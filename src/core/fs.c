@@ -59,6 +59,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     bfs_freespace_init(&fs.freespace, bio, BFS_BLK_NULL, fs.live_txn_id);
     fs.freespace.tree.txn_id_ptr = &fs.live_txn_id;
     fs.freespace.tree.fs_ctx = &fs;
+    fs.freespace.sb = &fs.txn.sb_new;
 
     uint32_t epool_count = BFS_EMERGENCY_POOL_SIZE;
     if (epool_count > data_blocks / 4) epool_count = data_blocks / 4;
@@ -129,8 +130,7 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
     fs->freespace.tree.fs_ctx = fs;
     fs->freespace.total_free = bfs_be32(sb->free_blocks);
     fs->freespace.global_reserve = bfs_be32(sb->global_reserve);
-    fs->freespace.emergency_pool = fs->txn.sb_new.emergency_pool;
-    fs->freespace.emergency_count = &fs->txn.sb_new.emergency_count;
+    fs->freespace.sb = &fs->txn.sb_new;
     bfs_freespace_refill_reserve(&fs->freespace);
 
     bfs_blk_t dir_root = bfs_be32(sb->dir_tree_root);
@@ -429,7 +429,7 @@ bfs_err_t bfs_fs_reserve(bfs_fs_t *fs, uint32_t items)
 {
     uint32_t needed = items * 12;
     uint32_t available = fs->freespace.total_free + fs->pending_count + fs->freespace.reserve_count;
-    if (fs->freespace.emergency_count) available += bfs_be32(*fs->freespace.emergency_count);
+    if (fs->freespace.sb) available += bfs_be32(fs->freespace.sb->emergency_count);
     return (available < needed) ? BFS_ERR_NOSPC : BFS_OK;
 }
 

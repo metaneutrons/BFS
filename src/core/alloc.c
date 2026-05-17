@@ -43,10 +43,10 @@ static bfs_blk_t iface_alloc(bfs_allocator_t *a)
         if (fs->reserve_count > 0)
             return fs->reserve[--fs->reserve_count];
         /* Last resort: emergency pool (breaks COW recursion) */
-        if (fs->emergency_count && *fs->emergency_count > 0) {
-            uint32_t idx = bfs_be32(*fs->emergency_count) - 1;
-            bfs_blk_t blk = bfs_be32(fs->emergency_pool[idx]);
-            *fs->emergency_count = bfs_be32(idx);
+        if (fs->sb && bfs_be32(fs->sb->emergency_count) > 0) {
+            uint32_t idx = bfs_be32(fs->sb->emergency_count) - 1;
+            bfs_blk_t blk = bfs_be32(fs->sb->emergency_pool[idx]);
+            fs->sb->emergency_count = bfs_be32(idx);
             return blk;
         }
         return BFS_BLK_NULL;

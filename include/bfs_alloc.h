@@ -14,6 +14,7 @@
 #define BFS_ALLOC_H
 
 #include "bfs_btree.h"
+#include "bfs_ondisk.h"
 
 #define BFS_ALLOC_RESERVE_SIZE 128 /* pre-allocated reserve blocks */
 #define BFS_METADATA_RESERVE  128 /* blocks reserved for delete/rename/COW ops */
@@ -29,9 +30,8 @@ typedef struct bfs_freespace {
     bool in_alloc;                  /* recursion guard */
 
     /* Emergency pool: last-resort blocks when reserve is empty during COW.
-     * Points into bfs_fs_t's superblock emergency_pool. */
-    uint32_t *emergency_pool;       /* pointer to sb emergency_pool array */
-    uint32_t *emergency_count;      /* pointer to sb emergency_count */
+     * Points to the live superblock within the transaction manager. */
+    bfs_superblock_t *sb;
 } bfs_freespace_t;
 
 /* Initialize the free space allocator. free_tree_root is the root of
