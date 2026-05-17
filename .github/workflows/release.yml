@@ -1,0 +1,71 @@
+name: Release
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    outputs:
+      release_created: ${{ steps.release.outputs.release_created }}
+      tag_name: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: googleapis/release-please-action@v4
+        id: release
+        with:
+          release-type: simple
+          package-name: bfs
+
+  build-release:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install Amiga cross-compiler
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y wget lhasa
+          # Download pre-built bebbo gcc for Linux
+          wget -q https://github.com/bebbo/amiga-gcc/releases/latest/download/amiga-gcc-ubuntu-latest.tar.gz
+          sudo tar xzf amiga-gcc-ubuntu-latest.tar.gz -C /opt/
+          echo "/opt/amiga/bin" >> $GITHUB_PATH
+
+      - name: Build all CPU targets
+        run: |
+          export AMIGA_CC=m68k-amigaos-gcc
+          export AMIGA_PREFIX=/opt/amiga/m68k-amigaos
+          make release
+
+      - name: Create release archive
+        run: |
+          cd build/release
+          tar czf ../../bfs-${{ needs.release-please.outputs.tag_name }}-amiga.tar.gz \
+            bfshandler bfshandler.020 bfshandler.030 bfshandler.040 bfshandler.060 \
+            bfs-test bfsformat bfssnapshot
+          cd ../..
+          # Also create LHA archive (Amiga standard)
+          lha c bfs-${{ needs.release-please.outputs.tag_name }}-amiga.lha \
+            build/release/bfshandler build/release/bfshandler.* \
+            build/release/bfs-test build/release/bfsformat build/release/bfssnapshot
+
+      - name: Upload release assets
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ needs.release-please.outputs.tag_name }} \
+            bfs-${{ needs.release-please.outputs.tag_name }}-amiga.tar.gz \
+            bfs-${{ needs.release-please.outputs.tag_name }}-amiga.lha
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and run host tests
+        run: make host-test

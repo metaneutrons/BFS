@@ -1,0 +1,13 @@
+[fs-uae]
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 8192
+cpu = 68040
+uae_cpu_speed = max
+uae_cpu_24bit_addressing = false
+uae_sound_output = none
+kickstart_file = /Volumes/Dev/Source/BFS/emulator-test/.assets/A1200.47.102.rom
+hard_drive_0 = /Volumes/Dev/Source/BFS/emulator-test/benchmark.hdf
+floppy_speed = 0
+window_width = 800
+window_height = 600

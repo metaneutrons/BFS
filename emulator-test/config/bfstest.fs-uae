@@ -1,0 +1,25 @@
+[fs-uae]
+# BFS Integration Test — local development config
+# Copy BFStest.fs-uae.template and fill in your paths.
+#
+# Required:
+#   KICKSTART_FILE — path to Kickstart 3.2 ROM
+#   WB_DIR         — path to Workbench 3.2 system directory
+
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 8192
+cpu = 68020
+
+# TODO: Set your local paths below
+kickstart_file = ${KICKSTART_FILE}
+
+hard_drive_0 = ${WB_DIR}
+hard_drive_0_label = System
+hard_drive_0_priority = 0
+
+hard_drive_1 = ../BFStest.hdf
+
+window_width = 800
+window_height = 600
+fullscreen = 0

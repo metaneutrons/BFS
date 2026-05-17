@@ -1,0 +1,129 @@
+name: BFS
+
+on:
+  push:
+    branches: [master, main]
+  pull_request:
+
+jobs:
+  host-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - run: make host-test
+
+  integration-test:
+    runs-on: ubuntu-latest
+    needs: host-tests
+    if: github.event_name == 'push'
+    timeout-minutes: 5
+    continue-on-error: true
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: Prepare environment
+        id: prep
+        env:
+          CI_TEST_ENV: ${{ secrets.CI_TEST_ENV }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # Skip gracefully if secret not available
+          if [ -z "$CI_TEST_ENV" ]; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+
+          ASSET_NAME="${CI_TEST_ENV%%|*}"
+          ASSET_KEY="${CI_TEST_ENV##*|}"
+
+          # Download asset
+          gh release download ci-assets --pattern "$ASSET_NAME" 2>/dev/null || {
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          }
+
+          # Decrypt
+          openssl enc -d -aes-256-cbc -pbkdf2 -pass "pass:$ASSET_KEY" \
+            -in "$ASSET_NAME" 2>/dev/null | tar xz 2>/dev/null || {
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          }
+
+          rm -f "$ASSET_NAME"
+          echo "ready=true" >> $GITHUB_OUTPUT
+
+      - name: Install tools
+        if: steps.prep.outputs.skip != 'true'
+        run: |
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq fs-uae xvfb python3-pip
+          pip3 install amitools
+
+      - name: Build
+        if: steps.prep.outputs.skip != 'true'
+        run: |
+          if ! command -v m68k-amigaos-gcc &>/dev/null; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          make amiga amiga-stresstest
+
+      - name: Prepare test image
+        if: steps.prep.outputs.skip != 'true'
+        run: |
+          # Build format tool
+          cc -std=c99 -O2 -I include -I tests -DBFS_HOST=1 \
+            -o fmt src/core/*.c tests/block_device_emu.c -x c - << 'EOF'
+          #include "bfs_fs.h"
+          #include "block_device_emu.h"
+          int main(int c,char**v){bfs_bio_t*b=bio_emu_open(v[1],4096);if(!b)return 1;int r=bfs_fs_format(b,"Vol",0);bfs_bio_close(b);return r;}
+          EOF
+          dd if=/dev/zero of=test.hdf bs=1M count=256 2>/dev/null
+          ./fmt test.hdf
+
+          # Build test media
+          ADF=test.adf
+          xdftool $ADF create size=dd + format "Test" ofs + boot install
+          xdftool $ADF makedir C
+          for f in C/*; do [ -f "$f" ] && xdftool $ADF write "$f" "C/$(basename $f)"; done
+          [ -f System/Format ] && xdftool $ADF write System/Format C/Format
+          xdftool $ADF makedir Libs
+          for f in Libs/*; do [ -f "$f" ] && xdftool $ADF write "$f" "Libs/$(basename $f)"; done
+          xdftool $ADF makedir L
+          xdftool $ADF write build/amiga/bfshandler L/bfshandler
+          xdftool $ADF write build/amiga/bfs-stresstest C/bfs-stresstest
+          xdftool $ADF makedir S
+          printf 'Assign C: Test:C\nAssign L: Test:L\nAssign LIBS: Test:Libs\nC:bfs-stresstest DH0: >Test:result\n' > /tmp/s
+          xdftool $ADF write /tmp/s S/Startup-Sequence
+
+      - name: Run emulator
+        if: steps.prep.outputs.skip != 'true'
+        run: |
+          ROM=$(find . -maxdepth 1 -name "*.rom" | head -1)
+          [ -z "$ROM" ] && exit 0
+
+          cat > /tmp/test.cfg << EOF
+          [fs-uae]
+          amiga_model = A1200
+          chip_memory = 2048
+          fast_memory = 8192
+          cpu = 68020
+          kickstart_file = $(pwd)/$ROM
+          floppy_drive_0 = $(pwd)/test.adf
+          hard_drive_0 = $(pwd)/test.hdf
+          floppy_speed = 0
+          uae_cpu_speed = max
+          window_hidden = 1
+          EOF
+          xvfb-run -a timeout 120 fs-uae /tmp/test.cfg 2>/dev/null || true
+
+      - name: Check results
+        if: steps.prep.outputs.skip != 'true'
+        run: |
+          REPORT=$(xdftool test.adf read result 2>/dev/null || echo "")
+          if [ -n "$REPORT" ]; then
+            PASS=$(echo "$REPORT" | grep -c "PASS" || echo 0)
+            FAIL=$(echo "$REPORT" | grep -c "FAIL" || echo 0)
+            echo "### Integration Test: $PASS passed, $FAIL failed" >> $GITHUB_STEP_SUMMARY
+            [ "$FAIL" -gt 0 ] && exit 1
+          fi

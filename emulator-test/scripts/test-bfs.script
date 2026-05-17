@@ -1,0 +1,80 @@
+; BFS Integration Test Script
+; Runs inside AROS/AmigaOS
+
+Echo "=== BFS Integration Test ==="
+Echo ""
+
+; Format the BFS partition
+Echo "Formatting BFSTEST:..."
+Format DRIVE BFSTEST: NAME "TestVol" NOICONS
+IF WARN
+  Echo "FAIL: Format failed"
+  SKIP end
+ENDIF
+Echo "OK: Format succeeded"
+
+; Create directories
+Echo "Creating directories..."
+MakeDir BFSTEST:src
+MakeDir BFSTEST:src/core
+MakeDir BFSTEST:data
+IF WARN
+  Echo "FAIL: MakeDir failed"
+  SKIP end
+ENDIF
+Echo "OK: Directories created"
+
+; Copy files
+Echo "Copying files..."
+Echo "Hello BFS!" >BFSTEST:readme.txt
+Echo "#include <stdio.h>" >BFSTEST:src/main.c
+Echo "int main() { return 0; }" >>BFSTEST:src/main.c
+Copy C:Dir BFSTEST:data/dir_copy
+IF WARN
+  Echo "FAIL: Copy failed"
+  SKIP end
+ENDIF
+Echo "OK: Files copied"
+
+; List directory
+Echo "Listing BFSTEST:..."
+Dir BFSTEST: ALL
+Echo ""
+
+; Read back file
+Echo "Reading readme.txt..."
+Type BFSTEST:readme.txt
+Echo ""
+
+; Delete and rename
+Echo "Testing delete and rename..."
+Delete BFSTEST:readme.txt
+Rename BFSTEST:src/main.c BFSTEST:src/app.c
+IF WARN
+  Echo "FAIL: Delete/Rename failed"
+  SKIP end
+ENDIF
+Echo "OK: Delete and rename succeeded"
+
+; Verify rename
+List BFSTEST:src/
+Echo ""
+
+; Test file size
+Echo "Testing large file..."
+Copy C:Dir BFSTEST:data/bigfile
+List BFSTEST:data/bigfile
+Echo ""
+
+; Final directory listing
+Echo "Final state:"
+Dir BFSTEST: ALL
+Echo ""
+
+Echo "=== ALL TESTS PASSED ==="
+
+LAB end
+Echo ""
+Echo "Test complete. Shutting down..."
+; Signal test completion
+Echo "DONE" >SYS:test-result.txt

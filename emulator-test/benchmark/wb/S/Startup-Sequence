@@ -1,0 +1,9 @@
+Echo "=== BFS vs PFS3 Benchmark ==="
+Echo ""
+Echo "--- BFS (DH1:) ---"
+C:DiskSpeed DRIVE DH1: FAST NOCPU MINTIME 1
+Echo ""
+Echo "--- PFS3 (DH2:) ---"
+C:DiskSpeed DRIVE DH2: FAST NOCPU MINTIME 1
+Echo ""
+Echo "=== DONE ==="
