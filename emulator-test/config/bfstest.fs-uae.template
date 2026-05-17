@@ -1,0 +1,22 @@
+[fs-uae]
+# BFS Integration Test — AROS m68k in FS-UAE
+
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 8192
+cpu = 68020
+
+# AROS Kickstart ROM
+kickstart_file = {EMULATOR_DIR}/aros/aros-rom.bin
+kickstart_ext_file = {EMULATOR_DIR}/aros/aros-ext.bin
+
+# Boot from AROS CD-ROM (contains full system)
+cdrom_drive_0 = {EMULATOR_DIR}/aros/AROS-20260428-amiga-m68k-boot-iso/aros-amiga-m68k.iso
+
+# BFS test partition (16MB blank HDF)
+hard_drive_0 = {EMULATOR_DIR}/bfstest.hdf
+hard_drive_0_label = BFSTEST
+
+# Window settings (overridden by --ci mode)
+window_width = 800
+window_height = 600

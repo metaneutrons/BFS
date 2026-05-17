@@ -1,0 +1,27 @@
+[fs-uae]
+amiga_model = A4000
+cpu = 68040
+chip_memory = 2048
+fast_memory = 8192
+uae_cpu_speed = max
+
+kickstart_file = /Users/fabian/Documents/amiga/rom/kick.a1200.47.102.rom
+
+hard_drive_0 = /Users/fabian/Documents/fswb/amigaos/amiga-os-3.2/Workbench3.2
+hard_drive_0_label = System
+hard_drive_0_priority = 0
+
+hard_drive_1 = /Users/fabian/Source/BFS/emulator-test/test.hdf
+hard_drive_1_file_system = /Users/fabian/Source/BFS/build/amiga/bfshandler
+hard_drive_1_label = BFSTest
+
+floppy_drive_speed = 0
+
+uae_sound_output = none
+
+console_debugger = 1
+uae_debugging_features = gdbserver
+uae_log_illegal_mem = true
+
+window_width = 800
+window_height = 600

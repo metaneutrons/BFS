@@ -1,0 +1,6 @@
+Echo "=== BFS Integration Test ==="
+Format DRIVE DH1: NAME "PFS3Test" NOICONS QUICK <NIL:
+Format DRIVE DH2: NAME "BFSTest" NOICONS QUICK <NIL:
+C:bfs-bench DH2: --test >SYS:test-report.txt
+Type SYS:test-report.txt
+Echo "=== DONE ==="

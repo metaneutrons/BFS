@@ -1,0 +1,8 @@
+Echo "=== BFS Benchmark ==="
+Format DRIVE DH1: NAME "PFS3Test" NOICONS QUICK <NIL:
+Format DRIVE DH2: NAME "BFSTest" NOICONS QUICK <NIL:
+C:bfs-bench DH1: DH2: --compare >SYS:bench-report.txt
+Type SYS:bench-report.txt
+C:DiskSpeed DH1: ALL >>SYS:bench-report.txt
+C:DiskSpeed DH2: ALL >>SYS:bench-report.txt
+Echo "=== DONE ==="

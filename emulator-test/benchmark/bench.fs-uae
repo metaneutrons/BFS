@@ -1,0 +1,29 @@
+[fs-uae]
+amiga_model = A4000
+cpu = 68040
+chip_memory = 2048
+fast_memory = 8192
+uae_cpu_speed = max
+
+kickstart_file = /Users/fabian/Documents/amiga/rom/kick.a1200.47.102.rom
+
+# Full Workbench (shared with test, but bench uses its own script)
+hard_drive_0 = /Users/fabian/Documents/fswb/amigaos/amiga-os-3.2/Workbench3.2
+hard_drive_0_label = System
+hard_drive_0_priority = 0
+
+# BFS partition (DH1) - same HDF as test (known working)
+hard_drive_1 = /Users/fabian/Source/BFS/emulator-test/benchmark/bfs.hdf
+hard_drive_1_file_system = /Users/fabian/Source/BFS/build/amiga/bfshandler
+hard_drive_1_label = BFS
+
+# PFS3 partition (DH2) - auto-formatted by PFS3 handler
+hard_drive_2 = /Users/fabian/Source/BFS/emulator-test/benchmark/pfs3.hdf
+hard_drive_2_file_system = /Users/fabian/Source/BFS/emulator-test/benchmark/wb/L/pfs3aio
+hard_drive_2_label = PFS3
+
+floppy_drive_speed = 0
+uae_sound_output = none
+
+window_width = 800
+window_height = 600
