@@ -27,14 +27,16 @@ code.
 | File extent lookup | O(n) anode chain | O(log n) B+tree |
 | Metadata checksums | None | CRC32 on every block |
 | Crash safety | Journal replay | COW + dual superblocks |
+| Data consistency | None | Optional `data=ordered` mode |
 | Snapshots | — | B+tree based (Read-only) |
+| Defragmentation | Offline | **Online Compaction** |
 | Max filename | 107 chars | 255 chars |
 | Max volume size | ~1.6 TB | 16 TB (4K blocks) |
 | Hard links | Yes | Yes |
 | Soft links | Yes | Yes |
 | File comments | Yes | Yes |
 | Free space tracking | Bitmap | Self-hosting B+tree |
-| Automated tests | — | 198 tests + emulator integration |
+| Automated tests | — | **200 tests** + emulator integration |
 
 ## Architecture
 
@@ -60,7 +62,7 @@ code.
 └────────────────────────────────────────────────────────┘
 ```
 
-The B+tree engine is shared across all metadata types, utilizing a **dynamic transaction tracking** architecture that ensures session-wide consistency and safe COW reclamation.
+The B+tree engine is shared across all metadata types, utilizing a **dynamic transaction tracking** architecture that ensures session-wide consistency and safe COW reclamation. It supports **online compaction** for metadata trees to maintain performance without downtime.
 
 - **Directory tree** — (parent_id, hash, name) → inode
 - **Extent tree** — file_block → (disk_block, length)
@@ -69,11 +71,9 @@ The B+tree engine is shared across all metadata types, utilizing a **dynamic tra
 
 ## Limitations
 
-- **Data blocks are not COW'd** — same trade-off as ext4 `data=writeback`;
-  metadata is always consistent but data may contain stale bytes after crash
-- **No background defragmentation** — files fragment over time
-- **Pending frees are bounded** — overflow leaks blocks until next sync (now 16K capacity)
-- **Needs real-world testing** — no production use on actual Amiga hardware yet
+- **Data blocks are not COW'd** — metadata is always consistent; data consistency can be enforced using the optional `data=ordered` mode.
+- **Pending frees are bounded** — overflow leaks blocks until next sync (now 16K capacity).
+- **Needs real-world testing** — no production use on actual Amiga hardware yet.
 
 ## Building
 
@@ -114,15 +114,15 @@ make bench
 
 ## Testing
 
-198 host tests across 25 suites:
+200 host tests across 25 suites:
 
-- **B+tree** — insert, split, delete, merge, scan, COW isolation
+- **B+tree** — insert, split, delete, merge, scan, COW isolation, **compaction**
 - **Free space** — alloc, free, coalesce, self-hosting, disk-full
 - **Directory** — lookup, case-insensitive, international chars, scan
 - **Extents** — single, fragmented, truncate, large files
 - **File I/O** — read, write, seek, cross-block, truncate
 - **Dir operations** — mkdir, rmdir, create, delete, rename
-- **Filesystem** — format, mount, crash recovery, sync cycles
+- **Filesystem** — format, mount, crash recovery, sync cycles, **ordered data**
 - **Durability** — stale handles, backup SB protection, batch reclamation
 - **Integration** — full workflows, persistence, multiple block sizes
 - **Stress** — 2K files, disk-full recovery, random ops, deep dirs
