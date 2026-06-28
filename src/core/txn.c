@@ -23,11 +23,6 @@ void bfs_txn_set_dir_root(bfs_txn_t *txn, bfs_blk_t root)
     txn->sb_new.dir_tree_root = bfs_be32(root);
 }
 
-void bfs_txn_set_extent_root(bfs_txn_t *txn, bfs_blk_t root)
-{
-    txn->sb_new.extent_tree_root = bfs_be32(root);
-}
-
 void bfs_txn_set_free_root(bfs_txn_t *txn, bfs_blk_t root)
 {
     txn->sb_new.free_tree_root = bfs_be32(root);
