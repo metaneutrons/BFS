@@ -27,17 +27,32 @@ typedef struct BFS_PACKED {
 
 /* Create a snapshot of the current filesystem state. */
 bfs_err_t bfs_snapshot_create(bfs_fs_t *fs, const char *name);
+bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name);
 
 /* Delete a snapshot by ID. Decrements refcounts and frees unreferenced blocks. */
 bfs_err_t bfs_snapshot_delete(bfs_fs_t *fs, uint32_t snapshot_id);
+bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id);
 
 /* Callback for listing snapshots. Return false to stop iteration. */
 typedef bool (*bfs_snapshot_list_cb)(uint32_t id, const bfs_snapshot_record_t *rec, void *ctx);
 
 /* List all snapshots. */
 bfs_err_t bfs_snapshot_list(bfs_fs_t *fs, bfs_snapshot_list_cb cb, void *ctx);
+bfs_err_t bfs_snapshot_list_unlocked(bfs_fs_t *fs, bfs_snapshot_list_cb cb, void *ctx);
+
+/* Find a snapshot by name. */
+bfs_err_t bfs_snapshot_find_by_name(bfs_fs_t *fs, const char *name,
+                                      uint32_t *id_out,
+                                      bfs_snapshot_record_t *rec_out);
+bfs_err_t bfs_snapshot_find_by_name_unlocked(bfs_fs_t *fs, const char *name,
+                                      uint32_t *id_out,
+                                      bfs_snapshot_record_t *rec_out);
 
 /* Get the next available snapshot ID. */
 uint32_t bfs_snapshot_next_id(bfs_fs_t *fs);
+uint32_t bfs_snapshot_next_id_unlocked(bfs_fs_t *fs);
+
+/* Resume any interrupted snapshot deletions. */
+bfs_err_t bfs_snapshot_resume_deletions(bfs_fs_t *fs);
 
 #endif /* BFS_SNAPSHOT_H */
