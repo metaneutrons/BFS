@@ -11,6 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
       - run: make host-test
+      - run: make tools build/host/mkbfs   # compile-check host tools so they don't bit-rot
 
   integration-test:
     runs-on: ubuntu-latest
@@ -71,15 +72,10 @@ jobs:
       - name: Prepare test image
         if: steps.prep.outputs.skip != 'true'
         run: |
-          # Build format tool
-          cc -std=c99 -O2 -I include -I tests -DBFS_HOST=1 \
-            -o fmt src/core/*.c tests/block_device_emu.c -x c - << 'EOF'
-          #include "bfs_fs.h"
-          #include "block_device_emu.h"
-          int main(int c,char**v){bfs_bio_t*b=bio_emu_open(v[1],4096);if(!b)return 1;int r=bfs_fs_format(b,"Vol",0);bfs_bio_close(b);return r;}
-          EOF
+          # Format the test image with the real mkbfs tool (no throwaway heredoc)
+          make build/host/mkbfs
           dd if=/dev/zero of=test.hdf bs=1M count=256 2>/dev/null
-          ./fmt test.hdf
+          ./build/host/mkbfs test.hdf 4096 Vol
 
           # Build test media
           ADF=test.adf
