@@ -54,7 +54,7 @@ int main(void)
     /* Build BSTR name */
     UBYTE bstr[34];
     int nlen = 0;
-    while (name[nlen] && nlen < 30) { bstr[nlen + 1] = name[nlen]; nlen++; }
+    while (name[nlen] && nlen < 31) { bstr[nlen + 1] = name[nlen]; nlen++; }  /* BFS_VOLNAME_MAX - 1 */
     bstr[0] = nlen;
 
     PutStr("Formatting ");

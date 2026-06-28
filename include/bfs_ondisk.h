@@ -31,7 +31,7 @@
 /*
  * Superblock — written to blocks 0 and 1 (alternating).
  * The one with the higher valid txn_id is current.
- * Fixed size: first 128 bytes of the block. Rest is zero-padded.
+ * Occupies the first BFS_SB_SIZE (512) bytes of the block; rest is zero-padded.
  */
 #define BFS_VOLNAME_MAX 32
 
@@ -49,7 +49,7 @@
 BFS_PACKED_BEGIN
 typedef struct BFS_PACKED {
     uint32_t magic;              /* BFS_SB_MAGIC ('BFS\0') */
-    uint32_t version;            /* on-disk format version (2) */
+    uint32_t version;            /* on-disk format version (BFS_SB_VERSION) */
     uint32_t block_size;         /* bytes per block (1024..65536, power of 2) */
     uint32_t block_count;        /* total blocks on volume */
     uint64_t txn_id;             /* transaction counter, monotonically increasing */
@@ -91,7 +91,7 @@ typedef struct BFS_PACKED {
 } bfs_superblock_t;
 
 BFS_PACKED_END
-_Static_assert(sizeof(bfs_superblock_t) <= 512, "superblock must fit in one sector");
+_Static_assert(sizeof(bfs_superblock_t) <= BFS_SB_SIZE, "superblock must fit in one sector");
 
 /*
  * B+tree node header — first bytes of every B+tree block.
@@ -153,6 +153,11 @@ _Static_assert(sizeof(bfs_inode_t) == 44, "inode size");
  */
 #define BFS_NAME_MAX 255
 
+/* Directory name hash (FNV-1a). These constants define on-disk key ordering —
+ * changing them makes existing volumes' directory trees unsearchable. Frozen. */
+#define BFS_DIR_HASH_FNV_OFFSET 0x811C9DC5u
+#define BFS_DIR_HASH_FNV_PRIME  0x01000193u
+
 BFS_PACKED_BEGIN
 typedef struct BFS_PACKED {
     uint32_t parent_id;       /* inode number of parent directory */
@@ -160,6 +165,7 @@ typedef struct BFS_PACKED {
     uint8_t  name_len;        /* length of name in bytes */
     uint8_t  name[BFS_NAME_MAX]; /* filename bytes (not null-terminated on disk) */
 } bfs_dirkey_t;
+BFS_PACKED_END
 
 /*
  * Extent entry — used in per-file extent B+tree.
@@ -172,6 +178,7 @@ typedef struct BFS_PACKED {
     uint32_t length;          /* number of contiguous blocks */
     uint32_t data_crc32;      /* CRC32 of data (only if OPT_DATA_CHECKSUMS) */
 } bfs_extent_t;
+BFS_PACKED_END
 
 /*
  * Free space entry — used in free space B+tree.
