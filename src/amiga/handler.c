@@ -1133,10 +1133,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         }
 
         /* Walk the snapshot's dir tree */
-        bfs_blk_t dir_root = bfs_be32(rec.dir_tree_root);
         bfs_dir_tree_t snap_dir;
-        bfs_dir_init(&snap_dir, h->fs.bio, bfs_freespace_allocator(&h->fs.freespace),
-                     dir_root, ((uint64_t)bfs_be32(rec.txn_id_hi) << 32 | bfs_be32(rec.txn_id_lo)));
+        bfs_snapshot_open(&rec, h->fs.bio, bfs_freespace_allocator(&h->fs.freespace),
+                          &snap_dir, NULL);
 
         char namebuf[BFS_NAME_MAX + 1];
         exam_next_ctx_t ectx;
@@ -1182,11 +1181,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         /* Initialize snapshot trees (read-only) */
         static bfs_allocator_t ro_alloc = {0};
-        bfs_dir_init(&h->snap_mounts[slot].dir_tree, h->fs.bio, &ro_alloc,
-                     bfs_be32(rec.dir_tree_root), ((uint64_t)bfs_be32(rec.txn_id_hi) << 32 | bfs_be32(rec.txn_id_lo)));
-        bfs_inode_init(&h->snap_mounts[slot].inode_tree, h->fs.bio, &ro_alloc,
-                       bfs_be32(rec.inode_tree_root), ((uint64_t)bfs_be32(rec.txn_id_hi) << 32 | bfs_be32(rec.txn_id_lo)));
-        h->snap_mounts[slot].txn_id = ((uint64_t)bfs_be32(rec.txn_id_hi) << 32 | bfs_be32(rec.txn_id_lo));
+        bfs_snapshot_open(&rec, h->fs.bio, &ro_alloc,
+                          &h->snap_mounts[slot].dir_tree, &h->snap_mounts[slot].inode_tree);
+        h->snap_mounts[slot].txn_id = bfs_snapshot_record_txn_id(&rec);
 
         /* Register VolumeNode */
         struct DosList *vol = MakeDosEntry(vname, DLT_VOLUME);

@@ -16,6 +16,27 @@ static const bfs_btree_ops_t snap_ops = {
     .val_size = sizeof(bfs_snapshot_record_t),
 };
 
+uint64_t bfs_snapshot_record_txn_id(const bfs_snapshot_record_t *rec)
+{
+    return ((uint64_t)bfs_be32(rec->txn_id_hi) << 32) | bfs_be32(rec->txn_id_lo);
+}
+
+bfs_err_t bfs_snapshot_open(const bfs_snapshot_record_t *rec, bfs_bio_t *bio,
+                            bfs_allocator_t *alloc,
+                            bfs_dir_tree_t *dir_out, bfs_btree_t *inode_out)
+{
+    uint64_t txn = bfs_snapshot_record_txn_id(rec);
+    if (dir_out) {
+        bfs_err_t err = bfs_dir_init(dir_out, bio, alloc, bfs_be32(rec->dir_tree_root), txn);
+        if (err != BFS_OK) return err;
+    }
+    if (inode_out) {
+        bfs_err_t err = bfs_inode_init(inode_out, bio, alloc, bfs_be32(rec->inode_tree_root), txn);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
 /* ── Helpers ───────────────────────────────────────────────── */
 
 static void format_deleting_name(char *buf, uint32_t id)
@@ -342,13 +363,8 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
         /* Re-init old_dir and old_inode tree helpers using the latest roots in 'rec' */
         bfs_dir_tree_t old_dir;
         bfs_btree_t old_inode;
-        uint64_t snap_txn = (uint64_t)bfs_be32(rec.txn_id_hi) << 32 | bfs_be32(rec.txn_id_lo);
-
-        err = bfs_dir_init(&old_dir, fs->bio, bfs_freespace_allocator(&fs->freespace),
-                           bfs_be32(rec.dir_tree_root), snap_txn);
-        if (err != BFS_OK) return err;
-        err = bfs_inode_init(&old_inode, fs->bio, bfs_freespace_allocator(&fs->freespace),
-                             bfs_be32(rec.inode_tree_root), snap_txn);
+        err = bfs_snapshot_open(&rec, fs->bio, bfs_freespace_allocator(&fs->freespace),
+                                &old_dir, &old_inode);
         if (err != BFS_OK) return err;
 
         uint32_t last_reclaimed = bfs_be32(rec.timestamp);
