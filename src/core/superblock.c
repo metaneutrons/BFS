@@ -109,7 +109,7 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
     }
     if (b_off == 0) {
         /* Fallback: try partition midpoint */
-        b_off = (uint64_t)bio->block_count * bio->block_size / 2;
+        b_off = bfs_default_backup_offset(bio->block_count, bio->block_size);
     }
     if (b_off > 0) {
         bfs_err_t e_b = read_sb_at(bio, b_off, &sb_b);

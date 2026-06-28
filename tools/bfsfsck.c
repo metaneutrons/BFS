@@ -176,7 +176,7 @@ int main(int argc, char **argv)
     bfs_sb_read(bio, &sb);
     printf("  Volume: %s  Blocks: %u  Free: %u\n", sb.volname, block_count, fs.freespace.total_free);
 
-    uint32_t data_start = (BFS_DATA_OFFSET + bio->block_size - 1) / bio->block_size;
+    uint32_t data_start = bfs_data_start_block(bio->block_size);
     mark_range(0, data_start, 2, "reserved/superblock");
     uint64_t backup_off = ((uint64_t)bfs_be32(sb.sb_backup_offset_hi) << 32) |
                           bfs_be32(sb.sb_backup_offset_lo);
