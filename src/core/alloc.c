@@ -15,12 +15,14 @@
 #include "bfs_alloc.h"
 #include <string.h>
 
+#define BFS_ALLOC_RESERVE_REFILL_TARGET (BFS_ALLOC_RESERVE_SIZE * 3 / 4)
+
 /* ── B+tree ops for free space tree ────────────────────────── */
 
 static int blk_compare(const void *a, const void *b)
 {
-    uint32_t va = bfs_be32(*(const uint32_t *)a);
-    uint32_t vb = bfs_be32(*(const uint32_t *)b);
+    uint32_t va = bfs_load_be32(a);
+    uint32_t vb = bfs_load_be32(b);
     if (va < vb) return -1;
     if (va > vb) return 1;
     return 0;
@@ -83,7 +85,11 @@ bfs_err_t bfs_freespace_init(bfs_freespace_t *fs, bfs_bio_t *bio,
     fs->in_alloc = false;
     fs->reserve_count = 0;
 
-    return bfs_btree_init(&fs->tree, bio, &fs->iface, &free_ops, free_tree_root, txn_id);
+    bfs_err_t err = bfs_btree_init(&fs->tree, bio, &fs->iface, &free_ops,
+                                   free_tree_root, txn_id);
+    if (err == BFS_OK)
+        fs->tree.txn_id_ptr = &fs->tree.txn_id_fallback;
+    return err;
 }
 
 /* ── Add free extent ───────────────────────────────────────── */
@@ -93,14 +99,10 @@ bfs_err_t bfs_freespace_add(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count
     /* Bootstrap: if reserve is empty and tree is empty, seed the reserve
      * from the extent being added so the B+tree can allocate nodes. */
     if (fs->reserve_count == 0 && fs->tree.root == BFS_BLK_NULL) {
-        while (fs->reserve_count < BFS_ALLOC_RESERVE_SIZE && count > 0) {
-            fs->reserve[fs->reserve_count++] = start++;
-            count--;
-        }
-        if (count == 0) {
-            fs->total_free += fs->reserve_count;
+        fs->reserve[fs->reserve_count++] = start++;
+        count--;
+        if (count == 0)
             return BFS_OK;
-        }
     }
 
     fs->in_alloc = true;
@@ -124,8 +126,8 @@ typedef struct {
 static bool alloc_scan_cb(const void *key, const void *val, void *ctx)
 {
     alloc_scan_ctx_t *sc = (alloc_scan_ctx_t *)ctx;
-    uint32_t start = bfs_be32(*(const uint32_t *)key);
-    uint32_t len = bfs_be32(*(const uint32_t *)val);
+    uint32_t start = bfs_load_be32(key);
+    uint32_t len = bfs_load_be32(val);
 
     if (len >= sc->need) {
         sc->found_start = start;
@@ -133,6 +135,34 @@ static bool alloc_scan_cb(const void *key, const void *val, void *ctx)
         return false; /* stop scanning */
     }
     return true;
+}
+
+static bfs_blk_t alloc_one_from_largest(bfs_freespace_t *fs)
+{
+    uint32_t max_key = bfs_be32(UINT32_MAX);
+    uint32_t found_key, found_len;
+    if (bfs_btree_search_floor(&fs->tree, &max_key, &found_key, &found_len) != BFS_OK)
+        return BFS_BLK_NULL;
+
+    uint32_t blk_start = bfs_be32(found_key);
+    uint32_t blk_len = bfs_be32(found_len);
+    if (blk_len == 0)
+        return BFS_BLK_NULL;
+
+    bfs_blk_t result = blk_start + blk_len - 1;
+    bfs_err_t err;
+    if (blk_len == 1) {
+        err = bfs_btree_delete(&fs->tree, &found_key);
+    } else {
+        uint32_t new_len = bfs_be32(blk_len - 1);
+        err = bfs_btree_update(&fs->tree, &found_key, &new_len);
+    }
+    if (err != BFS_OK)
+        return BFS_BLK_NULL;
+
+    fs->total_free--;
+    fs->roving = result + 1;
+    return result;
 }
 
 /* ── Allocate ──────────────────────────────────────────────── */
@@ -144,32 +174,66 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
 
     fs->in_alloc = true;
 
+    if (count == 1) {
+        bfs_blk_t result = alloc_one_from_largest(fs);
+        if (result != BFS_BLK_NULL) {
+            fs->in_alloc = false;
+            bfs_freespace_refill_reserve(fs);
+            return result;
+        }
+    }
+
     /* First-fit scan starting from roving pointer */
     alloc_scan_ctx_t sc = { .need = count, .found_start = BFS_BLK_NULL, .found_len = 0 };
 
     uint32_t start_key = bfs_be32(fs->roving);
-    bfs_btree_scan(&fs->tree, &start_key, alloc_scan_cb, &sc);
+    bfs_err_t scan_err = bfs_btree_scan(&fs->tree, &start_key, alloc_scan_cb, &sc);
+    if (scan_err != BFS_OK) {
+        fs->in_alloc = false;
+        return BFS_BLK_NULL;
+    }
 
     /* If not found, wrap around from beginning */
     if (sc.found_start == BFS_BLK_NULL && fs->roving > 0) {
-        bfs_btree_scan(&fs->tree, NULL, alloc_scan_cb, &sc);
+        scan_err = bfs_btree_scan(&fs->tree, NULL, alloc_scan_cb, &sc);
+        if (scan_err != BFS_OK) {
+            fs->in_alloc = false;
+            return BFS_BLK_NULL;
+        }
     }
 
     if (sc.found_start == BFS_BLK_NULL) {
+        if (count == 1 && fs->reserve_count > 0) {
+            bfs_blk_t result = fs->reserve[--fs->reserve_count];
+            if (fs->total_free > 0)
+                fs->total_free--;
+            fs->in_alloc = false;
+            return result;
+        }
         fs->in_alloc = false;
         return BFS_BLK_NULL;
     }
 
     /* Remove the old extent */
     uint32_t old_key = bfs_be32(sc.found_start);
-    bfs_btree_delete(&fs->tree, &old_key);
+    uint32_t old_len = bfs_be32(sc.found_len);
+    bfs_err_t err = bfs_btree_delete(&fs->tree, &old_key);
+    if (err != BFS_OK) {
+        fs->in_alloc = false;
+        return BFS_BLK_NULL;
+    }
 
     /* If extent is larger than needed, re-insert the remainder */
     bfs_blk_t result = sc.found_start;
     if (sc.found_len > count) {
         uint32_t rem_start = bfs_be32(sc.found_start + count);
         uint32_t rem_len = bfs_be32(sc.found_len - count);
-        bfs_btree_insert(&fs->tree, &rem_start, &rem_len);
+        err = bfs_btree_insert(&fs->tree, &rem_start, &rem_len);
+        if (err != BFS_OK) {
+            bfs_btree_insert(&fs->tree, &old_key, &old_len);
+            fs->in_alloc = false;
+            return BFS_BLK_NULL;
+        }
     }
 
     fs->total_free -= count;
@@ -184,18 +248,95 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
 
 /* ── Free ──────────────────────────────────────────────────── */
 
+typedef struct {
+    bfs_blk_t end;
+    bool overlap;
+} overlap_scan_ctx_t;
+
+static bool overlap_scan_cb(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    overlap_scan_ctx_t *oc = (overlap_scan_ctx_t *)ctx;
+    oc->overlap = bfs_load_be32(key) < oc->end;
+    return false;
+}
+
+static bfs_err_t return_to_emergency_pool(bfs_freespace_t *fs, bfs_blk_t blk,
+                                          bool *handled)
+{
+    *handled = false;
+    if (!fs->sb)
+        return BFS_OK;
+
+    uint32_t ec = bfs_be32(fs->sb->emergency_count);
+    uint32_t found_idx = BFS_EMERGENCY_POOL_SIZE;
+    for (uint32_t i = 0; i < BFS_EMERGENCY_POOL_SIZE; i++) {
+        if (bfs_be32(fs->sb->emergency_pool[i]) == blk) {
+            if (i < ec) {
+                *handled = true;
+                return BFS_OK;
+            }
+            found_idx = i;
+            break;
+        }
+    }
+
+    if (found_idx < BFS_EMERGENCY_POOL_SIZE && ec < BFS_EMERGENCY_POOL_SIZE) {
+        uint32_t displaced = fs->sb->emergency_pool[ec];
+        fs->sb->emergency_pool[ec] = bfs_be32(blk);
+        fs->sb->emergency_pool[found_idx] = displaced;
+        fs->sb->emergency_count = bfs_be32(ec + 1);
+        *handled = true;
+    }
+    return BFS_OK;
+}
+
 bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count)
 {
     if (count == 0) return BFS_OK;
+    bfs_blk_t end = start + count;
+    if (end < start) return BFS_ERR_INVAL;
+
+    if (count == 1) {
+        bool handled;
+        bfs_err_t err = return_to_emergency_pool(fs, start, &handled);
+        if (handled || err != BFS_OK)
+            return err;
+    }
 
     fs->in_alloc = true;
 
     bfs_blk_t merge_start = start;
     uint32_t merge_len = count;
 
+    if (start > 0) {
+        uint32_t pred_search = bfs_be32(start);
+        uint32_t pred_key, pred_len;
+        if (bfs_btree_search_floor(&fs->tree, &pred_search, &pred_key, &pred_len) == BFS_OK) {
+            uint32_t pk = bfs_be32(pred_key);
+            uint32_t pl = bfs_be32(pred_len);
+            if (pk <= start && pk + pl > start) {
+                fs->in_alloc = false;
+                return BFS_ERR_EXISTS;
+            }
+        }
+    }
+
+    overlap_scan_ctx_t oc = { .end = end, .overlap = false };
+    uint32_t overlap_key = bfs_be32(start);
+    bfs_err_t scan_err = bfs_btree_scan(&fs->tree, &overlap_key, overlap_scan_cb, &oc);
+    if (scan_err != BFS_OK) {
+        fs->in_alloc = false;
+        return scan_err;
+    }
+    if (oc.overlap) {
+        fs->in_alloc = false;
+        return BFS_ERR_EXISTS;
+    }
+
     /* Right merge: check if there's an extent starting at (start + count) */
     {
-        uint32_t right_key = bfs_be32(start + count);
+        uint32_t right_key = bfs_be32(end);
         uint32_t right_len;
         if (bfs_btree_search(&fs->tree, &right_key, &right_len) == BFS_OK) {
             merge_len += bfs_be32(right_len);
@@ -226,10 +367,12 @@ bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t coun
     uint32_t ins_val = bfs_be32(merge_len);
     bfs_err_t err = bfs_btree_insert(&fs->tree, &ins_key, &ins_val);
 
-    fs->total_free += count;
+    if (err == BFS_OK)
+        fs->total_free += count;
     fs->in_alloc = false;
 
-    bfs_freespace_refill_reserve(fs);
+    if (err == BFS_OK)
+        bfs_freespace_refill_reserve(fs);
 
     return err;
 }
@@ -238,36 +381,22 @@ bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t coun
 
 bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
 {
-    while (fs->reserve_count < BFS_ALLOC_RESERVE_SIZE && fs->total_free > 0) {
+    if (fs->global_reserve == UINT32_MAX)
+        return BFS_OK;
+    while (fs->reserve_count < BFS_ALLOC_RESERVE_REFILL_TARGET &&
+           fs->total_free > fs->global_reserve + 1) {
         fs->in_alloc = true;
 
-        /* Find any free extent using floor search from max key */
-        uint32_t max_key = bfs_be32(UINT32_MAX);
-        uint32_t found_key, found_len;
-        if (bfs_btree_search_floor(&fs->tree, &max_key, &found_key, &found_len) != BFS_OK) {
+        bfs_blk_t blk = alloc_one_from_largest(fs);
+        if (blk == BFS_BLK_NULL) {
             fs->in_alloc = false;
             break;
         }
 
-        uint32_t blk_start = bfs_be32(found_key);
-        uint32_t blk_len = bfs_be32(found_len);
-
-        /* Remove the extent */
-        bfs_btree_delete(&fs->tree, &found_key);
-
-        /* Tree operations may have freed blocks back to reserve.
-         * Re-check capacity before adding. */
         if (fs->reserve_count < BFS_ALLOC_RESERVE_SIZE) {
-            fs->reserve[fs->reserve_count++] = blk_start;
-            if (blk_len > 1) {
-                uint32_t rem_key = bfs_be32(blk_start + 1);
-                uint32_t rem_val = bfs_be32(blk_len - 1);
-                bfs_btree_insert(&fs->tree, &rem_key, &rem_val);
-            }
-            fs->total_free--;
+            fs->reserve[fs->reserve_count++] = blk;
         } else {
-            /* Reserve full from freed COW blocks — put extent back and stop */
-            bfs_btree_insert(&fs->tree, &found_key, &found_len);
+            bfs_freespace_free(fs, blk, 1);
             fs->in_alloc = false;
             break;
         }
