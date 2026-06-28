@@ -27,8 +27,6 @@ static bool valid_block_size(uint32_t bs)
 #define BFS_GRESERVE_CAP          512   /* absolute maximum */
 #define BFS_GRESERVE_TINY_DIV     4     /* fallback if reserve would exceed the volume */
 
-static bfs_err_t return_reserve_to_free_tree(bfs_fs_t *fs);
-
 /* ── Format ────────────────────────────────────────────────── */
 
 bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
@@ -139,7 +137,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     err = bfs_inode_write(&fs.inode_tree, BFS_ROOT_INO, &root_inode);
     if (err != BFS_OK) return err;
 
-    err = return_reserve_to_free_tree(&fs);
+    err = bfs_freespace_return_reserve(&fs.freespace);
     if (err != BFS_OK) return err;
 
     bfs_txn_set_dir_root(&fs.txn, fs.dir_tree.tree.root);
@@ -253,23 +251,6 @@ static void update_tree_txns(bfs_fs_t *fs)
     fs->live_txn_id = bfs_txn_id(&fs->txn);
 }
 
-static bfs_err_t return_reserve_to_free_tree(bfs_fs_t *fs)
-{
-    uint32_t saved_global_reserve = fs->freespace.global_reserve;
-    fs->freespace.global_reserve = UINT32_MAX;
-    while (fs->freespace.reserve_count > 0) {
-        bfs_blk_t blk = fs->freespace.reserve[--fs->freespace.reserve_count];
-        bfs_err_t err = bfs_freespace_free(&fs->freespace, blk, 1);
-        if (err != BFS_OK) {
-            fs->freespace.reserve[fs->freespace.reserve_count++] = blk;
-            fs->freespace.global_reserve = saved_global_reserve;
-            return BFS_OK;
-        }
-    }
-    fs->freespace.global_reserve = saved_global_reserve;
-    return BFS_OK;
-}
-
 static void shellsort_blocks(bfs_blk_t *arr, uint32_t count)
 {
     static const uint32_t gaps[] = {1750, 701, 301, 132, 57, 23, 10, 4, 1, 0};
@@ -298,7 +279,7 @@ bfs_err_t bfs_fs_sync_unlocked(bfs_fs_t *fs)
         bfs_bio_sync(fs->bio);
     }
 
-    bfs_err_t err = return_reserve_to_free_tree(fs);
+    bfs_err_t err = bfs_freespace_return_reserve(&fs->freespace);
     if (err != BFS_OK) return err;
 
     /* Update superblock with current tree roots */
@@ -351,7 +332,7 @@ bfs_err_t bfs_fs_sync_unlocked(bfs_fs_t *fs)
         }
         free(process_buf);
 
-        err = return_reserve_to_free_tree(fs);
+        err = bfs_freespace_return_reserve(&fs->freespace);
         if (err != BFS_OK) return err;
 
         /* Final commit of free tree changes */
