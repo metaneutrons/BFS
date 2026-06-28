@@ -10,7 +10,6 @@
  */
 
 #include "bfs_extent.h"
-#include "bfs_fs.h"
 #include <string.h>
 
 /* ── B+tree ops ────────────────────────────────────────────── */
@@ -209,17 +208,17 @@ static bool extent_walk_block_cb(const void *key, const void *val, void *c)
     return true;
 }
 
-bfs_err_t bfs_extent_walk(bfs_fs_t *fs, bfs_blk_t root,
-                          bfs_node_walk_cb node_cb,
+bfs_err_t bfs_extent_walk(bfs_bio_t *bio, bfs_freespace_t *fsp, uint64_t txn_id,
+                          bfs_blk_t root, bfs_node_walk_cb node_cb,
                           bfs_node_walk_cb block_cb, void *ctx)
 {
     if (root == BFS_BLK_NULL) return BFS_OK;
     bfs_extent_tree_t et;
-    bfs_err_t err = bfs_extent_init(&et, fs->bio, &fs->freespace, root, fs->live_txn_id);
+    bfs_err_t err = bfs_extent_init(&et, bio, fsp, root, txn_id);
     if (err != BFS_OK) return err;
 
     if (block_cb) {
-        extent_walk_ctx_t ec = { block_cb, ctx, fs->bio->block_count, BFS_OK };
+        extent_walk_ctx_t ec = { block_cb, ctx, bio->block_count, BFS_OK };
         err = bfs_btree_scan(&et.tree, NULL, extent_walk_block_cb, &ec);
         if (err == BFS_OK) err = ec.err;
         if (err != BFS_OK) return err;
@@ -274,31 +273,32 @@ bfs_err_t bfs_extent_truncate_batch(bfs_extent_tree_t *et, uint32_t from_block,
         tc.count = 0;
         bfs_btree_scan(&et->tree, &start_key, trunc_cb, &tc);
         for (uint32_t i = 0; i < tc.count && ops_done < max_ops; i++) {
-            bfs_fs_t *fs_ctx = (bfs_fs_t *)et->tree.fs_ctx;
+            bfs_free_sink_t *sink = &et->tree.free_sink;
             uint32_t len = tc.lens[i];
             bfs_blk_t dblk = tc.dblks[i];
             /* Reject a corrupt/implausible extent read from disk before its
              * length drives the free loop below. Legitimate extents are tiny
-             * (the writer appends one block at a time); a length that exceeds
-             * the pending_frees capacity or runs past the device can only be
-             * corruption, and must never index past the fixed pending_frees[]. */
-            if (len == 0 || len > BFS_PENDING_FREES_MAX ||
+             * (the writer appends one block at a time); a length past the device,
+             * or larger than the deferred-free queue could ever hold (so a retry
+             * would never help), can only be corruption. */
+            if (len == 0 ||
                 dblk >= et->tree.bio->block_count ||
-                len > et->tree.bio->block_count - dblk) {
+                len > et->tree.bio->block_count - dblk ||
+                (sink->defer && len > sink->capacity)) {
                 return BFS_ERR_CORRUPT;
             }
-            /* Overflow-safe headroom check — the old pending_count + len form
-             * wraps when len is large and would defeat the guard. */
-            if (fs_ctx && len > BFS_PENDING_FREES_MAX - fs_ctx->pending_count) {
+            /* All-or-nothing per extent: if the whole extent won't fit in the
+             * queue right now, sync and retry rather than queue it partially. */
+            if (sink->defer && len > sink->headroom(sink->ctx)) {
                 return BFS_ERR_AGAIN;
             }
             uint32_t key = bfs_be32(tc.keys[i]);
             bfs_btree_delete(&et->tree, &key);
-            /* Don't return to free tree now (would cause COW recursion).
-             * Instead, stash in pending_frees for reclaim during sync. */
-            if (fs_ctx) {
+            /* Don't return to the free tree now (would cause COW recursion);
+             * defer to the post-commit reclaim queue. */
+            if (sink->defer) {
                 for (uint32_t b = 0; b < len; b++)
-                    fs_ctx->pending_frees[fs_ctx->pending_count++] = dblk + b;
+                    sink->defer(sink->ctx, dblk + b);
             } else {
                 bfs_freespace_free(et->fs, dblk, len);
             }

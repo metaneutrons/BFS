@@ -22,7 +22,6 @@
 #include "bfs_btree.h"
 #include "bfs_btree_internal.h"
 #include "bfs_crc32.h"
-#include "bfs_fs.h"
 #include <string.h>
 #include <stdlib.h>
 
@@ -119,7 +118,7 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
     tree->height = 0;
     tree->txn_id_ptr = NULL;
     tree->txn_id_fallback = txn_id;
-    tree->fs_ctx = NULL;
+    tree->free_sink = (bfs_free_sink_t){0};
 
     if (root != BFS_BLK_NULL) {
         uint8_t *buf = malloc(bio->block_size);
@@ -173,16 +172,15 @@ static void btree_free_node(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *buf
     const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
     uint64_t block_txn = bfs_be64(hdr->txn_id);
 
-    if (tree->fs_ctx) {
-        bfs_fs_t *fs = (bfs_fs_t *)tree->fs_ctx;
-        if (block_txn >= bfs_btree_txn_id(tree)) {
-            tree->alloc->dealloc(tree->alloc, blk);
-        } else if (fs->pending_count < BFS_PENDING_FREES_MAX) {
-            fs->pending_frees[fs->pending_count++] = blk;
-        }
-    } else if (block_txn >= bfs_btree_txn_id(tree)) {
+    if (block_txn >= bfs_btree_txn_id(tree)) {
+        /* Current-transaction block: free it immediately. */
         tree->alloc->dealloc(tree->alloc, blk);
+    } else if (tree->free_sink.defer) {
+        /* Older block: defer to the post-commit reclaim queue. If the queue is
+         * full it is dropped here and reclaimed on a later sync cycle. */
+        tree->free_sink.defer(tree->free_sink.ctx, blk);
     }
+    /* else: standalone tree, older block — nothing to do. */
 }
 
 static bfs_err_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf, bfs_blk_t *out_blk)
@@ -1248,7 +1246,7 @@ bfs_err_t bfs_btree_compact(bfs_btree_t *tree)
     bfs_btree_t new_tree;
     bfs_btree_init(&new_tree, tree->bio, tree->alloc, tree->ops,
                    BFS_BLK_NULL, bfs_btree_txn_id(tree));
-    new_tree.fs_ctx = tree->fs_ctx;
+    new_tree.free_sink = tree->free_sink;
     new_tree.txn_id_ptr = tree->txn_id_ptr;
 
     compact_ctx_t ctx = { .new_tree = &new_tree, .rc = BFS_OK };

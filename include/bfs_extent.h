@@ -72,4 +72,11 @@ bfs_err_t bfs_extent_remap_block(bfs_extent_tree_t *et, uint32_t file_block,
                                    bfs_blk_t new_disk_block,
                                    bfs_blk_t *old_disk_block_out);
 
+/* Walk every node block (node_cb) and every data block (block_cb) of the extent
+ * tree at `root`. Either cb may be NULL; both receive (block, ctx). The extent
+ * decode and length bounds-check live here. Returns the first error. */
+bfs_err_t bfs_extent_walk(bfs_bio_t *bio, bfs_freespace_t *fsp, uint64_t txn_id,
+                          bfs_blk_t root, bfs_node_walk_cb node_cb,
+                          bfs_node_walk_cb block_cb, void *ctx);
+
 #endif /* BFS_EXTENT_H */
