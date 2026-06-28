@@ -4,6 +4,7 @@
  */
 
 #include "bfs_file.h"
+#include "bfs_internal.h"
 #include "bfs_inode.h"
 #include "bfs_crc32.h"
 #include "bfs_refcount.h"

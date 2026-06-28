@@ -1,5 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 #include "bfs_snapshot.h"
+#include "bfs_internal.h"
 #include "bfs_refcount.h"
 #include "bfs_btree.h"
 #include "bfs_inode.h"
