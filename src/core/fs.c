@@ -29,11 +29,11 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     if (!valid_block_size(bs) || bc < BFS_MIN_VOLUME_BLOCKS)
         return BFS_ERR_INVAL;
 
-    bfs_blk_t data_start = (BFS_DATA_OFFSET + bs - 1) / bs;
+    bfs_blk_t data_start = bfs_data_start_block(bs);
     if (data_start == BFS_BLK_NULL || bc <= data_start)
         return BFS_ERR_INVAL;
     uint32_t data_blocks = bc - data_start;
-    uint64_t backup_off = (uint64_t)bc * bs / 2;
+    uint64_t backup_off = bfs_default_backup_offset(bc, bs);
 
     bfs_superblock_t sb;
     memset(&sb, 0, sizeof(sb));

@@ -193,5 +193,21 @@ typedef struct BFS_PACKED {
 BFS_PACKED_END
 _Static_assert(sizeof(bfs_free_extent_t) == 8, "free_extent size");
 
+/* ── On-disk geometry helpers (single source of truth) ─────── */
+
+/* First filesystem block — block 0 sits at byte BFS_DATA_OFFSET. Format (the
+ * writer) and fsck (the reader) must agree on this, so both derive it here. */
+static inline bfs_blk_t bfs_data_start_block(uint32_t block_size)
+{
+    return (BFS_DATA_OFFSET + block_size - 1) / block_size;
+}
+
+/* Default backup-superblock byte offset (partition midpoint). */
+static inline uint64_t bfs_default_backup_offset(bfs_blk_t block_count,
+                                                 uint32_t block_size)
+{
+    return (uint64_t)block_count * block_size / 2;
+}
+
 
 #endif /* BFS_ONDISK_H */
