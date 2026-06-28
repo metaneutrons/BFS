@@ -20,6 +20,7 @@
  */
 
 #include "bfs_btree.h"
+#include "bfs_btree_internal.h"
 #include "bfs_crc32.h"
 #include "bfs_fs.h"
 #include <string.h>
@@ -29,65 +30,11 @@
 
 static uint8_t *alloc_buf(const bfs_btree_t *tree) { return malloc(tree->bio->block_size); }
 
-/* ── Node capacity calculations ────────────────────────────── */
+/* Node layout/capacity/CRC accessors live in bfs_btree_internal.h — shared with
+ * the invariant test (tests/test_invariants.c) so it validates the real layout,
+ * not a hand-kept copy. */
 
-static uint32_t node_data_size(const bfs_btree_t *tree)
-{
-    return tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
-}
-
-static uint32_t leaf_max_keys(const bfs_btree_t *tree)
-{
-    return node_data_size(tree) / (tree->ops->key_size + tree->ops->val_size);
-}
-
-/* Max keys in an internal node: N keys + (N+1) child pointers (4 bytes each) */
-static uint32_t internal_max_keys(const bfs_btree_t *tree)
-{
-    return (node_data_size(tree) - 4) / (tree->ops->key_size + 4);
-}
-
-/* ── Node accessors ────────────────────────────────────────── */
-
-static void *node_key(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
-{
-    return buf + sizeof(bfs_btnode_hdr_t) + i * tree->ops->key_size;
-}
-
-static void *leaf_val(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
-{
-    uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + leaf_max_keys(tree) * tree->ops->key_size;
-    return buf + keys_end + i * tree->ops->val_size;
-}
-
-static uint8_t *internal_child_ptr(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
-{
-    uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + internal_max_keys(tree) * tree->ops->key_size;
-    return buf + keys_end + i * sizeof(uint32_t);
-}
-
-static bfs_blk_t get_child(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
-{
-    return bfs_load_be32(internal_child_ptr(tree, buf, i));
-}
-
-static void set_child(const bfs_btree_t *tree, uint8_t *buf, uint32_t i, bfs_blk_t blk)
-{
-    bfs_store_be32(internal_child_ptr(tree, buf, i), blk);
-}
-
-/* ── Node I/O with CRC ────────────────────────────────────── */
-
-static uint32_t node_compute_crc(const bfs_btree_t *tree, const uint8_t *buf)
-{
-    /* Cast away const temporarily — we restore the value */
-    bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
-    uint32_t saved_crc = hdr->crc32;
-    hdr->crc32 = 0;
-    uint32_t crc = bfs_crc32(0, buf, tree->bio->block_size);
-    hdr->crc32 = saved_crc;
-    return crc;
-}
+/* ── Node I/O ──────────────────────────────────────────────── */
 
 static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
 {
@@ -135,10 +82,7 @@ static void node_init(const bfs_btree_t *tree, uint8_t *buf, uint16_t level)
     hdr->right_sibling = 0;
 }
 
-static bfs_btnode_hdr_t *hdr_of(uint8_t *buf) { return (bfs_btnode_hdr_t *)buf; }
-static uint32_t num_keys(uint8_t *buf) { return bfs_be32(hdr_of(buf)->num_keys); }
-static uint16_t node_level(uint8_t *buf) { return bfs_be16(hdr_of(buf)->level); }
-static bool is_leaf(uint8_t *buf) { return node_level(buf) == BFS_BTNODE_LEAF; }
+/* hdr_of / num_keys / node_level / is_leaf are in bfs_btree_internal.h. */
 
 /* ── Binary search within a node ───────────────────────────── */
 

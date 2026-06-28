@@ -4,6 +4,7 @@
 
 #include "test_harness.h"
 #include "bfs_btree.h"
+#include "bfs_btree_internal.h"
 #include "bfs_fs.h"
 #include "bfs_file.h"
 #include "bfs_inode.h"
@@ -43,48 +44,8 @@ static const bfs_btree_ops_t u32_ops = {
 
 static void make_key(uint32_t *k, uint32_t v) { *k = bfs_be32(v); }
 
-/* ── Node accessor helpers (mirrored from btree.c) ─────────── */
-
-static uint32_t inv_node_data_size(const bfs_btree_t *tree)
-{
-    return tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
-}
-
-static uint32_t inv_leaf_max(const bfs_btree_t *tree)
-{
-    return inv_node_data_size(tree) / (tree->ops->key_size + tree->ops->val_size);
-}
-
-static uint32_t inv_internal_max(const bfs_btree_t *tree)
-{
-    return (inv_node_data_size(tree) - 4) / (tree->ops->key_size + 4);
-}
-
-static void *inv_node_key(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
-{
-    return buf + sizeof(bfs_btnode_hdr_t) + i * tree->ops->key_size;
-}
-
-static uint8_t *inv_internal_child_ptr(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
-{
-    uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + inv_internal_max(tree) * tree->ops->key_size;
-    return buf + keys_end + i * sizeof(uint32_t);
-}
-
-static bfs_blk_t inv_get_child(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
-{
-    return bfs_load_be32(inv_internal_child_ptr(tree, buf, i));
-}
-
-static uint32_t inv_node_compute_crc(const bfs_btree_t *tree, const uint8_t *buf)
-{
-    bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
-    uint32_t saved = hdr->crc32;
-    hdr->crc32 = 0;
-    uint32_t crc = bfs_crc32(0, buf, tree->bio->block_size);
-    hdr->crc32 = saved;
-    return crc;
-}
+/* Node accessors come from bfs_btree_internal.h — the SAME definitions btree.c
+ * uses, so this checker validates the real on-disk layout, not a hand-kept copy. */
 
 /* ── B+tree Invariant Checker ──────────────────────────────── */
 
@@ -118,7 +79,7 @@ static void verify_node(inv_ctx_t *ctx, bfs_blk_t blk, int depth, bool is_root)
     }
 
     /* 1. Valid CRC */
-    if (bfs_be32(hdr->crc32) != inv_node_compute_crc(tree, buf)) {
+    if (bfs_be32(hdr->crc32) != node_compute_crc(tree, buf)) {
         ctx->violations++;
         free(buf);
         return;
@@ -130,15 +91,15 @@ static void verify_node(inv_ctx_t *ctx, bfs_blk_t blk, int depth, bool is_root)
 
     /* 5. Non-root minimum fill */
     if (!is_root && n > 0) {
-        uint32_t min_keys = leaf ? inv_leaf_max(tree) / 2 : inv_internal_max(tree) / 2;
+        uint32_t min_keys = leaf ? leaf_max_keys(tree) / 2 : internal_max_keys(tree) / 2;
         if (n < min_keys)
             ctx->violations++;
     }
 
     /* 2/3. Keys sorted */
     for (uint32_t i = 1; i < n; i++) {
-        if (tree->ops->key_compare(inv_node_key(tree, buf, i - 1),
-                                   inv_node_key(tree, buf, i)) >= 0) {
+        if (tree->ops->key_compare(node_key(tree, buf, i - 1),
+                                   node_key(tree, buf, i)) >= 0) {
             ctx->violations++;
             break;
         }
@@ -155,14 +116,14 @@ static void verify_node(inv_ctx_t *ctx, bfs_blk_t blk, int depth, bool is_root)
     } else {
         /* 4. Internal node has num_keys+1 valid child pointers */
         for (uint32_t i = 0; i <= n; i++) {
-            bfs_blk_t child = inv_get_child(tree, buf, i);
+            bfs_blk_t child = get_child(tree, buf, i);
             if (child == BFS_BLK_NULL || child >= tree->bio->block_count)
                 ctx->violations++;
         }
 
         /* 7. Key ordering between children: keys in child[i] < key[i] */
         for (uint32_t i = 0; i <= n; i++) {
-            verify_node(ctx, inv_get_child(tree, buf, i), depth + 1, false);
+            verify_node(ctx, get_child(tree, buf, i), depth + 1, false);
         }
     }
 
@@ -519,7 +480,7 @@ static void test_corrupt_node_detected(void)
     TEST_ASSERT_EQ(bfs_bio_read(bio, tree.root, buf), BFS_OK);
 
     /* Get child[0] block number */
-    uint32_t keys_end_c = sizeof(bfs_btnode_hdr_t) + inv_internal_max(&tree) * tree.ops->key_size;
+    uint32_t keys_end_c = sizeof(bfs_btnode_hdr_t) + internal_max_keys(&tree) * tree.ops->key_size;
     bfs_blk_t child_blk = bfs_load_be32(buf + keys_end_c);
     free(buf);
 
@@ -571,7 +532,7 @@ static void test_self_referencing_child(void)
     TEST_ASSERT_EQ(bfs_bio_read(bio, tree.root, buf), BFS_OK);
 
     /* Overwrite child[0] with root block number */
-    uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + inv_internal_max(&tree) * tree.ops->key_size;
+    uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + internal_max_keys(&tree) * tree.ops->key_size;
     bfs_store_be32(buf + keys_end, tree.root);
 
     /* Recompute CRC so the node passes magic/CRC checks */
