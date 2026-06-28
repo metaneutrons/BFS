@@ -99,6 +99,19 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
         return BFS_ERR_CORRUPT;
     if (bfs_be32(hdr->crc32) != node_compute_crc(tree, buf))
         return BFS_ERR_CORRUPT;
+
+    /* Validate structural header fields read from disk before any accessor uses
+     * num_keys to index into the fixed-size block buffer. The CRC only catches
+     * accidental bit-rot, not a deliberately-consistent corrupt node crafted on
+     * untrusted media. */
+    {
+        uint16_t level = bfs_be16(hdr->level);
+        uint32_t nkeys = bfs_be32(hdr->num_keys);
+        uint32_t max_keys = (level == BFS_BTNODE_LEAF)
+                            ? leaf_max_keys(tree) : internal_max_keys(tree);
+        if (level > MAX_TREE_DEPTH || nkeys > max_keys)
+            return BFS_ERR_CORRUPT;
+    }
     return BFS_OK;
 }
 
@@ -1153,7 +1166,9 @@ static void walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
     if (blk == BFS_BLK_NULL || depth > MAX_TREE_DEPTH) return;
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return;
-    if (bfs_bio_read(tree->bio, blk, buf) != BFS_OK) { free(buf); return; }
+    /* node_read (not raw bfs_bio_read) so num_keys/level are validated before
+     * the child-pointer loop below trusts num_keys. */
+    if (node_read(tree, blk, buf) != BFS_OK) { free(buf); return; }
 
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     if (bfs_be16(hdr->level) > 0) {
