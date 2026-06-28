@@ -263,21 +263,7 @@ typedef struct {
     bfs_err_t err;
 } fs_queue_ctx_t;
 
-static bool fs_queue_extent_data_cb(const void *key, const void *val, void *ctx)
-{
-    (void)key;
-    fs_queue_ctx_t *qc = (fs_queue_ctx_t *)ctx;
-    const bfs_extent_val_t *ev = (const bfs_extent_val_t *)val;
-    bfs_blk_t disk = bfs_be32(ev->disk_block);
-    uint32_t len = bfs_be32(ev->length);
-    for (uint32_t i = 0; i < len; i++) {
-        qc->err = bfs_fs_queue_pending_free(qc->fs, disk + i);
-        if (qc->err != BFS_OK) return false;
-    }
-    return true;
-}
-
-static void fs_queue_extent_node_cb(bfs_blk_t blk, void *ctx)
+static void fs_queue_block_cb(bfs_blk_t blk, void *ctx)
 {
     fs_queue_ctx_t *qc = (fs_queue_ctx_t *)ctx;
     if (qc->err == BFS_OK)
@@ -286,18 +272,10 @@ static void fs_queue_extent_node_cb(bfs_blk_t blk, void *ctx)
 
 static bfs_err_t fs_queue_extent_tree_for_delete(bfs_fs_t *fs, bfs_blk_t root)
 {
-    if (root == BFS_BLK_NULL) return BFS_OK;
-    bfs_extent_tree_t et;
-    bfs_err_t err = bfs_extent_init(&et, fs->bio, &fs->freespace, root, fs->live_txn_id);
-    if (err != BFS_OK) return err;
+    /* Free both the extent-tree node blocks and the data blocks they map. */
     fs_queue_ctx_t qc = { .fs = fs, .err = BFS_OK };
-    err = bfs_btree_scan(&et.tree, NULL, fs_queue_extent_data_cb, &qc);
+    bfs_err_t err = bfs_extent_walk(fs, root, fs_queue_block_cb, fs_queue_block_cb, &qc);
     if (err != BFS_OK) return err;
-    if (qc.err != BFS_OK) return qc.err;
-    {
-        bfs_err_t werr = bfs_btree_walk_nodes(&et.tree, fs_queue_extent_node_cb, &qc);
-        if (qc.err == BFS_OK) qc.err = werr;
-    }
     return qc.err;
 }
 
