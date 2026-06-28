@@ -17,8 +17,8 @@
 
 static int extent_key_cmp(const void *a, const void *b)
 {
-    uint32_t va = bfs_be32(*(const uint32_t *)a);
-    uint32_t vb = bfs_be32(*(const uint32_t *)b);
+    uint32_t va = bfs_load_be32(a);
+    uint32_t vb = bfs_load_be32(b);
     if (va < vb) return -1;
     if (va > vb) return 1;
     return 0;
@@ -88,6 +88,84 @@ bfs_err_t bfs_extent_update_crc(bfs_extent_tree_t *et, uint32_t file_block,
     return bfs_btree_update(&et->tree, &key, &val);
 }
 
+/* ── Single-block remap ───────────────────────────────────── */
+
+static bfs_err_t extent_insert_raw(bfs_extent_tree_t *et, uint32_t file_block,
+                                   bfs_blk_t disk_block, uint32_t length,
+                                   uint32_t crc)
+{
+    uint32_t key = bfs_be32(file_block);
+    bfs_extent_val_t val = {
+        .disk_block = bfs_be32(disk_block),
+        .length = bfs_be32(length),
+        .data_crc32 = bfs_be32(crc),
+    };
+    return bfs_btree_insert(&et->tree, &key, &val);
+}
+
+bfs_err_t bfs_extent_remap_block(bfs_extent_tree_t *et, uint32_t file_block,
+                                   bfs_blk_t new_disk_block,
+                                   bfs_blk_t *old_disk_block_out)
+{
+    if (et->tree.root == BFS_BLK_NULL)
+        return BFS_ERR_NOTFOUND;
+
+    uint32_t search_key = bfs_be32(file_block);
+    uint32_t found_key;
+    bfs_extent_val_t found_val;
+    bfs_err_t err = bfs_btree_search_floor(&et->tree, &search_key,
+                                           &found_key, &found_val);
+    if (err != BFS_OK) return err;
+
+    uint32_t fb = bfs_be32(found_key);
+    uint32_t len = bfs_be32(found_val.length);
+    bfs_blk_t disk = bfs_be32(found_val.disk_block);
+    if (file_block < fb || file_block - fb >= len)
+        return BFS_ERR_NOTFOUND;
+
+    uint32_t offset = file_block - fb;
+    bfs_blk_t old_disk = disk + offset;
+    if (old_disk_block_out) *old_disk_block_out = old_disk;
+    if (old_disk == new_disk_block)
+        return BFS_OK;
+
+    err = bfs_btree_delete(&et->tree, &found_key);
+    if (err != BFS_OK) return err;
+
+    uint32_t left_len = offset;
+    uint32_t right_len = len - offset - 1;
+    uint32_t inserted_left = 0, inserted_mid = 0;
+
+    if (left_len > 0) {
+        err = extent_insert_raw(et, fb, disk, left_len, 0);
+        if (err != BFS_OK) goto rollback;
+        inserted_left = 1;
+    }
+
+    err = extent_insert_raw(et, file_block, new_disk_block, 1, 0);
+    if (err != BFS_OK) goto rollback;
+    inserted_mid = 1;
+
+    if (right_len > 0) {
+        err = extent_insert_raw(et, file_block + 1, old_disk + 1, right_len, 0);
+        if (err != BFS_OK) goto rollback;
+    }
+
+    return BFS_OK;
+
+rollback:
+    if (inserted_mid) {
+        uint32_t key = bfs_be32(file_block);
+        bfs_btree_delete(&et->tree, &key);
+    }
+    if (inserted_left) {
+        uint32_t key = bfs_be32(fb);
+        bfs_btree_delete(&et->tree, &key);
+    }
+    bfs_btree_insert(&et->tree, &found_key, &found_val);
+    return err;
+}
+
 /* ── Append ────────────────────────────────────────────────── */
 
 bfs_err_t bfs_extent_append(bfs_extent_tree_t *et, uint32_t file_block,
@@ -128,7 +206,7 @@ typedef struct {
 static bool trunc_cb(const void *key, const void *val, void *ctx)
 {
     trunc_ctx_t *tc = (trunc_ctx_t *)ctx;
-    uint32_t fb = bfs_be32(*(const uint32_t *)key);
+    uint32_t fb = bfs_load_be32(key);
     const bfs_extent_val_t *ev = (const bfs_extent_val_t *)val;
 
     if (fb >= tc->from && tc->count < 256) {
