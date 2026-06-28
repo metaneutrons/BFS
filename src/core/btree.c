@@ -256,7 +256,12 @@ static bfs_blk_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf)
         btree_free_node(tree, old_blk, buf);
     }
 
-    if (node_write(tree, new_blk, buf) != BFS_OK) return BFS_BLK_NULL;
+    if (node_write(tree, new_blk, buf) != BFS_OK) {
+        /* The block was allocated but never written or referenced — return it
+         * to the allocator instead of leaking it until reformat. */
+        tree->alloc->dealloc(tree->alloc, new_blk);
+        return BFS_BLK_NULL;
+    }
     return new_blk;
 }
 
@@ -1160,15 +1165,17 @@ delete_cleanup:
 
 /* ── Walk all node blocks (for fsck) ───────────────────────── */
 
-static void walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
-                                  bfs_node_walk_cb cb, void *ctx, int depth)
+static bfs_err_t walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
+                                      bfs_node_walk_cb cb, void *ctx, int depth)
 {
-    if (blk == BFS_BLK_NULL || depth > MAX_TREE_DEPTH) return;
+    if (blk == BFS_BLK_NULL) return BFS_OK;
+    if (depth > MAX_TREE_DEPTH) return BFS_ERR_CORRUPT;
     uint8_t *buf = alloc_buf(tree);
-    if (!buf) return;
+    if (!buf) return BFS_ERR_NOMEM;
     /* node_read (not raw bfs_bio_read) so num_keys/level are validated before
      * the child-pointer loop below trusts num_keys. */
-    if (node_read(tree, blk, buf) != BFS_OK) { free(buf); return; }
+    bfs_err_t err = node_read(tree, blk, buf);
+    if (err != BFS_OK) { free(buf); return err; }
 
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     if (bfs_be16(hdr->level) > 0) {
@@ -1177,17 +1184,23 @@ static void walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
         uint32_t data_sz = tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
         uint32_t max_keys = (data_sz - 4) / (tree->ops->key_size + 4);
         uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + max_keys * tree->ops->key_size;
-        for (uint32_t i = 0; i <= n; i++)
-            walk_nodes_recursive(tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
-                                 cb, ctx, depth + 1);
+        for (uint32_t i = 0; i <= n; i++) {
+            err = walk_nodes_recursive(tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
+                                       cb, ctx, depth + 1);
+            if (err != BFS_OK) { free(buf); return err; }
+        }
     }
     cb(blk, ctx);
     free(buf);
+    return BFS_OK;
 }
 
-void bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx)
+/* Returns BFS_OK, or the first node-read/structural error encountered. Callers
+ * that reference-count via the callback MUST check this — a swallowed read
+ * failure silently skips a subtree and corrupts the counts. */
+bfs_err_t bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx)
 {
-    walk_nodes_recursive(tree, tree->root, cb, ctx, 0);
+    return walk_nodes_recursive(tree, tree->root, cb, ctx, 0);
 }
 
 /* ── Compaction ────────────────────────────────────────────── */

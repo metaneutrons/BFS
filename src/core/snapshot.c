@@ -155,6 +155,16 @@ static void snapshot_ref_node_cb(bfs_blk_t blk, void *ctx)
         rc->err = snapshot_ref_block(rc, blk);
 }
 
+/* Walk a tree's index nodes for refcounting, folding the walk's own read
+ * failure into rc->err without clobbering an error the callback already set.
+ * A swallowed read failure here would silently mis-count shared blocks. */
+static void snapshot_ref_walk(bfs_btree_t *tree, snap_ref_ctx_t *rc)
+{
+    bfs_err_t werr = bfs_btree_walk_nodes(tree, snapshot_ref_node_cb, rc);
+    if (rc->err == BFS_OK)
+        rc->err = werr;
+}
+
 static bool snapshot_ref_extent_cb(const void *key, const void *val, void *ctx)
 {
     (void)key;
@@ -184,7 +194,7 @@ static bool snapshot_ref_inode_cb(const void *key, const void *val, void *ctx)
                               root, bfs_txn_id(&rc->fs->txn));
     if (rc->err != BFS_OK) return false;
 
-    bfs_btree_walk_nodes(&et.tree, snapshot_ref_node_cb, rc);
+    snapshot_ref_walk(&et.tree, rc);
     if (rc->err != BFS_OK) return false;
 
     rc->err = bfs_btree_scan(&et.tree, NULL, snapshot_ref_extent_cb, rc);
@@ -203,10 +213,10 @@ static bfs_err_t snapshot_ref_graph(bfs_fs_t *fs, bfs_btree_t *dir_tree,
         .err = BFS_OK,
     };
 
-    bfs_btree_walk_nodes(dir_tree, snapshot_ref_node_cb, &rc);
+    snapshot_ref_walk(dir_tree, &rc);
     if (rc.err != BFS_OK) return rc.err;
 
-    bfs_btree_walk_nodes(inode_tree, snapshot_ref_node_cb, &rc);
+    snapshot_ref_walk(inode_tree, &rc);
     if (rc.err != BFS_OK) return rc.err;
 
     rc.err = bfs_btree_scan(inode_tree, NULL, snapshot_ref_inode_cb, &rc);
@@ -275,6 +285,13 @@ bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
     fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
 
     err = fs_sync_unlocked(fs);
+    if (err != BFS_OK) {
+        /* Commit failed — reverse the refcount increments, matching the two
+         * error paths above, so we don't leave inflated in-memory counts.
+         * (A full transactional abort of the half-written roots is a larger
+         * change; this at least restores refcount symmetry.) */
+        snapshot_rollback_refs(fs, &rollback);
+    }
     block_vec_free(&rollback);
     return err;
 }
@@ -308,7 +325,7 @@ static bool reclaim_inode_cb(const void *key, const void *val, void *ctx)
         rc.err = bfs_extent_init(&et, rc.fs->bio, &rc.fs->freespace,
                                  root, bfs_txn_id(&rc.fs->txn));
         if (rc.err == BFS_OK) {
-            bfs_btree_walk_nodes(&et.tree, snapshot_ref_node_cb, &rc);
+            snapshot_ref_walk(&et.tree, &rc);
             if (rc.err == BFS_OK) {
                 bfs_btree_scan(&et.tree, NULL, snapshot_ref_extent_cb, &rc);
             }
@@ -403,10 +420,10 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
                 .rollback = NULL,
                 .err = BFS_OK,
             };
-            bfs_btree_walk_nodes(&old_dir.tree, snapshot_ref_node_cb, &rc);
+            snapshot_ref_walk(&old_dir.tree, &rc);
             if (rc.err != BFS_OK) return rc.err;
 
-            bfs_btree_walk_nodes(&old_inode, snapshot_ref_node_cb, &rc);
+            snapshot_ref_walk(&old_inode, &rc);
             if (rc.err != BFS_OK) return rc.err;
 
             /* Finally, remove the snapshot record from the snapshot tree completely */

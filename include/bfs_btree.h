@@ -108,9 +108,10 @@ bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
                                     void *key_out, void *val_out);
 
 
-/* Walk all node blocks in the tree (for fsck). Calls cb(blk, ctx) for each. */
+/* Walk all node blocks in the tree. Calls cb(blk, ctx) for each. Returns the
+ * first node-read/structural error, or BFS_OK. Refcounting callers must check. */
 typedef void (*bfs_node_walk_cb)(bfs_blk_t blk, void *ctx);
-void bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx);
+bfs_err_t bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx);
 
 /* Online compaction: re-packs tree into new contiguous blocks.
  * Returns BFS_OK and updates tree->root on success.
