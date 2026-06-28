@@ -27,7 +27,7 @@ static bfs_err_t file_block_for_offset(bfs_fs_t *fs, uint64_t offset, uint32_t *
 static bfs_err_t queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
 {
     if (fs->pending_count >= BFS_PENDING_FREES_MAX) {
-        bfs_err_t err = fs_sync_unlocked(fs);
+        bfs_err_t err = bfs_fs_sync_unlocked(fs);
         if (err != BFS_OK) return err;
     }
     if (fs->pending_count >= BFS_PENDING_FREES_MAX)
@@ -86,7 +86,7 @@ static bfs_err_t file_flush_and_sync(bfs_file_t *f)
 {
     bfs_err_t err = file_update_inode(f);
     if (err != BFS_OK) return err;
-    return fs_sync_unlocked(f->fs);
+    return bfs_fs_sync_unlocked(f->fs);
 }
 
 int32_t bfs_file_read_unlocked(bfs_file_t *f, void *buf, uint32_t len)

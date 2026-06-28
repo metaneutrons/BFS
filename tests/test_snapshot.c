@@ -170,7 +170,7 @@ static void test_interrupted_deletion_resume(void) {
     uint32_t key = bfs_be32(id);
     TEST_ASSERT_EQ(bfs_btree_update(&snap_tree, &key, &rec), BFS_OK);
     fs->txn.sb_new.snapshot_tree_root = bfs_be32(snap_tree.root);
-    TEST_ASSERT_EQ(fs_sync_unlocked(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync_unlocked(fs), BFS_OK);
 
     /* Simulate a crash / reboot by unmounting without using bfs_snapshot_delete */
     bfs_bio_t *bio = fs->bio;

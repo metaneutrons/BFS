@@ -17,7 +17,6 @@
 #include "bfs_ondisk.h"
 
 #define BFS_ALLOC_RESERVE_SIZE 128 /* pre-allocated reserve blocks */
-#define BFS_METADATA_RESERVE  128 /* blocks reserved for delete/rename/COW ops */
 
 typedef struct bfs_freespace {
     bfs_btree_t tree;              /* the free space B+tree */

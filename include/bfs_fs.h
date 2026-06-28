@@ -56,7 +56,7 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio);
 
 /* Sync: commit all pending changes to disk. */
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs);
-bfs_err_t fs_sync_unlocked(bfs_fs_t *fs);
+bfs_err_t bfs_fs_sync_unlocked(bfs_fs_t *fs);
 
 /* Unmount: sync and release resources. */
 bfs_err_t bfs_fs_unmount(bfs_fs_t *fs);
