@@ -7,6 +7,8 @@
 #include "bfs_file.h"
 #include "bfs_snapshot.h"
 #include "bfs_refcount.h"
+#include "bfs_inode.h"
+#include "bfs_extent.h"
 #include "block_device_emu.h"
 #include <string.h>
 #include <unistd.h>
@@ -133,6 +135,50 @@ static void test_snapshot_cow_preserves_shared(void) {
 
     /* Free space should decrease (new block allocated, old not freed) */
     TEST_ASSERT(fs.freespace.total_free < after_write);
+
+    teardown();
+}
+
+static void test_snapshot_reads_original_after_overwrite(void) {
+    setup();
+
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "snapdat", 7, &ino), BFS_OK);
+    bfs_file_t f;
+    TEST_ASSERT_EQ(bfs_file_open(&f, &fs, ino), BFS_OK);
+    uint8_t data[BS];
+    memset(data, 0x41, sizeof(data));
+    TEST_ASSERT_EQ(bfs_file_write(&f, data, sizeof(data)), BS);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+
+    TEST_ASSERT_EQ(bfs_snapshot_create(&fs, "before"), BFS_OK);
+
+    TEST_ASSERT_EQ(bfs_file_open(&f, &fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&f, 0, BFS_SEEK_SET), 0);
+    memset(data, 0x5A, sizeof(data));
+    TEST_ASSERT_EQ(bfs_file_write(&f, data, sizeof(data)), BS);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+
+    bfs_snapshot_record_t rec;
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(&fs, "before", NULL, &rec), BFS_OK);
+    uint64_t snap_txn = ((uint64_t)bfs_be32(rec.txn_id_hi) << 32) | bfs_be32(rec.txn_id_lo);
+    bfs_btree_t snap_inode_tree;
+    TEST_ASSERT_EQ(bfs_inode_init(&snap_inode_tree, fs.bio,
+                                  bfs_freespace_allocator(&fs.freespace),
+                                  bfs_be32(rec.inode_tree_root), snap_txn), BFS_OK);
+
+    bfs_inode_t snap_inode;
+    TEST_ASSERT_EQ(bfs_inode_read(&snap_inode_tree, ino, &snap_inode), BFS_OK);
+    bfs_extent_tree_t snap_extents;
+    TEST_ASSERT_EQ(bfs_extent_init(&snap_extents, fs.bio, &fs.freespace,
+                                   bfs_be32(snap_inode.extent_root), snap_txn), BFS_OK);
+    bfs_blk_t snap_block;
+    TEST_ASSERT_EQ(bfs_extent_lookup(&snap_extents, 0, &snap_block), BFS_OK);
+
+    uint8_t block[BS];
+    TEST_ASSERT_EQ(bfs_bio_read(fs.bio, snap_block, block), BFS_OK);
+    TEST_ASSERT_EQ(block[0], 0x41);
+    TEST_ASSERT_EQ(block[BS - 1], 0x41);
 
     teardown();
 }
@@ -281,6 +327,7 @@ TEST_SUITE_BEGIN("Snapshots & Metadata")
     TEST_RUN(test_snapshot_empty_fs);
     TEST_RUN(test_snapshot_after_writes);
     TEST_RUN(test_snapshot_cow_preserves_shared);
+    TEST_RUN(test_snapshot_reads_original_after_overwrite);
     TEST_RUN(test_multiple_snapshots_refcount);
     TEST_RUN(test_snapshot_list_order);
     TEST_RUN(test_inode_timestamps_on_create);

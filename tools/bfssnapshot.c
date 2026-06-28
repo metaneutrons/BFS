@@ -33,10 +33,26 @@
 #define ACTION_BFS_SNAPSHOT_DELETE  3001
 #define ACTION_BFS_SNAPSHOT_LIST    3002
 #define ACTION_BFS_SNAPSHOT_SHOW    3003
+#define ACTION_BFS_SNAPSHOT_MOUNT   3004
+#define ACTION_BFS_SNAPSHOT_UNMOUNT 3005
 
 static const char version[] = VERSTAG;
 
-static void put(const char *s) { Write(Output(), (APTR)s, strlen(s)); }
+static int tool_strlen(const char *s)
+{
+    int n = 0;
+    while (s[n]) n++;
+    return n;
+}
+
+static void tool_memcpy(void *dst, const void *src, int len)
+{
+    UBYTE *d = (UBYTE *)dst;
+    const UBYTE *s = (const UBYTE *)src;
+    while (len-- > 0) *d++ = *s++;
+}
+
+static void put(const char *s) { Write(Output(), (APTR)s, tool_strlen(s)); }
 
 static void putnum(LONG n)
 {
@@ -48,7 +64,7 @@ static void putnum(LONG n)
 
 static void putpad(const char *s, int width)
 {
-    int len = strlen(s);
+    int len = tool_strlen(s);
     put(s);
     int pad = width - len;
     while (pad-- > 0) put(" ");
@@ -63,21 +79,6 @@ static int str_eq_nocase(const char *a, const char *b)
         a++; b++;
     }
     return *a == *b;
-}
-
-/* Format protection bits like AmigaOS List command */
-static void put_prot(ULONG prot)
-{
-    /* HSPA: set = enabled (show letter), clear = show dash */
-    put((prot & (1<<7)) ? "h" : "-");
-    put((prot & (1<<6)) ? "s" : "-");
-    put((prot & (1<<5)) ? "p" : "-");
-    put((prot & (1<<4)) ? "a" : "-");
-    /* RWED: set = DENIED (show dash), clear = enabled (show letter) */
-    put((prot & (1<<3)) ? "-" : "r");
-    put((prot & (1<<2)) ? "-" : "w");
-    put((prot & (1<<1)) ? "-" : "e");
-    put((prot & (1<<0)) ? "-" : "d");
 }
 
 /* Parse "snapname/path" from name argument */
@@ -96,12 +97,12 @@ static void parse_snappath(const char *name, char *snapname, int snapmax,
 /* Build packed BSTR: "snapname\0path" */
 static void build_pktname(UBYTE *pktbuf, const char *snapname, const char *path)
 {
-    int slen = strlen(snapname);
-    int plen = strlen(path);
+    int slen = tool_strlen(snapname);
+    int plen = tool_strlen(path);
     pktbuf[0] = (UBYTE)(slen + 1 + plen);
-    memcpy(pktbuf + 1, snapname, slen);
+    tool_memcpy(pktbuf + 1, snapname, slen);
     pktbuf[1 + slen] = 0;
-    memcpy(pktbuf + 2 + slen, path, plen);
+    tool_memcpy(pktbuf + 2 + slen, path, plen);
 }
 /* Format AmigaOS days-since-1978 using system locale */
 static void put_date(ULONG days)
@@ -116,7 +117,7 @@ static void put_date(ULONG days)
     dt.dat_Format = FORMAT_DEF; /* system default format */
     dt.dat_Flags = 0;
     dt.dat_StrDay = NULL;
-    dt.dat_StrDate = buf;
+    dt.dat_StrDate = (STRPTR)buf;
     dt.dat_StrTime = NULL;
     if (DateToStr(&dt)) {
         put(buf);
@@ -128,6 +129,7 @@ static void put_date(ULONG days)
 
 int main(void)
 {
+    (void)version;
     struct Process *me = (struct Process *)FindTask(NULL);
     APTR oldwin = me->pr_WindowPtr;
     me->pr_WindowPtr = (APTR)-1;
@@ -203,8 +205,9 @@ int main(void)
             /* Parse: name\0 + uint32 id + uint32 timestamp */
             char *sname = sbuf;
             int nlen = 0; while (sname[nlen]) nlen++;
-            ULONG sid = *(ULONG *)(sbuf + nlen + 1);
-            ULONG ts = *(ULONG *)(sbuf + nlen + 5);
+            ULONG sid, ts;
+            tool_memcpy(&sid, sbuf + nlen + 1, sizeof(sid));
+            tool_memcpy(&ts, sbuf + nlen + 5, sizeof(ts));
             put("  #"); putnum((LONG)sid); put("  ");
             putpad(sname, 20);
             if (ts > 0) { put_date(ts); }
@@ -224,6 +227,7 @@ int main(void)
             else if (str_eq_nocase(opt, "DIRS")) show_files = 0;
             else if (str_eq_nocase(opt, "FILES")) show_dirs = 0;
         }
+        (void)recursive;
 
         if (!name || !name[0]) {
             put(detailed ? "LIST" : "DIR");
@@ -295,7 +299,7 @@ next:
             bvol[0] = vlen;
             put("Mounting snapshot \""); put(name);
             put("\" as "); put(opt); put("...\n");
-            if (DoPkt(port, 3004, (LONG)MKBADDR(bsnap), (LONG)MKBADDR(bvol), 0, 0, 0)) {
+            if (DoPkt(port, ACTION_BFS_SNAPSHOT_MOUNT, (LONG)MKBADDR(bsnap), (LONG)MKBADDR(bvol), 0, 0, 0)) {
                 put("Mounted. Use \""); put(opt); put(":\" to access.\n");
             } else { put("Mount failed.\n"); rc = 20; }
         }
@@ -306,7 +310,7 @@ next:
             UBYTE bvol[36] = {0};
             int vlen = 0; while (name[vlen] && name[vlen] != ':' && vlen < 32) { bvol[vlen+1] = name[vlen]; vlen++; }
             bvol[0] = vlen;
-            if (DoPkt(port, 3005, (LONG)MKBADDR(bvol), 0, 0, 0, 0))
+            if (DoPkt(port, ACTION_BFS_SNAPSHOT_UNMOUNT, (LONG)MKBADDR(bvol), 0, 0, 0, 0))
                 put("Unmounted.\n");
             else { put("Not found.\n"); rc = 20; }
         }

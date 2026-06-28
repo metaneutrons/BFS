@@ -156,8 +156,8 @@ static void test_alloc_free_cycles(void)
 /* ── Test: self-hosting — use allocator for a B+tree ───────── */
 
 static int u32_cmp(const void *a, const void *b) {
-    uint32_t va = bfs_be32(*(const uint32_t *)a);
-    uint32_t vb = bfs_be32(*(const uint32_t *)b);
+    uint32_t va = bfs_load_be32(a);
+    uint32_t vb = bfs_load_be32(b);
     return (va > vb) - (va < vb);
 }
 static const bfs_btree_ops_t u32_ops = { .key_compare = u32_cmp, .key_size = 4, .val_size = 4 };
@@ -223,6 +223,25 @@ static void test_out_of_space(void)
     unlink(TEST_IMG);
 }
 
+static void test_double_free_preserves_accounting(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+
+    bfs_freespace_t *fs = make_fs(bio);
+    bfs_blk_t blk = bfs_freespace_alloc(fs, 1);
+    TEST_ASSERT(blk != BFS_BLK_NULL);
+
+    TEST_ASSERT_EQ(bfs_freespace_free(fs, blk, 1), BFS_OK);
+    uint32_t free_after_first = fs->total_free;
+    TEST_ASSERT_EQ(bfs_freespace_free(fs, blk, 1), BFS_ERR_EXISTS);
+    TEST_ASSERT_EQ(fs->total_free, free_after_first);
+
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("Free Space Allocator")
     TEST_RUN(test_alloc_basic);
     TEST_RUN(test_alloc_multi);
@@ -231,4 +250,5 @@ TEST_SUITE_BEGIN("Free Space Allocator")
     TEST_RUN(test_alloc_free_cycles);
     TEST_RUN(test_self_hosting);
     TEST_RUN(test_out_of_space);
+    TEST_RUN(test_double_free_preserves_accounting);
 TEST_SUITE_END()

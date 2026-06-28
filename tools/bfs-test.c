@@ -35,7 +35,21 @@ static BPTR logfh; /* log file handle (0 = no log) */
 
 /* ── Output ────────────────────────────────────────────────── */
 
-static void put(const char *s) { Write(Output(), (APTR)s, strlen(s)); }
+static int tool_strlen(const char *s)
+{
+    int n = 0;
+    while (s[n]) n++;
+    return n;
+}
+
+static void tool_memcpy(void *dst, const void *src, int len)
+{
+    UBYTE *d = (UBYTE *)dst;
+    const UBYTE *s = (const UBYTE *)src;
+    while (len-- > 0) *d++ = *s++;
+}
+
+static void put(const char *s) { Write(Output(), (APTR)s, tool_strlen(s)); }
 
 static void putnum(LONG n)
 {
@@ -48,7 +62,7 @@ static void putnum(LONG n)
     put(p);
 }
 
-static void logput(const char *s) { if (logfh) Write(logfh, (APTR)s, strlen(s)); }
+static void logput(const char *s) { if (logfh) Write(logfh, (APTR)s, tool_strlen(s)); }
 static void lognum(LONG n)
 {
     char buf[12]; char *p = buf + sizeof(buf); *--p = 0;
@@ -984,7 +998,7 @@ static void test_snapshot_create_delete(void)
     UBYTE bstr[36] = {0};
     const char *sname = "test_snap";
     int nlen = 9;
-    bstr[0] = nlen; memcpy(bstr + 1, sname, nlen);
+    bstr[0] = nlen; tool_memcpy(bstr + 1, sname, nlen);
 
     LONG res = DoPkt(port, ACTION_BFS_SNAPSHOT_CREATE, (LONG)MKBADDR(bstr), 0, 0, 0, 0);
     if (!res) { fail(T, "create"); return; }

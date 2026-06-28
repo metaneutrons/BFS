@@ -54,6 +54,10 @@ $(BUILD_HOST)/test_%: tests/test_%.c $(CORE_SRC) $(EMU_SRC)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
 
+# The concurrency test spawns pthreads; link it explicitly with -pthread so it
+# builds on Linux/CI (macOS links pthread implicitly via libSystem, Linux does not).
+$(BUILD_HOST)/test_concurrency: HOST_CFLAGS += -pthread
+
 amiga:
 	@mkdir -p $(BUILD_AMIGA)
 	$(AMIGA_CC) $(AMIGA_CFLAGS) -o $(BUILD_AMIGA)/bfshandler \
