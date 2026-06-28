@@ -45,6 +45,17 @@ bfs_err_t bfs_snapshot_find_by_name(bfs_fs_t *fs, const char *name,
 /* Get the next available snapshot ID. */
 uint32_t bfs_snapshot_next_id(bfs_fs_t *fs);
 
+/* Reconstruct the 64-bit transaction id stored (as hi/lo halves) in a record. */
+uint64_t bfs_snapshot_record_txn_id(const bfs_snapshot_record_t *rec);
+
+/* Open a snapshot's read-only directory and inode trees from its record. Either
+ * out pointer may be NULL; `alloc` is attached to the trees (a read-only/no-op
+ * allocator for a mounted snapshot, or the live freespace allocator for internal
+ * traversal). Keeps the record's on-disk layout out of the Amiga glue. */
+bfs_err_t bfs_snapshot_open(const bfs_snapshot_record_t *rec, bfs_bio_t *bio,
+                            bfs_allocator_t *alloc,
+                            bfs_dir_tree_t *dir_out, bfs_btree_t *inode_out);
+
 /* Resume any interrupted snapshot deletions. */
 bfs_err_t bfs_snapshot_resume_deletions(bfs_fs_t *fs);
 
