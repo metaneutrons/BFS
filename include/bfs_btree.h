@@ -50,6 +50,24 @@ typedef struct bfs_btree_ops {
 
 /* ── B+tree handle ─────────────────────────────────────────── */
 
+/* ── Deferred-free sink ────────────────────────────────────── */
+
+/* During COW the engine frees blocks that belonged to an older transaction;
+ * they can only return to the allocator after the current transaction commits,
+ * so they are handed to this sink (the filesystem's pending-free queue). This
+ * keeps the generic B+tree engine free of any bfs_fs_t knowledge. A zeroed sink
+ * (defer == NULL) is a standalone tree with no deferral. */
+typedef struct {
+    void *ctx;
+    /* Queue blk for post-commit free; returns BFS_OK, or BFS_ERR_AGAIN if full.
+     * Must NOT sync — it is called in the middle of a COW. */
+    bfs_err_t (*defer)(void *ctx, bfs_blk_t blk);
+    /* Free slots in the queue right now (for all-or-nothing batch sizing). */
+    uint32_t (*headroom)(void *ctx);
+    /* Maximum slots the queue can ever hold (a longer run can never fit). */
+    uint32_t capacity;
+} bfs_free_sink_t;
+
 typedef struct bfs_btree {
     bfs_bio_t       *bio;
     bfs_allocator_t *alloc;
@@ -59,8 +77,8 @@ typedef struct bfs_btree {
     const uint64_t  *txn_id_ptr; /* pointer to current transaction id */
     uint64_t          txn_id_fallback; /* used if txn_id_ptr is NULL */
 
-    /* Back-pointer to bfs_fs_t for pending-frees tracking (NULL if standalone) */
-    void             *fs_ctx;
+    /* Where COW'd old blocks go for deferred free (zeroed = standalone tree). */
+    bfs_free_sink_t   free_sink;
 } bfs_btree_t;
 
 static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)

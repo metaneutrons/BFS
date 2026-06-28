@@ -50,7 +50,7 @@ bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
     if (err != BFS_OK) return err;
     f->extents.tree.txn_id_ptr = &fs->live_txn_id;
     f->extents.data_checksums = fs->data_checksums;
-    f->extents.tree.fs_ctx = fs;
+    f->extents.tree.free_sink = bfs_fs_free_sink(fs);
     return BFS_OK;
 }
 

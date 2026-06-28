@@ -159,7 +159,7 @@ static void test_interrupted_deletion_resume(void) {
     bfs_blk_t snap_root = bfs_be32(fs->txn.sb_new.snapshot_tree_root);
     TEST_ASSERT_EQ(bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
                                    &test_snap_ops, snap_root, bfs_txn_id(&fs->txn)), BFS_OK);
-    snap_tree.fs_ctx = fs;
+    snap_tree.free_sink = bfs_fs_free_sink(fs);
 
     char new_name[BFS_SNAPSHOT_NAME_MAX];
     snprintf(new_name, sizeof(new_name), ".deleting_%u", id);

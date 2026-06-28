@@ -59,7 +59,8 @@ static bfs_err_t fs_queue_extent_tree_for_delete(bfs_fs_t *fs, bfs_blk_t root)
 {
     /* Free both the extent-tree node blocks and the data blocks they map. */
     fs_queue_ctx_t qc = { .fs = fs, .err = BFS_OK };
-    bfs_err_t err = bfs_extent_walk(fs, root, fs_queue_block_cb, fs_queue_block_cb, &qc);
+    bfs_err_t err = bfs_extent_walk(fs->bio, &fs->freespace, fs->live_txn_id, root,
+                                    fs_queue_block_cb, fs_queue_block_cb, &qc);
     if (err != BFS_OK) return err;
     return qc.err;
 }

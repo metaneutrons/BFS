@@ -83,7 +83,7 @@ static bfs_err_t ensure_snapshot_trees(bfs_fs_t *fs)
                          BFS_BLK_NULL, bfs_txn_id(&fs->txn));
         if (err != BFS_OK) return err;
         fs->refcount.tree.txn_id_ptr = &fs->live_txn_id;
-        fs->refcount.tree.fs_ctx = fs;
+        fs->refcount.tree.free_sink = bfs_fs_free_sink(fs);
         fs->has_snapshots = true;
     }
     return BFS_OK;
@@ -181,7 +181,8 @@ static bool snapshot_ref_inode_cb(const void *key, const void *val, void *ctx)
     snap_ref_ctx_t *rc = (snap_ref_ctx_t *)ctx;
     const bfs_inode_t *inode = (const bfs_inode_t *)val;
     /* Refcount this inode's extent-tree node blocks AND its data blocks. */
-    bfs_err_t werr = bfs_extent_walk(rc->fs, bfs_be32(inode->extent_root),
+    bfs_err_t werr = bfs_extent_walk(rc->fs->bio, &rc->fs->freespace, rc->fs->live_txn_id,
+                                     bfs_be32(inode->extent_root),
                                      snapshot_ref_node_cb, snapshot_ref_node_cb, rc);
     if (rc->err == BFS_OK) rc->err = werr;
     return rc->err == BFS_OK;
@@ -257,7 +258,7 @@ bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
     err = bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
                          &snap_ops, snap_root, bfs_txn_id(&fs->txn));
     if (err != BFS_OK) return err;
-    snap_tree.fs_ctx = fs;
+    snap_tree.free_sink = bfs_fs_free_sink(fs);
 
     err = bfs_btree_insert(&snap_tree, &id, &rec);
     if (err != BFS_OK) {
@@ -306,7 +307,8 @@ static bool reclaim_inode_cb(const void *key, const void *val, void *ctx)
 
     /* Refcount-decrement this inode's extent node blocks AND data blocks. */
     {
-        bfs_err_t werr = bfs_extent_walk(rc.fs, bfs_be32(inode->extent_root),
+        bfs_err_t werr = bfs_extent_walk(rc.fs->bio, &rc.fs->freespace, rc.fs->live_txn_id,
+                                         bfs_be32(inode->extent_root),
                                          snapshot_ref_node_cb, snapshot_ref_node_cb, &rc);
         if (rc.err == BFS_OK) rc.err = werr;
     }
@@ -334,7 +336,7 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
     bfs_err_t err = bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
                                    &snap_ops, snap_root, bfs_txn_id(&fs->txn));
     if (err != BFS_OK) return err;
-    snap_tree.fs_ctx = fs;
+    snap_tree.free_sink = bfs_fs_free_sink(fs);
 
     uint32_t key = bfs_be32(snapshot_id);
     bfs_snapshot_record_t rec;
@@ -646,7 +648,7 @@ bfs_err_t bfs_snapshot_resume_deletions(bfs_fs_t *fs)
         bfs_lock_unlock(&fs->lock);
         return err;
     }
-    snap_tree.fs_ctx = fs;
+    snap_tree.free_sink = bfs_fs_free_sink(fs);
 
     /* To avoid modifying the tree while scanning, we collect all IDs of deleting snapshots first */
     resume_ctx_t c = { .fs = fs, .count = 0 };

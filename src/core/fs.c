@@ -80,7 +80,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
 
     bfs_freespace_init(&fs.freespace, bio, BFS_BLK_NULL, fs.live_txn_id);
     fs.freespace.tree.txn_id_ptr = &fs.live_txn_id;
-    fs.freespace.tree.fs_ctx = &fs;
+    fs.freespace.tree.free_sink = bfs_fs_free_sink(&fs);
     fs.freespace.sb = &fs.txn.sb_new;
 
     uint32_t epool_count = BFS_EMERGENCY_POOL_SIZE;
@@ -120,7 +120,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
                   BFS_BLK_NULL, fs.live_txn_id);
     if (err != BFS_OK) return err;
     fs.dir_tree.tree.txn_id_ptr = &fs.live_txn_id;
-    fs.dir_tree.tree.fs_ctx = &fs;
+    fs.dir_tree.tree.free_sink = bfs_fs_free_sink(&fs);
     err = bfs_dir_insert(&fs.dir_tree, 0, "/", 1, BFS_ROOT_INO, BFS_INODE_DIR);
     if (err != BFS_OK) return err;
 
@@ -128,7 +128,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
                     BFS_BLK_NULL, fs.live_txn_id);
     if (err != BFS_OK) return err;
     fs.inode_tree.txn_id_ptr = &fs.live_txn_id;
-    fs.inode_tree.fs_ctx = &fs;
+    fs.inode_tree.free_sink = bfs_fs_free_sink(&fs);
     bfs_inode_t root_inode;
     memset(&root_inode, 0, sizeof(root_inode));
     root_inode.inode_nr = bfs_be32(BFS_ROOT_INO);
@@ -168,7 +168,7 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
     err = bfs_freespace_init(&fs->freespace, bio, free_root, fs->live_txn_id);
     if (err != BFS_OK) { err = BFS_ERR_CORRUPT; goto fail; }
     fs->freespace.tree.txn_id_ptr = &fs->live_txn_id;
-    fs->freespace.tree.fs_ctx = fs;
+    fs->freespace.tree.free_sink = bfs_fs_free_sink(fs);
     fs->freespace.total_free = bfs_be32(sb->free_blocks);
     fs->freespace.global_reserve = bfs_be32(sb->global_reserve);
     fs->freespace.sb = &fs->txn.sb_new;
@@ -178,14 +178,14 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
                   dir_root, fs->live_txn_id);
     if (err != BFS_OK) { err = BFS_ERR_CORRUPT; goto fail; }
     fs->dir_tree.tree.txn_id_ptr = &fs->live_txn_id;
-    fs->dir_tree.tree.fs_ctx = fs;
+    fs->dir_tree.tree.free_sink = bfs_fs_free_sink(fs);
 
     bfs_blk_t inode_root = bfs_be32(sb->inode_tree_root);
     err = bfs_inode_init(&fs->inode_tree, bio, bfs_freespace_allocator(&fs->freespace),
                     inode_root, fs->live_txn_id);
     if (err != BFS_OK) { err = BFS_ERR_CORRUPT; goto fail; }
     fs->inode_tree.txn_id_ptr = &fs->live_txn_id;
-    fs->inode_tree.fs_ctx = fs;
+    fs->inode_tree.free_sink = bfs_fs_free_sink(fs);
 
     bfs_blk_t rc_root = bfs_be32(sb->refcount_tree_root);
     fs->has_snapshots = (rc_root != BFS_BLK_NULL && rc_root != 0);
@@ -194,7 +194,7 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
                                  rc_root, fs->live_txn_id);
         if (err != BFS_OK) { err = BFS_ERR_CORRUPT; goto fail; }
         fs->refcount.tree.txn_id_ptr = &fs->live_txn_id;
-        fs->refcount.tree.fs_ctx = fs;
+        fs->refcount.tree.free_sink = bfs_fs_free_sink(fs);
     }
 
     fs->mounted = true;
@@ -242,6 +242,28 @@ bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
         return BFS_ERR_NOSPC;
     fs->pending_frees[fs->pending_count++] = blk;
     return BFS_OK;
+}
+
+/* ── Deferred-free sink (attached to B+trees for COW reclamation) ── */
+
+static bfs_err_t fs_defer_free(void *ctx, bfs_blk_t blk)
+{
+    bfs_fs_t *fs = (bfs_fs_t *)ctx;
+    if (fs->pending_count >= BFS_PENDING_FREES_MAX) return BFS_ERR_AGAIN;
+    fs->pending_frees[fs->pending_count++] = blk;
+    return BFS_OK;
+}
+
+static uint32_t fs_free_headroom(void *ctx)
+{
+    bfs_fs_t *fs = (bfs_fs_t *)ctx;
+    return BFS_PENDING_FREES_MAX - fs->pending_count;
+}
+
+bfs_free_sink_t bfs_fs_free_sink(bfs_fs_t *fs)
+{
+    bfs_free_sink_t sink = { fs, fs_defer_free, fs_free_headroom, BFS_PENDING_FREES_MAX };
+    return sink;
 }
 
 /* ── Sync ──────────────────────────────────────────────────── */

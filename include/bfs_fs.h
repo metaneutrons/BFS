@@ -63,13 +63,10 @@ bfs_err_t bfs_fs_sync(bfs_fs_t *fs);
  * single entry point for post-COW block reclamation. */
 bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk);
 
-/* Walk every node block (node_cb) and every data block (block_cb) of the extent
- * tree at `root`. Either cb may be NULL; both receive (block, ctx). The extent
- * decode and length bounds-check live here, so delete / snapshot-refcount / etc.
- * don't each re-code them. Returns the first error. */
-bfs_err_t bfs_extent_walk(bfs_fs_t *fs, bfs_blk_t root,
-                          bfs_node_walk_cb node_cb,
-                          bfs_node_walk_cb block_cb, void *ctx);
+/* The deferred-free sink for this filesystem (its pending-free queue), to attach
+ * to a B+tree (tree.free_sink) so the tree's COW'd blocks are reclaimed at the
+ * next commit without the engine knowing anything about bfs_fs_t. */
+bfs_free_sink_t bfs_fs_free_sink(bfs_fs_t *fs);
 
 /* Unmount: sync and release resources. */
 bfs_err_t bfs_fs_unmount(bfs_fs_t *fs);
