@@ -24,8 +24,8 @@ extern bootstrap_alloc_t *bootstrap_create(bfs_blk_t start, bfs_blk_t max);
 /* Simple uint32 key, uint32 value for testing */
 static int u32_compare(const void *a, const void *b)
 {
-    uint32_t va = bfs_be32(*(const uint32_t *)a);
-    uint32_t vb = bfs_be32(*(const uint32_t *)b);
+    uint32_t va = bfs_load_be32(a);
+    uint32_t vb = bfs_load_be32(b);
     if (va < vb) return -1;
     if (va > vb) return 1;
     return 0;
@@ -38,7 +38,7 @@ static const bfs_btree_ops_t u32_ops = {
 };
 
 static void make_key(uint32_t *k, uint32_t v) { *k = bfs_be32(v); }
-static uint32_t read_key(const uint32_t *k) { return bfs_be32(*k); }
+static uint32_t read_key(const void *k) { return bfs_load_be32(k); }
 
 /* ── Test: empty tree search ───────────────────────────────── */
 
@@ -188,7 +188,7 @@ static bool scan_collector(const void *key, const void *val, void *ctx)
     (void)val;
     scan_ctx_t *sc = (scan_ctx_t *)ctx;
     if (sc->count < 2000)
-        sc->keys[sc->count++] = read_key((const uint32_t *)key);
+        sc->keys[sc->count++] = read_key(key);
     return true;
 }
 

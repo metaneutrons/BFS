@@ -28,8 +28,8 @@ extern bootstrap_alloc_t *bootstrap_create(bfs_blk_t start, bfs_blk_t max);
 /* Simple uint32 key/value ops for testing */
 static int u32_compare(const void *a, const void *b)
 {
-    uint32_t va = bfs_be32(*(const uint32_t *)a);
-    uint32_t vb = bfs_be32(*(const uint32_t *)b);
+    uint32_t va = bfs_load_be32(a);
+    uint32_t vb = bfs_load_be32(b);
     if (va < vb) return -1;
     if (va > vb) return 1;
     return 0;
@@ -65,15 +65,15 @@ static void *inv_node_key(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
     return buf + sizeof(bfs_btnode_hdr_t) + i * tree->ops->key_size;
 }
 
-static uint32_t *inv_internal_child_ptr(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
+static uint8_t *inv_internal_child_ptr(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
 {
     uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + inv_internal_max(tree) * tree->ops->key_size;
-    return (uint32_t *)(buf + keys_end) + i;
+    return buf + keys_end + i * sizeof(uint32_t);
 }
 
 static bfs_blk_t inv_get_child(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
 {
-    return bfs_be32(*inv_internal_child_ptr(tree, buf, i));
+    return bfs_load_be32(inv_internal_child_ptr(tree, buf, i));
 }
 
 static uint32_t inv_node_compute_crc(const bfs_btree_t *tree, const uint8_t *buf)
@@ -468,6 +468,31 @@ static void test_file_size_near_64bit_max(void)
     unlink(TEST_IMG);
 }
 
+static void test_file_offset_rejects_unaddressable_block(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "OffsetGuard", 0), BFS_OK);
+
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "huge", 4, &ino), BFS_OK);
+    bfs_file_t f;
+    TEST_ASSERT_EQ(bfs_file_open(&f, &fs, ino), BFS_OK);
+
+    uint64_t invalid_off = ((uint64_t)UINT32_MAX + 1ULL) * BLK_SIZE;
+    TEST_ASSERT_EQ(bfs_file_seek(&f, (int64_t)invalid_off, BFS_SEEK_SET), (int64_t)invalid_off);
+    uint8_t byte = 0x58;
+    TEST_ASSERT_EQ(bfs_file_write(&f, &byte, 1), BFS_ERR_INVAL);
+
+    bfs_fs_unmount(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 /* ── Part 3: Adversarial B+tree Nodes ──────────────────────── */
 
 static void test_corrupt_node_detected(void)
@@ -495,8 +520,7 @@ static void test_corrupt_node_detected(void)
 
     /* Get child[0] block number */
     uint32_t keys_end_c = sizeof(bfs_btnode_hdr_t) + inv_internal_max(&tree) * tree.ops->key_size;
-    uint32_t *child_ptrs = (uint32_t *)(buf + keys_end_c);
-    bfs_blk_t child_blk = bfs_be32(child_ptrs[0]);
+    bfs_blk_t child_blk = bfs_load_be32(buf + keys_end_c);
     free(buf);
 
     /* Corrupt the child node: flip a byte in the data area */
@@ -548,8 +572,7 @@ static void test_self_referencing_child(void)
 
     /* Overwrite child[0] with root block number */
     uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + inv_internal_max(&tree) * tree.ops->key_size;
-    uint32_t *child_ptrs = (uint32_t *)(buf + keys_end);
-    child_ptrs[0] = bfs_be32(tree.root);
+    bfs_store_be32(buf + keys_end, tree.root);
 
     /* Recompute CRC so the node passes magic/CRC checks */
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
@@ -601,6 +624,7 @@ TEST_SUITE_BEGIN("B+tree Invariants & Arithmetic Boundaries")
     TEST_RUN(test_freespace_near_max);
     TEST_RUN(test_large_inode_number);
     TEST_RUN(test_file_size_near_64bit_max);
+    TEST_RUN(test_file_offset_rejects_unaddressable_block);
     TEST_RUN(test_corrupt_node_detected);
     TEST_RUN(test_self_referencing_child);
 TEST_SUITE_END()

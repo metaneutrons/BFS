@@ -57,6 +57,7 @@ static void test_hardlink_create(void)
     TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, "original.txt", 12, &ino1, &type), BFS_OK);
     TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, "link.txt", 8, &ino2, &type), BFS_OK);
     TEST_ASSERT_EQ(ino1, ino2);
+    TEST_ASSERT_EQ(type, BFS_INODE_FILE);
 
     /* Link count should be 2 */
     bfs_inode_t inode;
@@ -158,6 +159,22 @@ static void test_comment_set_get(void)
     teardown(fs);
 }
 
+static void test_comment_get_truncates_to_buffer(void)
+{
+    bfs_fs_t *fs = setup();
+
+    uint32_t ino;
+    bfs_fs_create_file(fs, BFS_ROOT_INO, "tinybuf", 7, &ino);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, "This is important", 17), BFS_OK);
+
+    char buf[5] = {0x55, 0x55, 0x55, 0x55, 0x55};
+    TEST_ASSERT_EQ(bfs_fs_get_comment(fs, ino, buf, sizeof(buf)), BFS_OK);
+    TEST_ASSERT_MEM_EQ(buf, "This", 4);
+    TEST_ASSERT_EQ(buf[4], 0);
+
+    teardown(fs);
+}
+
 /* ── Parent directory tracking (..) ────────────────────────── */
 
 static void test_parent_tracking(void)
@@ -177,6 +194,38 @@ static void test_parent_tracking(void)
     /* Verify '..' in 'a' points to root */
     TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, a_ino, "..", 2, &parent_ino, &type), BFS_OK);
     TEST_ASSERT_EQ(parent_ino, BFS_ROOT_INO);
+
+    teardown(fs);
+}
+
+static void test_rmdir_removes_inode_and_parent_entry(void)
+{
+    bfs_fs_t *fs = setup();
+
+    uint32_t dir_ino;
+    TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "gone", 4, &dir_ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_rmdir(fs, BFS_ROOT_INO, "gone", 4), BFS_OK);
+
+    bfs_inode_t inode;
+    TEST_ASSERT_EQ(bfs_inode_read(&fs->inode_tree, dir_ino, &inode), BFS_ERR_NOTFOUND);
+    uint32_t parent, type;
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, dir_ino, "..", 2, &parent, &type), BFS_ERR_NOTFOUND);
+
+    teardown(fs);
+}
+
+static void test_rename_directory_updates_parent(void)
+{
+    bfs_fs_t *fs = setup();
+
+    uint32_t a_ino, b_ino;
+    TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "a", 1, &a_ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "b", 1, &b_ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_rename(fs, BFS_ROOT_INO, "b", 1, a_ino, "b", 1), BFS_OK);
+
+    uint32_t parent, type;
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, b_ino, "..", 2, &parent, &type), BFS_OK);
+    TEST_ASSERT_EQ(parent, a_ino);
 
     teardown(fs);
 }
@@ -268,7 +317,10 @@ TEST_SUITE_BEGIN("New Features")
     TEST_RUN(test_hardlink_delete_preserves_data);
     TEST_RUN(test_softlink_create_read);
     TEST_RUN(test_comment_set_get);
+    TEST_RUN(test_comment_get_truncates_to_buffer);
     TEST_RUN(test_parent_tracking);
+    TEST_RUN(test_rmdir_removes_inode_and_parent_entry);
+    TEST_RUN(test_rename_directory_updates_parent);
     TEST_RUN(test_delete_frees_blocks);
     TEST_RUN(test_features_persist);
 TEST_SUITE_END()
