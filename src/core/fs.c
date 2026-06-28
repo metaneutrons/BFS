@@ -294,7 +294,10 @@ static bfs_err_t fs_queue_extent_tree_for_delete(bfs_fs_t *fs, bfs_blk_t root)
     err = bfs_btree_scan(&et.tree, NULL, fs_queue_extent_data_cb, &qc);
     if (err != BFS_OK) return err;
     if (qc.err != BFS_OK) return qc.err;
-    bfs_btree_walk_nodes(&et.tree, fs_queue_extent_node_cb, &qc);
+    {
+        bfs_err_t werr = bfs_btree_walk_nodes(&et.tree, fs_queue_extent_node_cb, &qc);
+        if (qc.err == BFS_OK) qc.err = werr;
+    }
     return qc.err;
 }
 
