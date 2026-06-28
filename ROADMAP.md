@@ -33,20 +33,22 @@ tests.
 
 ---
 
-## 2. Split the `fs.c` god-file / fill out `txn.c`  (SoC, medium) — #28
+## 2. Fold commit orchestration into `txn.c`  (SoC, medium) — #28 (partial)
 
-**Problem.** `fs.c` (~900 lines) conflates on-disk format, mount/recovery,
-ENOSPC/reserve policy, the sync/reclaim engine, every namespace op, and the lock
-wrappers. `txn.c` only writes the superblock and bumps the id; the real commit
-orchestration (pending-free drain, reserve return, per-tree txn re-point) lives in
-`fs.c` — which is why `bfs_fs_sync_unlocked` had to be exported.
+**Done.** The namespace layer (create/mkdir/delete/rmdir/rename/links/comments,
+their helpers and the fs-lock wrappers) was split out of `fs.c` into
+`namespace.c` (fs.c 841 → ~415 lines), and the `global_reserve` sizing magic is
+now named `BFS_GRESERVE_*` constants. `fs.c` is now the lifecycle + sync/reserve
+core.
 
-**Why deferred.** Large refactor touching the commit path.
+**Remaining.** `txn.c` is still anaemic — it only writes the superblock and bumps
+the id, while the real commit orchestration (pending-free drain, reserve return,
+per-tree txn re-point) lives in `fs.c::bfs_fs_sync_unlocked`, which is why that
+helper has to be exported. Fold that orchestration into `txn.c` so
+`bfs_txn_commit` is the single transaction boundary.
 
-**Suggested approach.** Move commit/reclaim orchestration into `txn.c` so
-`bfs_txn_commit` is the single transaction boundary; separate format-layout from
-runtime allocation policy; name the `global_reserve` sizing constants (the
-`bc/20`, `64`, `1024`, `/8`, `512`, `/4` literals in `bfs_fs_format`).
+**Why still deferred.** This part touches the commit path directly — it wants its
+own pass with heavy crash/ASan verification.
 
 **Files.** `src/core/fs.c`, `src/core/txn.c`
 
