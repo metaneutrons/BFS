@@ -17,6 +17,10 @@
 
 #define ACTION_FORMAT 1020
 
+/* BFS_VOLNAME_MAX (32) + BSTR length byte + NUL. Mirrors BFS_NAME_BSTR_MAX in
+ * bfs_ondisk.h, which this standalone tool can't include. */
+#define BFS_NAME_BSTR_MAX 34
+
 int main(void)
 {
     struct RDArgs *rdargs;
@@ -52,7 +56,7 @@ int main(void)
     }
 
     /* Build BSTR name */
-    UBYTE bstr[34];
+    UBYTE bstr[BFS_NAME_BSTR_MAX];
     int nlen = 0;
     while (name[nlen] && nlen < 31) { bstr[nlen + 1] = name[nlen]; nlen++; }  /* BFS_VOLNAME_MAX - 1 */
     bstr[0] = nlen;

@@ -139,6 +139,13 @@ static inline int bfs_cmp_be32(const void *a, const void *b)
 #define BFS_MIN_BLOCK_SIZE  1024
 #define BFS_MAX_BLOCK_SIZE  65536
 
+/* True iff bs is a legal BFS block size: within [MIN, MAX] and a power of two.
+ * Single source for the rule that format (fs.c) and mount (superblock.c) share. */
+static inline bool bfs_block_size_valid(uint32_t bs)
+{
+    return bs >= BFS_MIN_BLOCK_SIZE && bs <= BFS_MAX_BLOCK_SIZE && (bs & (bs - 1)) == 0;
+}
+
 /* Minimum volume size in blocks (metadata overhead: superblocks, trees, reserve pool) */
 #define BFS_MIN_VOLUME_BLOCKS 256
 
