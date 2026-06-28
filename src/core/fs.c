@@ -145,7 +145,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     bfs_txn_set_free_blocks(&fs.txn, fs.freespace.total_free);
     bfs_txn_set_inode_root(&fs.txn, fs.inode_tree.root);
 
-    err = bfs_txn_commit(&fs.txn);
+    err = bfs_txn_write_sb(&fs.txn);
     bfs_lock_destroy(&fs.lock);
     if (err != BFS_OK) return err;
     return bfs_bio_sync(bio);
@@ -235,7 +235,7 @@ bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
     if (!fs->has_snapshots)
         return bfs_freespace_free(&fs->freespace, blk, 1);
     if (fs->pending_count >= BFS_PENDING_FREES_MAX) {
-        bfs_err_t err = bfs_fs_sync_unlocked(fs);
+        bfs_err_t err = bfs_txn_commit(fs);
         if (err != BFS_OK) return err;
     }
     if (fs->pending_count >= BFS_PENDING_FREES_MAX)
@@ -246,112 +246,10 @@ bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
 
 /* ── Sync ──────────────────────────────────────────────────── */
 
-static void update_tree_txns(bfs_fs_t *fs)
-{
-    fs->live_txn_id = bfs_txn_id(&fs->txn);
-}
-
-static void shellsort_blocks(bfs_blk_t *arr, uint32_t count)
-{
-    static const uint32_t gaps[] = {1750, 701, 301, 132, 57, 23, 10, 4, 1, 0};
-    for (const uint32_t *g = gaps; *g; g++) {
-        uint32_t gap = *g;
-        for (uint32_t i = gap; i < count; i++) {
-            bfs_blk_t tmp = arr[i];
-            uint32_t j = i;
-            while (j >= gap && arr[j - gap] > tmp) {
-                arr[j] = arr[j - gap];
-                j -= gap;
-            }
-            arr[j] = tmp;
-        }
-    }
-}
-
-bfs_err_t bfs_fs_sync_unlocked(bfs_fs_t *fs)
-{
-    if (!fs->mounted) return BFS_ERR_INVAL;
-
-    /* Phase 0: If data=ordered is enabled, flush all data writes to physical media
-     * before we commit the metadata that points to them. This ensures that a
-     * crash never leaves an inode pointing to uninitialized data blocks. */
-    if (fs->options & BFS_OPT_DATA_ORDERED) {
-        bfs_bio_sync(fs->bio);
-    }
-
-    bfs_err_t err = bfs_freespace_return_reserve(&fs->freespace);
-    if (err != BFS_OK) return err;
-
-    /* Update superblock with current tree roots */
-    bfs_txn_set_dir_root(&fs->txn, fs->dir_tree.tree.root);
-    bfs_txn_set_free_root(&fs->txn, fs->freespace.tree.root);
-    bfs_txn_set_free_blocks(&fs->txn, fs->freespace.total_free);
-    bfs_txn_set_inode_root(&fs->txn, fs->inode_tree.root);
-    if (fs->has_snapshots)
-        fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
-    fs->txn.sb_new.next_ino = bfs_be32(fs->next_ino);
-
-    err = bfs_txn_commit(&fs->txn);
-    if (err != BFS_OK) return err;
-    update_tree_txns(fs);
-
-    /* Process pending frees: Use a local buffer to avoid overwriting while processing */
-    int sync_iterations = 0;
-    while (fs->pending_count > 0 && sync_iterations < 256) {
-        sync_iterations++;
-        uint32_t count = fs->pending_count;
-        bfs_blk_t *process_buf = malloc(count * sizeof(bfs_blk_t));
-        if (!process_buf) return BFS_ERR_NOMEM;
-        
-        memcpy(process_buf, fs->pending_frees, count * sizeof(bfs_blk_t));
-        fs->pending_count = 0;
-
-        shellsort_blocks(process_buf, count);
-
-        uint32_t i = 0;
-        while (i < count) {
-            bfs_blk_t start = process_buf[i];
-            uint32_t len = 1;
-            while (i + len < count && process_buf[i + len] == start + len) len++;
-
-            if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
-                for (uint32_t b = 0; b < len; b++) {
-                    uint32_t rc = bfs_refcount_get(&fs->refcount, start + b);
-                    if (rc > 0) {
-                        bool freed;
-                        bfs_refcount_dec(&fs->refcount, start + b, &freed);
-                        if (freed) bfs_freespace_free(&fs->freespace, start + b, 1);
-                    } else {
-                        bfs_freespace_free(&fs->freespace, start + b, 1);
-                    }
-                }
-            } else {
-                bfs_freespace_free(&fs->freespace, start, len);
-            }
-            i += len;
-        }
-        free(process_buf);
-
-        err = bfs_freespace_return_reserve(&fs->freespace);
-        if (err != BFS_OK) return err;
-
-        /* Final commit of free tree changes */
-        bfs_txn_set_free_root(&fs->txn, fs->freespace.tree.root);
-        bfs_txn_set_free_blocks(&fs->txn, fs->freespace.total_free);
-        if (fs->has_snapshots)
-            fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
-        err = bfs_txn_commit(&fs->txn);
-        if (err != BFS_OK) return err;
-    }
-
-    update_tree_txns(fs);
-    return bfs_bio_sync(fs->bio);
-}
-
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = bfs_fs_sync_unlocked(fs);
+    bfs_err_t err = bfs_txn_commit(fs);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -363,7 +261,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
         bfs_lock_unlock(&fs->lock);
         return BFS_ERR_INVAL;
     }
-    bfs_err_t err = bfs_fs_sync_unlocked(fs);
+    bfs_err_t err = bfs_txn_commit(fs);
     free(fs->scratch);
     fs->mounted = false;
     bfs_lock_unlock(&fs->lock);

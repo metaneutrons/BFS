@@ -33,28 +33,7 @@ tests.
 
 ---
 
-## 2. Fold commit orchestration into `txn.c`  (SoC, medium) — #28 (partial)
-
-**Done.** The namespace layer (create/mkdir/delete/rmdir/rename/links/comments,
-their helpers and the fs-lock wrappers) was split out of `fs.c` into
-`namespace.c` (fs.c 841 → ~415 lines), and the `global_reserve` sizing magic is
-now named `BFS_GRESERVE_*` constants. `fs.c` is now the lifecycle + sync/reserve
-core.
-
-**Remaining.** `txn.c` is still anaemic — it only writes the superblock and bumps
-the id, while the real commit orchestration (pending-free drain, reserve return,
-per-tree txn re-point) lives in `fs.c::bfs_fs_sync_unlocked`, which is why that
-helper has to be exported. Fold that orchestration into `txn.c` so
-`bfs_txn_commit` is the single transaction boundary.
-
-**Why still deferred.** This part touches the commit path directly — it wants its
-own pass with heavy crash/ASan verification.
-
-**Files.** `src/core/fs.c`, `src/core/txn.c`
-
----
-
-## 3. Handler bypasses `fs->lock`  (SoC, high — latent) — #10
+## 2. Handler bypasses `fs->lock`  (SoC, high — latent) — #10
 
 **Problem.** `handler.c` performs ~25 direct `h->fs.inode_tree` / `h->fs.dir_tree`
 / `h->fs.txn.sb_new` mutations *outside* `fs->lock` (e.g. create-then-stamp-times

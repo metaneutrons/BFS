@@ -75,7 +75,7 @@ static bfs_err_t file_flush_and_sync(bfs_file_t *f)
 {
     bfs_err_t err = file_update_inode(f);
     if (err != BFS_OK) return err;
-    return bfs_fs_sync_unlocked(f->fs);
+    return bfs_txn_commit(f->fs);
 }
 
 int32_t bfs_file_read_unlocked(bfs_file_t *f, void *buf, uint32_t len)
