@@ -109,18 +109,6 @@ typedef struct {
     bfs_err_t err;
 } snap_ref_ctx_t;
 
-static bfs_err_t queue_freed_block(bfs_fs_t *fs, bfs_blk_t blk)
-{
-    if (fs->pending_count >= BFS_PENDING_FREES_MAX) {
-        bfs_err_t err = bfs_fs_sync_unlocked(fs);
-        if (err != BFS_OK) return err;
-    }
-    if (fs->pending_count >= BFS_PENDING_FREES_MAX)
-        return BFS_ERR_NOSPC;
-    fs->pending_frees[fs->pending_count++] = blk;
-    return BFS_OK;
-}
-
 static bfs_err_t snapshot_ref_block(snap_ref_ctx_t *ctx, bfs_blk_t blk)
 {
     if (blk == BFS_BLK_NULL)
@@ -145,7 +133,7 @@ static bfs_err_t snapshot_ref_block(snap_ref_ctx_t *ctx, bfs_blk_t blk)
     bool freed = false;
     bfs_err_t err = bfs_refcount_dec(&ctx->fs->refcount, blk, &freed);
     if (err != BFS_OK) return err;
-    return freed ? queue_freed_block(ctx->fs, blk) : BFS_OK;
+    return freed ? bfs_fs_queue_pending_free(ctx->fs, blk) : BFS_OK;
 }
 
 static void snapshot_ref_node_cb(bfs_blk_t blk, void *ctx)

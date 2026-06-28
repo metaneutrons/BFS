@@ -24,18 +24,6 @@ static bfs_err_t file_block_for_offset(bfs_fs_t *fs, uint64_t offset, uint32_t *
     return BFS_OK;
 }
 
-static bfs_err_t queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
-{
-    if (fs->pending_count >= BFS_PENDING_FREES_MAX) {
-        bfs_err_t err = bfs_fs_sync_unlocked(fs);
-        if (err != BFS_OK) return err;
-    }
-    if (fs->pending_count >= BFS_PENDING_FREES_MAX)
-        return BFS_ERR_NOSPC;
-    fs->pending_frees[fs->pending_count++] = blk;
-    return BFS_OK;
-}
-
 bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
 {
     memset(f, 0, sizeof(*f));
@@ -240,7 +228,7 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
                 return (total > 0) ? (int32_t)total : (int32_t)err;
             }
 
-            err = queue_pending_free(f->fs, old_blk);
+            err = bfs_fs_queue_pending_free(f->fs, old_blk);
             if (err != BFS_OK)
                 return (total > 0) ? (int32_t)total : (int32_t)err;
             disk_blk = new_blk;
