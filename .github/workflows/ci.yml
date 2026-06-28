@@ -16,9 +16,7 @@ jobs:
   integration-test:
     runs-on: ubuntu-latest
     needs: host-tests
-    if: github.event_name == 'push'
-    timeout-minutes: 5
-    continue-on-error: true
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v6
 
@@ -28,46 +26,39 @@ jobs:
           CI_TEST_ENV: ${{ secrets.CI_TEST_ENV }}
           GH_TOKEN: ${{ github.token }}
         run: |
-          # Skip gracefully if secret not available
+          # The emulator test needs a Kickstart ROM + Workbench assets that are
+          # encrypted in a private release and cannot live in the repo. Without
+          # the secret (forks, fork PRs) we genuinely cannot run it, so we skip
+          # and the job stays green. But when the secret IS present, a download,
+          # decrypt or test failure must fail the build — that is the whole point.
           if [ -z "$CI_TEST_ENV" ]; then
-            echo "skip=true" >> $GITHUB_OUTPUT
+            echo "No CI_TEST_ENV secret (fork or fork PR) — skipping integration test."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
             exit 0
           fi
-
           ASSET_NAME="${CI_TEST_ENV%%|*}"
           ASSET_KEY="${CI_TEST_ENV##*|}"
-
-          # Download asset
-          gh release download ci-assets --pattern "$ASSET_NAME" 2>/dev/null || {
-            echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
-          }
-
-          # Decrypt
-          openssl enc -d -aes-256-cbc -pbkdf2 -pass "pass:$ASSET_KEY" \
-            -in "$ASSET_NAME" 2>/dev/null | tar xz 2>/dev/null || {
-            echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
-          }
-
+          gh release download ci-assets --pattern "$ASSET_NAME"
+          openssl enc -d -aes-256-cbc -pbkdf2 -pass "pass:$ASSET_KEY" -in "$ASSET_NAME" | tar xz
           rm -f "$ASSET_NAME"
-          echo "ready=true" >> $GITHUB_OUTPUT
+          echo "skip=false" >> "$GITHUB_OUTPUT"
 
-      - name: Install tools
+      - name: Install emulator and cross-compiler
         if: steps.prep.outputs.skip != 'true'
         run: |
           sudo apt-get update -qq
-          sudo apt-get install -y -qq fs-uae xvfb python3-pip
+          sudo apt-get install -y -qq fs-uae xvfb python3-pip wget
           pip3 install amitools
+          # bebbo m68k-amigaos-gcc (prebuilt) — same toolchain as release.yml
+          wget -q https://github.com/bebbo/amiga-gcc/releases/latest/download/amiga-gcc-ubuntu-latest.tar.gz
+          sudo tar xzf amiga-gcc-ubuntu-latest.tar.gz -C /opt/
+          echo "/opt/amiga/bin" >> "$GITHUB_PATH"
 
-      - name: Build
+      - name: Build Amiga handler
         if: steps.prep.outputs.skip != 'true'
-        run: |
-          if ! command -v m68k-amigaos-gcc &>/dev/null; then
-            echo "skip=true" >> $GITHUB_OUTPUT
-            exit 0
-          fi
-          make amiga amiga-stresstest
+        # AMIGA_PREFIX must be passed on the command line: the Makefile assigns it
+        # with '=', which overrides the environment, so an exported value is ignored.
+        run: make amiga amiga-stresstest AMIGA_PREFIX=/opt/amiga/m68k-amigaos
 
       - name: Prepare test image
         if: steps.prep.outputs.skip != 'true'
@@ -92,12 +83,14 @@ jobs:
           printf 'Assign C: Test:C\nAssign L: Test:L\nAssign LIBS: Test:Libs\nC:bfs-stresstest DH0: >Test:result\n' > /tmp/s
           xdftool $ADF write /tmp/s S/Startup-Sequence
 
-      - name: Run emulator
+      - name: Run emulator and check results
         if: steps.prep.outputs.skip != 'true'
         run: |
           ROM=$(find . -maxdepth 1 -name "*.rom" | head -1)
-          [ -z "$ROM" ] && exit 0
-
+          if [ -z "$ROM" ]; then
+            echo "::error::No Kickstart ROM found in the decrypted assets"
+            exit 1
+          fi
           cat > /tmp/test.cfg << EOF
           [fs-uae]
           amiga_model = A1200
@@ -111,15 +104,30 @@ jobs:
           uae_cpu_speed = max
           window_hidden = 1
           EOF
-          xvfb-run -a timeout 120 fs-uae /tmp/test.cfg 2>/dev/null || true
-
-      - name: Check results
-        if: steps.prep.outputs.skip != 'true'
-        run: |
-          REPORT=$(xdftool test.adf read result 2>/dev/null || echo "")
-          if [ -n "$REPORT" ]; then
-            PASS=$(echo "$REPORT" | grep -c "PASS" || echo 0)
-            FAIL=$(echo "$REPORT" | grep -c "FAIL" || echo 0)
-            echo "### Integration Test: $PASS passed, $FAIL failed" >> $GITHUB_STEP_SUMMARY
-            [ "$FAIL" -gt 0 ] && exit 1
+          # Retry to absorb emulator flakiness, then REQUIRE a result. A missing
+          # result, any FAIL, or zero PASS markers all fail the build.
+          REPORT=""
+          for attempt in 1 2 3; do
+            echo "fs-uae run, attempt $attempt..."
+            xvfb-run -a timeout 180 fs-uae /tmp/test.cfg 2>/dev/null || true
+            REPORT=$(xdftool test.adf read result 2>/dev/null || true)
+            [ -n "$REPORT" ] && break
+            echo "No result file produced; retrying."
+          done
+          if [ -z "$REPORT" ]; then
+            echo "::error::Emulator produced no result after 3 attempts"
+            exit 1
           fi
+          echo "----- result -----"; echo "$REPORT"; echo "------------------"
+          PASS=$(echo "$REPORT" | grep -c "PASS" || true)
+          FAIL=$(echo "$REPORT" | grep -c "FAIL" || true)
+          echo "### Integration Test: $PASS passed, $FAIL failed" >> "$GITHUB_STEP_SUMMARY"
+          if [ "$FAIL" -gt 0 ]; then
+            echo "::error::Amiga integration test reported $FAIL failure(s)"
+            exit 1
+          fi
+          if [ "$PASS" -eq 0 ]; then
+            echo "::error::Amiga integration test produced no PASS markers"
+            exit 1
+          fi
+          echo "Integration test passed ($PASS checks)."
