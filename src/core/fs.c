@@ -10,11 +10,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-static bool valid_block_size(uint32_t bs)
-{
-    return bs >= BFS_MIN_BLOCK_SIZE && bs <= BFS_MAX_BLOCK_SIZE && (bs & (bs - 1)) == 0;
-}
-
 /* Global metadata-reserve sizing (blocks held back so delete/rename/COW never
  * hit ENOSPC mid-transaction): target ~1/20 of the volume, but at least
  * BFS_GRESERVE_TARGET on normal volumes, clamped to [FLOOR, CAP], with small-
@@ -35,7 +30,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     uint32_t bs = bio->block_size;
     bfs_blk_t bc = bio->block_count;
 
-    if (!valid_block_size(bs) || bc < BFS_MIN_VOLUME_BLOCKS)
+    if (!bfs_block_size_valid(bs) || bc < BFS_MIN_VOLUME_BLOCKS)
         return BFS_ERR_INVAL;
 
     bfs_blk_t data_start = bfs_data_start_block(bs);

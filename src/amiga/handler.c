@@ -1052,7 +1052,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case 3000: { /* ACTION_BFS_SNAPSHOT_CREATE */
         UBYTE *bname = (UBYTE *)BADDR(pkt->dp_Arg1);
         uint8_t nlen = bname[0];
-        char name[34];
+        char name[BFS_NAME_BSTR_MAX];
         if (nlen > 32) nlen = 32;
         memcpy(name, &bname[1], nlen);
         name[nlen] = 0;
@@ -1064,7 +1064,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case 3001: { /* ACTION_BFS_SNAPSHOT_DELETE */
         UBYTE *bname = (UBYTE *)BADDR(pkt->dp_Arg1);
         uint8_t nlen = bname[0];
-        char name[34];
+        char name[BFS_NAME_BSTR_MAX];
         if (nlen > 32) nlen = 32;
         memcpy(name, &bname[1], nlen);
         name[nlen] = 0;
@@ -1125,7 +1125,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         /* Find snapshot by name */
         uint8_t nlen = bname[0];
         if (nlen > 32) nlen = 32;
-        char sname[34]; memcpy(sname, &bname[1], nlen); sname[nlen] = 0;
+        char sname[BFS_NAME_BSTR_MAX]; memcpy(sname, &bname[1], nlen); sname[nlen] = 0;
 
         bfs_snapshot_record_t rec;
         if (bfs_snapshot_find_by_name(&h->fs, sname, NULL, &rec) != BFS_OK) {
@@ -1166,7 +1166,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         uint8_t snlen = bsnap[0], vlen = bvol[0];
         if (snlen > 32) snlen = 32;
         if (vlen > 32) vlen = 32;
-        char sname[34], vname[34];
+        char sname[BFS_NAME_BSTR_MAX], vname[BFS_NAME_BSTR_MAX];
         memcpy(sname, &bsnap[1], snlen); sname[snlen] = 0;
         memcpy(vname, &bvol[1], vlen); vname[vlen] = 0;
 
@@ -1204,7 +1204,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         UBYTE *bvol = (UBYTE *)BADDR(pkt->dp_Arg1);
         uint8_t vlen = bvol[0];
         if (vlen > 32) vlen = 32;
-        char vname[34]; memcpy(vname, &bvol[1], vlen); vname[vlen] = 0;
+        char vname[BFS_NAME_BSTR_MAX]; memcpy(vname, &bvol[1], vlen); vname[vlen] = 0;
         /* Find and deactivate */
         for (int i = 0; i < BFS_MAX_SNAP_MOUNTS; i++) {
             if (h->snap_mounts[i].active && h->snap_mounts[i].volnode) {

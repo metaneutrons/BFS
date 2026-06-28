@@ -36,6 +36,10 @@
 #define ACTION_BFS_SNAPSHOT_MOUNT   3004
 #define ACTION_BFS_SNAPSHOT_UNMOUNT 3005
 
+/* BFS_VOLNAME_MAX/BFS_SNAPSHOT_NAME_MAX (32) + BSTR length byte + NUL. Mirrors
+ * BFS_NAME_BSTR_MAX in bfs_ondisk.h, which this standalone tool can't include. */
+#define BFS_NAME_BSTR_MAX 34
+
 static const char version[] = VERSTAG;
 
 static int tool_strlen(const char *s)
@@ -171,7 +175,7 @@ int main(void)
     if (str_eq_nocase(cmd, "CREATE")) {
         if (!name || !name[0]) { put("CREATE requires a name.\n"); rc = 10; }
         else {
-            UBYTE bstr[36] = {0};
+            UBYTE bstr[BFS_NAME_BSTR_MAX] = {0};
             int nlen = 0; while (name[nlen] && nlen < 32) { bstr[nlen+1] = name[nlen]; nlen++; }
             bstr[0] = nlen;
             put("Creating snapshot \""); put(name); put("\"...\n");
@@ -183,7 +187,7 @@ int main(void)
     } else if (str_eq_nocase(cmd, "DELETE")) {
         if (!name || !name[0]) { put("DELETE requires a name.\n"); rc = 10; }
         else {
-            UBYTE bstr[36] = {0};
+            UBYTE bstr[BFS_NAME_BSTR_MAX] = {0};
             int nlen = 0; while (name[nlen] && nlen < 32) { bstr[nlen+1] = name[nlen]; nlen++; }
             bstr[0] = nlen;
             put("Deleting snapshot \""); put(name); put("\"...\n");
@@ -233,7 +237,7 @@ int main(void)
             put(detailed ? "LIST" : "DIR");
             put(" requires a snapshot name.\n"); rc = 10;
         } else {
-            char snapname[34], path[256];
+            char snapname[BFS_NAME_BSTR_MAX], path[256];
             parse_snappath(name, snapname, 34, path, 256);
 
             UBYTE pktbuf[290];
@@ -292,7 +296,7 @@ next:
             put("Example: bfssnapshot DH1: MOUNT daily SNAP0\n");
             rc = 10;
         } else {
-            UBYTE bsnap[36] = {0}, bvol[36] = {0};
+            UBYTE bsnap[BFS_NAME_BSTR_MAX] = {0}, bvol[BFS_NAME_BSTR_MAX] = {0};
             int nlen = 0; while (name[nlen] && nlen < 32) { bsnap[nlen+1] = name[nlen]; nlen++; }
             bsnap[0] = nlen;
             int vlen = 0; while (opt[vlen] && opt[vlen] != ':' && vlen < 32) { bvol[vlen+1] = opt[vlen]; vlen++; }
@@ -307,7 +311,7 @@ next:
     } else if (str_eq_nocase(cmd, "UNMOUNT")) {
         if (!name || !name[0]) { put("UNMOUNT requires a volume name.\n"); rc = 10; }
         else {
-            UBYTE bvol[36] = {0};
+            UBYTE bvol[BFS_NAME_BSTR_MAX] = {0};
             int vlen = 0; while (name[vlen] && name[vlen] != ':' && vlen < 32) { bvol[vlen+1] = name[vlen]; vlen++; }
             bvol[0] = vlen;
             if (DoPkt(port, ACTION_BFS_SNAPSHOT_UNMOUNT, (LONG)MKBADDR(bvol), 0, 0, 0, 0))

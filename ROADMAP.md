@@ -28,8 +28,12 @@ touching core trees directly; or explicitly document `fs->lock` as host-test-onl
 
 ## Also open (low severity)
 
-Minor nits not yet addressed: the on-disk `volname` comment says "UTF-8" but names
-are handled as ISO-8859-1 (#38); the snapshot BSTR buffer sizes (`[34]`/`[36]`)
-aren't derived from `BFS_SNAPSHOT_NAME_MAX` (#40); `btree_free_node` silently drops
-a block when `pending_frees` is full instead of syncing (#41); the block-size
-validity predicate is written twice with opposite polarity (#42).
+One nit remains: `btree_free_node` silently **drops** a block when the deferred-free
+queue is full instead of forcing a sync (#41). The obvious "free it immediately
+instead" is *unsafe* — a block freed mid-COW could be reallocated before the
+transaction commits, breaking COW consistency — so a real fix must drain or grow
+the queue at a safe point. Hence deferred.
+
+Fixed since: the `volname` charset doc (was "UTF-8", actually ISO-8859-1) (#38);
+the name BSTR buffer sizes now derive from `BFS_NAME_BSTR_MAX` (#40); the block-size
+validity predicate is now a single shared `bfs_block_size_valid()` (#42).

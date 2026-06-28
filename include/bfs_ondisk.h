@@ -35,6 +35,12 @@
  */
 #define BFS_VOLNAME_MAX 32
 
+/* Buffer to hold a volume/snapshot name (≤ BFS_VOLNAME_MAX, which also bounds
+ * the snapshot name) as an Amiga BSTR (leading length byte + chars) or a
+ * NUL-terminated C string: name_max + length-byte + terminator. The standalone
+ * Amiga tools can't include this header and define a matching local constant. */
+#define BFS_NAME_BSTR_MAX (BFS_VOLNAME_MAX + 2)
+
 /* Format-time option flags */
 #define BFS_OPT_DATA_CHECKSUMS  (1u << 0)  /* per-extent data CRC32 */
 #define BFS_OPT_SNAPSHOTS       (1u << 1)  /* snapshot support enabled (future) */
@@ -74,7 +80,8 @@ typedef struct BFS_PACKED {
     /* Next inode number to allocate (persisted across mounts) */
     uint32_t next_ino;
 
-    /* Volume label (null-terminated UTF-8, padded with zeros) */
+    /* Volume label (null-terminated ISO-8859-1 / Amiga "international", padded
+     * with zeros) — case-folded via bfs_intl_toupper, not UTF-8. */
     uint8_t  volname[BFS_VOLNAME_MAX];
 
     /* Byte offset of backup superblock (typically partition_size / 2) */

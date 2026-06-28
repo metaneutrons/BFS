@@ -66,7 +66,7 @@ bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
         return BFS_ERR_CORRUPT;
 
     uint32_t bs = bfs_be32(sb->block_size);
-    if (bs < BFS_MIN_BLOCK_SIZE || bs > BFS_MAX_BLOCK_SIZE || (bs & (bs - 1)))
+    if (!bfs_block_size_valid(bs))
         return BFS_ERR_CORRUPT;
 
     if (bfs_be32(sb->crc32) != bfs_sb_compute_crc(sb))
