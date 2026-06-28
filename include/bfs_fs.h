@@ -27,7 +27,7 @@
 #define BFS_ROOT_INO 1  /* root directory inode number */
 #define BFS_PENDING_FREES_MAX 16384 /* Excess COW'd blocks are leaked; reclaimed on next sync cycle */
 
-typedef struct {
+typedef struct bfs_fs {
     bfs_bio_t        *bio;
     bfs_txn_t         txn;
     bfs_freespace_t   freespace;
@@ -54,9 +54,9 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options);
 /* Mount an existing BFS filesystem. */
 bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio);
 
-/* Sync: commit all pending changes to disk. */
+/* Sync: commit all pending changes to disk (the full transaction commit lives in
+ * txn.c as bfs_txn_commit(fs); this is just the public, lock-taking wrapper). */
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs);
-bfs_err_t bfs_fs_sync_unlocked(bfs_fs_t *fs);
 
 /* Defer-free a block: queue it for reclaim at the next sync (syncing first if
  * the queue is full), or free it immediately when snapshots are disabled. The

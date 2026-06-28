@@ -20,6 +20,8 @@
 #include "bfs_superblock.h"
 #include "bfs_btree.h"
 
+struct bfs_fs;  /* full filesystem handle, defined in bfs_fs.h */
+
 typedef struct {
     bfs_bio_t *bio;
     bfs_superblock_t sb;       /* snapshot at txn_begin */
@@ -36,8 +38,12 @@ void bfs_txn_set_free_root(bfs_txn_t *txn, bfs_blk_t root);
 void bfs_txn_set_free_blocks(bfs_txn_t *txn, uint32_t count);
 void bfs_txn_set_inode_root(bfs_txn_t *txn, bfs_blk_t root);
 
-/* Commit: write updated superblock with new tree roots */
-bfs_err_t bfs_txn_commit(bfs_txn_t *txn);
+/* Low-level: write the working superblock (the durable-commit primitive). */
+bfs_err_t bfs_txn_write_sb(bfs_txn_t *txn);
+
+/* The single full-filesystem transaction-commit boundary (defined in txn.c):
+ * return reserve, gather tree roots, write the superblock, drain pending frees. */
+bfs_err_t bfs_txn_commit(struct bfs_fs *fs);
 
 /* Abort: discard changes */
 void bfs_txn_abort(bfs_txn_t *txn);

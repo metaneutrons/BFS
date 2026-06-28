@@ -224,7 +224,7 @@ bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
     if (!fs->mounted) return BFS_ERR_INVAL;
 
     /* Sync first to get a consistent state */
-    bfs_err_t err = bfs_fs_sync_unlocked(fs);
+    bfs_err_t err = bfs_txn_commit(fs);
     if (err != BFS_OK) return err;
 
     /* Ensure refcount + snapshot trees exist */
@@ -270,7 +270,7 @@ bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
     fs->txn.sb_new.snapshot_tree_root = bfs_be32(snap_tree.root);
     fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
 
-    err = bfs_fs_sync_unlocked(fs);
+    err = bfs_txn_commit(fs);
     if (err != BFS_OK) {
         /* Commit failed — reverse the refcount increments, matching the two
          * error paths above, so we don't leave inflated in-memory counts.
@@ -353,7 +353,7 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
         if (err != BFS_OK) return err;
 
         fs->txn.sb_new.snapshot_tree_root = bfs_be32(snap_tree.root);
-        err = bfs_fs_sync_unlocked(fs);
+        err = bfs_txn_commit(fs);
         if (err != BFS_OK) return err;
     }
 
@@ -406,7 +406,7 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
             fs->txn.sb_new.snapshot_tree_root = bfs_be32(snap_tree.root);
             fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
 
-            err = bfs_fs_sync_unlocked(fs);
+            err = bfs_txn_commit(fs);
             if (err != BFS_OK) return err;
         } else {
             /* We reclaimed c.count inodes in this batch (up to 50) */
@@ -419,7 +419,7 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
             fs->txn.sb_new.snapshot_tree_root = bfs_be32(snap_tree.root);
             fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
 
-            err = bfs_fs_sync_unlocked(fs);
+            err = bfs_txn_commit(fs);
             if (err != BFS_OK) return err;
         }
     }

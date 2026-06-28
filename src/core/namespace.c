@@ -6,7 +6,7 @@
  * their fs-lock wrappers. Split out of fs.c, which keeps format, mount, the
  * sync/reclaim engine and space reservation. These ops sit on top of the dir,
  * inode and extent trees and call fs.c's exported helpers (bfs_fs_alloc_ino,
- * bfs_fs_queue_pending_free, bfs_fs_sync_unlocked).
+ * bfs_fs_queue_pending_free) and the transaction boundary bfs_txn_commit().
  */
 #include "bfs_fs.h"
 #include "bfs_file.h"
