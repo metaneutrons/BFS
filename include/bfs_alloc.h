@@ -55,4 +55,7 @@ bfs_allocator_t *bfs_freespace_allocator(bfs_freespace_t *fs);
 /* Refill the reserve pool from the free space tree */
 bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs);
 
+/* Return unused reserve blocks to the free tree (called at transaction commit). */
+bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs);
+
 #endif /* BFS_ALLOC_H */

@@ -397,6 +397,26 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
     return BFS_OK;
 }
 
+/* Return any unused reserve-pool blocks to the free tree (called at transaction
+ * commit so the reserve doesn't permanently hold space). Temporarily lifts
+ * global_reserve so these frees aren't themselves blocked by the reserve floor. */
+bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
+{
+    uint32_t saved_global_reserve = fs->global_reserve;
+    fs->global_reserve = UINT32_MAX;
+    while (fs->reserve_count > 0) {
+        bfs_blk_t blk = fs->reserve[--fs->reserve_count];
+        bfs_err_t err = bfs_freespace_free(fs, blk, 1);
+        if (err != BFS_OK) {
+            fs->reserve[fs->reserve_count++] = blk;
+            fs->global_reserve = saved_global_reserve;
+            return BFS_OK;
+        }
+    }
+    fs->global_reserve = saved_global_reserve;
+    return BFS_OK;
+}
+
 /* ── Accessor ──────────────────────────────────────────────── */
 
 bfs_allocator_t *bfs_freespace_allocator(bfs_freespace_t *fs)
