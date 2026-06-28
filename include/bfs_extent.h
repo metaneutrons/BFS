@@ -66,4 +66,10 @@ bfs_err_t bfs_extent_lookup_val(bfs_extent_tree_t *et, uint32_t file_block,
 bfs_err_t bfs_extent_update_crc(bfs_extent_tree_t *et, uint32_t file_block,
                                   uint32_t crc);
 
+/* Remap one logical file block to a new physical block. If the logical block
+ * lives inside a multi-block extent, the extent is split around that block. */
+bfs_err_t bfs_extent_remap_block(bfs_extent_tree_t *et, uint32_t file_block,
+                                   bfs_blk_t new_disk_block,
+                                   bfs_blk_t *old_disk_block_out);
+
 #endif /* BFS_EXTENT_H */
