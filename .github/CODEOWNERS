@@ -1,0 +1,4 @@
+# CODEOWNERS for BFS
+# Replaces deprecated reviewers config in Dependabot
+
+* @metaneutrons
