@@ -273,11 +273,16 @@ bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
 
     err = bfs_txn_commit(fs);
     if (err != BFS_OK) {
-        /* Commit failed — reverse the refcount increments, matching the two
-         * error paths above, so we don't leave inflated in-memory counts.
-         * (A full transactional abort of the half-written roots is a larger
-         * change; this at least restores refcount symmetry.) */
-        snapshot_rollback_refs(fs, &rollback);
+        /* Do NOT roll back the refcount increments here. bfs_txn_commit writes the
+         * new superblock (snapshot record + refcount tree roots) and syncs it to
+         * stable storage before any reachable error return (a later drain-phase
+         * I/O failure), so on failure the snapshot and its incremented refcounts
+         * are already DURABLE and mutually consistent. Decrementing them now would
+         * diverge from the committed superblock, and a later sync would persist the
+         * under-counts — freeing blocks the durable snapshot still references
+         * (silent corruption). The snapshot is effectively created; surface the
+         * error but leave the consistent durable state intact. (The pre-commit
+         * failure paths above DO roll back, correctly — nothing was durable yet.) */
     }
     block_vec_free(&rollback);
     return err;
@@ -320,7 +325,14 @@ static bool reclaim_inode_cb(const void *key, const void *val, void *ctx)
 
     c->last_ino = ino;
     c->count++;
-    if (c->count >= 50) {
+    /* End the batch at 50 inodes OR when the deferred-free queue is running low,
+     * so the outer loop commits (draining the queue) and resumes from c->last_ino.
+     * The 50-inode cap alone can overflow the queue for inode-heavy snapshots;
+     * bounding by headroom too keeps each transaction's deferred frees within the
+     * queue (#41) instead of relying on the count and hitting the overflow latch
+     * mid-batch (which would stall the reclaim). */
+    if (c->count >= 50 ||
+        bfs_fs_pending_cap(c->fs) - c->fs->pending_count < BFS_FS_OP_FREE_RESERVE) {
         return false; /* Stop scan for this batch */
     }
     return true;

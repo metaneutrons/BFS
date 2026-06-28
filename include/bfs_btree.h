@@ -48,6 +48,19 @@ typedef struct bfs_btree_ops {
     uint32_t val_size;
 } bfs_btree_ops_t;
 
+/* ── Engine limits ─────────────────────────────────────────── */
+
+/* Maximum B+tree height the engine traverses; a tree deeper than this is
+ * treated as corrupt (the descent loops abort with BFS_ERR_CORRUPT). */
+#define BFS_BTREE_MAX_DEPTH 32
+
+/* Worst-case number of OLD-transaction node blocks a single insert or delete
+ * hands to the deferred-free sink. Delete dominates: along the root-to-leaf
+ * path it COWs and at most merges/borrows one extra node per level (≤ 2·depth),
+ * plus the leaf rebalance and the root collapse. Callers reserve this much
+ * free-queue headroom per tree mutation so the in-COW defer() never overflows. */
+#define BFS_BTREE_MAX_OP_FREES (2u * BFS_BTREE_MAX_DEPTH + 1u)
+
 /* ── B+tree handle ─────────────────────────────────────────── */
 
 /* ── Deferred-free sink ────────────────────────────────────── */
@@ -79,6 +92,12 @@ typedef struct bfs_btree {
 
     /* Where COW'd old blocks go for deferred free (zeroed = standalone tree). */
     bfs_free_sink_t   free_sink;
+
+    /* Sticky error latched if free_sink.defer() ever reports the queue full
+     * mid-COW (i.e. a block would otherwise be dropped/leaked). With correct
+     * headroom reservation by the caller this stays BFS_OK; insert/delete
+     * surface it as BFS_ERR_NOSPC instead of silently leaking. */
+    bfs_err_t         free_sink_err;
 } bfs_btree_t;
 
 static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
@@ -131,9 +150,19 @@ bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
 typedef void (*bfs_node_walk_cb)(bfs_blk_t blk, void *ctx);
 bfs_err_t bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx);
 
-/* Online compaction: re-packs tree into new contiguous blocks.
- * Returns BFS_OK and updates tree->root on success.
- * Old blocks are leaked into pending_frees for reclamation. */
-bfs_err_t bfs_btree_compact(bfs_btree_t *tree);
+/* Compaction, build-and-swap half: re-pack the tree into fresh dense blocks and
+ * swap tree->root to them, WITHOUT freeing the old nodes. Sets *old_root_out to
+ * the pre-swap root; if it stays equal to tree->root, no compaction happened
+ * (already dense, or empty). The caller must commit the swap and then free the
+ * old nodes post-commit (bfs_btree_free_block) — a whole-old-tree free mid-COW
+ * could overflow the deferred-free queue, so it must not happen here. fs trees
+ * go through bfs_fs_compact_tree, which wires both halves correctly. */
+bfs_err_t bfs_btree_compact_build_swap(bfs_btree_t *tree, bfs_blk_t *old_root_out);
+
+/* Read node block `blk` and free it (defers it if it belongs to an older
+ * transaction, deallocs immediately if current). Lets the fs-level compaction
+ * free an old tree's nodes one at a time, draining the queue between them. A
+ * read/alloc failure leaves the block unfreed rather than crashing. */
+void bfs_btree_free_block(bfs_btree_t *tree, bfs_blk_t blk);
 
 #endif /* BFS_BTREE_H */

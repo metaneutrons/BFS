@@ -154,6 +154,15 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
         return BFS_ERR_INVAL;
 
     while (len > 0) {
+        /* Reserve deferred-free headroom for this block's worst-case COW node
+         * frees (extent tree + freespace tree + refcount) before mutating. Drain
+         * via the inode-flushing sync if short — a raw commit here would persist a
+         * stale inode (see file_flush_and_sync / C1). */
+        if (f->fs->pending_count + 3u * BFS_BTREE_MAX_OP_FREES > bfs_fs_pending_cap(f->fs)) {
+            bfs_err_t ferr = file_flush_and_sync(f);
+            if (ferr != BFS_OK)
+                return (total > 0) ? (int32_t)total : (int32_t)ferr;
+        }
         uint32_t file_blk;
         bfs_err_t err = file_block_for_offset(f->fs, f->offset, &file_blk);
         if (err != BFS_OK) return (total > 0) ? (int32_t)total : (int32_t)err;
@@ -288,7 +297,18 @@ bfs_err_t bfs_file_truncate_unlocked(bfs_file_t *f, uint64_t new_size)
             first_free = UINT32_MAX;
         uint32_t first_free_blk = (uint32_t)first_free;
         bfs_err_t err;
+        bfs_blk_t prev_root = BFS_BLK_NULL;
+        bool have_prev = false;
         while ((err = bfs_extent_truncate_batch(&f->extents, first_free_blk, 128)) == BFS_ERR_AGAIN) {
+            /* AGAIN means the next extent's frees won't fit the deferred-free queue
+             * right now; the flush+sync below drains it and the retry proceeds. But
+             * if the batch removed NO extent since the last drain (the extent-tree
+             * root is unchanged), a single extent is larger than the whole queue and
+             * draining can never make it fit — fail loudly instead of spinning. */
+            if (have_prev && f->extents.tree.root == prev_root)
+                return BFS_ERR_NOSPC;
+            prev_root = f->extents.tree.root;
+            have_prev = true;
             /* Flush the inode so it reflects the partially-truncated extent tree
              * before the commit, then sync to reclaim pending_frees — a crash
              * mid-truncate must not leave the inode pointing at freed blocks. */

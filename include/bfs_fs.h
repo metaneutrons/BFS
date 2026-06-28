@@ -25,7 +25,20 @@
 #include "bfs_lock.h"
 
 #define BFS_ROOT_INO 1  /* root directory inode number */
-#define BFS_PENDING_FREES_MAX 16384 /* Excess COW'd blocks are leaked; reclaimed on next sync cycle */
+
+/* Capacity of the per-transaction deferred-free queue (pending_frees[]). Old
+ * COW'd blocks park here until the next commit drains them back to the
+ * allocator. The fs reserves headroom at safe entry points
+ * (bfs_fs_ensure_free_headroom) so an in-COW defer() can never overflow; an
+ * overflow would otherwise drop a block, leaking it until offline fsck — it is
+ * NOT reclaimed automatically. */
+#define BFS_PENDING_FREES_MAX 16384
+
+/* Worst-case deferred frees one top-level metadata op can produce: at most ~5
+ * trees touched (dir, inode, freespace, refcount, plus rename's second dir
+ * subtree), each bounded by BFS_BTREE_MAX_OP_FREES. Reserved up front so the
+ * op's in-COW defers never overflow the queue. */
+#define BFS_FS_OP_FREE_RESERVE (5u * BFS_BTREE_MAX_OP_FREES)
 
 typedef struct bfs_fs {
     bfs_bio_t        *bio;
@@ -42,9 +55,18 @@ typedef struct bfs_fs {
     uint64_t           live_txn_id;    /* current transaction id (host order) */
     bfs_blk_t         pending_frees[BFS_PENDING_FREES_MAX];
     uint32_t           pending_count;
+    uint32_t           pending_frees_cap; /* effective queue cap (= MAX in production; tests lower it) */
     uint8_t           *scratch;        /* pre-allocated block buffer for file I/O */
     bfs_fs_lock_t         lock;
 } bfs_fs_t;
+
+/* Effective deferred-free queue cap: the full array in production; tests lower
+ * fs->pending_frees_cap to drive the headroom-reserve paths cheaply. A zero
+ * (uninitialised) cap means the full capacity. */
+static inline uint32_t bfs_fs_pending_cap(const bfs_fs_t *fs)
+{
+    return fs->pending_frees_cap ? fs->pending_frees_cap : BFS_PENDING_FREES_MAX;
+}
 
 /* Format a fresh BFS filesystem.
  * block_size: 512..65536, power of 2
@@ -67,6 +89,12 @@ bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk);
  * to a B+tree (tree.free_sink) so the tree's COW'd blocks are reclaimed at the
  * next commit without the engine knowing anything about bfs_fs_t. */
 bfs_free_sink_t bfs_fs_free_sink(bfs_fs_t *fs);
+
+/* Ensure the deferred-free queue has room for `slots` more entries before a
+ * mutation that may defer that many old blocks. Commits (draining the queue) if
+ * short; returns BFS_ERR_NOSPC if still short afterwards. The caller MUST hold
+ * fs->lock write and must NOT be mid-tree-mutation — this may commit. */
+bfs_err_t bfs_fs_ensure_free_headroom(bfs_fs_t *fs, uint32_t slots);
 
 /* Unmount: sync and release resources. */
 bfs_err_t bfs_fs_unmount(bfs_fs_t *fs);
@@ -120,5 +148,12 @@ bfs_err_t bfs_fs_get_comment(bfs_fs_t *fs, uint32_t ino,
  * space. Each "item" = worst-case blocks for one tree modification. */
 bfs_err_t bfs_fs_reserve(bfs_fs_t *fs, uint32_t items);
 void      bfs_fs_unreserve(bfs_fs_t *fs, uint32_t items);
+
+/* Compact a filesystem B+tree (rebuild it densely). Builds a fresh tree, swaps
+ * the root, commits to make the swap durable, then frees the now-unreferenced
+ * old nodes post-commit — so the old-tree mass-free can never overflow the
+ * deferred-free queue mid-COW. Takes fs->lock. The only compaction entry point
+ * for an fs tree. */
+bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree);
 
 #endif /* BFS_FS_H */

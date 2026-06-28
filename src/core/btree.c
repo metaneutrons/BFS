@@ -25,7 +25,7 @@
 #include <string.h>
 #include <stdlib.h>
 
-#define MAX_TREE_DEPTH 32
+#define MAX_TREE_DEPTH BFS_BTREE_MAX_DEPTH
 
 static uint8_t *alloc_buf(const bfs_btree_t *tree) { return malloc(tree->bio->block_size); }
 
@@ -119,6 +119,7 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
     tree->txn_id_ptr = NULL;
     tree->txn_id_fallback = txn_id;
     tree->free_sink = (bfs_free_sink_t){0};
+    tree->free_sink_err = BFS_OK;
 
     if (root != BFS_BLK_NULL) {
         uint8_t *buf = malloc(bio->block_size);
@@ -176,9 +177,15 @@ static void btree_free_node(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *buf
         /* Current-transaction block: free it immediately. */
         tree->alloc->dealloc(tree->alloc, blk);
     } else if (tree->free_sink.defer) {
-        /* Older block: defer to the post-commit reclaim queue. If the queue is
-         * full it is dropped here and reclaimed on a later sync cycle. */
-        tree->free_sink.defer(tree->free_sink.ctx, blk);
+        /* Older block: it must NOT be freed mid-COW (a crash before commit would
+         * corrupt the last committed state were it reused), so defer it to the
+         * post-commit reclaim queue. The queue cannot be drained here — we are
+         * mid-mutation — so callers reserve headroom up front and this never
+         * fails. If it ever does, latch the error so insert/delete surface
+         * BFS_ERR_NOSPC instead of silently dropping (leaking) the block. */
+        bfs_err_t derr = tree->free_sink.defer(tree->free_sink.ctx, blk);
+        if (derr != BFS_OK && tree->free_sink_err == BFS_OK)
+            tree->free_sink_err = derr;
     }
     /* else: standalone tree, older block — nothing to do. */
 }
@@ -341,6 +348,7 @@ typedef struct {
 
 bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
 {
+    tree->free_sink_err = BFS_OK;
     /* Empty tree: create a root leaf */
     if (tree->root == BFS_BLK_NULL) {
         uint8_t *buf = alloc_buf(tree);
@@ -500,6 +508,8 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
 insert_cleanup:
     free(node_bufs);
     #undef NBUF
+    if (rc == BFS_OK && tree->free_sink_err != BFS_OK)
+        rc = BFS_ERR_NOSPC;  /* deferred-free queue overflowed mid-COW (a block would leak) */
     return rc;
 }
 
@@ -507,6 +517,7 @@ insert_cleanup:
 
 bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val)
 {
+    tree->free_sink_err = BFS_OK;
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
 
@@ -553,6 +564,8 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
 
     free(node_bufs);
     #undef UBUF
+    if (tree->free_sink_err != BFS_OK)
+        return BFS_ERR_NOSPC;  /* deferred-free queue overflowed mid-COW (a block would leak) */
     return BFS_OK;
 }
 
@@ -817,6 +830,7 @@ static uint32_t internal_min(const bfs_btree_t *tree)
 
 bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
 {
+    tree->free_sink_err = BFS_OK;
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
 
@@ -1116,6 +1130,8 @@ delete_cleanup:
     free(sib_buf);
     free(node_bufs);
     #undef DNBUF
+    if (rc == BFS_OK && tree->free_sink_err != BFS_OK)
+        rc = BFS_ERR_NOSPC;  /* deferred-free queue overflowed mid-COW (a block would leak) */
     return rc;
 }
 
@@ -1177,9 +1193,9 @@ static bool compact_cb(const void *key, const void *val, void *ctx)
     return cc->rc == BFS_OK;
 }
 
-static void compact_free_old_cb(bfs_blk_t blk, void *ctx)
+void bfs_btree_free_block(bfs_btree_t *tree, bfs_blk_t blk)
 {
-    bfs_btree_t *tree = (bfs_btree_t *)ctx;
+    if (blk == BFS_BLK_NULL) return;
     uint8_t *buf = malloc(tree->bio->block_size);
     if (!buf) return;
     if (bfs_bio_read(tree->bio, blk, buf) == BFS_OK) {
@@ -1234,11 +1250,13 @@ static bool bfs_btree_needs_compaction(const bfs_btree_t *tree)
     return (uint64_t)total_keys * BFS_COMPACT_THRESHOLD_DEN < (uint64_t)total_capacity * BFS_COMPACT_THRESHOLD_NUM;
 }
 
-bfs_err_t bfs_btree_compact(bfs_btree_t *tree)
+bfs_err_t bfs_btree_compact_build_swap(bfs_btree_t *tree, bfs_blk_t *old_root_out)
 {
+    *old_root_out = tree->root;
     if (tree->root == BFS_BLK_NULL) return BFS_OK;
 
-    /* Skip compaction if tree is already well-packed (utilization >= 90%) to avoid write amplification */
+    /* Skip if already well-packed (utilization >= 90%) to avoid write
+     * amplification; *old_root_out stays == tree->root to signal "no swap". */
     if (!bfs_btree_needs_compaction(tree)) {
         return BFS_OK;
     }
@@ -1249,15 +1267,20 @@ bfs_err_t bfs_btree_compact(bfs_btree_t *tree)
     new_tree.free_sink = tree->free_sink;
     new_tree.txn_id_ptr = tree->txn_id_ptr;
 
+    /* Build a dense copy by re-inserting every key. The new tree's own COW
+     * frees are all current-transaction blocks (freed immediately, never
+     * deferred), so building it does not touch the pending-free queue. */
     compact_ctx_t ctx = { .new_tree = &new_tree, .rc = BFS_OK };
     bfs_btree_scan(tree, NULL, compact_cb, &ctx);
+    if (ctx.rc != BFS_OK)
+        return ctx.rc;  /* build failed: tree untouched, old root still live */
 
-    if (ctx.rc == BFS_OK) {
-        /* Queue all old blocks for reclamation */
-        bfs_btree_walk_nodes(tree, compact_free_old_cb, tree);
-        /* Atomically swap root */
-        tree->root = new_tree.root;
-        tree->height = new_tree.height;
-    }
-    return ctx.rc;
+    /* Swap the root to the freshly-built tree. The OLD nodes (rooted at
+     * *old_root_out) stay referenced until the fs caller commits this swap and
+     * then frees them post-commit. They must NOT be freed here, mid-transaction:
+     * a whole-old-tree free is unbounded and could overflow the deferred-free
+     * queue. After the swap-commit they are unreferenced garbage, freed safely. */
+    tree->root = new_tree.root;
+    tree->height = new_tree.height;
+    return BFS_OK;
 }

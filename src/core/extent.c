@@ -279,17 +279,23 @@ bfs_err_t bfs_extent_truncate_batch(bfs_extent_tree_t *et, uint32_t from_block,
             /* Reject a corrupt/implausible extent read from disk before its
              * length drives the free loop below. Legitimate extents are tiny
              * (the writer appends one block at a time); a length past the device,
-             * or larger than the deferred-free queue could ever hold (so a retry
-             * would never help), can only be corruption. */
+             * or so long that it plus one delete's worst-case node frees could
+             * never fit the deferred-free queue (so a retry could never help),
+             * can only be corruption. */
             if (len == 0 ||
                 dblk >= et->tree.bio->block_count ||
                 len > et->tree.bio->block_count - dblk ||
-                (sink->defer && len > sink->capacity)) {
+                (sink->defer &&
+                 (uint64_t)len + BFS_BTREE_MAX_OP_FREES > sink->capacity)) {
                 return BFS_ERR_CORRUPT;
             }
-            /* All-or-nothing per extent: if the whole extent won't fit in the
-             * queue right now, sync and retry rather than queue it partially. */
-            if (sink->defer && len > sink->headroom(sink->ctx)) {
+            /* All-or-nothing per extent: the btree_delete below COWs up to
+             * BFS_BTREE_MAX_OP_FREES old extent-tree nodes, then this extent's
+             * `len` data blocks are deferred — all into the same queue. If that
+             * whole batch won't fit right now, sync and retry rather than overflow
+             * the queue with the (un-pre-checked) node frees. */
+            if (sink->defer &&
+                (uint64_t)len + BFS_BTREE_MAX_OP_FREES > sink->headroom(sink->ctx)) {
                 return BFS_ERR_AGAIN;
             }
             uint32_t key = bfs_be32(tc.keys[i]);
