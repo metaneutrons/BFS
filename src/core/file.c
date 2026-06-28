@@ -77,6 +77,18 @@ static bfs_err_t file_update_inode(bfs_file_t *f)
     return bfs_inode_write(&f->fs->inode_tree, f->inode_nr, &inode);
 }
 
+/* Reached a transaction commit point in the middle of a write or truncate: the
+ * inode must be made current (size + extent_root) BEFORE the commit. Otherwise a
+ * crash — or any later error return — leaves the just-allocated extent/data
+ * blocks unreferenced by the inode (orphaned and leaked), with the on-disk size
+ * inconsistent with the extent map. Always flush the inode, then sync. */
+static bfs_err_t file_flush_and_sync(bfs_file_t *f)
+{
+    bfs_err_t err = file_update_inode(f);
+    if (err != BFS_OK) return err;
+    return fs_sync_unlocked(f->fs);
+}
+
 int32_t bfs_file_read_unlocked(bfs_file_t *f, void *buf, uint32_t len)
 {
     uint32_t bs = f->fs->bio->block_size;
@@ -173,7 +185,9 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
             /* Try to reclaim pending frees if needed and worthwhile */
             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
                 if (f->fs->pending_count > BFS_SYNC_THRESHOLD) {
-                    fs_sync_unlocked(f->fs);
+                    bfs_err_t serr = file_flush_and_sync(f);
+                    if (serr != BFS_OK)
+                        return (total > 0) ? (int32_t)total : (int32_t)serr;
                 }
             }
             /* Stop data writes when only global reserve remains */
@@ -201,7 +215,9 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
 
         if (shared_block) {
             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
-                fs_sync_unlocked(f->fs);
+                bfs_err_t serr = file_flush_and_sync(f);
+                if (serr != BFS_OK)
+                    return (total > 0) ? (int32_t)total : (int32_t)serr;
             }
             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
                 return (total > 0) ? (int32_t)total : (int32_t)BFS_ERR_NOSPC;
@@ -284,8 +300,10 @@ bfs_err_t bfs_file_truncate_unlocked(bfs_file_t *f, uint64_t new_size)
         uint32_t first_free_blk = (uint32_t)first_free;
         bfs_err_t err;
         while ((err = bfs_extent_truncate_batch(&f->extents, first_free_blk, 128)) == BFS_ERR_AGAIN) {
-            /* Sync to reclaim pending_frees before next batch */
-            bfs_err_t sync_err = fs_sync_unlocked(f->fs);
+            /* Flush the inode so it reflects the partially-truncated extent tree
+             * before the commit, then sync to reclaim pending_frees — a crash
+             * mid-truncate must not leave the inode pointing at freed blocks. */
+            bfs_err_t sync_err = file_flush_and_sync(f);
             if (sync_err != BFS_OK) return sync_err;
         }
         if (err != BFS_OK) return err;
