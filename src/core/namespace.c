@@ -382,7 +382,9 @@ static bfs_err_t fs_get_comment_unlocked(bfs_fs_t *fs, uint32_t ino, char *buf, 
 bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = fs_create_file_unlocked(fs, parent_ino, name, name_len, ino_out);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_create_file_unlocked(fs, parent_ino, name, name_len, ino_out);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -390,7 +392,9 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
 bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = fs_mkdir_unlocked(fs, parent_ino, name, name_len, ino_out);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_mkdir_unlocked(fs, parent_ino, name, name_len, ino_out);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -398,7 +402,9 @@ bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
 bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = fs_delete_file_unlocked(fs, parent_ino, name, name_len);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_delete_file_unlocked(fs, parent_ino, name, name_len);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -406,7 +412,9 @@ bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
 bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = fs_rmdir_unlocked(fs, parent_ino, name, name_len);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_rmdir_unlocked(fs, parent_ino, name, name_len);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -414,7 +422,9 @@ bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
 bfs_err_t bfs_fs_rename(bfs_fs_t *fs, uint32_t old_parent, const char *old_name, uint8_t old_len, uint32_t new_parent, const char *new_name, uint8_t new_len)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = fs_rename_unlocked(fs, old_parent, old_name, old_len, new_parent, new_name, new_len);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_rename_unlocked(fs, old_parent, old_name, old_len, new_parent, new_name, new_len);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -422,7 +432,9 @@ bfs_err_t bfs_fs_rename(bfs_fs_t *fs, uint32_t old_parent, const char *old_name,
 bfs_err_t bfs_fs_make_hardlink(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t target_ino)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = fs_make_hardlink_unlocked(fs, parent_ino, name, name_len, target_ino);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_make_hardlink_unlocked(fs, parent_ino, name, name_len, target_ino);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -430,7 +442,9 @@ bfs_err_t bfs_fs_make_hardlink(bfs_fs_t *fs, uint32_t parent_ino, const char *na
 bfs_err_t bfs_fs_make_softlink(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, const char *target_path, uint16_t path_len)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = fs_make_softlink_unlocked(fs, parent_ino, name, name_len, target_path, path_len);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_make_softlink_unlocked(fs, parent_ino, name, name_len, target_path, path_len);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -438,7 +452,9 @@ bfs_err_t bfs_fs_make_softlink(bfs_fs_t *fs, uint32_t parent_ino, const char *na
 bfs_err_t bfs_fs_set_comment(bfs_fs_t *fs, uint32_t ino, const char *comment, uint8_t len)
 {
     bfs_lock_write(&fs->lock);
-    bfs_err_t err = fs_set_comment_unlocked(fs, ino, comment, len);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_set_comment_unlocked(fs, ino, comment, len);
     bfs_lock_unlock(&fs->lock);
     return err;
 }

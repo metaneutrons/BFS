@@ -64,6 +64,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
 
     bfs_fs_t fs;
     memset(&fs, 0, sizeof(fs));
+    fs.pending_frees_cap = BFS_PENDING_FREES_MAX;
     bfs_lock_init(&fs.lock);
     fs.bio = bio;
     fs.txn.bio = bio;
@@ -151,6 +152,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
 bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
 {
     memset(fs, 0, sizeof(*fs));
+    fs->pending_frees_cap = BFS_PENDING_FREES_MAX;
     bfs_lock_init(&fs->lock);
     fs->bio = bio;
     bfs_err_t err = bfs_txn_begin(&fs->txn, bio);
@@ -229,11 +231,11 @@ bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
     if (blk == BFS_BLK_NULL) return BFS_OK;
     if (!fs->has_snapshots)
         return bfs_freespace_free(&fs->freespace, blk, 1);
-    if (fs->pending_count >= BFS_PENDING_FREES_MAX) {
+    if (fs->pending_count >= bfs_fs_pending_cap(fs)) {
         bfs_err_t err = bfs_txn_commit(fs);
         if (err != BFS_OK) return err;
     }
-    if (fs->pending_count >= BFS_PENDING_FREES_MAX)
+    if (fs->pending_count >= bfs_fs_pending_cap(fs))
         return BFS_ERR_NOSPC;
     fs->pending_frees[fs->pending_count++] = blk;
     return BFS_OK;
@@ -244,7 +246,7 @@ bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
 static bfs_err_t fs_defer_free(void *ctx, bfs_blk_t blk)
 {
     bfs_fs_t *fs = (bfs_fs_t *)ctx;
-    if (fs->pending_count >= BFS_PENDING_FREES_MAX) return BFS_ERR_AGAIN;
+    if (fs->pending_count >= bfs_fs_pending_cap(fs)) return BFS_ERR_AGAIN;
     fs->pending_frees[fs->pending_count++] = blk;
     return BFS_OK;
 }
@@ -252,13 +254,100 @@ static bfs_err_t fs_defer_free(void *ctx, bfs_blk_t blk)
 static uint32_t fs_free_headroom(void *ctx)
 {
     bfs_fs_t *fs = (bfs_fs_t *)ctx;
-    return BFS_PENDING_FREES_MAX - fs->pending_count;
+    return bfs_fs_pending_cap(fs) - fs->pending_count;
 }
 
 bfs_free_sink_t bfs_fs_free_sink(bfs_fs_t *fs)
 {
+    /* capacity stays the physical array max — the truncate corruption check uses
+     * it as "no real run can exceed this". The runtime fill limit is enforced
+     * separately via headroom()/defer() against fs_pending_cap. */
     bfs_free_sink_t sink = { fs, fs_defer_free, fs_free_headroom, BFS_PENDING_FREES_MAX };
     return sink;
+}
+
+bfs_err_t bfs_fs_ensure_free_headroom(bfs_fs_t *fs, uint32_t slots)
+{
+    uint32_t cap = bfs_fs_pending_cap(fs);
+    if (slots > cap) return BFS_ERR_NOSPC;            /* never fits, even empty */
+    if (fs->pending_count + slots <= cap) return BFS_OK;
+    bfs_err_t err = bfs_txn_commit(fs);               /* drain at this safe point */
+    if (err != BFS_OK) return err;
+    if (fs->pending_count + slots > cap) return BFS_ERR_NOSPC;  /* still short */
+    return BFS_OK;
+}
+
+/* ── Tree compaction (build-swap-commit-free) ──────────────────── */
+
+typedef struct {
+    bfs_fs_t    *fs;
+    bfs_btree_t *old_tree;   /* handle over the pre-swap root (for bio + sink) */
+    bfs_err_t    rc;
+} compact_free_ctx_t;
+
+static void compact_free_node_cb(bfs_blk_t blk, void *ctx)
+{
+    compact_free_ctx_t *c = (compact_free_ctx_t *)ctx;
+    if (c->rc != BFS_OK) return;
+    /* The old tree may have more nodes than the queue holds. Drain it as we go;
+     * this is safe — the root swap is already durable, these nodes are
+     * unreferenced garbage, and we are not mid-tree-mutation. */
+    c->rc = bfs_fs_ensure_free_headroom(c->fs, 1);
+    if (c->rc != BFS_OK) return;
+    bfs_btree_free_block(c->old_tree, blk);
+    if (c->old_tree->free_sink_err != BFS_OK) {
+        c->rc = BFS_ERR_NOSPC;
+        c->old_tree->free_sink_err = BFS_OK;
+    }
+}
+
+bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree)
+{
+    bfs_lock_write(&fs->lock);
+    /* Enforced so the commit below has no reachable pre-SB-write failure: the only
+     * one bfs_txn_commit has is !mounted (txn.c), which this rules out. Every other
+     * commit failure is post-SB-write (the new root already durable), making the
+     * "keep the new root on failure" handling below unconditionally correct. */
+    if (!fs->mounted) { bfs_lock_unlock(&fs->lock); return BFS_ERR_INVAL; }
+
+    bfs_blk_t old_root;
+    uint32_t old_height = tree->height;
+    bfs_err_t err = bfs_btree_compact_build_swap(tree, &old_root);
+    if (err != BFS_OK || old_root == tree->root) {
+        /* Build failed (tree untouched) or nothing to compact. */
+        bfs_lock_unlock(&fs->lock);
+        return err;
+    }
+
+    /* Make the root swap durable before freeing any old node: afterwards the old
+     * tree is unreferenced and its blocks are safe to reclaim. */
+    err = bfs_txn_commit(fs);
+    if (err != BFS_OK) {
+        /* bfs_txn_commit writes the NEW root into the superblock and syncs it to
+         * stable storage BEFORE any reachable error return (e.g. a later in-commit
+         * bio-sync failure), so on failure the new compacted root is already
+         * durable and is what a crash-mount recovers. Do NOT roll tree->root back
+         * to old_root — that would diverge from the committed superblock, and a
+         * later sync would write the stale old root, reverting the durable
+         * compaction and leaking the whole new tree. Keep the new root; the OLD
+         * nodes are simply left unfreed here (a bounded leak that fsck reclaims). */
+        bfs_lock_unlock(&fs->lock);
+        return err;
+    }
+
+    /* Post-commit: free the old tree's nodes, draining the queue as needed. */
+    bfs_btree_t old_tree = *tree;
+    old_tree.root = old_root;
+    old_tree.height = old_height;
+    old_tree.free_sink_err = BFS_OK;
+    compact_free_ctx_t cfx = { fs, &old_tree, BFS_OK };
+    bfs_err_t werr = bfs_btree_walk_nodes(&old_tree, compact_free_node_cb, &cfx);
+
+    bfs_lock_unlock(&fs->lock);
+    /* A read error while freeing old nodes is a post-commit space leak (fsck
+     * reclaims it), not corruption — the new tree is already durable. */
+    if (werr != BFS_OK) return werr;
+    return cfx.rc;
 }
 
 /* ── Sync ──────────────────────────────────────────────────── */

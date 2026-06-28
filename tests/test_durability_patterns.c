@@ -273,8 +273,8 @@ static void test_online_compaction(void)
 
     uint32_t free_before = g_fs.freespace.total_free;
     
-    /* Compact the directory tree */
-    TEST_ASSERT_EQ(bfs_btree_compact(&g_fs.dir_tree.tree), BFS_OK);
+    /* Compact the directory tree (build new, swap root, commit, free old) */
+    TEST_ASSERT_EQ(bfs_fs_compact_tree(&g_fs, &g_fs.dir_tree.tree), BFS_OK);
     
     /* Sync to reclaim the old fragmented blocks */
     TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
