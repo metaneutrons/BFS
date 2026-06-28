@@ -28,6 +28,7 @@
 #include "bfs_dir.h"
 #include "bfs_inode.h"
 #include "bfs_snapshot.h"
+#include "amiga_bio.h"
 
 /* ── Packet number constants ────────────────────────────────── */
 /* Only define if not already provided by NDK headers */
@@ -102,11 +103,6 @@
 #ifndef CHANGE_LOCK
 #define CHANGE_LOCK 2
 #endif
-
-/* Forward declarations */
-struct amiga_bio;
-extern void bfs_amiga_bio_init(struct amiga_bio *ab, struct IOExtTD *request,
-                                struct MsgPort *port, struct DosEnvec *env);
 
 /* Handler global state */
 struct bfs_notify {
@@ -370,10 +366,23 @@ static void SendNotifications(struct bfs_handler *h)
 static LONG pkt_log[64];
 static int pkt_log_idx = 0;
 
-static int snap_key_cmp(const void *a, const void *b) {
-    uint32_t va = bfs_be32(*(const uint32_t*)a);
-    uint32_t vb = bfs_be32(*(const uint32_t*)b);
-    return (va > vb) - (va < vb);
+typedef struct {
+    uint32_t last_id;
+    uint32_t found_id;
+    bfs_snapshot_record_t rec;
+    bool found;
+} snap_next_ctx_t;
+
+static bool snap_next_cb(uint32_t id, const bfs_snapshot_record_t *rec, void *ctx)
+{
+    snap_next_ctx_t *sn = (snap_next_ctx_t *)ctx;
+    if (id > sn->last_id) {
+        sn->found_id = id;
+        sn->rec = *rec;
+        sn->found = true;
+        return false;
+    }
+    return true;
 }
 
 /* ── Directory scan context for EXAMINE_ALL ───────────────── */
@@ -560,7 +569,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             break;
         }
 
-        if (type != BFS_INODE_FILE) {
+        if (type != BFS_INODE_FILE && type != BFS_INODE_HARDLINK) {
             res2 = ERROR_OBJECT_WRONG_TYPE;
             break;
         }
@@ -1059,9 +1068,10 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (nlen > 32) nlen = 32;
         memcpy(name, &bname[1], nlen);
         name[nlen] = 0;
-        /* Find snapshot by name */
-        /* For now, delete snapshot ID 1 (TODO: lookup by name) */
-        bfs_err_t err = bfs_snapshot_delete(&h->fs, 1);
+        uint32_t id = 0;
+        bfs_err_t err = bfs_snapshot_find_by_name(&h->fs, name, &id, NULL);
+        if (err == BFS_OK)
+            err = bfs_snapshot_delete(&h->fs, id);
         if (err == BFS_OK) { res1 = DOSTRUE; res2 = 0; }
         else { res2 = ERROR_OBJECT_NOT_FOUND; }
         break;
@@ -1079,29 +1089,20 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             break; /* DOSFALSE */
         }
 
-        bfs_blk_t snap_root = bfs_be32(h->fs.txn.sb_new.snapshot_tree_root);
-        if (snap_root == 0 || snap_root == BFS_BLK_NULL) break;
+        snap_next_ctx_t sn = { .last_id = last_id, .found = false };
+        if (bfs_snapshot_list(&h->fs, snap_next_cb, &sn) != BFS_OK || !sn.found)
+            break;
 
-        static const bfs_btree_ops_t sops = { .key_compare = snap_key_cmp, .key_size = 4, .val_size = sizeof(bfs_snapshot_record_t) };
-        bfs_btree_t stree;
-        bfs_btree_init(&stree, h->fs.bio, bfs_freespace_allocator(&h->fs.freespace),
-                       &sops, snap_root, bfs_txn_id(&h->fs.txn));
-
-        /* Find next snapshot after last_id */
-        uint32_t search_key = bfs_be32(last_id + 1);
-        bfs_snapshot_record_t rec;
-        uint32_t found_key;
-        if (bfs_btree_search_floor(&stree, &search_key, &found_key, &rec) != BFS_OK) break;
-
-        uint32_t id = bfs_be32(found_key);
+        uint32_t id = sn.found_id;
+        bfs_snapshot_record_t rec = sn.rec;
         /* Format: "name  (id N, day DDDD)\n" */
         char *p = outbuf;
         int nlen = 0; while (nlen < 32 && rec.name[nlen]) nlen++;
         memcpy(p, rec.name, nlen); p += nlen;
         *p++ = 0; /* null-terminate name */
         /* Store id and timestamp after the name for the tool to parse */
-        *(uint32_t *)p = id; p += 4;
-        *(uint32_t *)p = bfs_be32(rec.timestamp); p += 4;
+        bfs_store_be32(p, id); p += 4;
+        bfs_store_be32(p, bfs_be32(rec.timestamp)); p += 4;
 
         res1 = DOSTRUE;
         res2 = (LONG)id; /* next last_id */
@@ -1123,27 +1124,11 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         /* Find snapshot by name */
         uint8_t nlen = bname[0];
+        if (nlen > 32) nlen = 32;
         char sname[34]; memcpy(sname, &bname[1], nlen); sname[nlen] = 0;
 
-        /* Scan snapshot tree for matching name */
-        bfs_blk_t snap_root = bfs_be32(h->fs.txn.sb_new.snapshot_tree_root);
-        if (snap_root == 0 || snap_root == BFS_BLK_NULL) { res2 = ERROR_OBJECT_NOT_FOUND; break; }
-
-        /* Use the snapshot's dir_tree_root to scan entries */
-        /* For simplicity, scan the live snapshot tree to find the record */
-        typedef struct { const char *name; bfs_snapshot_record_t *rec; bool found; } find_ctx_t;
-        /* Can't define nested functions — use a simpler approach:
-         * Walk snapshot list to find matching name */
-        bfs_btree_t snap_tree;
-        static const bfs_btree_ops_t snap_ops2 = {
-            .key_compare = NULL, .key_size = 4, .val_size = sizeof(bfs_snapshot_record_t) };
-        bfs_btree_init(&snap_tree, h->fs.bio, bfs_freespace_allocator(&h->fs.freespace),
-                       &snap_ops2, snap_root, bfs_txn_id(&h->fs.txn));
-
-        /* Scan for matching snapshot — just use ID 1 for now */
-        uint32_t skey = bfs_be32(1);
         bfs_snapshot_record_t rec;
-        if (bfs_btree_search(&snap_tree, &skey, &rec) != BFS_OK) {
+        if (bfs_snapshot_find_by_name(&h->fs, sname, NULL, &rec) != BFS_OK) {
             res2 = ERROR_OBJECT_NOT_FOUND; break;
         }
 
@@ -1180,6 +1165,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         UBYTE *bsnap = (UBYTE *)BADDR(pkt->dp_Arg1);
         UBYTE *bvol = (UBYTE *)BADDR(pkt->dp_Arg2);
         uint8_t snlen = bsnap[0], vlen = bvol[0];
+        if (snlen > 32) snlen = 32;
+        if (vlen > 32) vlen = 32;
         char sname[34], vname[34];
         memcpy(sname, &bsnap[1], snlen); sname[snlen] = 0;
         memcpy(vname, &bvol[1], vlen); vname[vlen] = 0;
@@ -1190,18 +1177,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             if (!h->snap_mounts[i].active) { slot = i; break; }
         if (slot < 0) { res2 = ERROR_NO_FREE_STORE; break; }
 
-        /* Find snapshot record */
-        bfs_blk_t snap_root = bfs_be32(h->fs.txn.sb_new.snapshot_tree_root);
-        if (snap_root == 0 || snap_root == BFS_BLK_NULL) { res2 = ERROR_OBJECT_NOT_FOUND; break; }
-
-        /* Look up snapshot ID 1 (TODO: lookup by name) */
-        static const bfs_btree_ops_t sops = { .key_compare = snap_key_cmp, .key_size = 4, .val_size = sizeof(bfs_snapshot_record_t) };
-        bfs_btree_t stree;
-        bfs_btree_init(&stree, h->fs.bio, bfs_freespace_allocator(&h->fs.freespace),
-                       &sops, snap_root, bfs_txn_id(&h->fs.txn));
-        uint32_t skey = bfs_be32(1);
         bfs_snapshot_record_t rec;
-        if (bfs_btree_search(&stree, &skey, &rec) != BFS_OK) { res2 = ERROR_OBJECT_NOT_FOUND; break; }
+        if (bfs_snapshot_find_by_name(&h->fs, sname, NULL, &rec) != BFS_OK) { res2 = ERROR_OBJECT_NOT_FOUND; break; }
 
         /* Initialize snapshot trees (read-only) */
         static bfs_allocator_t ro_alloc = {0};
@@ -1229,6 +1206,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case 3005: { /* ACTION_BFS_SNAPSHOT_UNMOUNT */
         UBYTE *bvol = (UBYTE *)BADDR(pkt->dp_Arg1);
         uint8_t vlen = bvol[0];
+        if (vlen > 32) vlen = 32;
         char vname[34]; memcpy(vname, &bvol[1], vlen); vname[vlen] = 0;
         /* Find and deactivate */
         for (int i = 0; i < BFS_MAX_SNAP_MOUNTS; i++) {
@@ -1355,10 +1333,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         if (h->fs.mounted) bfs_fs_unmount(&h->fs);
         /* Set block size to 4096 (BFS default) and reinit cache */
-        struct amiga_bio *ab = (struct amiga_bio *)(h + 1);
-        ((bfs_bio_t *)ab)->block_size = 4096;
-        ((bfs_bio_t *)ab)->block_count = ((bfs_bio_t *)ab)->block_count *
-            (h->cache.bio.block_size ? h->cache.bio.block_size : 512) / 4096;
+        amiga_bio_t *ab = (amiga_bio_t *)(h + 1);
+        bfs_amiga_bio_set_blocksize(ab, 4096);
         bfs_cache_destroy(&h->cache);
         bfs_cache_init(&h->cache, (bfs_bio_t *)ab, h->dosenvec->de_NumBuffers);
 

@@ -18,7 +18,7 @@
 #include <dos/filehandler.h>
 #include <devices/trackdisk.h>
 #include <proto/exec.h>
-#include "bfs_bio.h"
+#include "amiga_bio.h"
 
 /* ── Constants for 64-bit extensions ───────────────────────── */
 
@@ -50,24 +50,29 @@ struct NSDeviceQueryResult {
 #define ACCESS_TD64 2 /* TD64 extensions (TD_READ64/WRITE64) */
 #define ACCESS_NSD  3 /* New Style Device extensions (NSCMD_TD_READ64/WRITE64) */
 
-typedef struct amiga_bio {
-    bfs_bio_t base;
-    struct IOExtTD *request;
-    struct MsgPort *port;
-    ULONG partition_start_byte;
-    ULONG sector_size;
-    ULONG total_sectors;
-    UWORD access_mode;
-} amiga_bio_t;
-
 /* ── Implementation ────────────────────────────────────────── */
+
+static uint64_t partition_size_bytes(const amiga_bio_t *ab)
+{
+    return ab->total_sectors * (uint64_t)ab->sector_size;
+}
 
 static bfs_err_t amiga_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
 {
     amiga_bio_t *ab = (amiga_bio_t *)bio;
     struct IOExtTD *req = ab->request;
-    unsigned long long byte_off = (unsigned long long)ab->partition_start_byte +
-                                  (unsigned long long)blk * bio->block_size;
+    uint64_t byte_off;
+
+    if (blk >= bio->block_count) return BFS_ERR_INVAL;
+    if (bio->block_size == 0) return BFS_ERR_INVAL;
+    byte_off = ab->partition_start_byte + (uint64_t)blk * bio->block_size;
+    uint64_t part_end = ab->partition_start_byte + partition_size_bytes(ab);
+    uint64_t io_end = byte_off + bio->block_size;
+    if (part_end < ab->partition_start_byte || io_end < byte_off ||
+        byte_off < ab->partition_start_byte || io_end > part_end)
+        return BFS_ERR_INVAL;
+    if (ab->access_mode == ACCESS_STD && (byte_off >> 32) != 0)
+        return BFS_ERR_INVAL;
 
     /* Select command based on detected access mode */
     req->iotd_Req.io_Command = (ab->access_mode == ACCESS_NSD) ? NSCMD_TD_READ64 :
@@ -87,8 +92,18 @@ static bfs_err_t amiga_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
 {
     amiga_bio_t *ab = (amiga_bio_t *)bio;
     struct IOExtTD *req = ab->request;
-    unsigned long long byte_off = (unsigned long long)ab->partition_start_byte +
-                                  (unsigned long long)blk * bio->block_size;
+    uint64_t byte_off;
+
+    if (blk >= bio->block_count) return BFS_ERR_INVAL;
+    if (bio->block_size == 0) return BFS_ERR_INVAL;
+    byte_off = ab->partition_start_byte + (uint64_t)blk * bio->block_size;
+    uint64_t part_end = ab->partition_start_byte + partition_size_bytes(ab);
+    uint64_t io_end = byte_off + bio->block_size;
+    if (part_end < ab->partition_start_byte || io_end < byte_off ||
+        byte_off < ab->partition_start_byte || io_end > part_end)
+        return BFS_ERR_INVAL;
+    if (ab->access_mode == ACCESS_STD && (byte_off >> 32) != 0)
+        return BFS_ERR_INVAL;
 
     req->iotd_Req.io_Command = (ab->access_mode == ACCESS_NSD) ? NSCMD_TD_WRITE64 :
                                (ab->access_mode == ACCESS_TD64) ? TD_WRITE64 : CMD_WRITE;
@@ -171,14 +186,14 @@ void bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
                         struct MsgPort *port, struct DosEnvec *env)
 {
     /* Calculate geometry from MountList environment vector */
-    ULONG sector_size = env->de_SizeBlock << 2;
-    ULONG sectors_per_cyl = env->de_Surfaces * env->de_BlocksPerTrack;
-    ULONG total_sectors = (env->de_HighCyl - env->de_LowCyl + 1) * sectors_per_cyl;
-    ULONG start_sector = env->de_LowCyl * sectors_per_cyl;
+    uint32_t sector_size = (uint32_t)env->de_SizeBlock << 2;
+    uint64_t sectors_per_cyl = (uint64_t)env->de_Surfaces * (uint64_t)env->de_BlocksPerTrack;
+    uint64_t total_sectors = ((uint64_t)env->de_HighCyl - (uint64_t)env->de_LowCyl + 1) * sectors_per_cyl;
+    uint64_t start_sector = (uint64_t)env->de_LowCyl * sectors_per_cyl;
 
     ab->base.ops = &amiga_bio_ops;
     ab->base.block_size = sector_size; /* initial block size = sector size */
-    ab->base.block_count = total_sectors;
+    ab->base.block_count = (total_sectors > UINT32_MAX) ? UINT32_MAX : (bfs_blk_t)total_sectors;
     ab->request = request;
     ab->port = port;
     ab->partition_start_byte = start_sector * sector_size;
@@ -191,6 +206,7 @@ void bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
 
 void bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size)
 {
+    uint64_t blocks = partition_size_bytes(ab) / fs_block_size;
     ab->base.block_size = fs_block_size;
-    ab->base.block_count = (ab->total_sectors * ab->sector_size) / fs_block_size;
+    ab->base.block_count = (blocks > UINT32_MAX) ? UINT32_MAX : (bfs_blk_t)blocks;
 }
