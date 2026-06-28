@@ -37,10 +37,10 @@ jobs:
           echo "/opt/amiga/bin" >> $GITHUB_PATH
 
       - name: Build all CPU targets
-        run: |
-          export AMIGA_CC=m68k-amigaos-gcc
-          export AMIGA_PREFIX=/opt/amiga/m68k-amigaos
-          make release
+        # Pass AMIGA_PREFIX on the command line: the Makefile assigns it with '=',
+        # which overrides the environment, so an exported value would be ignored
+        # and the build would fall back to the (nonexistent on Linux) brew path.
+        run: make release AMIGA_PREFIX=/opt/amiga/m68k-amigaos
 
       - name: Create release archive
         run: |

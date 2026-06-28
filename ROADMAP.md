@@ -70,24 +70,6 @@ touching core trees directly; or explicitly document `fs->lock` as host-test-onl
 
 ---
 
-## 4. Make the CI integration test able to fail  (build/CI, medium) — #32
-
-**Problem.** The fs-uae integration job is `continue-on-error: true`, runs only on
-`push`, and `exit 0`-skips whenever the cross-compiler or secret is absent (and
-nothing installs the compiler) — so it is effectively always green, and a real
-Amiga `FAIL` is swallowed.
-
-**Why deferred.** Changes the pipeline's pass/fail behavior, and it can't be
-validated against the actual GitHub runner locally (risk of turning CI red).
-
-**Suggested approach.** Install the cross-compiler (as `release.yml` already does),
-drop `continue-on-error`, and let it run on `pull_request`; if the emulator step is
-genuinely flaky, gate just that step rather than the whole job.
-
-**Files.** `.github/workflows/ci.yml`
-
----
-
 ## Also open (low severity)
 
 Minor nits not yet addressed: the on-disk `volname` comment says "UTF-8" but names
