@@ -29,10 +29,10 @@ uint8_t bfs_intl_toupper(uint8_t c)
 
 uint32_t bfs_dir_name_hash(const char *name, uint8_t len)
 {
-    uint32_t h = 0x811C9DC5; /* FNV offset basis */
+    uint32_t h = BFS_DIR_HASH_FNV_OFFSET;
     for (uint8_t i = 0; i < len; i++) {
         h ^= bfs_intl_toupper((uint8_t)name[i]);
-        h *= 0x01000193; /* FNV prime */
+        h *= BFS_DIR_HASH_FNV_PRIME;
     }
     return h;
 }

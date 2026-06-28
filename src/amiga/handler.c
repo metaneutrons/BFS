@@ -862,7 +862,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             id->id_NumBlocksUsed = h->fs.mounted ?
                 (bio->block_count - h->fs.freespace.total_free) : 0;
             id->id_BytesPerBlock = bio->block_size;
-            id->id_DiskType = h->fs.mounted ? 0x42465300 : ID_UNREADABLE_DISK;
+            id->id_DiskType = h->fs.mounted ? BFS_SB_MAGIC : ID_UNREADABLE_DISK;
             id->id_VolumeNode = MKBADDR(h->volnode);
             id->id_InUse = DOSTRUE;
             id->id_InUse = DOSTRUE;
@@ -1192,7 +1192,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         struct DosList *vol = MakeDosEntry(vname, DLT_VOLUME);
         if (vol) {
             vol->dol_Task = h->msgport;
-            vol->dol_misc.dol_volume.dol_DiskType = 0x42465300;
+            vol->dol_misc.dol_volume.dol_DiskType = BFS_SB_MAGIC;
             DateStamp(&vol->dol_misc.dol_volume.dol_VolumeDate);
             AddDosEntry(vol);
             h->snap_mounts[slot].volnode = vol;
@@ -1291,7 +1291,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             id->id_NumBlocks = h->fs.bio->block_count;
             id->id_NumBlocksUsed = h->fs.bio->block_count - h->fs.freespace.total_free;
             id->id_BytesPerBlock = h->fs.bio->block_size;
-            id->id_DiskType = 0x42465300; /* 'BFS\0' */
+            id->id_DiskType = BFS_SB_MAGIC; /* 'BFS\0' */
             id->id_VolumeNode = MKBADDR(h->volnode);
             id->id_InUse = DOSTRUE;
             res1 = DOSTRUE;
@@ -1348,7 +1348,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             struct DosList *vol = MakeDosEntry(volname, DLT_VOLUME);
             if (vol) {
                 vol->dol_Task = h->msgport;
-                vol->dol_misc.dol_volume.dol_DiskType = 0x42465300;
+                vol->dol_misc.dol_volume.dol_DiskType = BFS_SB_MAGIC;
                 DateStamp(&vol->dol_misc.dol_volume.dol_VolumeDate);
                 AddDosEntry(vol);
                 h->volnode = vol;
@@ -1709,7 +1709,7 @@ void EntryPoint(void)
         struct DosList *vol = MakeDosEntry(vname, DLT_VOLUME);
         if (vol) {
             vol->dol_Task = h->msgport;
-            vol->dol_misc.dol_volume.dol_DiskType = 0x42465300;
+            vol->dol_misc.dol_volume.dol_DiskType = BFS_SB_MAGIC;
             DateStamp(&vol->dol_misc.dol_volume.dol_VolumeDate);
             AddDosEntry(vol);
             h->volnode = vol;
