@@ -58,6 +58,11 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio);
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs);
 bfs_err_t bfs_fs_sync_unlocked(bfs_fs_t *fs);
 
+/* Defer-free a block: queue it for reclaim at the next sync (syncing first if
+ * the queue is full), or free it immediately when snapshots are disabled. The
+ * single entry point for post-COW block reclamation. */
+bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk);
+
 /* Unmount: sync and release resources. */
 bfs_err_t bfs_fs_unmount(bfs_fs_t *fs);
 

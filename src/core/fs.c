@@ -243,7 +243,7 @@ static void fs_release_ino_if_last(bfs_fs_t *fs, uint32_t ino)
         fs->next_ino = ino;
 }
 
-static bfs_err_t fs_queue_pending_block(bfs_fs_t *fs, bfs_blk_t blk)
+bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
 {
     if (blk == BFS_BLK_NULL) return BFS_OK;
     if (!fs->has_snapshots)
@@ -271,7 +271,7 @@ static bool fs_queue_extent_data_cb(const void *key, const void *val, void *ctx)
     bfs_blk_t disk = bfs_be32(ev->disk_block);
     uint32_t len = bfs_be32(ev->length);
     for (uint32_t i = 0; i < len; i++) {
-        qc->err = fs_queue_pending_block(qc->fs, disk + i);
+        qc->err = bfs_fs_queue_pending_free(qc->fs, disk + i);
         if (qc->err != BFS_OK) return false;
     }
     return true;
@@ -281,7 +281,7 @@ static void fs_queue_extent_node_cb(bfs_blk_t blk, void *ctx)
 {
     fs_queue_ctx_t *qc = (fs_queue_ctx_t *)ctx;
     if (qc->err == BFS_OK)
-        qc->err = fs_queue_pending_block(qc->fs, blk);
+        qc->err = bfs_fs_queue_pending_free(qc->fs, blk);
 }
 
 static bfs_err_t fs_queue_extent_tree_for_delete(bfs_fs_t *fs, bfs_blk_t root)
