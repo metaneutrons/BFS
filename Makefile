@@ -13,7 +13,7 @@ AMIGA_CC = m68k-amigaos-gcc
 INCLUDES = -I include -I tests
 
 HOST_CFLAGS  = -std=c99 -Wall -Wextra -Werror -g -O2 $(INCLUDES) -DBFS_HOST=1
-AMIGA_PREFIX = $(shell brew --prefix amiga-gcc 2>/dev/null || echo /opt/homebrew/Cellar/amiga-gcc/2025.07.13)/m68k-amigaos
+AMIGA_PREFIX = $(shell brew --prefix amiga-gcc 2>/dev/null || echo /opt/homebrew/opt/amiga-gcc)/m68k-amigaos
 AMIGA_CFLAGS = -std=c99 -Wall -O2 -m68020 -noixemul -fomit-frame-pointer \
                -Isrc/amiga $(INCLUDES) -DBFS_AMIGA=1 \
                -I$(AMIGA_PREFIX)/ndk-include
@@ -61,12 +61,7 @@ $(BUILD_HOST)/test_concurrency: HOST_CFLAGS += -pthread
 amiga:
 	@mkdir -p $(BUILD_AMIGA)
 	$(AMIGA_CC) $(AMIGA_CFLAGS) -o $(BUILD_AMIGA)/bfshandler \
-		src/amiga/startup.s \
-		src/amiga/crc32_68k.s \
-		src/amiga/memset_68k.s \
-		src/amiga/handler.c \
-		src/amiga/amiga_bio.c \
-		$(CORE_SRC_AMIGA) \
+		$(AMIGA_SRCS) \
 		-nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 
 amiga-stresstest:
@@ -91,7 +86,14 @@ clean:
 	rm -rf build/ *.img
 
 # ── Release builds (all CPU targets) ───────────────────────
-AMIGA_SRCS = src/amiga/startup.s src/amiga/handler.c src/amiga/amiga_bio.c $(CORE_SRC)
+# Shared handler source list — the dev `amiga` target and `release` MUST build
+# the same binary, so both use this. The hand-written 68k asm replaces the
+# portable C crc32.c (hence CORE_SRC_AMIGA, which filters it out) and libnix's
+# memcpy/memset on this slow CPU. memcpy_68k.s provides optimised _memcpy AND
+# _memset, so memset_68k.s (which only defines _memset) is deliberately not
+# assembled here — assembling both would duplicate _memset.
+AMIGA_ASM_SRCS = src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s
+AMIGA_SRCS = $(AMIGA_ASM_SRCS) src/amiga/handler.c src/amiga/amiga_bio.c $(CORE_SRC_AMIGA)
 AMIGA_LDFLAGS = -nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 AMIGA_BASE_FLAGS = -std=c99 -Wall -Os -noixemul -fomit-frame-pointer \
                    -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I$(AMIGA_PREFIX)/ndk-include
