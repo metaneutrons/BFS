@@ -123,6 +123,18 @@ static inline void bfs_store_be64(void *p, uint64_t v)
     memcpy(p, &v, sizeof(v));
 }
 
+/* Standard comparator for B+trees keyed by a big-endian uint32 (block, inode,
+ * snapshot-id and file-block numbers all use this). Single source of truth for
+ * every such tree's key ordering. */
+static inline int bfs_cmp_be32(const void *a, const void *b)
+{
+    uint32_t va = bfs_load_be32(a);
+    uint32_t vb = bfs_load_be32(b);
+    if (va < vb) return -1;
+    if (va > vb) return 1;
+    return 0;
+}
+
 /* Min block size 1024 (264-byte dir keys need at least 3 entries per node) */
 #define BFS_MIN_BLOCK_SIZE  1024
 #define BFS_MAX_BLOCK_SIZE  65536

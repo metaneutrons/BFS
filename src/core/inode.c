@@ -6,17 +6,8 @@
 #include "bfs_inode.h"
 #include <string.h>
 
-static int inode_key_cmp(const void *a, const void *b)
-{
-    uint32_t va = bfs_load_be32(a);
-    uint32_t vb = bfs_load_be32(b);
-    if (va < vb) return -1;
-    if (va > vb) return 1;
-    return 0;
-}
-
 static const bfs_btree_ops_t bfs_inode_ops = {
-    .key_compare = inode_key_cmp,
+    .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_inode_t),
 };
