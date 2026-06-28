@@ -5,6 +5,7 @@
 
 #include "bfs_fs.h"
 #include "bfs_file.h"
+#include "bfs_internal.h"
 #include "bfs_inode.h"
 #include "bfs_extent.h"
 #include "bfs_snapshot.h"
