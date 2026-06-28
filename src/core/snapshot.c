@@ -153,39 +153,15 @@ static void snapshot_ref_walk(bfs_btree_t *tree, snap_ref_ctx_t *rc)
         rc->err = werr;
 }
 
-static bool snapshot_ref_extent_cb(const void *key, const void *val, void *ctx)
-{
-    (void)key;
-    snap_ref_ctx_t *rc = (snap_ref_ctx_t *)ctx;
-    const bfs_extent_val_t *ev = (const bfs_extent_val_t *)val;
-    bfs_blk_t disk = bfs_be32(ev->disk_block);
-    uint32_t len = bfs_be32(ev->length);
-
-    for (uint32_t i = 0; i < len; i++) {
-        rc->err = snapshot_ref_block(rc, disk + i);
-        if (rc->err != BFS_OK) return false;
-    }
-    return true;
-}
-
 static bool snapshot_ref_inode_cb(const void *key, const void *val, void *ctx)
 {
     (void)key;
     snap_ref_ctx_t *rc = (snap_ref_ctx_t *)ctx;
     const bfs_inode_t *inode = (const bfs_inode_t *)val;
-    bfs_blk_t root = bfs_be32(inode->extent_root);
-    if (root == BFS_BLK_NULL)
-        return true;
-
-    bfs_extent_tree_t et;
-    rc->err = bfs_extent_init(&et, rc->fs->bio, &rc->fs->freespace,
-                              root, bfs_txn_id(&rc->fs->txn));
-    if (rc->err != BFS_OK) return false;
-
-    snapshot_ref_walk(&et.tree, rc);
-    if (rc->err != BFS_OK) return false;
-
-    rc->err = bfs_btree_scan(&et.tree, NULL, snapshot_ref_extent_cb, rc);
+    /* Refcount this inode's extent-tree node blocks AND its data blocks. */
+    bfs_err_t werr = bfs_extent_walk(rc->fs, bfs_be32(inode->extent_root),
+                                     snapshot_ref_node_cb, snapshot_ref_node_cb, rc);
+    if (rc->err == BFS_OK) rc->err = werr;
     return rc->err == BFS_OK;
 }
 
@@ -306,18 +282,11 @@ static bool reclaim_inode_cb(const void *key, const void *val, void *ctx)
         .err = BFS_OK,
     };
 
-    /* Process data blocks of this inode */
-    bfs_blk_t root = bfs_be32(inode->extent_root);
-    if (root != BFS_BLK_NULL) {
-        bfs_extent_tree_t et;
-        rc.err = bfs_extent_init(&et, rc.fs->bio, &rc.fs->freespace,
-                                 root, bfs_txn_id(&rc.fs->txn));
-        if (rc.err == BFS_OK) {
-            snapshot_ref_walk(&et.tree, &rc);
-            if (rc.err == BFS_OK) {
-                bfs_btree_scan(&et.tree, NULL, snapshot_ref_extent_cb, &rc);
-            }
-        }
+    /* Refcount-decrement this inode's extent node blocks AND data blocks. */
+    {
+        bfs_err_t werr = bfs_extent_walk(rc.fs, bfs_be32(inode->extent_root),
+                                         snapshot_ref_node_cb, snapshot_ref_node_cb, &rc);
+        if (rc.err == BFS_OK) rc.err = werr;
     }
 
     if (rc.err != BFS_OK) {

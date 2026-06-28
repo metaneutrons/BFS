@@ -183,6 +183,54 @@ bfs_err_t bfs_extent_append(bfs_extent_tree_t *et, uint32_t file_block,
     return BFS_OK;
 }
 
+/* ── Whole-tree walk (delete / snapshot refcount share this) ─ */
+
+typedef struct {
+    bfs_node_walk_cb cb;
+    void *ctx;
+    bfs_blk_t block_count;
+    bfs_err_t err;
+} extent_walk_ctx_t;
+
+static bool extent_walk_block_cb(const void *key, const void *val, void *c)
+{
+    extent_walk_ctx_t *ec = (extent_walk_ctx_t *)c;
+    (void)key;
+    const bfs_extent_val_t *ev = (const bfs_extent_val_t *)val;
+    bfs_blk_t disk = bfs_be32(ev->disk_block);
+    uint32_t len = bfs_be32(ev->length);
+    /* Same untrusted-length guard as bfs_extent_truncate_batch. */
+    if (len == 0 || disk >= ec->block_count || len > ec->block_count - disk) {
+        ec->err = BFS_ERR_CORRUPT;
+        return false;
+    }
+    for (uint32_t i = 0; i < len; i++)
+        ec->cb(disk + i, ec->ctx);
+    return true;
+}
+
+bfs_err_t bfs_extent_walk(bfs_fs_t *fs, bfs_blk_t root,
+                          bfs_node_walk_cb node_cb,
+                          bfs_node_walk_cb block_cb, void *ctx)
+{
+    if (root == BFS_BLK_NULL) return BFS_OK;
+    bfs_extent_tree_t et;
+    bfs_err_t err = bfs_extent_init(&et, fs->bio, &fs->freespace, root, fs->live_txn_id);
+    if (err != BFS_OK) return err;
+
+    if (block_cb) {
+        extent_walk_ctx_t ec = { block_cb, ctx, fs->bio->block_count, BFS_OK };
+        err = bfs_btree_scan(&et.tree, NULL, extent_walk_block_cb, &ec);
+        if (err == BFS_OK) err = ec.err;
+        if (err != BFS_OK) return err;
+    }
+    if (node_cb) {
+        err = bfs_btree_walk_nodes(&et.tree, node_cb, ctx);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
 /* ── Truncate ──────────────────────────────────────────────── */
 
 /* Collect extents to delete */
