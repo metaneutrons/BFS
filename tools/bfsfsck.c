@@ -21,17 +21,8 @@ static uint8_t *block_map;
 static uint32_t block_count;
 static uint32_t errors, warnings;
 
-static int u32_key_cmp(const void *a, const void *b)
-{
-    uint32_t va = bfs_load_be32(a);
-    uint32_t vb = bfs_load_be32(b);
-    if (va < vb) return -1;
-    if (va > vb) return 1;
-    return 0;
-}
-
 static const bfs_btree_ops_t snapshot_ops = {
-    .key_compare = u32_key_cmp,
+    .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_snapshot_record_t),
 };

@@ -19,17 +19,8 @@
 
 /* ── B+tree ops for free space tree ────────────────────────── */
 
-static int blk_compare(const void *a, const void *b)
-{
-    uint32_t va = bfs_load_be32(a);
-    uint32_t vb = bfs_load_be32(b);
-    if (va < vb) return -1;
-    if (va > vb) return 1;
-    return 0;
-}
-
 static const bfs_btree_ops_t free_ops = {
-    .key_compare = blk_compare,
+    .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(uint32_t),
 };
