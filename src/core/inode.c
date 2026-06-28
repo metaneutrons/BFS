@@ -8,8 +8,8 @@
 
 static int inode_key_cmp(const void *a, const void *b)
 {
-    uint32_t va = bfs_be32(*(const uint32_t *)a);
-    uint32_t vb = bfs_be32(*(const uint32_t *)b);
+    uint32_t va = bfs_load_be32(a);
+    uint32_t vb = bfs_load_be32(b);
     if (va < vb) return -1;
     if (va > vb) return 1;
     return 0;

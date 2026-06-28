@@ -44,9 +44,9 @@ static void make_dir_key(uint8_t *key_buf, uint32_t parent_id,
 {
     memset(key_buf, 0, DIR_KEY_SIZE);
     /* parent_id (big-endian) */
-    *(uint32_t *)key_buf = bfs_be32(parent_id);
+    bfs_store_be32(key_buf, parent_id);
     /* name_hash (big-endian) — hash of folded name for consistent ordering */
-    *(uint32_t *)(key_buf + 4) = bfs_be32(bfs_dir_name_hash(name, name_len));
+    bfs_store_be32(key_buf + 4, bfs_dir_name_hash(name, name_len));
     /* name_len */
     key_buf[8] = name_len;
     /* Store ORIGINAL name (comparison folds both sides) */
@@ -61,13 +61,13 @@ static int dir_key_compare(const void *a, const void *b)
     const uint8_t *kb = (const uint8_t *)b;
 
     /* Compare parent_id */
-    uint32_t pa = bfs_be32(*(const uint32_t *)ka);
-    uint32_t pb = bfs_be32(*(const uint32_t *)kb);
+    uint32_t pa = bfs_load_be32(ka);
+    uint32_t pb = bfs_load_be32(kb);
     if (pa != pb) return (pa < pb) ? -1 : 1;
 
     /* Compare name_hash */
-    uint32_t ha = bfs_be32(*(const uint32_t *)(ka + 4));
-    uint32_t hb = bfs_be32(*(const uint32_t *)(kb + 4));
+    uint32_t ha = bfs_load_be32(ka + 4);
+    uint32_t hb = bfs_load_be32(kb + 4);
     if (ha != hb) return (ha < hb) ? -1 : 1;
 
     /* Compare name bytes with case folding */
@@ -155,7 +155,7 @@ static bool dir_scan_cb(const void *key, const void *val, void *ctx)
     const uint8_t *k = (const uint8_t *)key;
     const bfs_dir_val_t *v = (const bfs_dir_val_t *)val;
 
-    uint32_t pid = bfs_be32(*(const uint32_t *)k);
+    uint32_t pid = bfs_load_be32(k);
     if (pid != sc->parent_id) return false; /* different parent, stop */
 
     uint8_t name_len = k[8];
@@ -169,7 +169,7 @@ bfs_err_t bfs_dir_scan(bfs_dir_tree_t *dt, uint32_t parent_id,
     /* Build a start key with parent_id and zeros for the rest */
     uint8_t start_key[DIR_KEY_SIZE];
     memset(start_key, 0, DIR_KEY_SIZE);
-    *(uint32_t *)start_key = bfs_be32(parent_id);
+    bfs_store_be32(start_key, parent_id);
 
     dir_scan_ctx_t sc = { .parent_id = parent_id, .cb = cb, .ctx = ctx };
     return bfs_btree_scan(&dt->tree, start_key, dir_scan_cb, &sc);

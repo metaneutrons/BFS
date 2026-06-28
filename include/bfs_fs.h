@@ -22,6 +22,7 @@
 #include "bfs_txn.h"
 #include "bfs_inode.h"
 #include "bfs_refcount.h"
+#include "bfs_lock.h"
 
 #define BFS_ROOT_INO 1  /* root directory inode number */
 #define BFS_PENDING_FREES_MAX 16384 /* Excess COW'd blocks are leaked; reclaimed on next sync cycle */
@@ -42,6 +43,7 @@ typedef struct {
     bfs_blk_t         pending_frees[BFS_PENDING_FREES_MAX];
     uint32_t           pending_count;
     uint8_t           *scratch;        /* pre-allocated block buffer for file I/O */
+    bfs_fs_lock_t         lock;
 } bfs_fs_t;
 
 /* Format a fresh BFS filesystem.
@@ -54,6 +56,7 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio);
 
 /* Sync: commit all pending changes to disk. */
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs);
+bfs_err_t fs_sync_unlocked(bfs_fs_t *fs);
 
 /* Unmount: sync and release resources. */
 bfs_err_t bfs_fs_unmount(bfs_fs_t *fs);

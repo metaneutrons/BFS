@@ -16,6 +16,7 @@
 #include <stdint.h>
 #include <stddef.h>
 #include <stdbool.h>
+#include <string.h>
 
 /* Block number — 32-bit, max 16TB with 4K blocks */
 typedef uint32_t bfs_blk_t;
@@ -82,6 +83,45 @@ typedef enum {
              bfs_be32((uint32_t)(v >> 32));
   }
 #endif
+
+static inline uint16_t bfs_load_be16(const void *p)
+{
+    uint16_t v;
+    memcpy(&v, p, sizeof(v));
+    return bfs_be16(v);
+}
+
+static inline uint32_t bfs_load_be32(const void *p)
+{
+    uint32_t v;
+    memcpy(&v, p, sizeof(v));
+    return bfs_be32(v);
+}
+
+static inline uint64_t bfs_load_be64(const void *p)
+{
+    uint64_t v;
+    memcpy(&v, p, sizeof(v));
+    return bfs_be64(v);
+}
+
+static inline void bfs_store_be16(void *p, uint16_t v)
+{
+    v = bfs_be16(v);
+    memcpy(p, &v, sizeof(v));
+}
+
+static inline void bfs_store_be32(void *p, uint32_t v)
+{
+    v = bfs_be32(v);
+    memcpy(p, &v, sizeof(v));
+}
+
+static inline void bfs_store_be64(void *p, uint64_t v)
+{
+    v = bfs_be64(v);
+    memcpy(p, &v, sizeof(v));
+}
 
 /* Min block size 1024 (264-byte dir keys need at least 3 entries per node) */
 #define BFS_MIN_BLOCK_SIZE  1024
