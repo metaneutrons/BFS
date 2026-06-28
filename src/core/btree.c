@@ -25,6 +25,8 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define MAX_TREE_DEPTH 32
+
 static uint8_t *alloc_buf(const bfs_btree_t *tree) { return malloc(tree->bio->block_size); }
 
 /* ── Node capacity calculations ────────────────────────────── */
@@ -58,20 +60,20 @@ static void *leaf_val(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
     return buf + keys_end + i * tree->ops->val_size;
 }
 
-static uint32_t *internal_child_ptr(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
+static uint8_t *internal_child_ptr(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
 {
     uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + internal_max_keys(tree) * tree->ops->key_size;
-    return (uint32_t *)(buf + keys_end) + i;
+    return buf + keys_end + i * sizeof(uint32_t);
 }
 
 static bfs_blk_t get_child(const bfs_btree_t *tree, uint8_t *buf, uint32_t i)
 {
-    return bfs_be32(*internal_child_ptr(tree, buf, i));
+    return bfs_load_be32(internal_child_ptr(tree, buf, i));
 }
 
 static void set_child(const bfs_btree_t *tree, uint8_t *buf, uint32_t i, bfs_blk_t blk)
 {
-    *internal_child_ptr(tree, buf, i) = bfs_be32(blk);
+    bfs_store_be32(internal_child_ptr(tree, buf, i), blk);
 }
 
 /* ── Node I/O with CRC ────────────────────────────────────── */
@@ -181,8 +183,10 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
     bfs_blk_t blk = tree->root;
+    uint32_t depth = 0;
 
     while (1) {
+        if (depth++ > MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
         bfs_err_t err = node_read(tree, blk, buf);
         if (err != BFS_OK) { free(buf); return err; }
 
@@ -226,6 +230,12 @@ static void btree_free_node(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *buf
 
 static bfs_blk_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf)
 {
+    if (old_blk != BFS_BLK_NULL && tree->txn_id_ptr != NULL) {
+        const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
+        if (bfs_be64(hdr->txn_id) >= bfs_btree_txn_id(tree))
+            return node_write(tree, old_blk, buf) == BFS_OK ? old_blk : BFS_BLK_NULL;
+    }
+
     bfs_blk_t new_blk = tree->alloc->alloc(tree->alloc);
     if (new_blk == BFS_BLK_NULL) return BFS_BLK_NULL;
 
@@ -358,8 +368,6 @@ static bfs_err_t internal_split(bfs_btree_t *tree, uint8_t *buf, split_result_t 
 
 /* ── Iterative top-down insert ─────────────────────────────── */
 
-#define MAX_TREE_DEPTH 32
-
 typedef struct {
     bfs_blk_t blk;
     uint32_t child_idx;
@@ -397,6 +405,7 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
 
     bfs_blk_t blk = tree->root;
     while (1) {
+        if (depth >= MAX_TREE_DEPTH) { rc = BFS_ERR_CORRUPT; goto insert_cleanup; }
         bfs_err_t err = node_read(tree, blk, NBUF(depth));
         if (err != BFS_OK) { rc = err; goto insert_cleanup; }
         path[depth].blk = blk;
@@ -546,6 +555,7 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
 
     /* Descend to leaf */
     while (1) {
+        if (d >= MAX_TREE_DEPTH) { free(node_bufs); return BFS_ERR_CORRUPT; }
         bfs_err_t err = node_read(tree, blk, UBUF(d));
         if (err != BFS_OK) { free(node_bufs); return err; }
         path[d].blk = blk;
@@ -591,7 +601,9 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
 
     /* First: descend to the starting leaf */
     bfs_blk_t blk = tree->root;
+    uint32_t descend_depth = 0;
     while (1) {
+        if (descend_depth++ > MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
         bfs_err_t err = node_read(tree, blk, buf);
         if (err != BFS_OK) { free(buf); return err; }
         if (is_leaf(buf)) break;
@@ -633,6 +645,7 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
         bool reached_leaf = false;
 
         while (1) {
+            if (depth > MAX_TREE_DEPTH) { free(last); free(buf); return BFS_ERR_CORRUPT; }
             bfs_err_t err = node_read(tree, cur, buf);
             if (err != BFS_OK) { free(last); free(buf); return err; }
 
@@ -715,7 +728,9 @@ static bfs_err_t rightmost_in_subtree(const bfs_btree_t *tree, bfs_blk_t blk,
 {
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
+    uint32_t depth = 0;
     while (1) {
+        if (depth++ > MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
         bfs_err_t err = node_read(tree, blk, buf);
         if (err != BFS_OK) { free(buf); return err; }
         uint32_t n = num_keys(buf);
@@ -739,6 +754,7 @@ bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
     bfs_blk_t blk = tree->root;
+    uint32_t depth = 0;
 
     /* Track the last internal node where we descended right (idx > 0).
      * If the leaf has no key <= search_key, the predecessor is the
@@ -747,6 +763,7 @@ bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
     uint32_t turn_child_idx = 0; /* child index we came from (the left sibling has the predecessor) */
 
     while (1) {
+        if (depth++ > MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
         bfs_err_t err = node_read(tree, blk, buf);
         if (err != BFS_OK) { free(buf); return err; }
 
@@ -850,6 +867,7 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
 
     bfs_blk_t blk = tree->root;
     while (1) {
+        if (depth >= MAX_TREE_DEPTH) { rc = BFS_ERR_CORRUPT; goto delete_cleanup; }
         bfs_err_t err = node_read(tree, blk, DNBUF(depth));
         if (err != BFS_OK) { rc = err; goto delete_cleanup; }
         path[depth].blk = blk;
@@ -1133,8 +1151,6 @@ static void walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
                                   bfs_node_walk_cb cb, void *ctx, int depth)
 {
     if (blk == BFS_BLK_NULL || depth > MAX_TREE_DEPTH) return;
-    cb(blk, ctx);
-
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return;
     if (bfs_bio_read(tree->bio, blk, buf) != BFS_OK) { free(buf); return; }
@@ -1146,10 +1162,11 @@ static void walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
         uint32_t data_sz = tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
         uint32_t max_keys = (data_sz - 4) / (tree->ops->key_size + 4);
         uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + max_keys * tree->ops->key_size;
-        uint32_t *children = (uint32_t *)(buf + keys_end);
         for (uint32_t i = 0; i <= n; i++)
-            walk_nodes_recursive(tree, bfs_be32(children[i]), cb, ctx, depth + 1);
+            walk_nodes_recursive(tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
+                                 cb, ctx, depth + 1);
     }
+    cb(blk, ctx);
     free(buf);
 }
 
@@ -1159,6 +1176,10 @@ void bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx)
 }
 
 /* ── Compaction ────────────────────────────────────────────── */
+
+/* Threshold for compaction: fill factor < 90% */
+#define BFS_COMPACT_THRESHOLD_NUM 9
+#define BFS_COMPACT_THRESHOLD_DEN 10
 
 typedef struct {
     bfs_btree_t *new_tree;
@@ -1183,9 +1204,60 @@ static void compact_free_old_cb(bfs_blk_t blk, void *ctx)
     free(buf);
 }
 
+static void utilization_walk_recursive(const bfs_btree_t *tree, bfs_blk_t blk,
+                                       uint32_t *total_keys, uint32_t *total_capacity, int depth)
+{
+    if (blk == BFS_BLK_NULL || depth > MAX_TREE_DEPTH) return;
+    uint8_t *buf = malloc(tree->bio->block_size);
+    if (!buf) return;
+    if (node_read(tree, blk, buf) != BFS_OK) {
+        free(buf);
+        return;
+    }
+
+    bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
+    uint32_t n = bfs_be32(hdr->num_keys);
+    *total_keys += n;
+
+    if (bfs_be16(hdr->level) > 0) {
+        /* Internal node */
+        *total_capacity += internal_max_keys(tree);
+        /* Recurse into children */
+        uint32_t data_sz = tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
+        uint32_t max_keys = (data_sz - 4) / (tree->ops->key_size + 4);
+        uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + max_keys * tree->ops->key_size;
+        for (uint32_t i = 0; i <= n; i++) {
+            utilization_walk_recursive(tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
+                                       total_keys, total_capacity, depth + 1);
+        }
+    } else {
+        /* Leaf node */
+        *total_capacity += leaf_max_keys(tree);
+    }
+
+    free(buf);
+}
+
+static bool bfs_btree_needs_compaction(const bfs_btree_t *tree)
+{
+    if (tree->root == BFS_BLK_NULL) return false;
+    uint32_t total_keys = 0;
+    uint32_t total_capacity = 0;
+    utilization_walk_recursive(tree, tree->root, &total_keys, &total_capacity, 0);
+    if (total_capacity == 0) return false;
+
+    /* Returns true if utilization is < 90% */
+    return (uint64_t)total_keys * BFS_COMPACT_THRESHOLD_DEN < (uint64_t)total_capacity * BFS_COMPACT_THRESHOLD_NUM;
+}
+
 bfs_err_t bfs_btree_compact(bfs_btree_t *tree)
 {
     if (tree->root == BFS_BLK_NULL) return BFS_OK;
+
+    /* Skip compaction if tree is already well-packed (utilization >= 90%) to avoid write amplification */
+    if (!bfs_btree_needs_compaction(tree)) {
+        return BFS_OK;
+    }
 
     bfs_btree_t new_tree;
     bfs_btree_init(&new_tree, tree->bio, tree->alloc, tree->ops,
