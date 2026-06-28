@@ -219,7 +219,7 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
 
 /* ── Insert helpers ────────────────────────────────────────── */
 
-static bfs_blk_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf);
+static bfs_err_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf, bfs_blk_t *out_blk);
 
 /* Centralized node deallocation. Blocks from the current transaction are 
  * freed immediately; older blocks are queued for post-commit reclamation. */
@@ -241,28 +241,34 @@ static void btree_free_node(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *buf
     }
 }
 
-static bfs_blk_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf)
+static bfs_err_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf, bfs_blk_t *out_blk)
 {
     if (old_blk != BFS_BLK_NULL && tree->txn_id_ptr != NULL) {
         const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
-        if (bfs_be64(hdr->txn_id) >= bfs_btree_txn_id(tree))
-            return node_write(tree, old_blk, buf) == BFS_OK ? old_blk : BFS_BLK_NULL;
+        if (bfs_be64(hdr->txn_id) >= bfs_btree_txn_id(tree)) {
+            /* Same transaction owns the block: rewrite in place. */
+            bfs_err_t err = node_write(tree, old_blk, buf);
+            if (err == BFS_OK) *out_blk = old_blk;
+            return err;
+        }
     }
 
     bfs_blk_t new_blk = tree->alloc->alloc(tree->alloc);
-    if (new_blk == BFS_BLK_NULL) return BFS_BLK_NULL;
+    if (new_blk == BFS_BLK_NULL) return BFS_ERR_NOSPC;
 
     if (old_blk != BFS_BLK_NULL) {
         btree_free_node(tree, old_blk, buf);
     }
 
-    if (node_write(tree, new_blk, buf) != BFS_OK) {
-        /* The block was allocated but never written or referenced — return it
-         * to the allocator instead of leaking it until reformat. */
+    bfs_err_t err = node_write(tree, new_blk, buf);
+    if (err != BFS_OK) {
+        /* Allocated but never written or referenced — return it to the allocator
+         * instead of leaking it, and propagate the real error (I/O, not NOSPC). */
         tree->alloc->dealloc(tree->alloc, new_blk);
-        return BFS_BLK_NULL;
+        return err;
     }
-    return new_blk;
+    *out_blk = new_blk;
+    return BFS_OK;
 }
 
 /* Insert key/val into a leaf at position idx. Caller must ensure there's room. */
@@ -480,8 +486,9 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
     }
 
     /* COW the leaf */
-    bfs_blk_t new_blk = cow_node(tree, path[depth].blk, leaf);
-    if (new_blk == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto insert_cleanup; }
+    bfs_blk_t new_blk;
+    rc = cow_node(tree, path[depth].blk, leaf, &new_blk);
+    if (rc != BFS_OK) goto insert_cleanup;
 
     /* Walk back up the path */
     for (int d = depth - 1; d >= 0; d--) {
@@ -523,8 +530,8 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
             }
         }
 
-        new_blk = cow_node(tree, path[d].blk, node);
-        if (new_blk == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto insert_cleanup; }
+        rc = cow_node(tree, path[d].blk, node, &new_blk);
+        if (rc != BFS_OK) goto insert_cleanup;
     }
 
     tree->root = new_blk;
@@ -592,12 +599,13 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
     memcpy(leaf_val(tree, UBUF(d), idx), new_val, tree->ops->val_size);
 
     /* COW back up */
-    bfs_blk_t new_blk = cow_node(tree, path[d].blk, UBUF(d));
-    if (new_blk == BFS_BLK_NULL) { free(node_bufs); return BFS_ERR_NOSPC; }
+    bfs_blk_t new_blk;
+    bfs_err_t cerr = cow_node(tree, path[d].blk, UBUF(d), &new_blk);
+    if (cerr != BFS_OK) { free(node_bufs); return cerr; }
     for (int i = d - 1; i >= 0; i--) {
         set_child(tree, UBUF(i), path[i].child_idx, new_blk);
-        new_blk = cow_node(tree, path[i].blk, UBUF(i));
-        if (new_blk == BFS_BLK_NULL) { free(node_bufs); return BFS_ERR_NOSPC; }
+        cerr = cow_node(tree, path[i].blk, UBUF(i), &new_blk);
+        if (cerr != BFS_OK) { free(node_bufs); return cerr; }
     }
     tree->root = new_blk;
 
@@ -916,8 +924,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
             tree->height = 0;
             goto delete_cleanup;
         }
-        bfs_blk_t new_blk = cow_node(tree, path[0].blk, leaf);
-        if (new_blk == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto delete_cleanup; }
+        bfs_blk_t new_blk;
+        rc = cow_node(tree, path[0].blk, leaf, &new_blk);
+        if (rc != BFS_OK) goto delete_cleanup;
         tree->root = new_blk;
         goto delete_cleanup;
     }
@@ -947,8 +956,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
                 memcpy(node_key(tree, parent, ci), node_key(tree, sib_buf, 0), ks);
 
                 /* COW the sibling */
-                bfs_blk_t new_sib = cow_node(tree, sib_blk, sib_buf);
-                if (new_sib == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto delete_cleanup; }
+                bfs_blk_t new_sib;
+                rc = cow_node(tree, sib_blk, sib_buf, &new_sib);
+                if (rc != BFS_OK) goto delete_cleanup;
                 set_child(tree, parent, ci + 1, new_sib);
                 goto cow_upward;
             }
@@ -974,8 +984,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
                 /* Update parent separator to new first key of current leaf */
                 memcpy(node_key(tree, parent, ci - 1), node_key(tree, leaf, 0), ks);
 
-                bfs_blk_t new_sib = cow_node(tree, sib_blk, sib_buf);
-                if (new_sib == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto delete_cleanup; }
+                bfs_blk_t new_sib;
+                rc = cow_node(tree, sib_blk, sib_buf, &new_sib);
+                if (rc != BFS_OK) goto delete_cleanup;
                 set_child(tree, parent, ci - 1, new_sib);
                 goto cow_upward;
             }
@@ -1025,8 +1036,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
 cow_upward:
     /* COW the leaf */
     {
-        bfs_blk_t new_blk = cow_node(tree, path[depth].blk, leaf);
-        if (new_blk == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto delete_cleanup; }
+        bfs_blk_t new_blk;
+        rc = cow_node(tree, path[depth].blk, leaf, &new_blk);
+        if (rc != BFS_OK) goto delete_cleanup;
 
         /* Walk back up, propagating merges */
         for (int d = depth - 1; d >= 0; d--) {
@@ -1060,8 +1072,9 @@ cow_upward:
                             set_child(tree, sib_buf, i, get_child(tree, sib_buf, i + 1));
                         hdr_of(sib_buf)->num_keys = bfs_be32(sn - 1);
 
-                        bfs_blk_t new_sib = cow_node(tree, sib_blk, sib_buf);
-                        if (new_sib == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto delete_cleanup; }
+                        bfs_blk_t new_sib;
+                        rc = cow_node(tree, sib_blk, sib_buf, &new_sib);
+                        if (rc != BFS_OK) goto delete_cleanup;
                         set_child(tree, pp, pci + 1, new_sib);
                         merged = false;
                         goto cow_this;
@@ -1087,8 +1100,9 @@ cow_upward:
                         memcpy(node_key(tree, pp, pci - 1), node_key(tree, sib_buf, sn - 1), ks);
                         hdr_of(sib_buf)->num_keys = bfs_be32(sn - 1);
 
-                        bfs_blk_t new_sib = cow_node(tree, sib_blk, sib_buf);
-                        if (new_sib == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto delete_cleanup; }
+                        bfs_blk_t new_sib;
+                        rc = cow_node(tree, sib_blk, sib_buf, &new_sib);
+                        if (rc != BFS_OK) goto delete_cleanup;
                         set_child(tree, pp, pci - 1, new_sib);
                         merged = false;
                         goto cow_this;
@@ -1134,8 +1148,8 @@ cow_upward:
             }
 
 cow_this:
-            new_blk = cow_node(tree, path[d].blk, node);
-            if (new_blk == BFS_BLK_NULL) { rc = BFS_ERR_NOSPC; goto delete_cleanup; }
+            rc = cow_node(tree, path[d].blk, node, &new_blk);
+            if (rc != BFS_OK) goto delete_cleanup;
         }
 
         tree->root = new_blk;
