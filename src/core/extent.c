@@ -236,7 +236,21 @@ bfs_err_t bfs_extent_truncate_batch(bfs_extent_tree_t *et, uint32_t from_block,
         bfs_btree_scan(&et->tree, &start_key, trunc_cb, &tc);
         for (uint32_t i = 0; i < tc.count && ops_done < max_ops; i++) {
             bfs_fs_t *fs_ctx = (bfs_fs_t *)et->tree.fs_ctx;
-            if (fs_ctx && fs_ctx->pending_count + tc.lens[i] > BFS_PENDING_FREES_MAX) {
+            uint32_t len = tc.lens[i];
+            bfs_blk_t dblk = tc.dblks[i];
+            /* Reject a corrupt/implausible extent read from disk before its
+             * length drives the free loop below. Legitimate extents are tiny
+             * (the writer appends one block at a time); a length that exceeds
+             * the pending_frees capacity or runs past the device can only be
+             * corruption, and must never index past the fixed pending_frees[]. */
+            if (len == 0 || len > BFS_PENDING_FREES_MAX ||
+                dblk >= et->tree.bio->block_count ||
+                len > et->tree.bio->block_count - dblk) {
+                return BFS_ERR_CORRUPT;
+            }
+            /* Overflow-safe headroom check — the old pending_count + len form
+             * wraps when len is large and would defeat the guard. */
+            if (fs_ctx && len > BFS_PENDING_FREES_MAX - fs_ctx->pending_count) {
                 return BFS_ERR_AGAIN;
             }
             uint32_t key = bfs_be32(tc.keys[i]);
@@ -244,10 +258,10 @@ bfs_err_t bfs_extent_truncate_batch(bfs_extent_tree_t *et, uint32_t from_block,
             /* Don't return to free tree now (would cause COW recursion).
              * Instead, stash in pending_frees for reclaim during sync. */
             if (fs_ctx) {
-                for (uint32_t b = 0; b < tc.lens[i]; b++)
-                    fs_ctx->pending_frees[fs_ctx->pending_count++] = tc.dblks[i] + b;
+                for (uint32_t b = 0; b < len; b++)
+                    fs_ctx->pending_frees[fs_ctx->pending_count++] = dblk + b;
             } else {
-                bfs_freespace_free(et->fs, tc.dblks[i], tc.lens[i]);
+                bfs_freespace_free(et->fs, dblk, len);
             }
             ops_done++;
         }
