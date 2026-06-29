@@ -36,7 +36,7 @@ code.
 | Soft links | Yes | Yes |
 | File comments | Yes | Yes |
 | Free space tracking | Bitmap | Self-hosting B+tree |
-| Automated tests | — | **200 tests** + emulator integration |
+| Automated tests | — | **220 tests** + emulator integration |
 
 ## Architecture
 
@@ -72,7 +72,7 @@ The B+tree engine is shared across all metadata types, utilizing a **dynamic tra
 ## Limitations
 
 - **Data blocks are not COW'd** — metadata is always consistent; data consistency can be enforced using the optional `data=ordered` mode.
-- **Pending frees are bounded** — overflow leaks blocks until next sync (now 16K capacity).
+- **Very large snapshots** — creating or deleting a snapshot on an extremely large volume (or reclaiming a single multi-GB shared file) can exhaust the bounded deferred-free queue and fail safely with an out-of-space error rather than completing; a resumable reclaim is on the roadmap. Ordinary metadata operations reserve queue headroom up front and never overflow.
 - **Needs real-world testing** — no production use on actual Amiga hardware yet.
 
 ## Building
@@ -114,7 +114,7 @@ make bench
 
 ## Testing
 
-200 host tests across 25 suites:
+220 host tests across 28 suites:
 
 - **B+tree** — insert, split, delete, merge, scan, COW isolation, **compaction**
 - **Free space** — alloc, free, coalesce, self-hosting, disk-full
@@ -134,6 +134,7 @@ make bench
 - **Real-world** — large directory workloads, fragmentation patterns
 - **Hunt** — targeted regression tests
 - **Snapshots** — create, delete, list, mount (read-only)
+- **Deferred-free queue** — headroom reserve, non-silent overflow latch, compaction mass-free, no-leak under delete-storm churn
 
 ### Emulator integration test
 
