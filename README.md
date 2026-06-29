@@ -41,33 +41,33 @@ code.
 ## Architecture
 
 ```plain
-┌────────────────────────────────────────────────────────┐
-│                    AmigaOS Glue Layer                  │
-│  handler.c (DOS packets)    amiga_bio.c    startup.s   │
-├────────────────────────────────────────────────────────┤
-│                  Portable Core (C99)                   │
-│                                                        │
-│  ┌─────────┐  ┌─────────┐  ┌─────────┐  ┌──────────┐   │
-│  │ btree.c │  │ alloc.c │  │  dir.c  │  │ extent.c │   │
-│  │ unified │  │  free   │  │  dir    │  │  file    │   │
-│  │ B+tree  │  │  space  │  │  ops    │  │ extents  │   │
-│  └────┬────┘  └────┬────┘  └────┬────┘  └────┬─────┘   │
-│       └────────────┴────────────┴────────────┘         │
-│                        │                               │
-│  ┌─────────┐  ┌────────┴──┐  ┌──────────┐  ┌────────┐  │
-│  │  fs.c   │  │   txn.c   │  │ crc32.c  │  │ file.c │  │
-│  │ format  │  │ COW txns  │  │checksums │  │ I/O    │  │
-│  │ mount   │  │ dual-sb   │  │          │  │        │  │
-│  └─────────┘  └───────────┘  └──────────┘  └────────┘  │
-└────────────────────────────────────────────────────────┘
+┌──────────────────────────────────────────────────────────────────────┐
+│ AmigaOS Glue Layer                                                   │
+│ handler.c (DOS packets) · amiga_bio.c (device) · startup.s · 68k asm │
+├──────────────────────────────────────────────────────────────────────┤
+│ Operations                                                           │
+│ namespace.c (dir CRUD, rename, links) · file.c (I/O) · snapshot.c    │
+├──────────────────────────────────────────────────────────────────────┤
+│ Metadata trees  (key → value, all on the shared engine)              │
+│ dir.c (names) · extent.c (file maps) · inode.c · refcount.c (snap)   │
+├──────────────────────────────────────────────────────────────────────┤
+│ B+tree engine                                                        │
+│ btree.c — one generic copy-on-write B+tree, used by every tree above │
+├──────────────────────────────────────────────────────────────────────┤
+│ Storage & transactions                                               │
+│ fs.c (format/mount) · txn.c (COW commit) · superblock.c (dual-SB)    │
+│ alloc.c + bootstrap_alloc.c (free space) · cache.c (LRU) · crc32.c   │
+└──────────────────────────────────────────────────────────────────────┘
 ```
 
 The B+tree engine is shared across all metadata types, utilizing a **dynamic transaction tracking** architecture that ensures session-wide consistency and safe COW reclamation. It supports **online compaction** for metadata trees to maintain performance without downtime.
 
 - **Directory tree** — (parent_id, hash, name) → inode
 - **Extent tree** — file_block → (disk_block, length)
-- **Free space tree** — block_nr → length
 - **Inode tree** — inode_id → metadata
+- **Free space tree** — block_nr → length (self-hosting)
+- **Refcount tree** — block_nr → refcount (snapshot block sharing)
+- **Snapshot tree** — snapshot_id → record (tree roots + name)
 
 ## Limitations
 
