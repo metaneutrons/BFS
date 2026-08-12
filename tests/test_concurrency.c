@@ -7,10 +7,12 @@
 #include "bfs_file.h"
 #include "bfs_snapshot.h"
 #include "block_device_emu.h"
+#include <errno.h>
 #include <pthread.h>
-#include <unistd.h>
 #include <stdio.h>
 #include <string.h>
+#include <time.h>
+#include <unistd.h>
 
 #define TEST_IMG "test_concurrency.img"
 #define BLK_SIZE 4096
@@ -19,6 +21,17 @@
 
 static bfs_fs_t g_fs;
 static volatile int g_stop = 0;
+
+static void sleep_us(long microseconds)
+{
+    struct timespec delay = {
+        .tv_sec = microseconds / 1000000L,
+        .tv_nsec = (microseconds % 1000000L) * 1000L,
+    };
+
+    while (nanosleep(&delay, &delay) == -1 && errno == EINTR) {
+    }
+}
 
 static bfs_fs_t *setup(void)
 {
@@ -80,7 +93,7 @@ static void *writer_thread_fn(void *arg)
         }
 
         /* Sleep micro-second to let other threads interleave */
-        usleep(100);
+        sleep_us(100);
     }
     return NULL;
 }
@@ -110,7 +123,7 @@ static void *reader_thread_fn(void *arg)
                 }
             }
         }
-        usleep(500);
+        sleep_us(500);
     }
     return NULL;
 }
@@ -127,7 +140,7 @@ static void *snapshot_thread_fn(void *arg)
         snprintf(name, sizeof(name), "snap_%03d", snap_cnt++);
         bfs_snapshot_create(fs, name);
 
-        usleep(5000); /* 5ms */
+        sleep_us(5000); /* 5ms */
     }
     return NULL;
 }
@@ -140,7 +153,7 @@ static void *sync_thread_fn(void *arg)
 
     while (!g_stop) {
         bfs_fs_sync(fs);
-        usleep(2000); /* 2ms */
+        sleep_us(2000); /* 2ms */
     }
     return NULL;
 }
