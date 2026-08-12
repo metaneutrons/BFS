@@ -46,7 +46,7 @@ jobs:
         run: |
           cd build/release
           tar czf ../../bfs-${{ needs.release-please.outputs.tag_name }}-amiga.tar.gz \
-            bfshandler bfshandler.020 bfshandler.030 bfshandler.040 bfshandler.060 \
+            bfshandler bfshandler.* \
             bfs-test bfsformat bfssnapshot
           cd ../..
           # Also create LHA archive (Amiga standard)
