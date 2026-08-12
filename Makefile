@@ -120,7 +120,7 @@ release:
 # ── Host tools ──────────────────────────────────────────────
 $(BUILD_HOST)/mkbfs: tools/mkbfs.c $(CORE_SRC) $(EMU_SRC)
 	@mkdir -p $(BUILD_HOST)
-	$(HOST_CC) -std=c99 -O2 $(INCLUDES) -DBFS_HOST=1 -o $@ $^
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $^
 
 # ── Amiga test binary ───────────────────────────────────────
 amiga-test: amiga
