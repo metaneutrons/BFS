@@ -32,7 +32,7 @@ BUILD_AMIGA = build/amiga
 TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 
 # ── Phony targets ───────────────────────────────────────────
-.PHONY: host-test amiga amiga-stresstest clean tools stress-test bench
+.PHONY: host-test amiga amiga-stresstest clean tools stress-test bench release
 
 host-test: $(TEST_BINS)
 	@echo "=== Running tests ==="
@@ -97,6 +97,7 @@ AMIGA_SRCS = $(AMIGA_ASM_SRCS) src/amiga/handler.c src/amiga/amiga_bio.c $(CORE_
 AMIGA_LDFLAGS = -nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 AMIGA_BASE_FLAGS = -std=c99 -Wall -Os -noixemul -fomit-frame-pointer \
                    -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I$(AMIGA_PREFIX)/ndk-include
+AMIGA_RELEASE_CPUS = 020 030 040 060 080
 TOOL_SRCS_TEST = tools/bfs-test.c
 TOOL_SRCS_FMT = tools/bfsformat.c
 TOOL_SRCS_SNAP = tools/bfssnapshot.c
@@ -104,7 +105,7 @@ TOOL_SRCS_SNAP = tools/bfssnapshot.c
 release:
 	@mkdir -p build/release
 	@echo "Building release binaries..."
-	@for cpu in 020 030 040 060; do \
+	@for cpu in $(AMIGA_RELEASE_CPUS); do \
 		echo "  68$$cpu..."; \
 		$(AMIGA_CC) $(AMIGA_BASE_FLAGS) -m68$$cpu -o build/release/bfshandler.$$cpu $(AMIGA_SRCS) $(AMIGA_LDFLAGS); \
 	done
