@@ -12,7 +12,8 @@ python3 tools/release/build_identity.py verify
 [[ "$tag" =~ ^v[0-9]+\.[0-9]+\.[0-9]+(-[0-9A-Za-z.-]+)?$ ]]
 [[ "$source_date_epoch" =~ ^[0-9]+$ ]]
 command -v lha >/dev/null 2>&1 || { printf 'ERROR: lha is required.\n' >&2; exit 2; }
-lha 2>&1 | grep -q 'LHa for UNIX' || {
+lha_version=$(lha 2>&1)
+grep -q 'LHa for UNIX' <<< "$lha_version" || {
     printf 'ERROR: the pinned LHa archiver is required; Lhasa cannot create archives.\n' >&2
     exit 2
 }

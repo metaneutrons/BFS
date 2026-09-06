@@ -51,5 +51,6 @@ fi
 
 mkdir -p "$destination"
 install -m 0755 "${binaries[0]}" "$destination/lha"
-"$destination/lha" 2>&1 | grep -q 'LHa for UNIX'
+lha_version=$("$destination/lha" 2>&1)
+grep -q 'LHa for UNIX' <<< "$lha_version"
 printf 'Installed pinned LHA %s in %s.\n' "$version" "$destination"
