@@ -6,10 +6,15 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 TIMEOUT="${1:-600}"
 
-WB="$SCRIPT_DIR/.bench-wb"
+[[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ERROR: timeout must be a positive integer" >&2
+    exit 2
+}
+
+WB="${BFS_BENCH_WB_DIR:-$SCRIPT_DIR/.bench-wb}"
 BFS_HDF="$SCRIPT_DIR/bench-bfs.hdf"
 PFS_HDF="$SCRIPT_DIR/bench-pfs3.hdf"
-ROM="$SCRIPT_DIR/.assets/A1200.47.102.rom"
+ROM="${BFS_ROM_FILE:-$SCRIPT_DIR/.assets/A1200.47.102.rom}"
 
 [ -d "$WB" ] || { echo "ERROR: Run build-bench-image.sh first"; exit 1; }
 [ -f "$BFS_HDF" ] || { echo "ERROR: bench-bfs.hdf not found"; exit 1; }
@@ -22,6 +27,19 @@ rm -f "$WB/Results/bfs.txt" "$WB/Results/pfs3.txt" "$WB/Results/info.txt"
 rm -f "$WB/Results/"*.uaem
 
 CFG=$(mktemp)
+PID=
+TIMER_PID=
+# shellcheck disable=SC2329
+cleanup() {
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        kill "$PID" 2>/dev/null
+    fi
+    if [ -n "$TIMER_PID" ] && kill "$TIMER_PID" 2>/dev/null; then
+        if wait "$TIMER_PID" 2>/dev/null; then :; fi
+    fi
+    rm -f "$CFG"
+}
+trap cleanup EXIT
 cat > "$CFG" << EOF
 [fs-uae]
 amiga_model = A1200
@@ -47,25 +65,36 @@ echo ""
 
 FSEMU_AUDIO_DRIVER=null fs-uae "$CFG" &
 PID=$!
-(sleep "$TIMEOUT" && kill $PID 2>/dev/null) &
+(
+    sleep "$TIMEOUT"
+    if kill -0 "$PID" 2>/dev/null; then
+        kill "$PID" 2>/dev/null
+    fi
+) &
 TIMER_PID=$!
 
 # Wait for completion (check for pfs3.txt = last result written)
-for i in $(seq 1 "$TIMEOUT"); do
+for _ in $(seq 1 "$TIMEOUT"); do
     sleep 1
     if [ -f "$WB/Results/pfs3.txt" ] && [ -s "$WB/Results/pfs3.txt" ]; then
         sleep 2  # let it finish writing
-        kill $PID 2>/dev/null
+        if kill "$PID" 2>/dev/null; then :; fi
         break
     fi
-    if ! kill -0 $PID 2>/dev/null; then break; fi
+    if ! kill -0 "$PID" 2>/dev/null; then break; fi
 done
-kill $TIMER_PID 2>/dev/null || true
-wait $PID 2>/dev/null || true
+if kill "$TIMER_PID" 2>/dev/null; then
+    if wait "$TIMER_PID" 2>/dev/null; then :; fi
+fi
+TIMER_PID=
+if wait "$PID" 2>/dev/null; then :; fi
+PID=
+trap - EXIT
 rm -f "$CFG"
 
 # ── Show results ──────────────────────────────────────────────
 echo ""
+result_status=0
 if [ -f "$WB/Results/info.txt" ] && [ -s "$WB/Results/info.txt" ]; then
     echo "=== Machine Info ==="
     cat "$WB/Results/info.txt"
@@ -75,12 +104,16 @@ if [ -f "$WB/Results/bfs.txt" ] && [ -s "$WB/Results/bfs.txt" ]; then
     echo "=== BFS Results ==="
     cat "$WB/Results/bfs.txt"
 else
-    echo "ERROR: BFS benchmark did not complete"
+    echo "ERROR: BFS benchmark did not complete" >&2
+    result_status=1
 fi
 echo ""
 if [ -f "$WB/Results/pfs3.txt" ] && [ -s "$WB/Results/pfs3.txt" ]; then
     echo "=== PFS3 Results ==="
     cat "$WB/Results/pfs3.txt"
 else
-    echo "ERROR: PFS3 benchmark did not complete"
+    echo "ERROR: PFS3 benchmark did not complete" >&2
+    result_status=1
 fi
+
+exit "$result_status"

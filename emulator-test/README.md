@@ -1,62 +1,56 @@
 # BFS Emulator Integration Test
 
-Tests the BFS handler inside a real AmigaOS-compatible environment
-using FS-UAE with AROS m68k.
+Tests the BFS handler inside an AmigaOS-compatible environment using FS-UAE and a minimal AROS
+m68k runtime.
 
 ## Prerequisites
 
-- `fs-uae` (install: `brew install fs-uae`)
-- `m68k-amigaos-gcc` (install: `brew install metaneutrons/tap/amiga-gcc`)
-- Internet connection (first run downloads AROS ~50MB)
+- `fs-uae` (macOS: `brew install fs-uae`)
+- `m68k-amigaos-gcc` (macOS: `brew install metaneutrons/tap/amiga-gcc`)
+- Internet access for the first checksum-verified AROS ROM download
 
 ## Usage
 
 ```bash
-# Interactive (window visible — for development)
+# Build and run the full integration suite
 make emulator-test
 
-# Headless (for CI)
-make emulator-test-ci
-
-# Setup only (download AROS, create config, don't run)
-./emulator-test/run.sh --setup-only
+# Download and verify the AROS ROMs without running tests
+make emulator-setup
 ```
 
-## What it tests
+`make emulator-test-ci` is an alias for the same headless, self-verifying test path used in CI.
+Generated ROMs, disk images, configuration, and the minimal system directory live under `build/`
+and are ignored by Git.
 
-The test script runs INSIDE the emulated Amiga and exercises:
+## What It Tests
 
-1. **Format** — `Format DRIVE BFSTEST: NAME "TestVol"`
-2. **MakeDir** — nested directory creation
-3. **File I/O** — write files via `Echo >`, read via `Type`
-4. **Copy** — binary file copy
-5. **Delete** — file deletion
-6. **Rename** — file rename
-7. **Dir/List** — directory listing (tests ExAll/ExNext)
-8. **Large files** — copy a binary and verify size
+The on-Amiga `bfs-test` binary exercises file and directory operations, metadata, hard and soft
+links, remount durability, large and sparse files, disk-full behavior, snapshots, fragmentation,
+rename and delete edge cases, and repeated rewrite patterns. The host runner accepts the run only
+when the structured summary is complete, at least one test ran, every test passed, and zero tests
+failed.
 
-## CI Integration
+## CI Assets
 
-```yaml
-# GitHub Actions example
-- name: Install FS-UAE
-  run: brew install fs-uae
+The integration job downloads two freely redistributable AROS ROM images from an immutable
+upstream commit and verifies pinned SHA-256 digests. It creates a minimal system drive from the
+freshly built BFS handler and test binary. No Kickstart, Workbench, downloaded tool, ROM, or disk
+image is stored in this repository.
 
-- name: Build BFS handler
-  run: make amiga
+The flow is:
 
-- name: Run emulator test
-  run: make emulator-test-ci
-  timeout-minutes: 5
-```
+1. Download and verify the AROS ROM and extended ROM.
+2. Create and format a blank 32MB BFS HDF image.
+3. Create a minimal system drive containing `bfshandler` and `bfs-test`.
+4. Boot AROS and mount the HDF through the freshly built handler.
+5. Run the complete on-Amiga integrity suite.
+6. Require a valid structured summary with zero failures.
 
-The integration job downloads its encrypted ROM and Workbench bundle at run
-time. Those assets are not stored in this repository.
+## External Benchmark Assets
 
-## External benchmark assets
-
-The BFS/PFS3 comparison uses third-party or licensed Amiga files that must not
-be committed to this repository. By default, local copies are read from:
+The optional BFS/PFS3 comparison uses third-party or licensed Amiga files that must not be
+committed. By default, local copies are read from:
 
 ```text
 emulator-test/.assets/A1200.47.102.rom
@@ -67,9 +61,8 @@ emulator-test/.cache/DiskSpeed
 emulator-test/.cache/pfs3aio
 ```
 
-The `.assets/` and `.cache/` directories are ignored by Git. Their locations
-can be overridden with `BFS_AMIGA_ASSETS_DIR`, `BFS_ROM_FILE`,
-`BFS_DISKSPEED`, and `BFS_PFS3_HANDLER`.
+The locations can be overridden with `BFS_AMIGA_ASSETS_DIR`, `BFS_ROM_FILE`, `BFS_DISKSPEED`, and
+`BFS_PFS3_HANDLER`.
 
 ```bash
 make amiga build/host/mkbfs
@@ -77,33 +70,14 @@ make amiga build/host/mkbfs
 ./emulator-test/run-bench.sh
 ```
 
-DiskSpeed, AmigaOS ROMs, and Workbench files must come from lawfully obtained
-local copies. If a CI job later needs another redistributable dependency, it
-must download a pinned artifact at run time and verify its checksum.
-
-## How it works
-
-1. Creates a blank 16MB HDF image (the BFS test partition)
-2. Configures FS-UAE with AROS as the system drive
-3. Points `hard_drive_1_file_system` to our `bfshandler` binary
-4. AROS boots, mounts the BFS partition, runs the test script
-5. Test script writes results to `SYS:test-result.txt`
-6. Host script checks the result after FS-UAE exits
-
-## Files
-
-```
-emulator-test/
-├── run.sh              — main test runner
-├── README.md           — this file
-├── aros/               — AROS m68k files (downloaded on first run)
-├── config/             — FS-UAE configuration
-├── scripts/            — Amiga test scripts
-└── bfstest.hdf        — blank test partition (created by run.sh)
-```
+DiskSpeed, AmigaOS ROMs, and Workbench files must come from lawfully obtained local copies. Any
+redistributable dependency added to CI must be downloaded by immutable identity and verified
+before execution.
 
 ## Troubleshooting
 
-- **"kickstart_file not found"**: AROS ROM not downloaded. Run `./run.sh --setup-only`
-- **Emulator hangs**: Handler crashed. Check with `--ci` mode (auto-timeout 120s)
-- **"Format failed"**: Handler not loaded. Check `hard_drive_1_file_system` path
+- **AROS ROM missing:** run `make emulator-setup` and retry.
+- **No structured result:** inspect `fs-uae.log` in the run's printed evidence directory
+  under `build/emulator/run.*` for a boot or handler failure.
+- **Handler not mounted:** inspect `build/emulator/ci-test.fs-uae` and its
+  `hard_drive_1_file_system` value.

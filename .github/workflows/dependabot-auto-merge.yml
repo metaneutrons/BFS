@@ -1,6 +1,8 @@
 name: Dependabot Auto-Merge
 
-on: pull_request
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
@@ -8,12 +10,12 @@ permissions:
 
 jobs:
   auto-merge:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     if: github.event.pull_request.user.login == 'dependabot[bot]'
     steps:
       - name: Fetch Dependabot metadata
         id: metadata
-        uses: dependabot/fetch-metadata@db5263155796a5676709848507b5e85c26b52829 # v2.2.0
+        uses: dependabot/fetch-metadata@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
 
