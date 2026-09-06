@@ -1,18 +1,18 @@
 version: 2
 updates:
-  - package-ecosystem: "github-actions"
-    directory: "/"
-    target-branch: "main"
+  - package-ecosystem: github-actions
+    directory: /
     schedule:
-      interval: "daily"
+      interval: weekly
+      day: monday
+      time: '05:15'
     open-pull-requests-limit: 5
+    cooldown:
+      default-days: 3
     labels:
-      - "dependencies"
-      - "github-actions"
+      - dependencies
+      - github-actions
     groups:
       github-actions-minor-patch:
-        patterns:
-          - "*"
-        update-types:
-          - "minor"
-          - "patch"
+        patterns: ['*']
+        update-types: [minor, patch]
