@@ -7,6 +7,7 @@
 #include "bfs_fs.h"
 #include "bfs_file.h"
 #include "block_device_emu.h"
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -28,7 +29,7 @@ static void setup(void)
 static void teardown(void)
 {
     bfs_fs_unmount(&g_fs);
-    bio_emu_create(TEST_IMG, BLK_SIZE, 0); /* delete */
+    unlink(TEST_IMG);
 }
 
 /* ── 1. Transactional Consistency (The "Stale Handle" Pattern) ── */
@@ -46,7 +47,7 @@ static void test_txn_stale_handle_consistency(void)
      * This tests if the handle's internal tree correctly tracks live_txn_id. */
     for (int i = 0; i < 5; i++) {
         char buf[64];
-        sprintf(buf, "data %d", i);
+        snprintf(buf, sizeof(buf), "data %d", i);
         TEST_ASSERT(bfs_file_write(&f, buf, 64) == 64);
         bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); inode.extent_root = bfs_be32(f.extents.tree.root); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
     }
@@ -77,6 +78,7 @@ static void test_backup_sb_protection(void)
     
     /* Write enough blocks to pass the midpoint */
     uint8_t *zeros = calloc(1, BLK_SIZE);
+    TEST_ASSERT(zeros != NULL);
     for (uint32_t i = 0; i < BLK_COUNT / 2 + 10; i++) {
         if (bfs_file_write(&f, zeros, BLK_SIZE) != BLK_SIZE) break;
     }
@@ -85,6 +87,7 @@ static void test_backup_sb_protection(void)
 
     /* Read backup SB directly and verify it's still a valid SB and matches primary magic */
     uint8_t *sb_buf = malloc(BLK_SIZE);
+    TEST_ASSERT(sb_buf != NULL);
     TEST_ASSERT_EQ(bfs_bio_read(g_bio, backup_blk, sb_buf), BFS_OK);
     bfs_superblock_t *sb = (bfs_superblock_t *)sb_buf;
     TEST_ASSERT_EQ(bfs_be32(sb->magic), BFS_SB_MAGIC);
@@ -151,7 +154,7 @@ static void test_exall_linear_complexity(void)
 
     /* Create 100 files */
     for (int i = 0; i < 100; i++) {
-        char name[16]; sprintf(name, "f%03d", i);
+        char name[16]; snprintf(name, sizeof(name), "f%03d", i);
         bfs_fs_create_file(&g_fs, BFS_ROOT_INO, name, strlen(name), NULL);
     }
     bfs_fs_sync(&g_fs);
@@ -165,7 +168,7 @@ static void test_exall_linear_complexity(void)
 
     /* Create 900 more (total 1000) */
     for (int i = 100; i < 1000; i++) {
-        char name[16]; sprintf(name, "f%03d", i);
+        char name[16]; snprintf(name, sizeof(name), "f%03d", i);
         bfs_fs_create_file(&g_fs, BFS_ROOT_INO, name, strlen(name), NULL);
     }
     bfs_fs_sync(&g_fs);
@@ -266,7 +269,7 @@ static void test_online_compaction(void)
     setup();
     /* Create a fragmented directory tree with 500 entries */
     for (int i = 0; i < 500; i++) {
-        char name[16]; sprintf(name, "file_%d", i);
+        char name[16]; snprintf(name, sizeof(name), "file_%d", i);
         bfs_fs_create_file(&g_fs, BFS_ROOT_INO, name, strlen(name), NULL);
     }
     bfs_fs_sync(&g_fs);
@@ -281,7 +284,7 @@ static void test_online_compaction(void)
 
     /* Verify all files still exist and are accessible after compaction */
     for (int i = 0; i < 500; i++) {
-        char name[16]; sprintf(name, "file_%d", i);
+        char name[16]; snprintf(name, sizeof(name), "file_%d", i);
         uint32_t ino, type;
         TEST_ASSERT_EQ(bfs_dir_lookup(&g_fs.dir_tree, BFS_ROOT_INO, name, strlen(name), &ino, &type), BFS_OK);
     }

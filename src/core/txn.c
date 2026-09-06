@@ -25,33 +25,42 @@
 
 bfs_err_t bfs_txn_begin(bfs_txn_t *txn, bfs_bio_t *bio)
 {
+    if (!txn || !bio || !bio->ops || !bio->ops->read_block ||
+        !bio->ops->write_block || !bio->ops->sync)
+        return BFS_ERR_INVAL;
     memset(txn, 0, sizeof(*txn));
     txn->bio = bio;
     bfs_err_t err = bfs_sb_read(bio, &txn->sb);
     if (err != BFS_OK) return err;
+    uint64_t committed_id = bfs_be64(txn->sb.txn_id);
+    if (committed_id >= UINT64_MAX - 1) return BFS_ERR_NOSPC;
     txn->sb_new = txn->sb;
-    txn->sb_new.txn_id = bfs_be64(bfs_be64(txn->sb.txn_id) + 1);
+    txn->sb_new.txn_id = bfs_be64(committed_id + 1);
     txn->active = true;
     return BFS_OK;
 }
 
 void bfs_txn_set_dir_root(bfs_txn_t *txn, bfs_blk_t root)
 {
+    if (!txn) return;
     txn->sb_new.dir_tree_root = bfs_be32(root);
 }
 
 void bfs_txn_set_free_root(bfs_txn_t *txn, bfs_blk_t root)
 {
+    if (!txn) return;
     txn->sb_new.free_tree_root = bfs_be32(root);
 }
 
 void bfs_txn_set_free_blocks(bfs_txn_t *txn, uint32_t count)
 {
+    if (!txn) return;
     txn->sb_new.free_blocks = bfs_be32(count);
 }
 
 void bfs_txn_set_inode_root(bfs_txn_t *txn, bfs_blk_t root)
 {
+    if (!txn) return;
     txn->sb_new.inode_tree_root = bfs_be32(root);
 }
 
@@ -59,11 +68,13 @@ void bfs_txn_set_inode_root(bfs_txn_t *txn, bfs_blk_t root)
  * txn_id. The full filesystem commit boundary is bfs_txn_commit(fs), below. */
 bfs_err_t bfs_txn_write_sb(bfs_txn_t *txn)
 {
-    if (!txn->active) return BFS_ERR_INVAL;
+    if (!txn || !txn->active || !txn->bio) return BFS_ERR_INVAL;
+    uint64_t next_id = bfs_be64(txn->sb_new.txn_id);
+    if (next_id == UINT64_MAX) return BFS_ERR_NOSPC;
     bfs_err_t err = bfs_sb_write(txn->bio, &txn->sb_new);
     if (err != BFS_OK) return err;
     txn->sb = txn->sb_new;
-    txn->sb_new.txn_id = bfs_be64(bfs_be64(txn->sb.txn_id) + 1);
+    txn->sb_new.txn_id = bfs_be64(next_id + 1);
     /* active remains true: the transaction stays open for the next commit cycle.
      * Call txn_abort() to explicitly end the transaction without committing. */
     return BFS_OK;
@@ -71,7 +82,7 @@ bfs_err_t bfs_txn_write_sb(bfs_txn_t *txn)
 
 void bfs_txn_abort(bfs_txn_t *txn)
 {
-    if (!txn->active) return;
+    if (!txn || !txn->active) return;
     txn->sb_new = txn->sb;
     txn->sb_new.txn_id = bfs_be64(bfs_be64(txn->sb.txn_id) + 1);
     txn->active = false;
@@ -79,6 +90,7 @@ void bfs_txn_abort(bfs_txn_t *txn)
 
 uint64_t bfs_txn_id(const bfs_txn_t *txn)
 {
+    if (!txn) return 0;
     return bfs_be64(txn->sb_new.txn_id);
 }
 
@@ -106,23 +118,80 @@ static void shellsort_blocks(bfs_blk_t *arr, uint32_t count)
     }
 }
 
+static bool preserve_pending_tail(bfs_fs_t *fs, const bfs_blk_t *items,
+                                  uint32_t first, uint32_t count)
+{
+    uint32_t cap = bfs_fs_pending_cap(fs);
+    while (first < count && fs->pending_count < cap)
+        bfs_fs_pending_items(fs)[fs->pending_count++] = items[first++];
+    return first == count;
+}
+
 /* The single transaction-commit boundary for a mounted filesystem: flush data
  * (data=ordered), return the reserve pool, gather the current tree roots into
  * the working superblock and write it, then drain the COW pending-free queue
  * (refcount-aware) and re-commit the free tree. Every caller that needs to make
  * filesystem state durable — file/snapshot/namespace mid-op, sync, unmount —
  * goes through here. */
-bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
+static bfs_err_t reclaim_shared_blocks(bfs_fs_t *fs, const bfs_blk_t *blocks,
+                                       uint32_t count)
 {
-    if (!fs->mounted) return BFS_ERR_INVAL;
-
-    /* Phase 0: If data=ordered is enabled, flush all data writes to physical media
-     * before we commit the metadata that points to them. This ensures that a
-     * crash never leaves an inode pointing to uninitialized data blocks. */
-    if (fs->options & BFS_OPT_DATA_ORDERED) {
-        bfs_bio_sync(fs->bio);
+    for (uint32_t i = 0; i < count; i++) {
+        bool freed = false;
+        bfs_err_t err = bfs_refcount_dec(&fs->refcount, blocks[i], &freed);
+        if (err == BFS_OK && freed)
+            err = bfs_freespace_free(&fs->freespace, blocks[i], 1);
+        if (err != BFS_OK)
+            return preserve_pending_tail(fs, blocks, i + 1, count)
+                       ? err : BFS_ERR_NOSPC;
     }
+    return BFS_OK;
+}
 
+static bfs_err_t reclaim_block_ranges(bfs_fs_t *fs, const bfs_blk_t *blocks,
+                                      uint32_t count)
+{
+    uint32_t i = 0;
+    while (i < count) {
+        bfs_blk_t start = blocks[i];
+        uint32_t len = 1;
+        while (len < count - i && blocks[i + len] == start + len) len++;
+        bfs_err_t err = bfs_freespace_free(&fs->freespace, start, len);
+        if (err != BFS_OK)
+            return preserve_pending_tail(fs, blocks, i + len, count)
+                       ? err : BFS_ERR_NOSPC;
+        i += len;
+    }
+    return BFS_OK;
+}
+
+static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs)
+{
+    uint32_t count = fs->pending_count;
+    if (count > bfs_fs_pending_cap(fs) ||
+        (uint64_t)count * sizeof(bfs_blk_t) > SIZE_MAX)
+        return BFS_ERR_CORRUPT;
+    bfs_blk_t *blocks = malloc(count * sizeof(*blocks));
+    if (!blocks) return BFS_ERR_NOMEM;
+    /* The source capacity and exactly matching allocation size were checked above. */
+    memcpy(blocks, bfs_fs_pending_items(fs), count * sizeof(*blocks)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    shellsort_blocks(blocks, count);
+    for (uint32_t i = 1; i < count; i++) {
+        if (blocks[i] == blocks[i - 1]) {
+            free(blocks);
+            return BFS_ERR_CORRUPT;
+        }
+    }
+    fs->pending_count = 0;
+    bfs_err_t err = fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL
+        ? reclaim_shared_blocks(fs, blocks, count)
+        : reclaim_block_ranges(fs, blocks, count);
+    free(blocks);
+    return err;
+}
+
+static bfs_err_t txn_commit_working(bfs_fs_t *fs)
+{
     bfs_err_t err = bfs_freespace_return_reserve(&fs->freespace);
     if (err != BFS_OK) return err;
 
@@ -143,38 +212,8 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
     int sync_iterations = 0;
     while (fs->pending_count > 0 && sync_iterations < 256) {
         sync_iterations++;
-        uint32_t count = fs->pending_count;
-        bfs_blk_t *process_buf = malloc(count * sizeof(bfs_blk_t));
-        if (!process_buf) return BFS_ERR_NOMEM;
-
-        memcpy(process_buf, fs->pending_frees, count * sizeof(bfs_blk_t));
-        fs->pending_count = 0;
-
-        shellsort_blocks(process_buf, count);
-
-        uint32_t i = 0;
-        while (i < count) {
-            bfs_blk_t start = process_buf[i];
-            uint32_t len = 1;
-            while (i + len < count && process_buf[i + len] == start + len) len++;
-
-            if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
-                for (uint32_t b = 0; b < len; b++) {
-                    uint32_t rc = bfs_refcount_get(&fs->refcount, start + b);
-                    if (rc > 0) {
-                        bool freed;
-                        bfs_refcount_dec(&fs->refcount, start + b, &freed);
-                        if (freed) bfs_freespace_free(&fs->freespace, start + b, 1);
-                    } else {
-                        bfs_freespace_free(&fs->freespace, start + b, 1);
-                    }
-                }
-            } else {
-                bfs_freespace_free(&fs->freespace, start, len);
-            }
-            i += len;
-        }
-        free(process_buf);
+        err = reclaim_pending_batch(fs);
+        if (err != BFS_OK) return err;
 
         err = bfs_freespace_return_reserve(&fs->freespace);
         if (err != BFS_OK) return err;
@@ -186,8 +225,28 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
             fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
         err = bfs_txn_write_sb(&fs->txn);
         if (err != BFS_OK) return err;
+        update_tree_txns(fs);
     }
+
+    if (fs->pending_count > 0) return BFS_ERR_AGAIN;
 
     update_tree_txns(fs);
     return bfs_bio_sync(fs->bio);
+}
+
+bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
+{
+    if (!fs || !fs->mounted || !fs->bio || !fs->txn.active)
+        return BFS_ERR_INVAL;
+    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+    /* An ordered-data flush has not modified commit state, so it can be retried. */
+    if (fs->options & BFS_OPT_DATA_ORDERED) {
+        bfs_err_t err = bfs_bio_sync(fs->bio);
+        if (err != BFS_OK) return err;
+    }
+    bfs_err_t err = txn_commit_working(fs);
+    /* Later failures can follow a partial superblock write or reclamation.
+     * Require recovery instead of letting the next operation commit that state. */
+    if (err != BFS_OK) fs->recovery_error = err;
+    return err;
 }

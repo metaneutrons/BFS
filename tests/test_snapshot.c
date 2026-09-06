@@ -90,6 +90,47 @@ static void test_multiple_snapshots(void) {
     teardown(fs);
 }
 
+static void test_snapshot_name_validation(void) {
+    bfs_fs_t *fs = setup();
+    char unterminated[BFS_SNAPSHOT_NAME_MAX];
+    memset(unterminated, 'x', sizeof(unterminated));
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs, unterminated), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, unterminated, NULL, NULL), BFS_ERR_INVAL);
+
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs, NULL), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs, ""), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs,
+        "12345678901234567890123456789012"), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs, "invalid/name"), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, NULL, NULL, NULL),
+                   BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, "", NULL, NULL),
+                   BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs,
+        "12345678901234567890123456789012", NULL, NULL), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_list(NULL, snap_count_cb, NULL), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_list(fs, NULL, NULL), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_delete(NULL, 1), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_delete(fs, 0), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_next_id(NULL), 0);
+    TEST_ASSERT_EQ(bfs_snapshot_open(NULL, fs->bio,
+                                     bfs_freespace_allocator(&fs->freespace),
+                                     NULL, &fs->inode_tree), BFS_ERR_INVAL);
+
+    bfs_fs_t unmounted = {0};
+    TEST_ASSERT_EQ(bfs_snapshot_create(&unmounted, "name"), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_delete(&unmounted, 1), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_list(&unmounted, snap_count_cb, NULL), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(&unmounted, "name", NULL, NULL),
+                   BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_next_id(&unmounted), 0);
+
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs, "unique"), BFS_OK);
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs, "unique"), BFS_ERR_EXISTS);
+
+    teardown(fs);
+}
+
 static void test_no_snapshot_overhead(void) {
     bfs_fs_t *fs = setup();
     /* Without snapshots, has_snapshots should be false */
@@ -101,6 +142,41 @@ static void test_no_snapshot_overhead(void) {
     bfs_fs_delete_file(fs, 1, "tmp", 3);
     bfs_fs_sync(fs);
 
+    TEST_ASSERT(!fs->has_snapshots);
+    teardown(fs);
+}
+
+static void test_delete_preflights_large_inode(void) {
+    bfs_fs_t *fs = setup();
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "large", 5, &ino), BFS_OK);
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    uint8_t *data = malloc(12u * BS);
+    TEST_ASSERT(data != NULL);
+    memset(data, 0x5a, 12u * BS);
+    TEST_ASSERT_EQ(bfs_file_write(&file, data, 12u * BS), 12u * BS);
+    free(data);
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs, "large-snapshot"), BFS_OK);
+
+    bfs_blk_t shared_block = BFS_BLK_NULL;
+    TEST_ASSERT_EQ(bfs_extent_lookup(&file.extents, 0, &shared_block), BFS_OK);
+    TEST_ASSERT_EQ(bfs_refcount_get(&fs->refcount, shared_block), 2);
+
+    fs->pending_frees_cap = BFS_BTREE_MAX_OP_FREES + 5u;
+    TEST_ASSERT_EQ(bfs_snapshot_delete(fs, 1), BFS_ERR_NOSPC);
+    TEST_ASSERT_EQ(bfs_refcount_get(&fs->refcount, shared_block), 2);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, "large-snapshot", NULL, NULL),
+                   BFS_OK);
+    bfs_bio_t *bio = fs->bio;
+    TEST_ASSERT_EQ(bfs_fs_unmount(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mount(fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, "large-snapshot", NULL, NULL),
+                   BFS_OK);
+
+    fs->pending_frees_cap = BFS_PENDING_FREES_MAX;
+    TEST_ASSERT_EQ(bfs_snapshot_delete(fs, 1), BFS_OK);
     TEST_ASSERT(!fs->has_snapshots);
     teardown(fs);
 }
@@ -191,8 +267,6 @@ static void test_interrupted_deletion_resume(void) {
     /* Due to B+tree structural hysteresis, some empty B-tree leaf nodes in the refcount/snapshot 
      * trees may remain allocated, which is standard B+tree behavior. We allow a minor tolerance 
      * of 4 blocks for metadata overhead, ensuring that all actual snapshot data blocks are fully reclaimed. */
-    printf("DEBUG: new_fs.freespace.total_free=%u, free_before_snap=%u (diff=%d)\n",
-           new_fs.freespace.total_free, free_before_snap, (int)free_before_snap - (int)new_fs.freespace.total_free);
     TEST_ASSERT(new_fs.freespace.total_free >= free_before_snap - 4);
 
     /* Clean up */
@@ -205,6 +279,8 @@ TEST_SUITE_BEGIN("Snapshots")
     TEST_RUN(test_create_snapshot);
     TEST_RUN(test_snapshot_preserves_data);
     TEST_RUN(test_multiple_snapshots);
+    TEST_RUN(test_snapshot_name_validation);
     TEST_RUN(test_no_snapshot_overhead);
+    TEST_RUN(test_delete_preflights_large_inode);
     TEST_RUN(test_interrupted_deletion_resume);
 TEST_SUITE_END()

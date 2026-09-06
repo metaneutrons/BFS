@@ -3,6 +3,8 @@
  */
 
 #include "block_device_emu.h"
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -11,6 +13,13 @@ typedef struct {
     bfs_bio_t base;
     FILE *fp;
 } bio_emu_t;
+
+static void close_preserving_errno(FILE *fp)
+{
+    int saved_errno = errno;
+    (void)fclose(fp);
+    errno = saved_errno;
+}
 
 static bfs_err_t emu_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
 {
@@ -61,6 +70,14 @@ bfs_bio_t *bio_emu_create(const char *path, uint32_t block_size, bfs_blk_t block
     /* block_size must be power of 2 */
     if (block_size & (block_size - 1))
         return NULL;
+    if (block_count == 0) {
+        errno = EINVAL;
+        return NULL;
+    }
+    if ((uint64_t)block_count > (uint64_t)LONG_MAX / block_size) {
+        errno = EOVERFLOW;
+        return NULL;
+    }
 
     FILE *fp = fopen(path, "w+b");
     if (!fp) return NULL;
@@ -68,13 +85,19 @@ bfs_bio_t *bio_emu_create(const char *path, uint32_t block_size, bfs_blk_t block
     /* Extend file to full size */
     uint64_t total = (uint64_t)block_size * block_count;
     if (fseek(fp, (long)(total - 1), SEEK_SET) != 0 || fputc(0, fp) == EOF) {
-        fclose(fp);
+        close_preserving_errno(fp);
         return NULL;
     }
-    rewind(fp);
+    if (fseek(fp, 0, SEEK_SET) != 0) {
+        close_preserving_errno(fp);
+        return NULL;
+    }
 
     bio_emu_t *emu = calloc(1, sizeof(*emu));
-    if (!emu) { fclose(fp); return NULL; }
+    if (!emu) {
+        close_preserving_errno(fp);
+        return NULL;
+    }
 
     emu->base.ops = &emu_ops;
     emu->base.block_size = block_size;
@@ -93,21 +116,38 @@ bfs_bio_t *bio_emu_open(const char *path, uint32_t block_size)
     FILE *fp = fopen(path, "r+b");
     if (!fp) return NULL;
 
-    fseek(fp, 0, SEEK_END);
+    if (fseek(fp, 0, SEEK_END) != 0) {
+        close_preserving_errno(fp);
+        return NULL;
+    }
     long size = ftell(fp);
-    rewind(fp);
+    if (size < 0 || fseek(fp, 0, SEEK_SET) != 0) {
+        close_preserving_errno(fp);
+        return NULL;
+    }
 
-    if (size <= 0 || (size % block_size) != 0) {
-        fclose(fp);
+    if (size == 0 || (size % block_size) != 0) {
+        errno = EINVAL;
+        close_preserving_errno(fp);
+        return NULL;
+    }
+
+    uint64_t block_count = (uint64_t)size / block_size;
+    if (block_count > UINT32_MAX) {
+        errno = EOVERFLOW;
+        close_preserving_errno(fp);
         return NULL;
     }
 
     bio_emu_t *emu = calloc(1, sizeof(*emu));
-    if (!emu) { fclose(fp); return NULL; }
+    if (!emu) {
+        close_preserving_errno(fp);
+        return NULL;
+    }
 
     emu->base.ops = &emu_ops;
     emu->base.block_size = block_size;
-    emu->base.block_count = (bfs_blk_t)(size / block_size);
+    emu->base.block_count = (bfs_blk_t)block_count;
     emu->fp = fp;
     return &emu->base;
 }

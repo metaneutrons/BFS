@@ -20,12 +20,32 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
 
 bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
 {
+    if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+        return BFS_ERR_INVAL;
     uint32_t key = bfs_be32(ino);
-    return bfs_btree_search(tree, &key, out);
+    bfs_err_t err = bfs_btree_search(tree, &key, out);
+    if (err != BFS_OK) return err;
+    uint32_t type = bfs_be32(out->type);
+    bfs_blk_t extent_root = bfs_be32(out->extent_root);
+    if (bfs_be32(out->inode_nr) != ino || type > BFS_INODE_HARDLINK ||
+        bfs_be32(out->link_count) == 0 ||
+        (extent_root != BFS_BLK_NULL &&
+         (!tree->bio || extent_root >= tree->bio->block_count)))
+        return BFS_ERR_CORRUPT;
+    return BFS_OK;
 }
 
 bfs_err_t bfs_inode_write(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *inode)
 {
+    if (!tree || !inode || ino == 0 || ino >= 0x80000000u ||
+        bfs_be32(inode->inode_nr) != ino ||
+        bfs_be32(inode->type) > BFS_INODE_HARDLINK ||
+        bfs_be32(inode->link_count) == 0)
+        return BFS_ERR_INVAL;
+    bfs_blk_t extent_root = bfs_be32(inode->extent_root);
+    if (extent_root != BFS_BLK_NULL &&
+        (!tree->bio || extent_root >= tree->bio->block_count))
+        return BFS_ERR_INVAL;
     uint32_t key = bfs_be32(ino);
 
     /* Try update (single traversal for existing inodes) */
@@ -37,6 +57,8 @@ bfs_err_t bfs_inode_write(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *in
 
 bfs_err_t bfs_inode_delete(bfs_btree_t *tree, uint32_t ino)
 {
+    if (!tree || ino == 0 || ino >= 0x80000000u)
+        return BFS_ERR_INVAL;
     uint32_t key = bfs_be32(ino);
     return bfs_btree_delete(tree, &key);
 }

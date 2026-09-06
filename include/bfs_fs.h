@@ -26,7 +26,8 @@
 
 #define BFS_ROOT_INO 1  /* root directory inode number */
 
-/* Capacity of the per-transaction deferred-free queue (pending_frees[]). Old
+/* Inline capacity of the per-transaction deferred-free queue. Large atomic
+ * reclaim units reserve a heap buffer before mutation. Old
  * COW'd blocks park here until the next commit drains them back to the
  * allocator. The fs reserves headroom at safe entry points
  * (bfs_fs_ensure_free_headroom) so an in-COW defer() can never overflow; an
@@ -50,22 +51,33 @@ typedef struct bfs_fs {
     uint32_t           next_ino;   /* next inode number to allocate */
     uint32_t           options;    /* BFS_OPT_* flags */
     bool               mounted;
+    bfs_err_t          recovery_error; /* nonzero: abandon/remount required */
+    /* Shared between fs.c recovery and file.c handle validation. */
+    // cppcheck-suppress unusedStructMember
+    uint64_t           recovery_generation; /* invalidates open handles on reload */
     bool               data_checksums; /* BFS_OPT_DATA_CHECKSUMS enabled */
-    bool               has_snapshots;  /* refcount_tree_root != 0 */
+    /* Consulted by snapshot.c, file.c and txn.c, not just assigned by mount. */
+    // cppcheck-suppress unusedStructMember
+    bool               has_snapshots;  /* snapshot_tree_root != 0 */
     uint64_t           live_txn_id;    /* current transaction id (host order) */
     bfs_blk_t         pending_frees[BFS_PENDING_FREES_MAX];
+    bfs_blk_t        *pending_frees_dynamic; /* large atomic reclaim units */
     uint32_t           pending_count;
-    uint32_t           pending_frees_cap; /* effective queue cap (= MAX in production; tests lower it) */
+    uint32_t           pending_frees_cap; /* allocated capacity; tests may lower it */
     uint8_t           *scratch;        /* pre-allocated block buffer for file I/O */
     bfs_fs_lock_t         lock;
 } bfs_fs_t;
 
-/* Effective deferred-free queue cap: the full array in production; tests lower
- * fs->pending_frees_cap to drive the headroom-reserve paths cheaply. A zero
- * (uninitialised) cap means the full capacity. */
+/* Effective queue capacity, including optional growth. Tests lower the inline
+ * cap to exercise hard-limit failures. Zero means the inline capacity. */
 static inline uint32_t bfs_fs_pending_cap(const bfs_fs_t *fs)
 {
     return fs->pending_frees_cap ? fs->pending_frees_cap : BFS_PENDING_FREES_MAX;
+}
+
+static inline bfs_blk_t *bfs_fs_pending_items(bfs_fs_t *fs)
+{
+    return fs->pending_frees_dynamic ? fs->pending_frees_dynamic : fs->pending_frees;
 }
 
 /* Format a fresh BFS filesystem.
@@ -80,9 +92,9 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio);
  * txn.c as bfs_txn_commit(fs); this is just the public, lock-taking wrapper). */
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs);
 
-/* Defer-free a block: queue it for reclaim at the next sync (syncing first if
- * the queue is full), or free it immediately when snapshots are disabled. The
- * single entry point for post-COW block reclamation. */
+/* Defer-free a block for reclaim at the next sync. Callers must reserve queue
+ * headroom at a safe operation boundary; a full queue returns BFS_ERR_AGAIN
+ * and is never drained from inside a multi-step mutation. */
 bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk);
 
 /* The deferred-free sink for this filesystem (its pending-free queue), to attach
@@ -98,6 +110,10 @@ bfs_err_t bfs_fs_ensure_free_headroom(bfs_fs_t *fs, uint32_t slots);
 
 /* Unmount: sync and release resources. */
 bfs_err_t bfs_fs_unmount(bfs_fs_t *fs);
+
+/* Drop a mounted in-memory state without writing it. This is only for media
+ * loss/change and crash simulation; normal callers must use bfs_fs_unmount(). */
+void bfs_fs_abandon(bfs_fs_t *fs);
 
 /* ── Directory operations ──────────────────────────────────── */
 

@@ -15,5 +15,7 @@ typedef signed long long int64_t;
 typedef unsigned long long uint64_t;
 #define UINT32_MAX 0xFFFFFFFFU
 #define INT32_MAX  0x7FFFFFFF
+#define UINT64_MAX 0xFFFFFFFFFFFFFFFFULL
+#define INT64_MAX  0x7FFFFFFFFFFFFFFFLL
 
 #endif

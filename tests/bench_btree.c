@@ -86,6 +86,11 @@ int main(void) {
 
     /* ── Random lookup ───────────────────────────────────────── */
     int *order = malloc(NUM_ENTRIES * sizeof(int));
+    if (!order) {
+        fprintf(stderr, "Failed to allocate lookup order\n");
+        bfs_fs_unmount(&fs);
+        return 1;
+    }
     for (int i = 0; i < NUM_ENTRIES; i++) order[i] = i;
     srand(42);
     for (int i = NUM_ENTRIES - 1; i > 0; i--) {
@@ -113,7 +118,7 @@ int main(void) {
 
     /* ── Simulated O(n) linear lookup ────────────────────────── */
     for (int i = 0; i < NUM_ENTRIES; i++) {
-        strcpy(g_linear[i].name, names[i]);
+        snprintf(g_linear[i].name, sizeof(g_linear[i].name), "%s", names[i]);
         g_linear[i].val = (uint32_t)(i + 100);
     }
 

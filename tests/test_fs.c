@@ -46,6 +46,21 @@ static void test_format_mount(void)
     unlink(TEST_IMG);
 }
 
+static void test_format_rejects_invalid_volume_names(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+
+    TEST_ASSERT_EQ(bfs_fs_format(bio, NULL, 0), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "", 0), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio,
+        "12345678901234567890123456789012", 0), BFS_ERR_INVAL);
+
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 /* ── Test: format, create files, remount, verify ───────────── */
 
 static void test_format_create_remount(void)
@@ -130,6 +145,30 @@ static void test_crash_recovery(void)
     unlink(TEST_IMG);
 }
 
+static void test_abandon_discards_uncommitted_state(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "Abandon", 0), BFS_OK);
+
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "pending", 7,
+                                      &ino), BFS_OK);
+    bfs_fs_abandon(&fs);
+    TEST_ASSERT(!fs.mounted);
+    TEST_ASSERT(fs.scratch == NULL);
+
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "pending", 7,
+                                  NULL, NULL), BFS_ERR_NOTFOUND);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 /* ── Test: multiple sync cycles ────────────────────────────── */
 
 static void test_multiple_syncs(void)
@@ -205,8 +244,10 @@ static void test_superblock_alternation(void)
 
 TEST_SUITE_BEGIN("Filesystem")
     TEST_RUN(test_format_mount);
+    TEST_RUN(test_format_rejects_invalid_volume_names);
     TEST_RUN(test_format_create_remount);
     TEST_RUN(test_crash_recovery);
+    TEST_RUN(test_abandon_discards_uncommitted_state);
     TEST_RUN(test_multiple_syncs);
     TEST_RUN(test_superblock_alternation);
 TEST_SUITE_END()

@@ -9,7 +9,7 @@
  * mid-mutation. The fix:
  *   - reserves queue headroom at safe fs-entry points (bfs_fs_ensure_free_headroom)
  *     so the in-COW defer() provably never overflows for bounded ops;
- *   - latches any residual overflow and surfaces it as a loud BFS_ERR_NOSPC
+ *   - latches any residual overflow and surfaces it as a loud BFS_ERR_AGAIN
  *     instead of a silent drop;
  *   - reorders compaction to swap-root -> commit -> free-old-nodes, so its
  *     unbounded whole-old-tree free happens post-commit and can drain.
@@ -27,6 +27,7 @@
 #include "bfs_inode.h"
 #include "bfs_snapshot.h"
 #include "block_device_emu.h"
+#include <unistd.h>
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -39,6 +40,15 @@
 static bfs_fs_t   g_fs;
 static bfs_bio_t *g_bio;
 
+static uint64_t available_free_blocks(void)
+{
+    uint64_t total = (uint64_t)g_fs.freespace.total_free +
+                     g_fs.freespace.reserve_count;
+    if (g_fs.freespace.sb)
+        total += bfs_be32(g_fs.freespace.sb->emergency_count);
+    return total;
+}
+
 static void setup(void)
 {
     g_bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
@@ -49,7 +59,7 @@ static void setup(void)
 static void teardown(void)
 {
     bfs_fs_unmount(&g_fs);
-    bio_emu_create(TEST_IMG, BLK_SIZE, 0); /* delete image */
+    unlink(TEST_IMG);
 }
 
 /* Create n files and COMMIT them, so their tree nodes belong to an OLDER
@@ -60,7 +70,7 @@ static void teardown(void)
 static void create_and_commit(int n)
 {
     for (int i = 0; i < n; i++) {
-        char name[24]; sprintf(name, "f%05d", i);
+        char name[24]; snprintf(name, sizeof(name), "f%05d", i);
         TEST_ASSERT_EQ(bfs_fs_create_file(&g_fs, BFS_ROOT_INO, name, (uint8_t)strlen(name), NULL), BFS_OK);
     }
     TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
@@ -76,7 +86,7 @@ static void delete_storm(int n)
     g_fs.pending_frees_cap = SMALL_CAP;
     uint64_t txn_before = g_fs.live_txn_id;
     for (int i = 0; i < n; i++) {
-        char name[24]; sprintf(name, "f%05d", i);
+        char name[24]; snprintf(name, sizeof(name), "f%05d", i);
         TEST_ASSERT_EQ(bfs_fs_delete_file(&g_fs, BFS_ROOT_INO, name, (uint8_t)strlen(name)), BFS_OK);
     }
     /* At least one commit must have fired DURING the deletes (before the sync
@@ -95,11 +105,11 @@ static void test_small_cap_delete_storm_no_leak(void)
 {
     setup();
     const int N = 2000;
-    uint32_t prev_free = 0;
+    uint64_t prev_free = 0;
     for (int cycle = 0; cycle < 4; cycle++) {
         create_and_commit(N);
         delete_storm(N);
-        uint32_t f = g_fs.freespace.total_free;   /* tree is empty again */
+        uint64_t f = available_free_blocks();
         if (cycle >= 2)                           /* let the free tree settle */
             TEST_ASSERT_EQ(f, prev_free);
         prev_free = f;
@@ -115,11 +125,11 @@ static void test_small_cap_delete_storm_snapshots(void)
     TEST_ASSERT_EQ(bfs_snapshot_create(&g_fs, "snap0"), BFS_OK);
     TEST_ASSERT(g_fs.has_snapshots);
     const int N = 1500;
-    uint32_t prev_free = 0;
+    uint64_t prev_free = 0;
     for (int cycle = 0; cycle < 4; cycle++) {
         create_and_commit(N);
         delete_storm(N);
-        uint32_t f = g_fs.freespace.total_free;
+        uint64_t f = available_free_blocks();
         if (cycle >= 2)
             TEST_ASSERT_EQ(f, prev_free);
         prev_free = f;
@@ -136,12 +146,12 @@ static void compact_fragmented(uint32_t cap, uint32_t *free_after_out)
     setup();
     const int N = 800;
     for (int i = 0; i < N; i++) {
-        char name[24]; sprintf(name, "c%05d", i);
+        char name[24]; snprintf(name, sizeof(name), "c%05d", i);
         TEST_ASSERT_EQ(bfs_fs_create_file(&g_fs, BFS_ROOT_INO, name, (uint8_t)strlen(name), NULL), BFS_OK);
     }
     /* Delete every other entry to drop utilisation below the 90% threshold. */
     for (int i = 0; i < N; i += 2) {
-        char name[24]; sprintf(name, "c%05d", i);
+        char name[24]; snprintf(name, sizeof(name), "c%05d", i);
         TEST_ASSERT_EQ(bfs_fs_delete_file(&g_fs, BFS_ROOT_INO, name, (uint8_t)strlen(name)), BFS_OK);
     }
     TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
@@ -152,7 +162,7 @@ static void compact_fragmented(uint32_t cap, uint32_t *free_after_out)
 
     /* Every surviving entry must still resolve through the rebuilt tree. */
     for (int i = 1; i < N; i += 2) {
-        char name[24]; sprintf(name, "c%05d", i);
+        char name[24]; snprintf(name, sizeof(name), "c%05d", i);
         uint32_t ino, type;
         TEST_ASSERT_EQ(bfs_dir_lookup(&g_fs.dir_tree, BFS_ROOT_INO, name,
                                       (uint8_t)strlen(name), &ino, &type), BFS_OK);
@@ -177,7 +187,7 @@ static void test_compaction_mass_free_no_leak(void)
 
 /* (5) negative control / oracle: with the reserve deliberately bypassed (direct
  * btree delete, not a namespace wrapper) and the queue full, a COW delete that
- * frees OLD nodes must report BFS_ERR_NOSPC via the latch — NOT return OK with a
+ * frees OLD nodes must report BFS_ERR_AGAIN via the latch — NOT return OK with a
  * silently dropped block. Proves the overflow is now loud, and that the harness
  * can actually drive the queue to full (so the other tests aren't vacuous). */
 static void test_overflow_is_loud_not_silent(void)
@@ -203,9 +213,9 @@ static void test_overflow_is_loud_not_silent(void)
     g_fs.pending_count     = 64;
 
     /* The delete COWs old interior nodes; every old-node defer hits the full
-     * queue. The latch must surface NOSPC rather than dropping/leaking silently. */
+     * queue. The latch must surface the retryable error rather than dropping it. */
     bfs_err_t r = bfs_inode_delete(&g_fs.inode_tree, 1000);
-    TEST_ASSERT_EQ(r, BFS_ERR_NOSPC);
+    TEST_ASSERT_EQ(r, BFS_ERR_AGAIN);
 
     /* Discard the intentionally-degraded queue state before teardown's sync so
      * it does not try to drain the dummy entries. */

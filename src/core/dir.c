@@ -30,6 +30,7 @@ uint8_t bfs_intl_toupper(uint8_t c)
 uint32_t bfs_dir_name_hash(const char *name, uint8_t len)
 {
     uint32_t h = BFS_DIR_HASH_FNV_OFFSET;
+    if (!name && len != 0) return h;
     for (uint8_t i = 0; i < len; i++) {
         h ^= bfs_intl_toupper((uint8_t)name[i]);
         h *= BFS_DIR_HASH_FNV_PRIME;
@@ -93,6 +94,7 @@ static const bfs_btree_ops_t dir_ops = {
 bfs_err_t bfs_dir_init(bfs_dir_tree_t *dt, bfs_bio_t *bio,
                    bfs_allocator_t *alloc, bfs_blk_t root, uint64_t txn_id)
 {
+    if (!dt) return BFS_ERR_INVAL;
     return bfs_btree_init(&dt->tree, bio, alloc, &dir_ops, root, txn_id);
 }
 
@@ -102,6 +104,7 @@ bfs_err_t bfs_dir_lookup(bfs_dir_tree_t *dt, uint32_t parent_id,
                            const char *name, uint8_t name_len,
                            uint32_t *inode_nr_out, uint32_t *type_out)
 {
+    if (!dt || !name || name_len == 0) return BFS_ERR_INVAL;
     uint8_t key[DIR_KEY_SIZE];
     make_dir_key(key, parent_id, name, name_len);
 
@@ -109,8 +112,13 @@ bfs_err_t bfs_dir_lookup(bfs_dir_tree_t *dt, uint32_t parent_id,
     bfs_err_t err = bfs_btree_search(&dt->tree, key, &val);
     if (err != BFS_OK) return err;
 
-    if (inode_nr_out) *inode_nr_out = bfs_be32(val.inode_nr);
-    if (type_out) *type_out = bfs_be32(val.entry_type);
+    uint32_t inode_nr = bfs_be32(val.inode_nr);
+    uint32_t type = bfs_be32(val.entry_type);
+    if (inode_nr == 0 || inode_nr >= 0x80000000u || type > BFS_INODE_HARDLINK)
+        return BFS_ERR_CORRUPT;
+
+    if (inode_nr_out) *inode_nr_out = inode_nr;
+    if (type_out) *type_out = type;
     return BFS_OK;
 }
 
@@ -120,6 +128,9 @@ bfs_err_t bfs_dir_insert(bfs_dir_tree_t *dt, uint32_t parent_id,
                            const char *name, uint8_t name_len,
                            uint32_t inode_nr, uint32_t entry_type)
 {
+    if (!dt || !name || name_len == 0 || inode_nr == 0 ||
+        inode_nr >= 0x80000000u || entry_type > BFS_INODE_HARDLINK)
+        return BFS_ERR_INVAL;
     uint8_t key[DIR_KEY_SIZE];
     make_dir_key(key, parent_id, name, name_len);
 
@@ -136,6 +147,7 @@ bfs_err_t bfs_dir_insert(bfs_dir_tree_t *dt, uint32_t parent_id,
 bfs_err_t bfs_dir_remove(bfs_dir_tree_t *dt, uint32_t parent_id,
                            const char *name, uint8_t name_len)
 {
+    if (!dt || !name || name_len == 0) return BFS_ERR_INVAL;
     uint8_t key[DIR_KEY_SIZE];
     make_dir_key(key, parent_id, name, name_len);
     return bfs_btree_delete(&dt->tree, key);
@@ -147,6 +159,7 @@ typedef struct {
     uint32_t parent_id;
     bfs_dir_scan_cb cb;
     void *ctx;
+    bfs_err_t err;
 } dir_scan_ctx_t;
 
 static bool dir_scan_cb(const void *key, const void *val, void *ctx)
@@ -159,18 +172,31 @@ static bool dir_scan_cb(const void *key, const void *val, void *ctx)
     if (pid != sc->parent_id) return false; /* different parent, stop */
 
     uint8_t name_len = k[8];
+    uint32_t inode_nr = bfs_be32(v->inode_nr);
+    uint32_t type = bfs_be32(v->entry_type);
+    if (name_len == 0 || bfs_load_be32(k + 4) !=
+                             bfs_dir_name_hash((const char *)(k + 9), name_len) ||
+        inode_nr == 0 || inode_nr >= 0x80000000u ||
+        type > BFS_INODE_HARDLINK) {
+        sc->err = BFS_ERR_CORRUPT;
+        return false;
+    }
     return sc->cb((const char *)(k + 9), name_len,
-                  bfs_be32(v->inode_nr), bfs_be32(v->entry_type), sc->ctx);
+                  inode_nr, type, sc->ctx);
 }
 
 bfs_err_t bfs_dir_scan(bfs_dir_tree_t *dt, uint32_t parent_id,
                          bfs_dir_scan_cb cb, void *ctx)
 {
+    if (!dt || !cb) return BFS_ERR_INVAL;
     /* Build a start key with parent_id and zeros for the rest */
     uint8_t start_key[DIR_KEY_SIZE];
     memset(start_key, 0, DIR_KEY_SIZE);
     bfs_store_be32(start_key, parent_id);
 
-    dir_scan_ctx_t sc = { .parent_id = parent_id, .cb = cb, .ctx = ctx };
-    return bfs_btree_scan(&dt->tree, start_key, dir_scan_cb, &sc);
+    dir_scan_ctx_t sc = {
+        .parent_id = parent_id, .cb = cb, .ctx = ctx, .err = BFS_OK,
+    };
+    bfs_err_t err = bfs_btree_scan(&dt->tree, start_key, dir_scan_cb, &sc);
+    return sc.err != BFS_OK ? sc.err : err;
 }

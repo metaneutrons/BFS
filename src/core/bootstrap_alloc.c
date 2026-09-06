@@ -28,11 +28,19 @@ static bfs_blk_t bootstrap_alloc_fn(bfs_allocator_t *a)
     return ba->next_block++;
 }
 
-static void bootstrap_free_fn(bfs_allocator_t *a, bfs_blk_t blk)
+static bfs_err_t bootstrap_free_fn(bfs_allocator_t *a, bfs_blk_t blk)
 {
     bootstrap_alloc_t *ba = (bootstrap_alloc_t *)a->ctx;
-    if (blk && ba->freed_count < BOOTSTRAP_MAX_FREED)
-        ba->freed[ba->freed_count++] = blk;
+    if (!blk) return BFS_OK;
+    if (ba->freed_count >= BOOTSTRAP_MAX_FREED) return BFS_ERR_NOSPC;
+    ba->freed[ba->freed_count++] = blk;
+    return BFS_OK;
+}
+
+static bfs_err_t bootstrap_error_fn(bfs_allocator_t *a)
+{
+    (void)a;
+    return BFS_ERR_NOSPC;
 }
 
 bootstrap_alloc_t *bootstrap_create(bfs_blk_t start, bfs_blk_t max)
@@ -41,6 +49,7 @@ bootstrap_alloc_t *bootstrap_create(bfs_blk_t start, bfs_blk_t max)
     if (!instance) return NULL;
     instance->base.alloc = bootstrap_alloc_fn;
     instance->base.dealloc = bootstrap_free_fn;
+    instance->base.error = bootstrap_error_fn;
     instance->base.ctx = instance;
     instance->next_block = start;
     instance->max_block = max;
