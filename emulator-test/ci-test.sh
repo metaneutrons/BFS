@@ -13,11 +13,17 @@ mkbfs=${BFS_MKBFS:-"$build_dir/host/mkbfs"}
 fixture=${BFS_TEST_HDF:-}
 timeout_seconds=${BFS_TEST_TIMEOUT:-1800}
 profile=${BFS_TEST_PROFILE:-full}
+filter=${BFS_TEST_FILTER:-}
 
 case "$profile" in
     full|quick) ;;
     *) printf 'ERROR: BFS_TEST_PROFILE must be full or quick.\n' >&2; exit 2 ;;
 esac
+
+[[ -z "$filter" || "$filter" =~ ^[A-Za-z0-9_-]+$ ]] || {
+    printf 'ERROR: BFS_TEST_FILTER contains unsupported characters.\n' >&2
+    exit 2
+}
 
 [[ "$timeout_seconds" =~ ^[1-9][0-9]*$ ]] || {
     printf 'ERROR: BFS_TEST_TIMEOUT must be a positive integer.\n' >&2
@@ -55,7 +61,12 @@ mkdir -p "$system_dir/C" "$system_dir/L" "$system_dir/S"
 cp "$handler" "$system_dir/L/bfshandler"
 cp "$test_binary" "$system_dir/C/bfs-test"
 cp "$project_dir/tools/bfs-test-cases.def" "$run_dir/test-cases.def"
-cp "$script_dir/startup/ci-test" "$system_dir/S/Startup-Sequence"
+if [[ -n "$filter" ]]; then
+    printf 'C:bfs-test DH1: LOG=SYS:bfs-test.result %s\n' "$filter" \
+        > "$system_dir/S/Startup-Sequence"
+else
+    cp "$script_dir/startup/ci-test" "$system_dir/S/Startup-Sequence"
+fi
 if [[ "$profile" == quick ]]; then
     printf 'C:bfs-test DH1: LOG=SYS:bfs-test.result QUICK\n' > "$system_dir/S/Startup-Sequence"
 fi
@@ -104,5 +115,6 @@ if [[ "$(uname -s)" == Linux ]]; then
 fi
 FSEMU_AUDIO_DRIVER=null python3 "$script_dir/ci_runner.py" \
     --result "$result" --log "$emulator_log" --profile "$profile" \
+    --filter "$filter" \
     --timeout "$timeout_seconds" --inventory "$run_dir/test-cases.def" \
     -- "${command[@]}"

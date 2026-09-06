@@ -16,7 +16,9 @@ import time
 COMPLETION = b"BFS-TEST-COMPLETE\t1\n"
 
 
-def test_inventory(path):
+def test_inventory(path, filter_name=""):
+    if filter_name and not re.fullmatch(r"[A-Za-z0-9_-]+", filter_name):
+        raise ValueError("invalid test filter")
     names = []
     for line in path.read_text(encoding="ascii").splitlines():
         if line == "/* SPDX-License-Identifier: MPL-2.0 */":
@@ -24,7 +26,8 @@ def test_inventory(path):
         match = re.fullmatch(r"BFS_TEST\(([a-z0-9_]+), (test_[a-z0-9_]+)\)", line)
         if not match:
             raise ValueError("invalid guest test inventory")
-        names.append(match[1])
+        if not filter_name or filter_name in match[1]:
+            names.append(match[1])
     if not names or len(set(names)) != len(names):
         raise ValueError("empty or duplicate guest test inventory")
     return names
@@ -127,6 +130,7 @@ def main():
     parser.add_argument("--log", type=Path, required=True)
     parser.add_argument("--inventory", type=Path, required=True)
     parser.add_argument("--profile", choices=("full", "quick"), required=True)
+    parser.add_argument("--filter", default="")
     parser.add_argument("--timeout", type=int, required=True)
     parser.add_argument("command", nargs=argparse.REMAINDER)
     args = parser.parse_args()
@@ -134,7 +138,7 @@ def main():
     if not command:
         parser.error("emulator command is required")
     try:
-        names = test_inventory(args.inventory)
+        names = test_inventory(args.inventory, args.filter)
         run_emulator(command, args.result, args.log, args.timeout)
         print(verify_result(args.result, args.profile, names), end="")
         print(f"Amiga integration test passed ({len(names)} checks).")

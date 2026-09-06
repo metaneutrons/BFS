@@ -76,6 +76,12 @@ class AmigaRunnerTests(unittest.TestCase):
             with self.assertRaises(ValueError):
                 RUNNER.test_inventory(inventory)
 
+    def test_inventory_filter_is_strict_and_selective(self):
+        inventory = RUNNER.test_inventory(ROOT / "tools/bfs-test-cases.def", "fill_08")
+        self.assertEqual(inventory, ["fill_08"])
+        with self.assertRaisesRegex(ValueError, "invalid test filter"):
+            RUNNER.test_inventory(ROOT / "tools/bfs-test-cases.def", "fill 08")
+
     def test_child_completion(self):
         script = (f"from pathlib import Path; import time; "
                   f"Path({str(self.result)!r}).write_text({self.valid!r}); "
