@@ -1,7 +1,12 @@
 # Build artifacts
 build/
+dist*/
 *.o
 *.d
+
+# Generated Python bytecode
+__pycache__/
+*.py[cod]
 
 # Test artifacts
 *.img
@@ -9,16 +14,13 @@ build/
 *.adf
 
 # Emulator test runtime files
-emulator-test/aros/
-emulator-test/bfstest.hdf
-emulator-test/stress.hdf
+aros/
 
 # CI secrets (local key file)
 .ci-key
 
 # macOS
 .DS_Store
-**/.DS_Store
 
 # Editor
 *.swp
@@ -28,13 +30,9 @@ emulator-test/stress.hdf
 .idea/
 
 # Homebrew formula build artifacts
-contrib/homebrew/*.bottle*
-emulator-test/.wb32/
-emulator-test/ci-test.hdf
-emulator-test/.assets/
+*.bottle*
+.wb32/
+.assets/
 .cache/
 *.fs-uae
-emulator-test/bench.hdf
-emulator-test/.bench-wb/
-emulator-test/bench-bfs.hdf
-emulator-test/bench-pfs3.hdf
+.bench-wb/

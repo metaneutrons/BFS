@@ -33,10 +33,21 @@ BUILD_AMIGA = build/amiga
 TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 
 # ── Phony targets ───────────────────────────────────────────
-.PHONY: repository-audit host-test amiga amiga-stresstest clean tools stress-test bench release
+.PHONY: setup quality-gates repository-audit host-test amiga amiga-stresstest clean tools stress-test bench release
+
+setup:
+	@command -v lefthook >/dev/null 2>&1 || { \
+		echo "lefthook is required (brew install lefthook)" >&2; exit 1; }
+	@command -v gitleaks >/dev/null 2>&1 || { \
+		echo "gitleaks is required (brew install gitleaks)" >&2; exit 1; }
+	@lefthook install
 
 repository-audit:
 	@tools/check-no-binaries.sh
+
+quality-gates:
+	@tests/quality/test-gates.sh
+	@lefthook validate
 
 host-test: $(TEST_BINS)
 	@echo "=== Running tests ==="

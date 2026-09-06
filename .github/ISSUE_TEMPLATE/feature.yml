@@ -1,0 +1,26 @@
+name: Feature request
+description: Propose a focused improvement to BFS
+title: "feat: "
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: Describe the user or engineering problem to solve.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed solution
+      description: Describe the behavior and relevant alternatives.
+    validations:
+      required: true
+  - type: textarea
+    id: compatibility
+    attributes:
+      label: Compatibility impact
+      description: Note on-disk, API, AmigaOS, AROS, or CPU compatibility effects.
+    validations:
+      required: true
