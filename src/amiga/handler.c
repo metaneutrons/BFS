@@ -915,16 +915,22 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         uint32_t lock_parent = parent_ino;
         if (len == 0) {
-            /* Lock on parent directory itself */
+            /* Empty final component refers to the resolved directory, not
+             * necessarily the original lock (e.g. '/', '//' or ':'). */
             bfs_lock_t *parent_lock = (bfs_lock_t *)BADDR(pkt->dp_Arg1);
-            if (parent_lock) {
+            if (parent_lock && parent_lock->ino == parent_ino) {
                 ino = parent_lock->ino;
                 type = parent_lock->type;
                 lock_parent = parent_lock->parent_ino;
             } else {
-                ino = BFS_ROOT_INO;
+                ino = parent_ino;
                 type = BFS_INODE_DIR;
                 lock_parent = BFS_ROOT_INO;
+                if (ino != BFS_ROOT_INO) {
+                    err = bfs_dir_lookup(&h->fs.dir_tree, ino, "..", 2,
+                                          &lock_parent, NULL);
+                    if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+                }
             }
         } else {
             err = bfs_dir_lookup(&h->fs.dir_tree, parent_ino, namebuf, len,
@@ -1390,7 +1396,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         }
         uint32_t ino1 = LockIno((BPTR)pkt->dp_Arg1);
         uint32_t ino2 = LockIno((BPTR)pkt->dp_Arg2);
-        res1 = (ino1 == ino2) ? LOCK_SAME : LOCK_SAME_VOLUME;
+        /* The packet is Boolean; dos.library translates it to LOCK_* codes. */
+        res1 = (ino1 == ino2) ? DOSTRUE : DOSFALSE;
         res2 = 0;
         break;
     }

@@ -14,6 +14,11 @@ delete protection bits are low-active, and content changes clear the archive bit
 Resizing preserves the caller's position except when truncation moves EOF below
 it; other open handles constrain how far a file can shrink.
 
+`ACTION_SAME_LOCK` returns DOSTRUE for the same object and DOSFALSE otherwise.
+The LOCK_SAME/LOCK_SAME_VOLUME codes belong to the dos.library function, not
+the packet. Empty final path components retain the resolved directory after
+parent traversal or a volume-prefix reset, rather than reusing the base lock.
+
 64-bit DOS extensions have two distinct wire contracts. They must not be decoded
 as pairs of ordinary packet arguments:
 
@@ -36,6 +41,7 @@ native MorphOS, OS4 or physical Apollo hardware.
 
 - [AmigaOS SetProtection](https://developer.amigaos3.net/autodocs/dos.library/SetProtection.html)
 - [AmigaOS SetFileSize](https://developer.amigaos3.net/autodocs/dos.library/SetFileSize.html)
+- [AROS SameLock packet translation](https://github.com/aros-development-team/AROS/blob/master/rom/dos/samelock.c)
 - [AROS DOS64 definitions](https://github.com/aros-development-team/AROS/blob/master/compiler/include/dos/dos64.h)
 - [PFS3 OS4 packet handling](https://github.com/aros-development-team/AROS/blob/master/rom/filesys/pfs3/fs/dd_funcs.c)
 - [WinUAE packet identifiers and FIB layout](https://github.com/tonioni/WinUAE/blob/master/filesys.cpp)
