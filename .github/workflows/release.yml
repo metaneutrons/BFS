@@ -34,7 +34,7 @@ jobs:
           # Download pre-built bebbo gcc for Linux
           wget -q https://github.com/bebbo/amiga-gcc/releases/latest/download/amiga-gcc-ubuntu-latest.tar.gz
           sudo tar xzf amiga-gcc-ubuntu-latest.tar.gz -C /opt/
-          echo "/opt/amiga/bin" >> $GITHUB_PATH
+          echo "/opt/amiga/bin" >> "$GITHUB_PATH"
 
       - name: Build all CPU targets
         # Pass AMIGA_PREFIX on the command line: the Makefile assigns it with '=',

@@ -33,7 +33,10 @@ BUILD_AMIGA = build/amiga
 TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 
 # ── Phony targets ───────────────────────────────────────────
-.PHONY: host-test amiga amiga-stresstest clean tools stress-test bench release
+.PHONY: repository-audit host-test amiga amiga-stresstest clean tools stress-test bench release
+
+repository-audit:
+	@tools/check-no-binaries.sh
 
 host-test: $(TEST_BINS)
 	@echo "=== Running tests ==="

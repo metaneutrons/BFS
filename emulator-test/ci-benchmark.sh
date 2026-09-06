@@ -7,19 +7,20 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMEOUT="${1:-300}"
 
-ROM="$SCRIPT_DIR/.assets/A1200.47.102.rom"
+ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
+ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
+DISKSPEED="${BFS_DISKSPEED:-$SCRIPT_DIR/.cache/DiskSpeed}"
 
 # ── Verify prerequisites ──────────────────────────────────────
-[ -f "$ROM" ] || { echo "ERROR: ROM not found: $ROM"; exit 1; }
+[ -f "$ROM" ] || { echo "ERROR: ROM not found: $ROM (set BFS_ROM_FILE)"; exit 1; }
 command -v fs-uae >/dev/null || { echo "ERROR: fs-uae not found"; exit 1; }
 [ -f "$PROJECT_DIR/build/amiga/bfshandler" ] || { echo "ERROR: run 'make amiga' first"; exit 1; }
-[ -f "$SCRIPT_DIR/.cache/DiskSpeed" ] || { echo "ERROR: DiskSpeed not found in .cache/"; exit 1; }
+[ -f "$DISKSPEED" ] || { echo "ERROR: DiskSpeed not found: $DISKSPEED (set BFS_DISKSPEED)"; exit 1; }
 
 # ── Setup WB directory ────────────────────────────────────────
 WB="$SCRIPT_DIR/.wb32"
 if [ ! -d "$WB/C" ]; then
-    ASSETS="$SCRIPT_DIR/.assets"
-    [ -d "$ASSETS/C" ] || { echo "ERROR: .assets/C/ not found"; exit 1; }
+    [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
     mkdir -p "$WB/C" "$WB/L" "$WB/Libs" "$WB/S" "$WB/Devs"
     cp "$ASSETS/C/"* "$WB/C/" 2>/dev/null || true
     cp "$ASSETS/L/"* "$WB/L/" 2>/dev/null || true
@@ -28,7 +29,7 @@ fi
 
 # Deploy handler + DiskSpeed
 cp "$PROJECT_DIR/build/amiga/bfshandler" "$WB/L/"
-cp "$SCRIPT_DIR/.cache/DiskSpeed" "$WB/C/"
+cp "$DISKSPEED" "$WB/C/DiskSpeed"
 
 # ── Create test HDF (128MB, pre-formatted BFS) ────────────────
 HDF="$SCRIPT_DIR/bench.hdf"

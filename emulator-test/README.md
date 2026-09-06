@@ -50,6 +50,37 @@ The test script runs INSIDE the emulated Amiga and exercises:
   timeout-minutes: 5
 ```
 
+The integration job downloads its encrypted ROM and Workbench bundle at run
+time. Those assets are not stored in this repository.
+
+## External benchmark assets
+
+The BFS/PFS3 comparison uses third-party or licensed Amiga files that must not
+be committed to this repository. By default, local copies are read from:
+
+```text
+emulator-test/.assets/A1200.47.102.rom
+emulator-test/.assets/C/
+emulator-test/.assets/L/
+emulator-test/.assets/Libs/
+emulator-test/.cache/DiskSpeed
+emulator-test/.cache/pfs3aio
+```
+
+The `.assets/` and `.cache/` directories are ignored by Git. Their locations
+can be overridden with `BFS_AMIGA_ASSETS_DIR`, `BFS_ROM_FILE`,
+`BFS_DISKSPEED`, and `BFS_PFS3_HANDLER`.
+
+```bash
+make amiga build/host/mkbfs
+./emulator-test/build-bench-image.sh
+./emulator-test/run-bench.sh
+```
+
+DiskSpeed, AmigaOS ROMs, and Workbench files must come from lawfully obtained
+local copies. If a CI job later needs another redistributable dependency, it
+must download a pinned artifact at run time and verify its checksum.
+
 ## How it works
 
 1. Creates a blank 16MB HDF image (the BFS test partition)
