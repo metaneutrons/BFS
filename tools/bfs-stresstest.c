@@ -27,12 +27,17 @@ static UBYTE buf[BUF_SIZE];
 static UBYTE vbuf[BUF_SIZE];
 static char pathbuf[256];
 static char pathbuf2[256];
-static char outbuf[128];
 
 static LONG pass_count;
 static LONG fail_count;
 
 /* ── Helpers ───────────────────────────────────────────────── */
+
+static ULONG str_len(const char *text) {
+    ULONG len = 0;
+    while (text[len]) len++;
+    return len;
+}
 
 static ULONG checksum(UBYTE *data, ULONG len) {
     ULONG crc = 0;
@@ -155,6 +160,7 @@ static void phase1(const char *base) {
 
         {
             ULONG rcrc = 0, readtotal = 0;
+            BOOL verify_ok = TRUE;
             offset = 0;
             while (readtotal < size) {
                 ULONG chunk = (size - readtotal < BUF_SIZE) ? size - readtotal : BUF_SIZE;
@@ -163,16 +169,23 @@ static void phase1(const char *base) {
                 /* Verify pattern */
                 fill_pattern(buf, offset, chunk);
                 rcrc = checksum(vbuf, chunk) ^ rcrc;
-                if (rcrc != (checksum(buf, chunk) ^ (rcrc ^ checksum(vbuf, chunk)))) {
-                    /* Just compare buffers directly */
+                {
+                    ULONG i;
+                    for (i = 0; i < chunk; i++) {
+                        if (vbuf[i] != buf[i]) {
+                            verify_ok = FALSE;
+                            break;
+                        }
+                    }
                 }
+                if (!verify_ok) break;
                 readtotal += chunk;
                 offset += chunk >> 2;
             }
             Close(fh);
             str_copy(tname, names[f]);
             str_cat(tname, "_read");
-            report(tname, rcrc == wcrc, rcrc);
+            report(tname, verify_ok && rcrc == wcrc, rcrc);
         }
         next:;
     }
@@ -193,9 +206,13 @@ static void phase2(const char *base) {
         fh = Open(pathbuf, MODE_NEWFILE);
         if (!fh) { ok = FALSE; break; }
         fill_pattern(buf, i * 256, (size < BUF_SIZE) ? size : BUF_SIZE);
-        Write(fh, buf, (size < BUF_SIZE) ? size : BUF_SIZE);
-        crcs[i] = checksum(buf, (size < BUF_SIZE) ? size : BUF_SIZE);
+        {
+            ULONG wsize = (size < BUF_SIZE) ? size : BUF_SIZE;
+            if (Write(fh, buf, wsize) != (LONG)wsize) ok = FALSE;
+            crcs[i] = checksum(buf, wsize);
+        }
         Close(fh);
+        if (!ok) break;
     }
     report("phase2_create", ok, 0);
 
@@ -208,9 +225,9 @@ static void phase2(const char *base) {
         make_filename(base, "sf", i);
         fh = Open(pathbuf, MODE_OLDFILE);
         if (!fh) { ok = FALSE; break; }
-        Read(fh, vbuf, rsize);
+        if (Read(fh, vbuf, rsize) != (LONG)rsize) ok = FALSE;
         Close(fh);
-        if (checksum(vbuf, rsize) != crcs[i]) { ok = FALSE; break; }
+        if (!ok || checksum(vbuf, rsize) != crcs[i]) { ok = FALSE; break; }
     }
     report("phase2_verify", ok, 0);
 
@@ -231,9 +248,9 @@ static void phase2(const char *base) {
         make_filename(base, "sf", i);
         fh = Open(pathbuf, MODE_OLDFILE);
         if (!fh) { ok = FALSE; break; }
-        Read(fh, vbuf, rsize);
+        if (Read(fh, vbuf, rsize) != (LONG)rsize) ok = FALSE;
         Close(fh);
-        if (checksum(vbuf, rsize) != crcs[i]) { ok = FALSE; break; }
+        if (!ok || checksum(vbuf, rsize) != crcs[i]) { ok = FALSE; break; }
     }
     report("phase2_survivors", ok, 0);
 }
@@ -270,8 +287,9 @@ static void phase3(const char *base) {
             fh = Open(pathbuf, MODE_NEWFILE);
             if (!fh) { ok = FALSE; break; }
             fill_pattern(buf, d * 100 + f, 512);
-            Write(fh, buf, 512);
+            if (Write(fh, buf, 512) != 512) ok = FALSE;
             Close(fh);
+            if (!ok) break;
         }
         if (!ok) break;
     }
@@ -340,9 +358,10 @@ static void phase4(const char *base) {
         fh = Open(pathbuf, MODE_NEWFILE);
         if (!fh) { ok = FALSE; break; }
         fill_pattern(buf, i * 512, wsize);
-        Write(fh, buf, wsize);
+        if (Write(fh, buf, wsize) != (LONG)wsize) ok = FALSE;
         crcs[i] = checksum(buf, wsize);
         Close(fh);
+        if (!ok) break;
     }
     report("phase4_create", ok, 0);
 
@@ -364,9 +383,10 @@ static void phase4(const char *base) {
         fh = Open(pathbuf, MODE_NEWFILE);
         if (!fh) { ok = FALSE; break; }
         fill_pattern(buf, i * 512 + 1, wsize);
-        Write(fh, buf, wsize);
+        if (Write(fh, buf, wsize) != (LONG)wsize) ok = FALSE;
         crcs[i] = checksum(buf, wsize);
         Close(fh);
+        if (!ok) break;
     }
     report("phase4_refill", ok, 0);
 
@@ -381,9 +401,9 @@ static void phase4(const char *base) {
         make_filename(base, "frag", i);
         fh = Open(pathbuf, MODE_OLDFILE);
         if (!fh) { ok = FALSE; break; }
-        Read(fh, vbuf, wsize);
+        if (Read(fh, vbuf, wsize) != (LONG)wsize) ok = FALSE;
         Close(fh);
-        if (checksum(vbuf, wsize) != crcs[i]) { ok = FALSE; break; }
+        if (!ok || checksum(vbuf, wsize) != crcs[i]) { ok = FALSE; break; }
     }
     report("phase4_verify", ok, 0);
 }
@@ -394,8 +414,14 @@ int main(int argc, char **argv) {
     char base[64];
     char numbuf[8];
 
-    if (argc < 2) {
+    if (argc != 2) {
         emit("Usage: bfs-stresstest DH0:\n");
+        return 5;
+    }
+
+    ULONG base_len = str_len(argv[1]);
+    if (base_len < 2 || base_len >= (ULONG)sizeof(base) - 1u) {
+        emit("Invalid volume path\n");
         return 5;
     }
 

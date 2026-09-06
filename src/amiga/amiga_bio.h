@@ -6,6 +6,7 @@
 #include <exec/io.h>
 #include <dos/filehandler.h>
 #include "bfs_bio.h"
+#include "bfs_superblock.h"
 
 typedef struct amiga_bio {
     bfs_bio_t base;
@@ -15,10 +16,13 @@ typedef struct amiga_bio {
     uint32_t sector_size;
     uint64_t total_sectors;
     UWORD access_mode;
+    bool removable;
 } amiga_bio_t;
 
-void bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
-                        struct MsgPort *port, struct DosEnvec *env);
+bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
+                        struct MsgPort *port, struct DosEnvec *env,
+                        bool removable);
 void bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size);
+bfs_err_t bfs_amiga_bio_probe_superblock(amiga_bio_t *ab, bfs_superblock_t *sb);
 
 #endif /* BFS_AMIGA_BIO_H */
