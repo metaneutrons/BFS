@@ -103,7 +103,9 @@ jobs:
     name: Amiga Integration Test
     runs-on: ubuntu-24.04
     needs: host-tests
-    timeout-minutes: 45
+    timeout-minutes: 60
+    env:
+      BFS_TEST_TIMEOUT: 2400
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
@@ -114,7 +116,9 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends fs-uae xvfb
+          sudo apt-get install -y -qq --no-install-recommends fs-uae xvfb libarchive-tools musl
+          tools/install-lha.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
           docker pull "$AMIGA_GCC_IMAGE"
           container=$(docker create "$AMIGA_GCC_IMAGE")
@@ -127,6 +131,8 @@ jobs:
         run: |
           set -euo pipefail
           make release AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
+          tools/release/qualify-archives.sh "v$(cat version.txt)-ci.$GITHUB_RUN_ID" \
+            "$(git show -s --format=%ct HEAD)" build/ci-archives
           make ci-test AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
 
       - name: Preserve emulator evidence

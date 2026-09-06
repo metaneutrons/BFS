@@ -161,20 +161,23 @@ TOOL_SRCS_FMT = tools/bfsformat.c
 TOOL_SRCS_SNAP = tools/bfssnapshot.c
 
 release:
-	@mkdir -p build/release
+	@mkdir -p build/release build/link-maps
+	@python3 tools/release/build_identity.py begin
 	@echo "Building release binaries..."
 	@set -e; for cpu in $(AMIGA_RELEASE_CPUS); do \
 		echo "  68$$cpu..."; \
-		$(AMIGA_CC) $(AMIGA_BASE_FLAGS) -m68$$cpu -o build/release/bfshandler.$$cpu $(AMIGA_SRCS) $(AMIGA_LDFLAGS); \
+		$(AMIGA_CC) $(AMIGA_BASE_FLAGS) -m68$$cpu -o build/release/bfshandler.$$cpu $(AMIGA_SRCS) $(AMIGA_LDFLAGS) \
+			-Wl,-Map,build/link-maps/bfshandler.$$cpu.map; \
 	done
 	@echo "  Tools (68020)..."
 	@$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/release/bfs-test $(TOOL_SRCS_TEST) $(AMIGA_TOOL_LDFLAGS)
+		-o build/release/bfs-test $(TOOL_SRCS_TEST) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfs-test.map
 	@$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/release/bfsformat $(TOOL_SRCS_FMT) $(AMIGA_TOOL_LDFLAGS)
+		-o build/release/bfsformat $(TOOL_SRCS_FMT) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfsformat.map
 	@$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/release/bfssnapshot $(TOOL_SRCS_SNAP) $(AMIGA_TOOL_LDFLAGS)
+		-o build/release/bfssnapshot $(TOOL_SRCS_SNAP) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfssnapshot.map
 	@cp build/release/bfshandler.020 build/release/bfshandler
+	@python3 tools/release/build_identity.py finish
 	@echo "Done. Binaries in build/release/"
 	@ls -la build/release/
 
