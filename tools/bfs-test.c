@@ -388,7 +388,7 @@ static BPTR locate_relative(BPTR lock, const char *name)
 static BOOL check_relative_paths(BPTR child, BPTR expected)
 {
     const char *paths[] = {"/leaf", "//path/leaf", ":path/leaf", "../leaf"};
-    BOOL ok = TRUE;
+    BOOL ok = SameLock(child, expected) == LOCK_SAME_VOLUME;
     unsigned i;
     for (i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
         BPTR found = locate_relative(child, paths[i]);
@@ -404,6 +404,20 @@ static BOOL check_relative_paths(BPTR child, BPTR expected)
     return ok;
 }
 
+static BOOL check_empty_paths(BPTR child, BPTR parent, BPTR root)
+{
+    const char *paths[] = {"", "/", "//", ":"};
+    BPTR expected[] = {child, parent, root, root};
+    BOOL ok = TRUE;
+    unsigned i;
+    for (i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        BPTR found = locate_relative(child, paths[i]);
+        if (!found || SameLock(found, expected[i]) != LOCK_SAME) ok = FALSE;
+        if (found) UnLock(found);
+    }
+    return ok;
+}
+
 static void test_relative_paths(void)
 {
     BPTR parent = CreateDir(vpath("path"));
@@ -411,6 +425,9 @@ static void test_relative_paths(void)
     BOOL ok = child && write_seeded(vpath("path/leaf"), 3, 17);
     BPTR expected = ok ? Lock(vpath("path/leaf"), SHARED_LOCK) : 0;
     ok = expected && check_relative_paths(child, expected);
+    BPTR root = Lock(vol, SHARED_LOCK);
+    ok = ok && root && check_empty_paths(child, parent, root);
+    if (root) UnLock(root);
     if (expected) UnLock(expected);
     if (child) UnLock(child);
     if (parent) UnLock(parent);
