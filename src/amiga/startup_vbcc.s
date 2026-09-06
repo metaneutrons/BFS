@@ -1,17 +1,41 @@
-; BFS — AmigaOS handler entry point (VBCC/vasm Motorola syntax)
-;
-; Minimal startup: just call _EntryPoint() from handler.c.
+; SPDX-License-Identifier: MPL-2.0
+; Stack boundary equivalent to startup.s, in vasm Motorola syntax.
 
 	section	text,code
 
 	public	_EntryPoint
+	public	_EntryPointNoStack
 	public	start
 
-	; Fake segment header for LoadSeg
-	dc.l	0
-	dc.l	16
-
 start:
+	movem.l	d2-d7/a2-a6,-(sp)
+	lea	-12(sp),sp
+	move.l	sp,a2
+	move.l	4.w,a6
+	move.l	#131072,d0
+	moveq	#1,d1
+	jsr	-198(a6)
+	tst.l	d0
+	beq	.no_stack
+	move.l	d0,a3
+	move.l	d0,(a2)
+	add.l	#131072,d0
+	move.l	d0,4(a2)
+	move.l	d0,8(a2)
+	move.l	a2,a0
+	jsr	-732(a6)
 	bsr	_EntryPoint
+	move.l	4.w,a6
+	move.l	a2,a0
+	jsr	-732(a6)
+	move.l	a3,a1
+	move.l	#131072,d0
+	jsr	-210(a6)
+	bra	.done
+.no_stack:
+	bsr	_EntryPointNoStack
+.done:
+	lea	12(sp),sp
+	movem.l	(sp)+,d2-d7/a2-a6
 	moveq	#0,d0
 	rts
