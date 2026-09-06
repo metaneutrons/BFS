@@ -8,6 +8,12 @@ overwritten in place: neither COW metadata nor ordered mode makes those data
 overwrites atomic after a power failure. Shared snapshot data and checksummed
 data use copy-on-write.
 
+Public file operations refresh inode size and extent roots under the filesystem
+lock, so multiple handles observe each other's completed writes/truncations
+while retaining independent positions. Direct struct fields are cached values.
+After namespace deletion, old handles reject operations with `BFS_ERR_NOTFOUND`;
+BFS does not provide POSIX-style access to unlinked files.
+
 Partial writes and truncation validate checksummed old data before retaining any
 bytes. A mismatched CRC rejects the operation without generating a new checksum
 for corrupt contents. A complete block replacement does not retain old bytes.

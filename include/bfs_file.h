@@ -40,7 +40,7 @@ int64_t bfs_file_seek(bfs_file_t *f, int64_t offset, int mode);
 /* Truncate file to 'new_size' bytes. */
 bfs_err_t bfs_file_truncate(bfs_file_t *f, uint64_t new_size);
 
-/* Get current extent root and size (for updating inode after modifications). */
+/* Cached extent root from this handle's last operation, not a cross-handle view. */
 static inline bfs_blk_t bfs_file_extent_root(const bfs_file_t *f) {
     return f->extents.tree.root;
 }
