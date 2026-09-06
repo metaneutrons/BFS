@@ -82,6 +82,12 @@ static const bfs_bio_ops_t cache_ops = {
 
 bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
 {
+    if (!cache || !dev || !dev->ops || !dev->ops->read_block ||
+        !dev->ops->write_block || !dev->ops->sync ||
+        !bfs_block_size_valid(dev->block_size) || dev->block_count == 0)
+        return BFS_ERR_INVAL;
+
+    memset(cache, 0, sizeof(*cache));
     cache->bio.ops = &cache_ops;
     cache->bio.block_size = dev->block_size;
     cache->bio.block_count = dev->block_count;
@@ -102,6 +108,8 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
         if (!cache->slots[i].data) {
             for (uint32_t j = 0; j < i; j++) free(cache->slots[j].data);
             free(cache->slots);
+            cache->slots = NULL;
+            cache->num_slots = 0;
             return BFS_ERR_NOMEM;
         }
     }
@@ -110,16 +118,20 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
 
 void bfs_cache_destroy(bfs_cache_t *cache)
 {
+    if (!cache) return;
     if (!cache->slots) return;
     for (uint32_t i = 0; i < cache->num_slots; i++) {
         free(cache->slots[i].data);
     }
     free(cache->slots);
     cache->slots = NULL;
+    cache->num_slots = 0;
+    cache->clock = 0;
 }
 
 void bfs_cache_invalidate(bfs_cache_t *cache)
 {
+    if (!cache || !cache->slots) return;
     for (uint32_t i = 0; i < cache->num_slots; i++)
         cache->slots[i].blk = UINT32_MAX;
     cache->clock = 0;

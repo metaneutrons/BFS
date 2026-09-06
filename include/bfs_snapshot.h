@@ -4,7 +4,8 @@
  *
  * Snapshots are frozen point-in-time copies of the filesystem tree roots.
  * They share blocks with the live filesystem via reference counting.
- * Creating a snapshot is O(1) — just saves the current roots.
+ * Creating a snapshot is O(n) because referenced metadata and data blocks are
+ * walked to establish their shared-block refcounts.
  * Deleting a snapshot is O(n) — must walk and decrement refcounts.
  */
 
@@ -42,7 +43,7 @@ bfs_err_t bfs_snapshot_find_by_name(bfs_fs_t *fs, const char *name,
                                       uint32_t *id_out,
                                       bfs_snapshot_record_t *rec_out);
 
-/* Get the next available snapshot ID. */
+/* Get the next available snapshot ID, or 0 if the tree cannot be read. */
 uint32_t bfs_snapshot_next_id(bfs_fs_t *fs);
 
 /* Reconstruct the 64-bit transaction id stored (as hi/lo halves) in a record. */

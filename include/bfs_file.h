@@ -19,6 +19,7 @@ typedef struct {
     uint32_t            inode_nr;
     uint64_t            size;       /* file size in bytes */
     uint64_t            offset;     /* current read/write position */
+    uint64_t            recovery_generation;
 } bfs_file_t;
 
 /* Open a file by inode number. Reads inode from inode tree for extent_root/size. */

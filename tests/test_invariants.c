@@ -44,6 +44,20 @@ static const bfs_btree_ops_t u32_ops = {
 
 static void make_key(uint32_t *k, uint32_t v) { *k = bfs_be32(v); }
 
+static bool mark_scan_cb(const void *key, const void *val, void *ctx)
+{
+    (void)key;
+    (void)val;
+    *(bool *)ctx = true;
+    return true;
+}
+
+static void count_node_cb(bfs_blk_t blk, void *ctx)
+{
+    (void)blk;
+    (*(uint32_t *)ctx)++;
+}
+
 /* Node accessors come from bfs_btree_internal.h — the SAME definitions btree.c
  * uses, so this checker validates the real on-disk layout, not a hand-kept copy. */
 
@@ -319,6 +333,9 @@ static void test_freespace_near_max(void)
     unlink(TEST_IMG);
     bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
     TEST_ASSERT(bio != NULL);
+    /* Exercise 32-bit block arithmetic without creating a multi-terabyte image.
+     * Metadata allocations remain in the emulator's low backing range. */
+    bio->block_count = UINT32_MAX;
 
     bfs_freespace_t fs;
     bfs_freespace_init(&fs, bio, BFS_BLK_NULL, 1);
@@ -339,7 +356,7 @@ static void test_freespace_near_max(void)
     TEST_ASSERT_EQ(alloc_blk, start);
 
     /* Free them back — should merge correctly */
-    bfs_freespace_free(&fs, alloc_blk, 10); /* may fail due to COW overhead — acceptable */
+    TEST_ASSERT_EQ(bfs_freespace_free(&fs, alloc_blk, 10), BFS_OK);
 
     /* Verify the allocation worked with near-max block numbers */
     bfs_bio_close(bio);
@@ -359,22 +376,28 @@ static void test_large_inode_number(void)
     err = bfs_fs_mount(&fs, bio);
     TEST_ASSERT_EQ(err, BFS_OK);
 
-    /* Set next_ino to UINT32_MAX - 5 */
-    fs.next_ino = UINT32_MAX - 5;
+    /* The high bit is reserved for comment-directory keys. Exercise the last
+     * three valid inode IDs and verify clean exhaustion at the boundary. */
+    fs.next_ino = 0x7ffffffdu;
 
     /* Create 3 files */
     uint32_t ino1, ino2, ino3;
     err = bfs_fs_create_file(&fs, BFS_ROOT_INO, "a", 1, &ino1);
     TEST_ASSERT_EQ(err, BFS_OK);
-    TEST_ASSERT_EQ(ino1, UINT32_MAX - 5);
+    TEST_ASSERT_EQ(ino1, 0x7ffffffdu);
 
     err = bfs_fs_create_file(&fs, BFS_ROOT_INO, "b", 1, &ino2);
     TEST_ASSERT_EQ(err, BFS_OK);
-    TEST_ASSERT_EQ(ino2, UINT32_MAX - 4);
+    TEST_ASSERT_EQ(ino2, 0x7ffffffeu);
 
     err = bfs_fs_create_file(&fs, BFS_ROOT_INO, "c", 1, &ino3);
     TEST_ASSERT_EQ(err, BFS_OK);
-    TEST_ASSERT_EQ(ino3, UINT32_MAX - 3);
+    TEST_ASSERT_EQ(ino3, 0x7fffffffu);
+
+    uint32_t exhausted_ino = 123;
+    err = bfs_fs_create_file(&fs, BFS_ROOT_INO, "d", 1, &exhausted_ino);
+    TEST_ASSERT_EQ(err, BFS_ERR_NOSPC);
+    TEST_ASSERT_EQ(exhausted_ino, 123);
 
     /* Verify lookups work with large inode numbers */
     bfs_inode_t inode;
@@ -500,7 +523,7 @@ static void test_corrupt_node_detected(void)
 
     /* Scan should also detect corruption */
     bool scan_called = false;
-    err = bfs_btree_scan(&tree, NULL, (bfs_scan_cb)NULL, &scan_called);
+    err = bfs_btree_scan(&tree, NULL, mark_scan_cb, &scan_called);
     TEST_ASSERT_EQ(err, BFS_ERR_CORRUPT);
 
     bfs_bio_close(bio);
@@ -542,33 +565,56 @@ static void test_self_referencing_child(void)
     TEST_ASSERT_EQ(bfs_bio_write(bio, tree.root, buf), BFS_OK);
     free(buf);
 
-    /* Search for key 0 — this would traverse child[0] which is the root.
-     * Without cycle detection, this would infinite loop.
-     * The tree height is finite, so the search descends based on level.
-     * Since root is internal (level>0) and child[0] is also internal (same level),
-     * the search will keep descending until it finds a leaf or hits the same
-     * node repeatedly. In practice, the btree search follows levels down,
-     * so it will eventually read a node at level 0 (leaf) — but the root
-     * is not a leaf, so it will keep going.
-     *
-     * FINDING: The current implementation has NO explicit cycle detection.
-     * The search relies on the tree being well-formed (levels decrease).
-     * A self-referencing node at the same level causes infinite recursion
-     * in the iterative search (infinite loop). We test with a timeout
-     * expectation — if this test completes, the implementation handles it.
-     *
-     * Since we can't easily test for infinite loops in C without signals,
-     * we document this as a known limitation. The search will loop forever
-     * on a self-referencing internal node. A depth limit would fix this.
-     */
+    /* The child must be one level below its parent. The explicit level check
+     * rejects this cycle immediately rather than relying only on a timeout. */
+    uint32_t key = bfs_be32(0), value = 0;
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &value), BFS_ERR_CORRUPT);
 
-    /* NOTE: We intentionally do NOT call bfs_btree_search here because
-     * it would infinite-loop. This documents the finding:
-     *
-     * FINDING: No cycle detection in B+tree traversal. A corrupted node
-     * with a self-referencing child pointer will cause an infinite loop.
-     * Recommendation: add a depth counter (max 32) to search/scan paths.
-     */
+    bfs_bio_close(bio);
+    free(ba);
+    unlink(TEST_IMG);
+}
+
+static void test_duplicate_child_reference(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops,
+                                  BFS_BLK_NULL, 1), BFS_OK);
+
+    for (uint32_t i = 0; i < 600; i++) {
+        uint32_t key, value;
+        make_key(&key, i);
+        make_key(&value, i);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &value), BFS_OK);
+    }
+    TEST_ASSERT(tree.height >= 2);
+
+    uint8_t *buf = malloc(BLK_SIZE);
+    TEST_ASSERT(buf != NULL);
+    TEST_ASSERT_EQ(bfs_bio_read(bio, tree.root, buf), BFS_OK);
+    uint32_t keys_end = sizeof(bfs_btnode_hdr_t) +
+                        internal_max_keys(&tree) * tree.ops->key_size;
+    bfs_blk_t child0 = bfs_load_be32(buf + keys_end);
+    bfs_store_be32(buf + keys_end + sizeof(uint32_t), child0);
+    bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
+    hdr->crc32 = 0;
+    hdr->crc32 = bfs_be32(bfs_crc32(0, buf, BLK_SIZE));
+    TEST_ASSERT_EQ(bfs_bio_write(bio, tree.root, buf), BFS_OK);
+    free(buf);
+
+    uint32_t visited = 0;
+    TEST_ASSERT_EQ(bfs_btree_walk_nodes(&tree, count_node_cb, &visited),
+                   BFS_ERR_CORRUPT);
+    TEST_ASSERT(visited > 0);
+
+    bool scanned = false;
+    TEST_ASSERT_EQ(bfs_btree_scan(&tree, NULL, mark_scan_cb, &scanned), BFS_ERR_CORRUPT);
+    uint32_t key = bfs_be32(599), value = 0;
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &value), BFS_ERR_CORRUPT);
 
     bfs_bio_close(bio);
     free(ba);
@@ -588,4 +634,5 @@ TEST_SUITE_BEGIN("B+tree Invariants & Arithmetic Boundaries")
     TEST_RUN(test_file_offset_rejects_unaddressable_block);
     TEST_RUN(test_corrupt_node_detected);
     TEST_RUN(test_self_referencing_child);
+    TEST_RUN(test_duplicate_child_reference);
 TEST_SUITE_END()

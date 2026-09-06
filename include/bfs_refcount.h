@@ -7,8 +7,9 @@
  * COW must decrement refcount instead of freeing shared blocks.
  *
  * The refcount tree is only created when the first snapshot is taken.
- * When refcount_tree_root == 0, all blocks are implicitly refcount=1
- * and the fast path (no refcount checks) is used.
+ * The presence of snapshots is determined by snapshot_tree_root, not this
+ * tree's root: a valid snapshot set can have an empty refcount tree when every
+ * referenced block has an implicit count of one.
  *
  * Key: uint32_t block_number (big-endian)
  * Val: uint32_t refcount (big-endian)
@@ -37,7 +38,11 @@ bfs_err_t bfs_refcount_inc(bfs_refcount_t *rc, bfs_blk_t blk);
 /* Decrement refcount. Returns true via *freed if refcount reached 0 (caller should free). */
 bfs_err_t bfs_refcount_dec(bfs_refcount_t *rc, bfs_blk_t blk, bool *freed);
 
-/* Get current refcount (1 if not in tree). */
+/* Get current refcount (1 if not in tree) with explicit lookup errors. */
+bfs_err_t bfs_refcount_get_checked(bfs_refcount_t *rc, bfs_blk_t blk,
+                                   uint32_t *count_out);
+
+/* Convenience lookup. Returns 0 when the refcount tree cannot be read. */
 uint32_t bfs_refcount_get(bfs_refcount_t *rc, bfs_blk_t blk);
 
 #endif /* BFS_REFCOUNT_H */

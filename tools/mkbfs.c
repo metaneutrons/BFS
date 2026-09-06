@@ -4,6 +4,8 @@
 #include "bfs_fs.h"
 #include "bfs_bio.h"
 #include "block_device_emu.h"
+#include <errno.h>
+#include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 
@@ -12,11 +14,20 @@ int main(int argc, char **argv)
     uint32_t block_size = 4096;
     const char *volname = "BFSTest";
 
-    if (argc < 2) {
+    if (argc < 2 || argc > 4) {
         fprintf(stderr, "Usage: mkbfs <image> [block_size] [volname]\n");
-        return 1;
+        return 2;
     }
-    if (argc >= 3) block_size = atoi(argv[2]);
+    if (argc >= 3) {
+        char *end = NULL;
+        errno = 0;
+        unsigned long parsed = strtoul(argv[2], &end, 10);
+        if (errno != 0 || !end || *end != '\0' || parsed > UINT32_MAX) {
+            fprintf(stderr, "Invalid block size: %s\n", argv[2]);
+            return 2;
+        }
+        block_size = (uint32_t)parsed;
+    }
     if (argc >= 4) volname = argv[3];
 
     bfs_bio_t *bio = bio_emu_open(argv[1], block_size);

@@ -50,16 +50,22 @@ typedef enum {
 #if defined(__amigaos__) || defined(__VBCC__) || defined(BFS_AMIGA)
   /* 68k is big-endian — no conversion needed */
   #define BFS_CPU_BE 1
+#elif defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__)
+  #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
+    #define BFS_CPU_BE 1
+  #else
+    #define BFS_CPU_BE 0
+  #endif
 #elif defined(__APPLE__)
   #include <machine/endian.h>
-  #if BYTE_ORDER == BIG_ENDIAN
+  #if defined(BYTE_ORDER) && defined(BIG_ENDIAN) && BYTE_ORDER == BIG_ENDIAN
     #define BFS_CPU_BE 1
   #else
     #define BFS_CPU_BE 0
   #endif
 #else
   #include <endian.h>
-  #if __BYTE_ORDER == __BIG_ENDIAN
+  #if defined(__BYTE_ORDER) && defined(__BIG_ENDIAN) && __BYTE_ORDER == __BIG_ENDIAN
     #define BFS_CPU_BE 1
   #else
     #define BFS_CPU_BE 0

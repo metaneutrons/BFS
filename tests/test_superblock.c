@@ -21,6 +21,7 @@ static void make_test_sb(bfs_superblock_t *sb, uint64_t txn_id)
     sb->block_count = bfs_be32(BLK_COUNT);
     sb->txn_id      = bfs_be64(txn_id);
     sb->free_blocks = bfs_be32(BLK_COUNT - 2);
+    sb->next_ino    = bfs_be32(2);
     /* Backup at partition midpoint */
     uint64_t backup_off = (uint64_t)BLK_COUNT * BLK_SIZE / 2;
     sb->sb_backup_offset_lo = bfs_be32((uint32_t)backup_off);
@@ -189,6 +190,52 @@ static void test_sb_validate_bad_block_size(void)
     TEST_ASSERT_EQ(bfs_sb_validate(&sb), BFS_ERR_CORRUPT);
 }
 
+static void test_sb_rejects_device_geometry_mismatch(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bfs_superblock_t sb, out;
+    make_test_sb(&sb, 1);
+    TEST_ASSERT_EQ(bfs_sb_write(bio, &sb), BFS_OK);
+    bio->block_count--;
+    TEST_ASSERT_EQ(bfs_sb_read(bio, &out), BFS_ERR_CORRUPT);
+    bio->block_count++;
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_sb_validate_structural_fields(void)
+{
+    bfs_superblock_t sb;
+    make_test_sb(&sb, 1);
+    sb.dir_tree_root = bfs_be32(BLK_COUNT);
+    sb.crc32 = bfs_be32(bfs_sb_compute_crc(&sb));
+    TEST_ASSERT_EQ(bfs_sb_validate(&sb), BFS_ERR_CORRUPT);
+
+    make_test_sb(&sb, 1);
+    sb.emergency_count = bfs_be32(2);
+    sb.emergency_pool[0] = bfs_be32(2);
+    sb.emergency_pool[1] = bfs_be32(2);
+    sb.crc32 = bfs_be32(bfs_sb_compute_crc(&sb));
+    TEST_ASSERT_EQ(bfs_sb_validate(&sb), BFS_ERR_CORRUPT);
+}
+
+static void test_sb_raw_write_bounds(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bfs_superblock_t sb;
+    make_test_sb(&sb, 1);
+    sb.crc32 = bfs_be32(bfs_sb_compute_crc(&sb));
+    TEST_ASSERT_EQ(bfs_sb_write_raw(bio, BLK_SIZE - 256, &sb), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_sb_write_raw(bio, (uint64_t)BLK_SIZE * BLK_COUNT,
+                                    &sb), BFS_ERR_INVAL);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("Superblock")
     TEST_RUN(test_sb_roundtrip);
     TEST_RUN(test_sb_corruption_detected);
@@ -197,4 +244,7 @@ TEST_SUITE_BEGIN("Superblock")
     TEST_RUN(test_sb_recovery_after_failed_write);
     TEST_RUN(test_sb_validate_bad_magic);
     TEST_RUN(test_sb_validate_bad_block_size);
+    TEST_RUN(test_sb_rejects_device_geometry_mismatch);
+    TEST_RUN(test_sb_validate_structural_fields);
+    TEST_RUN(test_sb_raw_write_bounds);
 TEST_SUITE_END()

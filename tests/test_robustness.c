@@ -189,8 +189,56 @@ static void test_crc_corruption_detected(void)
     int32_t result = bfs_file_read(&f2, readbuf, BLK_SIZE);
     TEST_ASSERT_EQ(result, BFS_ERR_CORRUPT);
 
+    bfs_fs_abandon(&fs);
     bfs_bio_close(bio);
-    fs.mounted = false;
+    unlink(TEST_IMG);
+}
+
+static void test_checksum_overwrite_is_cow_and_persistent(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "CRCCow", BFS_OPT_DATA_CHECKSUMS), BFS_OK);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "crc-cow", 7, &ino), BFS_OK);
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    uint8_t block[BLK_SIZE];
+    memset(block, 0x11, sizeof(block));
+    TEST_ASSERT_EQ(bfs_file_write(&file, block, sizeof(block)), BLK_SIZE);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+
+    bfs_blk_t old_block, new_block;
+    TEST_ASSERT_EQ(bfs_extent_lookup(&file.extents, 0, &old_block), BFS_OK);
+    memset(block, 0xA5, sizeof(block));
+    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_write(&file, block, sizeof(block)), BLK_SIZE);
+    TEST_ASSERT_EQ(bfs_extent_lookup(&file.extents, 0, &new_block), BFS_OK);
+    TEST_ASSERT(new_block != old_block);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_bio_close(bio);
+
+    bio = bio_emu_open(TEST_IMG, BLK_SIZE);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    uint8_t readback[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_file_read(&file, readback, sizeof(readback)), BLK_SIZE);
+    TEST_ASSERT_MEM_EQ(readback, block, sizeof(block));
+    TEST_ASSERT_EQ(bfs_extent_lookup(&file.extents, 0, &new_block), BFS_OK);
+
+    TEST_ASSERT_EQ(bfs_bio_read(bio, new_block, readback), BFS_OK);
+    readback[BLK_SIZE - 1] ^= 0x01;
+    TEST_ASSERT_EQ(bfs_bio_write(bio, new_block, readback), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_read(&file, readback, sizeof(readback)), BFS_ERR_CORRUPT);
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
 
@@ -515,7 +563,7 @@ static void run_fuzz_seed(uint32_t seed)
     /* Verify consistency */
     for (int i = 0; i < FUZZ_POOL_SIZE; i++) {
         char nm[16];
-        int nl = snprintf(nm, sizeof(nm), "fz_%03u", i);
+        int nl = snprintf(nm, sizeof(nm), "fz_%03d", i);
         uint32_t found_ino, type;
         bfs_err_t err = bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, nm, (uint8_t)nl, &found_ino, &type);
         if (exists[i]) {
@@ -541,6 +589,7 @@ TEST_SUITE_BEGIN("Robustness")
     TEST_RUN(test_io_error_during_read);
     TEST_RUN(test_scan_during_delete);
     TEST_RUN(test_crc_corruption_detected);
+    TEST_RUN(test_checksum_overwrite_is_cow_and_persistent);
     TEST_RUN(test_rename_cross_dir_stress);
     TEST_RUN(test_truncate_extend_zeroed);
     TEST_RUN(test_softlink_self_reference);

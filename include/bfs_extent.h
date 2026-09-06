@@ -36,7 +36,8 @@ bfs_err_t bfs_extent_init(bfs_extent_tree_t *et, bfs_bio_t *bio,
                       bfs_freespace_t *fs, bfs_blk_t root, uint64_t txn_id);
 
 /* Look up the physical block for a file-relative block offset.
- * Returns BFS_OK and sets *disk_block, or BFS_ERR_NOTFOUND. */
+ * Returns BFS_OK and sets *disk_block, BFS_ERR_NOTFOUND for a hole, or the
+ * underlying tree/corruption error. */
 bfs_err_t bfs_extent_lookup(bfs_extent_tree_t *et, uint32_t file_block,
                               bfs_blk_t *disk_block);
 
@@ -46,8 +47,14 @@ bfs_err_t bfs_extent_lookup(bfs_extent_tree_t *et, uint32_t file_block,
 bfs_err_t bfs_extent_append(bfs_extent_tree_t *et, uint32_t file_block,
                               uint32_t count, bfs_blk_t *disk_block_out);
 
-/* Truncate: free all extents with file_block >= from_block.
- * Returns freed data blocks to the free space allocator. */
+/* Insert one already allocated and initialized physical block. Ownership passes
+ * to the extent tree only when this call succeeds. */
+bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
+                               bfs_blk_t disk_block, uint32_t crc);
+
+/* Truncate at from_block, shortening an extent that straddles the boundary and
+ * freeing all following extents. The batch form returns BFS_ERR_AGAIN when the
+ * caller must commit/drain deferred frees before retrying. max_ops must be > 0. */
 bfs_err_t bfs_extent_truncate(bfs_extent_tree_t *et, uint32_t from_block);
 bfs_err_t bfs_extent_truncate_batch(bfs_extent_tree_t *et, uint32_t from_block,
                                      uint32_t max_ops);
@@ -58,7 +65,8 @@ static inline bfs_blk_t bfs_extent_root(const bfs_extent_tree_t *et) {
 }
 
 /* Look up full extent value for a file block (for CRC verification).
- * Returns BFS_OK and fills val_out, or BFS_ERR_NOTFOUND. */
+ * Returns BFS_OK and fills val_out, BFS_ERR_NOTFOUND for a hole, or the
+ * underlying tree/corruption error. */
 bfs_err_t bfs_extent_lookup_val(bfs_extent_tree_t *et, uint32_t file_block,
                                   bfs_extent_val_t *val_out);
 
@@ -71,6 +79,11 @@ bfs_err_t bfs_extent_update_crc(bfs_extent_tree_t *et, uint32_t file_block,
 bfs_err_t bfs_extent_remap_block(bfs_extent_tree_t *et, uint32_t file_block,
                                    bfs_blk_t new_disk_block,
                                    bfs_blk_t *old_disk_block_out);
+
+/* Remap one block and store its checksum in the same metadata update. */
+bfs_err_t bfs_extent_remap_block_crc(bfs_extent_tree_t *et, uint32_t file_block,
+                                     bfs_blk_t new_disk_block, uint32_t crc,
+                                     bfs_blk_t *old_disk_block_out);
 
 /* Walk every node block (node_cb) and every data block (block_cb) of the extent
  * tree at `root`. Either cb may be NULL; both receive (block, ctx). The extent

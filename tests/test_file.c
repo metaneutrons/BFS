@@ -176,10 +176,36 @@ static void test_large_file(void)
     teardown(fs);
 }
 
+static void test_truncate_regrow_zeroes_tail(void)
+{
+    bfs_fs_t *fs = setup();
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "tail", 4, &ino), BFS_OK);
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    uint8_t data[BLK_SIZE], actual[BLK_SIZE];
+    memset(data, 0x7c, sizeof(data));
+    TEST_ASSERT_EQ(bfs_file_write(&file, data, sizeof(data)), sizeof(data));
+    TEST_ASSERT_EQ(bfs_file_truncate(&file, 17), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_truncate(&file, BLK_SIZE), BFS_OK);
+    memset(data + 17, 0, sizeof(data) - 17);
+    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)), sizeof(actual));
+    TEST_ASSERT_MEM_EQ(actual, data, sizeof(data));
+    bfs_bio_t *bio = fs->bio;
+    TEST_ASSERT_EQ(bfs_fs_unmount(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mount(fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)), sizeof(actual));
+    TEST_ASSERT_MEM_EQ(actual, data, sizeof(data));
+    teardown(fs);
+}
+
 TEST_SUITE_BEGIN("File I/O")
     TEST_RUN(test_write_read);
     TEST_RUN(test_cross_block_write);
     TEST_RUN(test_seek);
     TEST_RUN(test_truncate);
     TEST_RUN(test_large_file);
+    TEST_RUN(test_truncate_regrow_zeroes_tail);
 TEST_SUITE_END()
