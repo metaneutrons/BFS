@@ -1,70 +1,452 @@
 name: Release
 
 on:
-  push:
-    branches: [main]
+  workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  release-please:
-    runs-on: ubuntu-latest
+  identity:
+    name: Release Identity
+    runs-on: ubuntu-24.04
     outputs:
-      release_created: ${{ steps.release.outputs.release_created }}
-      tag_name: ${{ steps.release.outputs.tag_name }}
+      epoch: ${{ steps.metadata.outputs.epoch }}
+      prerelease: ${{ steps.metadata.outputs.prerelease }}
+      tag: ${{ steps.metadata.outputs.tag }}
+      version: ${{ steps.metadata.outputs.version }}
     steps:
-      - uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
-        id: release
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+      - name: Verify tag and version identity
+        id: metadata
+        run: |
+          set -euo pipefail
+          [[ "$GITHUB_REF_TYPE" == tag ]]
+          tag=${GITHUB_REF_NAME}
+          tools/release/verify-identity.sh "$tag"
+          full_version=${tag#v}
+          version=${full_version%%-*}
+          epoch=$(git show -s --format=%ct HEAD)
+          prerelease=false
+          [[ "$full_version" == *-* ]] && prerelease=true
+          {
+            echo "tag=$tag"
+            echo "version=$version"
+            echo "epoch=$epoch"
+            echo "prerelease=$prerelease"
+          } >> "$GITHUB_OUTPUT"
 
-  build-release:
-    needs: release-please
-    if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: ubuntu-latest
+  build:
+    name: Build Reproducible Amiga Assets
+    needs: identity
+    runs-on: ubuntu-24.04
+    env:
+      AMIGA_GCC_IMAGE: amigadev/m68k-amigaos-gcc@sha256:b18080e6ffca8f793e0f539536a9138e9d2a548ca1a301c7483f43ee15fedfed
+      SOURCE_DATE_EPOCH: ${{ needs.identity.outputs.epoch }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Install Amiga cross-compiler
+      - name: Extract pinned Amiga GCC toolchain
+        id: toolchain
         run: |
+          set -euo pipefail
+          docker pull "$AMIGA_GCC_IMAGE"
+          container=$(docker create "$AMIGA_GCC_IMAGE")
+          trap 'docker rm -f "$container" >/dev/null 2>&1' EXIT
+          docker cp "$container:/opt/amiga" "$RUNNER_TEMP/amiga"
+          echo "$RUNNER_TEMP/amiga/bin" >> "$GITHUB_PATH"
+          echo "prefix=$RUNNER_TEMP/amiga/m68k-amigaos" >> "$GITHUB_OUTPUT"
+
+      - name: Build all CPU targets once
+        run: |
+          set -euo pipefail
+          m68k-amigaos-gcc --version
+          printf 'int probe(void) { return 0; }\n' > "$RUNNER_TEMP/68080-probe.c"
+          m68k-amigaos-gcc -m68080 -c "$RUNNER_TEMP/68080-probe.c" \
+            -o "$RUNNER_TEMP/68080-probe.o"
+          make release AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
+
+      - name: Install pinned LHA archiver
+        run: |
+          set -euo pipefail
           sudo apt-get update
-          sudo apt-get install -y wget lhasa
-          # Download pre-built bebbo gcc for Linux
-          wget -q https://github.com/bebbo/amiga-gcc/releases/latest/download/amiga-gcc-ubuntu-latest.tar.gz
-          sudo tar xzf amiga-gcc-ubuntu-latest.tar.gz -C /opt/
-          echo "/opt/amiga/bin" >> "$GITHUB_PATH"
+          sudo apt-get install --yes libarchive-tools
+          tools/install-lha.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
-      - name: Build all CPU targets
-        # Pass AMIGA_PREFIX on the command line: the Makefile assigns it with '=',
-        # which overrides the environment, so an exported value would be ignored
-        # and the build would fall back to the (nonexistent on Linux) brew path.
-        run: make release AMIGA_PREFIX=/opt/amiga/m68k-amigaos
-
-      - name: Create release archive
-        run: |
-          cd build/release
-          tar czf ../../bfs-${{ needs.release-please.outputs.tag_name }}-amiga.tar.gz \
-            bfshandler bfshandler.* \
-            bfs-test bfsformat bfssnapshot
-          cd ../..
-          # Also create LHA archive (Amiga standard)
-          lha c bfs-${{ needs.release-please.outputs.tag_name }}-amiga.lha \
-            build/release/bfshandler build/release/bfshandler.* \
-            build/release/bfs-test build/release/bfsformat build/release/bfssnapshot
-
-      - name: Upload release assets
+      - name: Create and verify deterministic archives
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAG: ${{ needs.identity.outputs.tag }}
+          TOOLCHAIN_ID: ${{ env.AMIGA_GCC_IMAGE }}
         run: |
-          gh release upload ${{ needs.release-please.outputs.tag_name }} \
-            bfs-${{ needs.release-please.outputs.tag_name }}-amiga.tar.gz \
-            bfs-${{ needs.release-please.outputs.tag_name }}-amiga.lha
+          set -euo pipefail
+          tools/release/qualify-archives.sh "$TAG" "$SOURCE_DATE_EPOCH" dist
 
-  test:
-    runs-on: ubuntu-latest
+      - name: Create smoke-test filesystem fixture
+        run: |
+          set -euo pipefail
+          make build/host/mkbfs
+          mkdir smoke
+          dd if=/dev/zero of=smoke/bfs-smoke.hdf bs=1M count=32 status=none
+          build/host/mkbfs smoke/bfs-smoke.hdf 4096 BFSTest
+          (cd smoke && sha256sum bfs-smoke.hdf > bfs-smoke.hdf.sha256)
+
+      - name: Upload unsigned release payloads
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: unsigned-release-payloads
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 1
+
+      - name: Upload smoke-test fixture
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-smoke-fixture
+          path: smoke/*
+          if-no-files-found: error
+          retention-days: 1
+
+  smoke:
+    name: Clean-Room Amiga Smoke Test
+    needs: [identity, build]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    env:
+      TAG: ${{ needs.identity.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - name: Build and run host tests
-        run: make host-test
+      - name: Download unsigned release payloads
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: unsigned-release-payloads
+          path: dist
+      - name: Download smoke-test fixture
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release-smoke-fixture
+          path: smoke
+
+      - name: Install emulator and pinned archive tool
+        run: |
+          set -euo pipefail
+          sudo apt-get update
+          sudo apt-get install --yes fs-uae xvfb libarchive-tools
+          tools/install-lha.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Verify and extract release candidate
+        run: |
+          set -euo pipefail
+          (cd smoke && sha256sum --check bfs-smoke.hdf.sha256)
+          tools/release/verify-archives.sh "$TAG" dist
+          mkdir "$RUNNER_TEMP/candidate"
+          tar -xzf "dist/bfs-${TAG}-amiga.tar.gz" -C "$RUNNER_TEMP/candidate"
+
+      - name: Boot and exercise released binaries
+        env:
+          BFS_AROS_DIR: ${{ runner.temp }}/aros
+          BFS_BUILD_DIR: ${{ runner.temp }}/smoke-positive
+          BFS_HANDLER: ${{ runner.temp }}/candidate/bfs-${{ needs.identity.outputs.tag }}-amiga/bfshandler.020
+          BFS_TEST_BINARY: ${{ runner.temp }}/candidate/bfs-${{ needs.identity.outputs.tag }}-amiga/bfs-test
+          BFS_TEST_HDF: ${{ github.workspace }}/smoke/bfs-smoke.hdf
+        run: |
+          set -euo pipefail
+          emulator-test/ci-test.sh
+
+      - name: Prove corrupted handler is rejected
+        env:
+          BFS_AROS_DIR: ${{ runner.temp }}/aros
+          BFS_TEST_BINARY: ${{ runner.temp }}/candidate/bfs-${{ needs.identity.outputs.tag }}-amiga/bfs-test
+          BFS_TEST_HDF: ${{ github.workspace }}/smoke/bfs-smoke.hdf
+        run: |
+          set -euo pipefail
+          mkdir "$RUNNER_TEMP/corrupt"
+          cp "$RUNNER_TEMP/candidate/bfs-${TAG}-amiga/bfshandler.020" \
+            "$RUNNER_TEMP/corrupt/bfshandler.020"
+          printf '\377' | dd of="$RUNNER_TEMP/corrupt/bfshandler.020" \
+            bs=1 seek=0 count=1 conv=notrunc status=none
+          if cmp -s "$RUNNER_TEMP/candidate/bfs-${TAG}-amiga/bfshandler.020" \
+              "$RUNNER_TEMP/corrupt/bfshandler.020"; then
+            echo '::error::Negative smoke probe did not alter the handler.'
+            exit 1
+          fi
+          set +e
+          BFS_BUILD_DIR="$RUNNER_TEMP/smoke-negative" \
+          BFS_HANDLER="$RUNNER_TEMP/corrupt/bfshandler.020" \
+          BFS_TEST_TIMEOUT=30 emulator-test/ci-test.sh \
+            >"$RUNNER_TEMP/negative-smoke.log" 2>&1
+          status=$?
+          set -e
+          [[ "$status" -eq 1 ]]
+          grep -Eq 'ERROR: emulator (exited|timed out) before guest completion' \
+            "$RUNNER_TEMP/negative-smoke.log"
+
+      - name: Preserve smoke evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-smoke-evidence
+          path: |
+            ${{ runner.temp }}/smoke-positive/emulator/run.*
+            ${{ runner.temp }}/smoke-negative/emulator/run.*
+            ${{ runner.temp }}/negative-smoke.log
+          if-no-files-found: error
+
+  supply-chain:
+    name: Sign, Attest, and Inventory
+    needs: [identity, build, smoke]
+    runs-on: ubuntu-24.04
+    permissions:
+      attestations: write
+      contents: read
+      id-token: write
+    env:
+      TAG: ${{ needs.identity.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download qualified payloads
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: unsigned-release-payloads
+          path: dist
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Install archive reader
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libarchive-tools
+
+      - name: Install locked SPDX validator
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: 0.8.17
+      - name: Prepare SPDX validation environment
+        run: |
+          set -euo pipefail
+          uv venv "$RUNNER_TEMP/spdx-validation"
+          uv pip sync --python "$RUNNER_TEMP/spdx-validation/bin/python" \
+            --require-hashes tools/release/requirements.txt
+
+      - name: Generate SPDX SBOMs and keyless signatures
+        env:
+          EPOCH: ${{ needs.identity.outputs.epoch }}
+        run: |
+          set -euo pipefail
+          for payload in "bfs-${TAG}-amiga.tar.gz" "bfs-${TAG}-amiga.lha"; do
+            tools/release/generate-sbom.py \
+              "dist/$payload" "dist/$payload.spdx.json" "$TAG" "$GITHUB_SHA" "$EPOCH"
+            "$RUNNER_TEMP/spdx-validation/bin/python" tools/release/validate-sbom.py \
+              "dist/$payload.spdx.json"
+            cosign sign-blob --yes --bundle "dist/$payload.sigstore.json" "dist/$payload"
+          done
+
+      - name: Attest TAR payload provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: dist/bfs-${{ needs.identity.outputs.tag }}-amiga.tar.gz
+
+      - name: Attest LHA payload provenance
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: dist/bfs-${{ needs.identity.outputs.tag }}-amiga.lha
+
+      - name: Create checksum inventory
+        run: |
+          set -euo pipefail
+          (
+            cd dist
+            sha256sum \
+              "bfs-${TAG}-amiga.tar.gz" \
+              "bfs-${TAG}-amiga.lha" \
+              "bfs-${TAG}-amiga.tar.gz.spdx.json" \
+              "bfs-${TAG}-amiga.lha.spdx.json" \
+              "bfs-${TAG}-amiga.tar.gz.sigstore.json" \
+              "bfs-${TAG}-amiga.lha.sigstore.json" > SHA256SUMS
+          )
+
+      - name: Attest SBOMs, signatures, and checksum inventory
+        uses: actions/attest-build-provenance@977bb373ede98d70efdf65b84cb5f73e068dcc2a # v3.0.0
+        with:
+          subject-path: |
+            dist/*.spdx.json
+            dist/*.sigstore.json
+            dist/SHA256SUMS
+
+      - name: Verify supply chain and tamper rejection
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          tools/release/verify-candidate.sh "$TAG" dist supply-chain
+
+          mkdir "$RUNNER_TEMP/tampered"
+          payload="bfs-${TAG}-amiga.tar.gz"
+          cp "dist/$payload" "$RUNNER_TEMP/tampered/$payload"
+          printf 'tamper\n' >> "$RUNNER_TEMP/tampered/$payload"
+          set +e
+          cosign verify-blob --offline \
+              --bundle "dist/$payload.sigstore.json" \
+              --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+              --certificate-identity \
+                "https://github.com/$GITHUB_REPOSITORY/.github/workflows/release.yml@refs/tags/$TAG" \
+              "$RUNNER_TEMP/tampered/$payload" >"$RUNNER_TEMP/negative-cosign.log" 2>&1
+          cosign_status=$?
+          gh attestation verify "$RUNNER_TEMP/tampered/$payload" \
+              --repo "$GITHUB_REPOSITORY" \
+              --signer-workflow "$GITHUB_REPOSITORY/.github/workflows/release.yml" \
+              --source-ref "refs/tags/$TAG" >"$RUNNER_TEMP/negative-attestation.log" 2>&1
+          attestation_status=$?
+          set -e
+          [[ "$cosign_status" -eq 1 && "$attestation_status" -eq 1 ]]
+          grep -Eiq '(digest.*(match|mismatch)|invalid signature|signature verification failed)' \
+            "$RUNNER_TEMP/negative-cosign.log"
+          grep -Eq '(HTTP 404|404 Not Found)' "$RUNNER_TEMP/negative-attestation.log"
+
+      - name: Upload complete release candidate
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: release-candidate
+          path: dist/*
+          if-no-files-found: error
+          retention-days: 1
+
+  preflight:
+    name: Publication Preflight
+    needs: [identity, supply-chain]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.identity.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Verify repository access, tag and draft without mutating them
+        run: python3 tools/release/github_preflight.py draft "$TAG"
+
+  stage:
+    name: Stage and Verify Prerelease
+    needs: [identity, supply-chain, preflight]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      attestations: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.identity.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Download complete release candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release-candidate
+          path: dist
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+
+      - name: Preflight draft release
+        id: release
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libarchive-tools
+          tools/release/verify-candidate.sh "$TAG" dist supply-chain
+          python3 tools/release/github_preflight.py draft "$TAG" >> "$GITHUB_OUTPUT"
+
+      - name: Create draft for a qualification tag
+        if: steps.release.outputs.exists == 'false'
+        run: |
+          set -euo pipefail
+          gh release create "$TAG" --verify-tag --draft --prerelease \
+            --title "BFS $TAG" --notes "Release pipeline qualification build."
+
+      - name: Upload and read release assets back
+        run: |
+          set -euo pipefail
+          python3 tools/release/github_preflight.py upload "$TAG"
+          gh release upload "$TAG" dist/*
+          mkdir published
+          gh release download "$TAG" --dir published
+          tools/release/verify-candidate.sh "$TAG" published supply-chain
+          for asset in dist/*; do
+            cmp "$asset" "published/$(basename "$asset")"
+          done
+
+      - name: Publish candidate as a prerelease
+        run: |
+          set -euo pipefail
+          python3 tools/release/github_preflight.py publish "$TAG" dist
+          gh release edit "$TAG" --draft=false --prerelease --latest=false
+          python3 tools/release/github_preflight.py public "$TAG" dist
+          mkdir public
+          for asset in dist/*; do
+            name=$(basename "$asset")
+            curl --fail --silent --show-error --location --retry 3 \
+              --output "public/$name" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$name"
+          done
+          tools/release/verify-candidate.sh "$TAG" public supply-chain
+          for asset in dist/*; do
+            cmp "$asset" "public/$(basename "$asset")"
+          done
+
+  promote:
+    name: Promote Stable Release
+    if: needs.identity.outputs.prerelease == 'false'
+    needs: [identity, stage]
+    runs-on: ubuntu-24.04
+    environment: release
+    permissions:
+      attestations: read
+      contents: write
+    env:
+      GH_TOKEN: ${{ github.token }}
+      TAG: ${{ needs.identity.outputs.tag }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Download qualified candidate
+        uses: actions/download-artifact@634f93cb2916e3fdff6788551b99b062d0335ce0 # v5.0.0
+        with:
+          name: release-candidate
+          path: dist
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@398d4b0eeef1380460a10c8013a76f728fb906ac # v3.9.1
+      - name: Promote only after every verification passed
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libarchive-tools
+          tools/release/verify-candidate.sh "$TAG" dist supply-chain
+          python3 tools/release/github_preflight.py promote "$TAG" dist
+          gh release download "$TAG" --dir before
+          tools/release/verify-candidate.sh "$TAG" before supply-chain
+          for asset in dist/*; do cmp "$asset" "before/$(basename "$asset")"; done
+          gh release edit "$TAG" --prerelease=false --latest
+          python3 tools/release/github_preflight.py stable "$TAG" dist
+          latest=$(gh api "repos/$GITHUB_REPOSITORY/releases/latest" --jq .tag_name)
+          [[ "$latest" == "$TAG" ]]
+          mkdir after
+          for asset in dist/*; do
+            name=$(basename "$asset")
+            curl --fail --silent --show-error --location --retry 3 \
+              --output "after/$name" \
+              "https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG/$name"
+          done
+          tools/release/verify-candidate.sh "$TAG" after supply-chain
+          for asset in dist/*; do cmp "$asset" "after/$(basename "$asset")"; done

@@ -1,0 +1,85 @@
+name: Release Please
+
+on:
+  push:
+    branches: [main]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  release-please:
+    name: Release Please
+    runs-on: ubuntu-24.04
+    environment: release-please
+    outputs:
+      created: ${{ steps.release.outputs.release_created }}
+      tag: ${{ steps.release.outputs.tag_name }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Check release configuration
+        env:
+          CLIENT_ID: ${{ vars.RELEASE_PLEASE_CLIENT_ID }}
+        run: |
+          set -euo pipefail
+          [[ "$CLIENT_ID" =~ ^Iv[0-9A-Za-z]+$ ]]
+          jq -e '.packages["."].draft == true and .packages["."]."force-tag-creation" == true' \
+            release-please-config.json >/dev/null
+      - name: Mint repository-scoped app token
+        id: app-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.RELEASE_PLEASE_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: BFS
+          permission-contents: write
+          permission-pull-requests: write
+
+      - name: Preflight release app access without mutations
+        env:
+          GH_TOKEN: ${{ steps.app-token.outputs.token }}
+        run: python3 tools/release/github_preflight.py release-please
+
+      - name: Create or update the release pull request
+        id: release
+        uses: googleapis/release-please-action@45996ed1f6d02564a971a2fa1b5860e934307cf7 # v5.0.0
+        with:
+          token: ${{ steps.app-token.outputs.token }}
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json
+
+  dispatch:
+    name: Dispatch Qualified Release Workflow
+    needs: release-please
+    if: needs.release-please.outputs.created == 'true'
+    runs-on: ubuntu-24.04
+    environment: release-please
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Mint workflow-dispatch app token
+        id: dispatch-token
+        uses: actions/create-github-app-token@bcd2ba49218906704ab6c1aa796996da409d3eb1 # v3
+        with:
+          client-id: ${{ vars.RELEASE_PLEASE_CLIENT_ID }}
+          private-key: ${{ secrets.RELEASE_PLEASE_APP_PRIVATE_KEY }}
+          owner: ${{ github.repository_owner }}
+          repositories: BFS
+          permission-actions: write
+          permission-contents: read
+      - name: Preflight and start the release pipeline
+        env:
+          GH_TOKEN: ${{ steps.dispatch-token.outputs.token }}
+          TAG: ${{ needs.release-please.outputs.tag }}
+        run: |
+          set -euo pipefail
+          python3 tools/release/github_preflight.py dispatch "$TAG"
+          gh workflow run release.yml --repo "$GITHUB_REPOSITORY" --ref "$TAG"
