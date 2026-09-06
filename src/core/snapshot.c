@@ -873,9 +873,7 @@ bfs_err_t bfs_snapshot_find_by_name(bfs_fs_t *fs, const char *name,
                                       uint32_t *id_out,
                                       bfs_snapshot_record_t *rec_out)
 {
-    if (!fs || !fs->mounted || !name || !name[0] ||
-        strlen(name) >= BFS_SNAPSHOT_NAME_MAX)
-        return BFS_ERR_INVAL;
+    if (!fs || !fs->mounted) return BFS_ERR_INVAL;
     bfs_lock_read(&fs->lock);
     bfs_err_t err = bfs_snapshot_find_by_name_unlocked(fs, name, id_out, rec_out);
     bfs_lock_unlock(&fs->lock);
