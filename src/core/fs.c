@@ -172,6 +172,76 @@ out:
 
 /* ── Mount ─────────────────────────────────────────────────── */
 
+static bfs_err_t fs_open_namespace_trees(bfs_fs_t *fs)
+{
+    bfs_superblock_t *sb = &fs->txn.sb;
+    bfs_allocator_t *alloc = bfs_freespace_allocator(&fs->freespace);
+    bfs_err_t err = bfs_dir_init(&fs->dir_tree, fs->bio, alloc,
+                                 bfs_be32(sb->dir_tree_root), fs->live_txn_id);
+    if (err != BFS_OK) return err;
+    fs->dir_tree.tree.txn_id_ptr = &fs->live_txn_id;
+    fs->dir_tree.tree.free_sink = bfs_fs_free_sink(fs);
+    err = bfs_inode_init(&fs->inode_tree, fs->bio, alloc,
+                         bfs_be32(sb->inode_tree_root), fs->live_txn_id);
+    if (err != BFS_OK) return err;
+    fs->inode_tree.txn_id_ptr = &fs->live_txn_id;
+    fs->inode_tree.free_sink = bfs_fs_free_sink(fs);
+    return BFS_OK;
+}
+
+static bfs_err_t fs_open_refcount_tree(bfs_fs_t *fs)
+{
+    bfs_superblock_t *sb = &fs->txn.sb;
+    bfs_blk_t root = bfs_be32(sb->refcount_tree_root);
+    fs->has_snapshots = bfs_be32(sb->snapshot_tree_root) != BFS_BLK_NULL;
+    if (!fs->has_snapshots) {
+        memset(&fs->refcount, 0, sizeof(fs->refcount));
+        return root == BFS_BLK_NULL ? BFS_OK : BFS_ERR_CORRUPT;
+    }
+    bfs_err_t err = bfs_refcount_init(&fs->refcount, fs->bio,
+        bfs_freespace_allocator(&fs->freespace), root, fs->live_txn_id);
+    if (err != BFS_OK) return err;
+    fs->refcount.tree.txn_id_ptr = &fs->live_txn_id;
+    fs->refcount.tree.free_sink = bfs_fs_free_sink(fs);
+    return BFS_OK;
+}
+
+static bfs_err_t fs_validate_root(bfs_fs_t *fs)
+{
+    if (fs->next_ino <= BFS_ROOT_INO || fs->next_ino > 0x80000000u)
+        return BFS_ERR_CORRUPT;
+    uint32_t ino = 0, type = 0;
+    bfs_inode_t inode;
+    bfs_err_t err = bfs_dir_lookup(&fs->dir_tree, 0, "/", 1, &ino, &type);
+    if (err != BFS_OK) return err;
+    err = bfs_inode_read(&fs->inode_tree, BFS_ROOT_INO, &inode);
+    if (err != BFS_OK) return err;
+    return ino == BFS_ROOT_INO && type == BFS_INODE_DIR &&
+           bfs_be32(inode.type) == BFS_INODE_DIR ? BFS_OK : BFS_ERR_CORRUPT;
+}
+
+static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
+{
+    bfs_superblock_t *sb = &fs->txn.sb;
+    fs->live_txn_id = bfs_txn_id(&fs->txn);
+    bfs_err_t err = bfs_freespace_init(&fs->freespace, fs->bio,
+        bfs_be32(sb->free_tree_root), fs->live_txn_id);
+    if (err != BFS_OK) return err;
+    fs->freespace.tree.txn_id_ptr = &fs->live_txn_id;
+    fs->freespace.tree.free_sink = bfs_fs_free_sink(fs);
+    fs->freespace.total_free = bfs_be32(sb->free_blocks);
+    fs->freespace.global_reserve = bfs_be32(sb->global_reserve);
+    fs->freespace.sb = &fs->txn.sb_new;
+    err = fs_open_namespace_trees(fs);
+    if (err != BFS_OK) return err;
+    err = fs_open_refcount_tree(fs);
+    if (err != BFS_OK) return err;
+    fs->next_ino = bfs_be32(sb->next_ino);
+    fs->options = bfs_be32(sb->options);
+    fs->data_checksums = (fs->options & BFS_OPT_DATA_CHECKSUMS) != 0;
+    return fs_validate_root(fs);
+}
+
 bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
 {
     if (!fs || !fs_bio_valid(bio)) return BFS_ERR_INVAL;
@@ -182,67 +252,9 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
     bfs_err_t err = bfs_txn_begin(&fs->txn, bio);
     if (err != BFS_OK) goto fail;
 
-    bfs_superblock_t *sb = &fs->txn.sb;
-    fs->live_txn_id = bfs_txn_id(&fs->txn);
-
-    bfs_blk_t free_root = bfs_be32(sb->free_tree_root);
-    err = bfs_freespace_init(&fs->freespace, bio, free_root, fs->live_txn_id);
+    err = fs_load_working_state(fs);
     if (err != BFS_OK) goto fail;
-    fs->freespace.tree.txn_id_ptr = &fs->live_txn_id;
-    fs->freespace.tree.free_sink = bfs_fs_free_sink(fs);
-    fs->freespace.total_free = bfs_be32(sb->free_blocks);
-    fs->freespace.global_reserve = bfs_be32(sb->global_reserve);
-    fs->freespace.sb = &fs->txn.sb_new;
-
-    bfs_blk_t dir_root = bfs_be32(sb->dir_tree_root);
-    err = bfs_dir_init(&fs->dir_tree, bio, bfs_freespace_allocator(&fs->freespace),
-                  dir_root, fs->live_txn_id);
-    if (err != BFS_OK) goto fail;
-    fs->dir_tree.tree.txn_id_ptr = &fs->live_txn_id;
-    fs->dir_tree.tree.free_sink = bfs_fs_free_sink(fs);
-
-    bfs_blk_t inode_root = bfs_be32(sb->inode_tree_root);
-    err = bfs_inode_init(&fs->inode_tree, bio, bfs_freespace_allocator(&fs->freespace),
-                    inode_root, fs->live_txn_id);
-    if (err != BFS_OK) goto fail;
-    fs->inode_tree.txn_id_ptr = &fs->live_txn_id;
-    fs->inode_tree.free_sink = bfs_fs_free_sink(fs);
-
-    bfs_blk_t snapshot_root = bfs_be32(sb->snapshot_tree_root);
-    bfs_blk_t rc_root = bfs_be32(sb->refcount_tree_root);
-    fs->has_snapshots = snapshot_root != BFS_BLK_NULL;
-    if (!fs->has_snapshots && rc_root != BFS_BLK_NULL) {
-        err = BFS_ERR_CORRUPT;
-        goto fail;
-    }
-    if (fs->has_snapshots) {
-        err = bfs_refcount_init(&fs->refcount, bio, bfs_freespace_allocator(&fs->freespace),
-                                 rc_root, fs->live_txn_id);
-        if (err != BFS_OK) goto fail;
-        fs->refcount.tree.txn_id_ptr = &fs->live_txn_id;
-        fs->refcount.tree.free_sink = bfs_fs_free_sink(fs);
-    }
-
     fs->mounted = true;
-    fs->next_ino = bfs_be32(sb->next_ino);
-    if (fs->next_ino <= BFS_ROOT_INO || fs->next_ino > 0x80000000u) {
-        err = BFS_ERR_CORRUPT;
-        goto fail;
-    }
-    fs->options = bfs_be32(sb->options);
-    fs->data_checksums = (fs->options & BFS_OPT_DATA_CHECKSUMS) != 0;
-
-    uint32_t root_ino = 0, root_type = 0;
-    err = bfs_dir_lookup(&fs->dir_tree, 0, "/", 1, &root_ino, &root_type);
-    if (err != BFS_OK) goto fail;
-    bfs_inode_t root_inode;
-    err = bfs_inode_read(&fs->inode_tree, BFS_ROOT_INO, &root_inode);
-    if (err != BFS_OK) goto fail;
-    if (root_ino != BFS_ROOT_INO || root_type != BFS_INODE_DIR ||
-        bfs_be32(root_inode.type) != BFS_INODE_DIR) {
-        err = BFS_ERR_CORRUPT;
-        goto fail;
-    }
 
     fs->scratch = malloc(bio->block_size);
     if (!fs->scratch) { err = BFS_ERR_NOMEM; goto fail; }
@@ -342,13 +354,15 @@ bfs_err_t bfs_fs_reserve_pending(bfs_fs_t *fs, uint32_t slots)
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     uint32_t cap = bfs_fs_pending_cap(fs);
+    if (fs->pending_count > cap) return BFS_ERR_CORRUPT;
     if (slots <= cap) return BFS_OK;
     /* Explicitly reduced caps are fault-injection limits, not growable buffers. */
     if (cap < BFS_PENDING_FREES_MAX) return BFS_ERR_NOSPC;
     if ((uint64_t)slots * sizeof(bfs_blk_t) > SIZE_MAX) return BFS_ERR_NOMEM;
     bfs_blk_t *items = malloc((size_t)slots * sizeof(*items));
     if (!items) return BFS_ERR_NOMEM;
-    memcpy(items, bfs_fs_pending_items(fs), fs->pending_count * sizeof(*items));
+    /* pending_count <= old capacity < slots; allocation arithmetic is checked. */
+    memcpy(items, bfs_fs_pending_items(fs), fs->pending_count * sizeof(*items)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = items;
     fs->pending_frees_cap = slots;
@@ -506,67 +520,10 @@ bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs)
     if (err != BFS_OK) goto fail;
 
     fs->txn = txn;
-    fs->live_txn_id = bfs_txn_id(&fs->txn);
     fs->pending_count = 0;
     fs->pending_frees_cap = pending_cap;
-
-    bfs_superblock_t *sb = &fs->txn.sb;
-    err = bfs_freespace_init(&fs->freespace, fs->bio,
-                             bfs_be32(sb->free_tree_root), fs->live_txn_id);
+    err = fs_load_working_state(fs);
     if (err != BFS_OK) goto fail;
-    fs->freespace.tree.txn_id_ptr = &fs->live_txn_id;
-    fs->freespace.tree.free_sink = bfs_fs_free_sink(fs);
-    fs->freespace.total_free = bfs_be32(sb->free_blocks);
-    fs->freespace.global_reserve = bfs_be32(sb->global_reserve);
-    fs->freespace.sb = &fs->txn.sb_new;
-
-    err = bfs_dir_init(&fs->dir_tree, fs->bio,
-                       bfs_freespace_allocator(&fs->freespace),
-                       bfs_be32(sb->dir_tree_root), fs->live_txn_id);
-    if (err != BFS_OK) goto fail;
-    fs->dir_tree.tree.txn_id_ptr = &fs->live_txn_id;
-    fs->dir_tree.tree.free_sink = bfs_fs_free_sink(fs);
-
-    err = bfs_inode_init(&fs->inode_tree, fs->bio,
-                         bfs_freespace_allocator(&fs->freespace),
-                         bfs_be32(sb->inode_tree_root), fs->live_txn_id);
-    if (err != BFS_OK) goto fail;
-    fs->inode_tree.txn_id_ptr = &fs->live_txn_id;
-    fs->inode_tree.free_sink = bfs_fs_free_sink(fs);
-
-    bfs_blk_t snapshot_root = bfs_be32(sb->snapshot_tree_root);
-    bfs_blk_t refcount_root = bfs_be32(sb->refcount_tree_root);
-    fs->has_snapshots = snapshot_root != BFS_BLK_NULL;
-    if (!fs->has_snapshots && refcount_root != BFS_BLK_NULL) {
-        err = BFS_ERR_CORRUPT;
-        goto fail;
-    }
-    if (fs->has_snapshots) {
-        err = bfs_refcount_init(&fs->refcount, fs->bio,
-                                bfs_freespace_allocator(&fs->freespace),
-                                refcount_root, fs->live_txn_id);
-        if (err != BFS_OK) goto fail;
-        fs->refcount.tree.txn_id_ptr = &fs->live_txn_id;
-        fs->refcount.tree.free_sink = bfs_fs_free_sink(fs);
-    } else {
-        memset(&fs->refcount, 0, sizeof(fs->refcount));
-    }
-
-    fs->next_ino = bfs_be32(sb->next_ino);
-    fs->options = bfs_be32(sb->options);
-    fs->data_checksums = (fs->options & BFS_OPT_DATA_CHECKSUMS) != 0;
-
-    uint32_t root_ino = 0, root_type = 0;
-    bfs_inode_t root_inode;
-    err = bfs_dir_lookup(&fs->dir_tree, 0, "/", 1, &root_ino, &root_type);
-    if (err != BFS_OK) goto fail;
-    err = bfs_inode_read(&fs->inode_tree, BFS_ROOT_INO, &root_inode);
-    if (err != BFS_OK) goto fail;
-    if (root_ino != BFS_ROOT_INO || root_type != BFS_INODE_DIR ||
-        bfs_be32(root_inode.type) != BFS_INODE_DIR) {
-        err = BFS_ERR_CORRUPT;
-        goto fail;
-    }
 
     fs->recovery_error = BFS_OK;
     return BFS_OK;

@@ -116,6 +116,8 @@ typedef struct {
     bool fail_all_reads;
     bool fail_all_writes;
     bool fail_sync_now;
+    bool persist_write_failure;
+    uint32_t failed_writes;
     uint32_t writes_until_failure;
 } failing_bio_t;
 
@@ -126,9 +128,15 @@ static bfs_err_t fail_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf) {
 }
 static bfs_err_t fail_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf) {
     failing_bio_t *fb = (failing_bio_t *)bio;
-    if (fb->writes_until_failure && --fb->writes_until_failure == 0)
+    if (fb->writes_until_failure && --fb->writes_until_failure == 0) {
+        fb->fail_all_writes = fb->persist_write_failure;
+        fb->failed_writes++;
         return BFS_ERR_IO;
-    if (fb->fail_all_writes || blk == fb->fail_write_block) return BFS_ERR_IO;
+    }
+    if (fb->fail_all_writes || blk == fb->fail_write_block) {
+        fb->failed_writes++;
+        return BFS_ERR_IO;
+    }
     return bfs_bio_write(fb->inner, blk, buf);
 }
 static bfs_err_t fail_sync(bfs_bio_t *bio) {
@@ -550,6 +558,8 @@ static void test_snapshot_refcount_read_error_blocks_overwrite(void)
     fs.refcount.tree.bio = &fb.base;
     file.offset = 0;
     TEST_ASSERT_EQ(bfs_file_write(&file, "replaced", 8), BFS_ERR_IO);
+    /* The write calls through this BIO; restore it before the readback. */
+    // cppcheck-suppress redundantAssignment
     fs.refcount.tree.bio = bio;
 
     char data[9] = {0};
@@ -666,6 +676,8 @@ static void test_failed_recovery_blocks_operations(void)
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
     fb.fail_all_reads = true;
     TEST_ASSERT_EQ(bfs_fs_reload_committed_unlocked(&fs), BFS_ERR_IO);
+    /* Recovery invokes fail_read through the installed callback. */
+    // cppcheck-suppress redundantAssignment
     fb.fail_all_reads = false;
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
     TEST_ASSERT_EQ(bfs_fs_reserve(&fs, 1), BFS_ERR_IO);
@@ -675,6 +687,82 @@ static void test_failed_recovery_blocks_operations(void)
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_ERR_IO);
     TEST_ASSERT(!fs.mounted);
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_persistent_delete_failure_requires_remount(void)
+{
+    unsigned rollback_failures = 0;
+    for (uint32_t fail_at = 1; fail_at <= 16; fail_at++) {
+        unlink(TEST_IMG);
+        bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+        TEST_ASSERT(bio != NULL);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "Persistent", 0), BFS_OK);
+        failing_bio_t fb;
+        init_failing_bio(&fb, bio);
+        bfs_fs_t fs;
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+        uint32_t ino;
+        TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "file", 4, &ino), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, "keep", 4), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+        TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&fs.freespace), BFS_OK);
+        fb.persist_write_failure = true;
+        fb.writes_until_failure = fail_at;
+        bfs_err_t err = bfs_fs_delete_file(&fs, BFS_ROOT_INO, "file", 4);
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (fb.failed_writes > 1) {
+            rollback_failures++;
+            TEST_ASSERT_EQ(fs.recovery_error, BFS_ERR_IO);
+            /* Removing the injected failure must not make partial state committable. */
+            fb.fail_all_writes = false;
+            TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
+            TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "bad", 3, NULL), BFS_ERR_IO);
+        }
+        bfs_fs_abandon(&fs);
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+        char comment[80];
+        TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, ino, comment, sizeof(comment)), BFS_OK);
+        TEST_ASSERT_MEM_EQ(comment, "keep", 5);
+        TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        bfs_bio_close(bio);
+    }
+    TEST_ASSERT(rollback_failures > 0);
+    unlink(TEST_IMG);
+}
+
+static void test_failed_extent_rollback_marks_ownership_uncertain(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "ExtentRollback", 0), BFS_OK);
+    failing_bio_t fb;
+    init_failing_bio(&fb, bio);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "file", 4, &ino), BFS_OK);
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&file, "original", 8), 8);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&fs.freespace), BFS_OK);
+    bfs_blk_t replacement = bfs_freespace_alloc(&fs.freespace, 1);
+    TEST_ASSERT(replacement != BFS_BLK_NULL);
+    /* Removing the sole leaf key needs no write. Both inserts then fail. */
+    fb.fail_all_writes = true;
+    TEST_ASSERT_EQ(bfs_extent_remap_block(&file.extents, 0, replacement, NULL), BFS_ERR_IO);
+    TEST_ASSERT_EQ(file.extents.tree.free_sink_err, BFS_ERR_IO);
+    TEST_ASSERT(fb.failed_writes >= 2);
+    bfs_fs_abandon(&fs);
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    char data[8];
+    TEST_ASSERT_EQ(bfs_file_read(&file, data, sizeof(data)), sizeof(data));
+    TEST_ASSERT_MEM_EQ(data, "original", sizeof(data));
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
@@ -697,6 +785,8 @@ static void test_delete_write_failures_preserve_comment(void)
         TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
         fb.writes_until_failure = fail_at;
         bfs_err_t err = bfs_fs_delete_file(&fs, BFS_ROOT_INO, "file", 4);
+        /* The operation consumes the countdown through fail_write. */
+        // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
         TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
         if (err != BFS_OK) {
@@ -731,6 +821,8 @@ static void test_snapshot_delete_write_failure_recovery(void)
         TEST_ASSERT_EQ(bfs_snapshot_create(&fs, "point"), BFS_OK);
         fb.writes_until_failure = fail_at;
         bfs_err_t err = bfs_snapshot_delete(&fs, 1);
+        /* Disable injection for the subsequent recovery/readback phase. */
+        // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
         TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
         if (err == BFS_ERR_IO) failures++;
@@ -770,6 +862,8 @@ static void test_allocator_refill_failure_can_retry_free(void)
     TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
     fb.writes_until_failure = 1;
     TEST_ASSERT_EQ(bfs_freespace_free(&fs.freespace, block, 1), BFS_ERR_IO);
+    /* The allocator consumes the countdown through fail_write. */
+    // cppcheck-suppress redundantAssignment
     fb.writes_until_failure = 0;
     TEST_ASSERT_EQ(bfs_freespace_free(&fs.freespace, block, 1), BFS_OK);
     TEST_ASSERT_EQ(bfs_freespace_free(&fs.freespace, block, 1), BFS_ERR_EXISTS);
@@ -800,6 +894,8 @@ static void test_short_write_publishes_inode(void)
         TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&fs.freespace), BFS_OK);
         fb.writes_until_failure = fail_at;
         int32_t written = bfs_file_write(&file, data, sizeof(data));
+        /* Disable injection before validating the committed result. */
+        // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
         TEST_ASSERT(written == BFS_ERR_IO ||
                     (written > 0 && (uint32_t)written <= sizeof(data)));
@@ -842,6 +938,8 @@ TEST_SUITE_BEGIN("Hardware Failure Simulation")
     TEST_RUN(test_mount_propagates_superblock_io_error);
     TEST_RUN(test_recovery_invalidates_open_handles);
     TEST_RUN(test_failed_recovery_blocks_operations);
+    TEST_RUN(test_persistent_delete_failure_requires_remount);
+    TEST_RUN(test_failed_extent_rollback_marks_ownership_uncertain);
     TEST_RUN(test_delete_write_failures_preserve_comment);
     TEST_RUN(test_snapshot_delete_write_failure_recovery);
     TEST_RUN(test_allocator_refill_failure_can_retry_free);

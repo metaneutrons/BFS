@@ -23,7 +23,8 @@ static bfs_err_t memory_read(bfs_bio_t *bio, bfs_blk_t block, void *buffer)
     memory->reads++;
     if (memory->fail_read) return BFS_ERR_IO;
     if (block >= BLOCK_COUNT) return BFS_ERR_INVAL;
-    memcpy(buffer, memory->blocks[block], BLOCK_SIZE);
+    /* BIO callers supply a full BLOCK_SIZE buffer; the row index is checked. */
+    memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     return BFS_OK;
 }
 
@@ -33,7 +34,8 @@ static bfs_err_t memory_write(bfs_bio_t *bio, bfs_blk_t block, const void *buffe
     memory->writes++;
     if (memory->fail_write) return BFS_ERR_IO;
     if (block >= BLOCK_COUNT) return BFS_ERR_INVAL;
-    memcpy(memory->blocks[block], buffer, BLOCK_SIZE);
+    /* BIO callers supply a full BLOCK_SIZE buffer; the row index is checked. */
+    memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     return BFS_OK;
 }
 

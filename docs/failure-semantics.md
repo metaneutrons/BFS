@@ -8,12 +8,21 @@ overwritten in place: neither COW metadata nor ordered mode makes those data
 overwrites atomic after a power failure. Shared snapshot data and checksummed
 data use copy-on-write.
 
+Partial writes and truncation validate checksummed old data before retaining any
+bytes. A mismatched CRC rejects the operation without generating a new checksum
+for corrupt contents. A complete block replacement does not retain old bytes.
+
 Multi-step recovery reloads the latest valid committed roots and invalidates
 existing file handles. Reopen handles after an operation reports recovery failure;
 an old handle returns an I/O error rather than accessing reclaimed blocks. If
 reload itself fails, mutations, sync and file operations reject further use until
 the filesystem is abandoned or unmounted and mounted again. An error from a
 commit does not prove that no part of the commit reached storage.
+
+A failed namespace rollback latches a recovery error: removing the device fault
+does not make the partial namespace committable. Abandon/remount is required.
+Failed extent-remap rollback marks block ownership uncertain so the file layer
+recovers committed roots rather than freeing a possibly referenced replacement.
 
 Truncation may commit intermediate batches. On failure, already removed ranges
 can read as holes, but the inode must not reference reclaimed extent-tree nodes.

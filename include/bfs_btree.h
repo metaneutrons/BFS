@@ -32,6 +32,8 @@ typedef struct bfs_allocator {
     bfs_err_t (*dealloc)(struct bfs_allocator *a, bfs_blk_t blk);
     /* Explains a BFS_BLK_NULL allocation result. Optional allocators default to
      * BFS_ERR_NOSPC when this callback is absent. */
+    /* Invoked by allocator_failure in btree.c. */
+    // cppcheck-suppress unusedStructMember
     bfs_err_t (*error)(struct bfs_allocator *a);
     void *ctx;
 } bfs_allocator_t;
@@ -81,6 +83,8 @@ typedef struct {
     /* Free slots in the queue right now (for all-or-nothing batch sizing). */
     uint32_t (*headroom)(void *ctx);
     /* Optional memory-only growth before a mutation; must NOT commit or drain. */
+    /* Invoked by bfs_extent_truncate in extent.c. */
+    // cppcheck-suppress unusedStructMember
     bfs_err_t (*reserve)(void *ctx, uint32_t slots);
     /* Fixed capacity when reserve is absent; baseline capacity otherwise. */
     uint32_t capacity;
@@ -98,8 +102,8 @@ typedef struct bfs_btree {
     /* Where COW'd old blocks go for deferred free (zeroed = standalone tree). */
     bfs_free_sink_t   free_sink;
 
-    /* Sticky reclamation error from either the deferred-free sink or allocator.
-     * Mutations surface it instead of silently leaking a block. */
+    /* Sticky ownership error from reclamation or a failed composite rollback.
+     * Callers must recover or abandon instead of publishing uncertain mappings. */
     bfs_err_t         free_sink_err;
 } bfs_btree_t;
 

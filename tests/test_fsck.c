@@ -21,7 +21,8 @@ static int run_fsck(void)
         if (dup2(output, STDOUT_FILENO) < 0 || dup2(output, STDERR_FILENO) < 0)
             _exit(126);
         close(output);
-        execl("./bfsfsck", "bfsfsck", IMAGE, (char *)NULL);
+        /* Fixed executable/arguments in the test build directory, with no shell. */
+        execl("./bfsfsck", "bfsfsck", IMAGE, (char *)NULL); /* Flawfinder: ignore */
         _exit(127);
     }
     int status;

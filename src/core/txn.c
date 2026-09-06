@@ -133,6 +133,63 @@ static bool preserve_pending_tail(bfs_fs_t *fs, const bfs_blk_t *items,
  * (refcount-aware) and re-commit the free tree. Every caller that needs to make
  * filesystem state durable — file/snapshot/namespace mid-op, sync, unmount —
  * goes through here. */
+static bfs_err_t reclaim_shared_blocks(bfs_fs_t *fs, const bfs_blk_t *blocks,
+                                       uint32_t count)
+{
+    for (uint32_t i = 0; i < count; i++) {
+        bool freed = false;
+        bfs_err_t err = bfs_refcount_dec(&fs->refcount, blocks[i], &freed);
+        if (err == BFS_OK && freed)
+            err = bfs_freespace_free(&fs->freespace, blocks[i], 1);
+        if (err != BFS_OK)
+            return preserve_pending_tail(fs, blocks, i + 1, count)
+                       ? err : BFS_ERR_NOSPC;
+    }
+    return BFS_OK;
+}
+
+static bfs_err_t reclaim_block_ranges(bfs_fs_t *fs, const bfs_blk_t *blocks,
+                                      uint32_t count)
+{
+    uint32_t i = 0;
+    while (i < count) {
+        bfs_blk_t start = blocks[i];
+        uint32_t len = 1;
+        while (len < count - i && blocks[i + len] == start + len) len++;
+        bfs_err_t err = bfs_freespace_free(&fs->freespace, start, len);
+        if (err != BFS_OK)
+            return preserve_pending_tail(fs, blocks, i + len, count)
+                       ? err : BFS_ERR_NOSPC;
+        i += len;
+    }
+    return BFS_OK;
+}
+
+static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs)
+{
+    uint32_t count = fs->pending_count;
+    if (count > bfs_fs_pending_cap(fs) ||
+        (uint64_t)count * sizeof(bfs_blk_t) > SIZE_MAX)
+        return BFS_ERR_CORRUPT;
+    bfs_blk_t *blocks = malloc(count * sizeof(*blocks));
+    if (!blocks) return BFS_ERR_NOMEM;
+    /* The source capacity and exactly matching allocation size were checked above. */
+    memcpy(blocks, bfs_fs_pending_items(fs), count * sizeof(*blocks)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    shellsort_blocks(blocks, count);
+    for (uint32_t i = 1; i < count; i++) {
+        if (blocks[i] == blocks[i - 1]) {
+            free(blocks);
+            return BFS_ERR_CORRUPT;
+        }
+    }
+    fs->pending_count = 0;
+    bfs_err_t err = fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL
+        ? reclaim_shared_blocks(fs, blocks, count)
+        : reclaim_block_ranges(fs, blocks, count);
+    free(blocks);
+    return err;
+}
+
 static bfs_err_t txn_commit_working(bfs_fs_t *fs)
 {
     bfs_err_t err = bfs_freespace_return_reserve(&fs->freespace);
@@ -155,54 +212,8 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
     int sync_iterations = 0;
     while (fs->pending_count > 0 && sync_iterations < 256) {
         sync_iterations++;
-        uint32_t count = fs->pending_count;
-        bfs_blk_t *process_buf = malloc(count * sizeof(bfs_blk_t));
-        if (!process_buf) return BFS_ERR_NOMEM;
-
-        memcpy(process_buf, bfs_fs_pending_items(fs), count * sizeof(bfs_blk_t));
-        shellsort_blocks(process_buf, count);
-        for (uint32_t duplicate = 1; duplicate < count; duplicate++) {
-            if (process_buf[duplicate] == process_buf[duplicate - 1]) {
-                free(process_buf);
-                return BFS_ERR_CORRUPT;
-            }
-        }
-        fs->pending_count = 0;
-
-        if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
-            for (uint32_t i = 0; i < count; i++) {
-                bool freed = false;
-                err = bfs_refcount_dec(&fs->refcount, process_buf[i], &freed);
-                if (err != BFS_OK) {
-                    bool preserved = preserve_pending_tail(fs, process_buf, i + 1, count);
-                    free(process_buf);
-                    return preserved ? err : BFS_ERR_NOSPC;
-                }
-                if (freed) {
-                    err = bfs_freespace_free(&fs->freespace, process_buf[i], 1);
-                    if (err != BFS_OK) {
-                        bool preserved = preserve_pending_tail(fs, process_buf, i + 1, count);
-                        free(process_buf);
-                        return preserved ? err : BFS_ERR_NOSPC;
-                    }
-                }
-            }
-        } else {
-            uint32_t i = 0;
-            while (i < count) {
-                bfs_blk_t start = process_buf[i];
-                uint32_t len = 1;
-                while (i + len < count && process_buf[i + len] == start + len) len++;
-                err = bfs_freespace_free(&fs->freespace, start, len);
-                if (err != BFS_OK) {
-                    bool preserved = preserve_pending_tail(fs, process_buf, i + len, count);
-                    free(process_buf);
-                    return preserved ? err : BFS_ERR_NOSPC;
-                }
-                i += len;
-            }
-        }
-        free(process_buf);
+        err = reclaim_pending_batch(fs);
+        if (err != BFS_OK) return err;
 
         err = bfs_freespace_return_reserve(&fs->freespace);
         if (err != BFS_OK) return err;

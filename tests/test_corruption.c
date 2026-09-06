@@ -10,6 +10,7 @@
 
 #include "test_harness.h"
 #include "bfs_fs.h"
+#include "bfs_internal.h"
 #include "bfs_file.h"
 #include "bfs_dir.h"
 #include "bfs_ondisk.h"
@@ -104,8 +105,29 @@ static void test_corrupt_extent_length(void)
     bfs_err_t err = bfs_file_truncate(&f, 0);
     TEST_ASSERT_EQ(err, BFS_ERR_CORRUPT);
 
+    /* Truncate reads pending_count through its queue callbacks. */
+    // cppcheck-suppress redundantAssignment
     fs.pending_count = 0;
     bfs_fs_unmount(&fs);
+    bfs_bio_close(bio);
+    unlink(img);
+}
+
+static void test_pending_count_exceeds_capacity(void)
+{
+    const char *img = "test_corruption_pending.img";
+    unlink(img);
+    bfs_bio_t *bio = bio_emu_create(img, BS, 4096);
+    TEST_ASSERT(bio != NULL);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "Pending", 0), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_reserve_pending(&fs, BFS_PENDING_FREES_MAX + 1u), BFS_OK);
+    fs.pending_count = bfs_fs_pending_cap(&fs) + 1u;
+    TEST_ASSERT_EQ(bfs_fs_reserve_pending(&fs, fs.pending_count), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(fs.recovery_error, BFS_ERR_CORRUPT);
+    bfs_fs_abandon(&fs);
     bfs_bio_close(bio);
     unlink(img);
 }
@@ -113,4 +135,5 @@ static void test_corrupt_extent_length(void)
 TEST_SUITE_BEGIN("On-disk Corruption Robustness")
     TEST_RUN(test_corrupt_btree_numkeys);
     TEST_RUN(test_corrupt_extent_length);
+    TEST_RUN(test_pending_count_exceeds_capacity);
 TEST_SUITE_END()

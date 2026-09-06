@@ -52,8 +52,12 @@ typedef struct bfs_fs {
     uint32_t           options;    /* BFS_OPT_* flags */
     bool               mounted;
     bfs_err_t          recovery_error; /* nonzero: abandon/remount required */
+    /* Shared between fs.c recovery and file.c handle validation. */
+    // cppcheck-suppress unusedStructMember
     uint64_t           recovery_generation; /* invalidates open handles on reload */
     bool               data_checksums; /* BFS_OPT_DATA_CHECKSUMS enabled */
+    /* Consulted by snapshot.c, file.c and txn.c, not just assigned by mount. */
+    // cppcheck-suppress unusedStructMember
     bool               has_snapshots;  /* snapshot_tree_root != 0 */
     uint64_t           live_txn_id;    /* current transaction id (host order) */
     bfs_blk_t         pending_frees[BFS_PENDING_FREES_MAX];

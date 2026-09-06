@@ -130,11 +130,12 @@ static void child_bounds(const bfs_btree_t *tree, uint8_t *parent,
                           uint32_t child, node_bounds_t *bounds)
 {
     if (child > 0) {
-        memcpy(bounds->lower, node_key(tree, parent, child - 1), tree->ops->key_size);
+        /* tree_shape_valid bounds key_size by these BFS_MAX_KEY_SIZE arrays. */
+        memcpy(bounds->lower, node_key(tree, parent, child - 1), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         bounds->have_lower = true;
     }
     if (child < num_keys(parent)) {
-        memcpy(bounds->upper, node_key(tree, parent, child), tree->ops->key_size);
+        memcpy(bounds->upper, node_key(tree, parent, child), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         bounds->have_upper = true;
     }
 }
@@ -1580,19 +1581,23 @@ bfs_err_t bfs_btree_free_block(bfs_btree_t *tree, bfs_blk_t blk)
     return tree->free_sink_err;
 }
 
+typedef struct {
+    uint64_t keys;
+    uint64_t capacity;
+    block_set_t seen;
+} utilization_ctx_t;
+
 static bfs_err_t utilization_walk_recursive(const bfs_btree_t *tree,
                                             bfs_blk_t blk,
-                                            uint64_t *total_keys,
-                                            uint64_t *total_capacity,
+                                            utilization_ctx_t *ctx,
                                             int depth,
                                             uint16_t expected_level,
-                                            block_set_t *seen,
                                             const void *lower,
                                             const void *upper)
 {
     if (blk == BFS_BLK_NULL) return BFS_OK;
     if (depth >= MAX_TREE_DEPTH) return BFS_ERR_CORRUPT;
-    bfs_err_t err = block_set_add(seen, blk);
+    bfs_err_t err = block_set_add(&ctx->seen, blk);
     if (err == BFS_ERR_EXISTS) return BFS_ERR_CORRUPT;
     if (err != BFS_OK) return err;
     uint8_t *buf = malloc(tree->bio->block_size);
@@ -1610,24 +1615,16 @@ static bfs_err_t utilization_walk_recursive(const bfs_btree_t *tree,
         free(buf);
         return BFS_ERR_CORRUPT;
     }
-    *total_keys += n;
+    ctx->keys += n;
 
     if (bfs_be16(hdr->level) > 0) {
         /* Internal node */
-        *total_capacity += internal_max_keys(tree);
+        ctx->capacity += internal_max_keys(tree);
         /* Recurse into children */
-        uint32_t data_sz = tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
-        uint32_t max_keys = (data_sz - 4) / (tree->ops->key_size + 4);
-        uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + max_keys * tree->ops->key_size;
         for (uint32_t i = 0; i <= n; i++) {
-            if (expected_level == 0) {
-                free(buf);
-                return BFS_ERR_CORRUPT;
-            }
             err = utilization_walk_recursive(
-                tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
-                total_keys, total_capacity, depth + 1,
-                (uint16_t)(expected_level - 1), seen,
+                tree, get_child(tree, buf, i), ctx, depth + 1,
+                (uint16_t)(expected_level - 1),
                 i == 0 ? lower : node_key(tree, buf, i - 1),
                 i == n ? upper : node_key(tree, buf, i));
             if (err != BFS_OK) {
@@ -1637,7 +1634,7 @@ static bfs_err_t utilization_walk_recursive(const bfs_btree_t *tree,
         }
     } else {
         /* Leaf node */
-        *total_capacity += leaf_max_keys(tree);
+        ctx->capacity += leaf_max_keys(tree);
     }
 
     free(buf);
@@ -1650,20 +1647,17 @@ static bfs_err_t bfs_btree_needs_compaction(const bfs_btree_t *tree,
     *needed = false;
     if (tree->root == BFS_BLK_NULL) return BFS_OK;
     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
-    uint64_t total_keys = 0;
-    uint64_t total_capacity = 0;
-    block_set_t seen = {0};
-    bfs_err_t err = utilization_walk_recursive(tree, tree->root, &total_keys,
-                                               &total_capacity, 0,
+    utilization_ctx_t ctx = {0};
+    bfs_err_t err = utilization_walk_recursive(tree, tree->root, &ctx, 0,
                                                (uint16_t)(tree->height - 1),
-                                               &seen, NULL, NULL);
-    block_set_destroy(&seen);
+                                               NULL, NULL);
+    block_set_destroy(&ctx.seen);
     if (err != BFS_OK) return err;
-    if (total_capacity == 0) return BFS_OK;
+    if (ctx.capacity == 0) return BFS_OK;
 
     /* Returns true if utilization is < 90% */
-    *needed = total_keys * BFS_COMPACT_THRESHOLD_DEN <
-              total_capacity * BFS_COMPACT_THRESHOLD_NUM;
+    *needed = ctx.keys * BFS_COMPACT_THRESHOLD_DEN <
+              ctx.capacity * BFS_COMPACT_THRESHOLD_NUM;
     return BFS_OK;
 }
 

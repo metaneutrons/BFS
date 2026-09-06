@@ -12,6 +12,21 @@
 
 static bfs_fs_t fs;
 
+static bfs_err_t append_large_extent(uint32_t ino, bfs_blk_t *first)
+{
+    bfs_file_t file;
+    bfs_err_t err = bfs_file_open(&file, &fs, ino);
+    if (err != BFS_OK) return err;
+    err = bfs_extent_append(&file.extents, 0, DATA_BLOCKS, first);
+    if (err != BFS_OK) return err;
+    bfs_inode_t inode;
+    err = bfs_inode_read(&fs.inode_tree, ino, &inode);
+    if (err != BFS_OK) return err;
+    inode.extent_root = bfs_be32(file.extents.tree.root);
+    inode.size_lo = bfs_be32(DATA_BLOCKS * BS);
+    return bfs_inode_write(&fs.inode_tree, ino, &inode);
+}
+
 static void test_large_reclaim_units(void)
 {
     unlink(IMAGE);
@@ -22,15 +37,8 @@ static void test_large_reclaim_units(void)
     uint32_t free_before = fs.freespace.total_free;
     uint32_t ino;
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "large", 5, &ino), BFS_OK);
-    bfs_file_t file;
-    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
     bfs_blk_t first;
-    TEST_ASSERT_EQ(bfs_extent_append(&file.extents, 0, DATA_BLOCKS, &first), BFS_OK);
-    bfs_inode_t inode;
-    TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_OK);
-    inode.extent_root = bfs_be32(file.extents.tree.root);
-    inode.size_lo = bfs_be32(DATA_BLOCKS * BS);
-    TEST_ASSERT_EQ(bfs_inode_write(&fs.inode_tree, ino, &inode), BFS_OK);
+    TEST_ASSERT_EQ(append_large_extent(ino, &first), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
 
     TEST_ASSERT_EQ(bfs_snapshot_create(&fs, "large-snapshot"), BFS_OK);
@@ -42,6 +50,7 @@ static void test_large_reclaim_units(void)
     TEST_ASSERT(fs.pending_frees_dynamic == NULL);
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
 
+    bfs_file_t file;
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
     TEST_ASSERT_EQ(bfs_file_truncate(&file, 0), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
@@ -50,11 +59,7 @@ static void test_large_reclaim_units(void)
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
     TEST_ASSERT_EQ(file.size, 0);
 
-    TEST_ASSERT_EQ(bfs_extent_append(&file.extents, 0, DATA_BLOCKS, &first), BFS_OK);
-    TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_OK);
-    inode.extent_root = bfs_be32(file.extents.tree.root);
-    inode.size_lo = bfs_be32(DATA_BLOCKS * BS);
-    TEST_ASSERT_EQ(bfs_inode_write(&fs.inode_tree, ino, &inode), BFS_OK);
+    TEST_ASSERT_EQ(append_large_extent(ino, &first), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_delete_file(&fs, BFS_ROOT_INO, "large", 5), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);

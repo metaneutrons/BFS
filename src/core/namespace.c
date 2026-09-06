@@ -36,9 +36,23 @@ static bfs_err_t fs_restore_comment(bfs_fs_t *fs, uint32_t ino,
                            comment->len, ino, 0);
 }
 
-static bfs_err_t fs_cleanup_result(bfs_err_t primary, bfs_err_t cleanup)
+static bfs_err_t fs_cleanup_result(bfs_fs_t *fs, bfs_err_t primary, bfs_err_t cleanup)
 {
+    if (cleanup != BFS_OK) fs->recovery_error = cleanup;
     return cleanup == BFS_OK ? primary : cleanup;
+}
+
+static bfs_err_t fs_namespace_result(bfs_fs_t *fs, bfs_err_t result)
+{
+    bfs_err_t error = fs->recovery_error;
+    if (error == BFS_OK) error = fs->dir_tree.tree.free_sink_err;
+    if (error == BFS_OK) error = fs->inode_tree.free_sink_err;
+    if (error == BFS_OK) error = fs->freespace.tree.free_sink_err;
+    if (error == BFS_OK) error = fs->refcount.tree.free_sink_err;
+    if (error == BFS_OK) return result;
+    /* An incomplete rollback must never become the next committed namespace. */
+    fs->recovery_error = error;
+    return error;
 }
 
 static bool fs_name_valid(const char *name, uint8_t len)
@@ -124,9 +138,10 @@ static void fs_collect_delete_block(bfs_blk_t blk, void *ctx)
             blocks->err = BFS_ERR_NOMEM;
             return;
         }
-        if (blocks->items)
-            memcpy(items, blocks->items,
-                   blocks->count * sizeof(*blocks->items));
+        if (blocks->items) {
+            /* count equals the old capacity; the checked new allocation doubles it. */
+            memcpy(items, blocks->items, blocks->count * sizeof(*items)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+        }
         free(blocks->items);
         blocks->items = items;
         blocks->capacity = capacity;
@@ -206,7 +221,7 @@ static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
     if (err != BFS_OK) {
         bfs_err_t cleanup_err = bfs_inode_delete(&fs->inode_tree, ino);
         if (cleanup_err == BFS_OK) fs_release_ino_if_last(fs, ino);
-        return fs_cleanup_result(err, cleanup_err);
+        return fs_cleanup_result(fs, err, cleanup_err);
     }
     if (ino_out) *ino_out = ino;
     return BFS_OK;
@@ -233,7 +248,7 @@ static bfs_err_t fs_mkdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
     if (err != BFS_OK) {
         bfs_err_t cleanup_err = bfs_inode_delete(&fs->inode_tree, ino);
         if (cleanup_err == BFS_OK) fs_release_ino_if_last(fs, ino);
-        return fs_cleanup_result(err, cleanup_err);
+        return fs_cleanup_result(fs, err, cleanup_err);
     }
     err = bfs_dir_insert(&fs->dir_tree, parent_ino, name, name_len, ino, BFS_INODE_DIR);
     if (err != BFS_OK) {
@@ -241,7 +256,7 @@ static bfs_err_t fs_mkdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
         if (cleanup_err == BFS_OK)
             cleanup_err = bfs_inode_delete(&fs->inode_tree, ino);
         if (cleanup_err == BFS_OK) fs_release_ino_if_last(fs, ino);
-        return fs_cleanup_result(err, cleanup_err);
+        return fs_cleanup_result(fs, err, cleanup_err);
     }
     if (ino_out) *ino_out = ino;
     return BFS_OK;
@@ -268,7 +283,7 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
         if (err != BFS_OK) {
             inode.link_count = bfs_be32(lc);
             bfs_err_t rollback_err = bfs_inode_write(&fs->inode_tree, ino, &inode);
-            return fs_cleanup_result(err, rollback_err);
+            return fs_cleanup_result(fs, err, rollback_err);
         }
         return BFS_OK;
     }
@@ -291,7 +306,7 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
     }
     err = bfs_dir_remove(&fs->dir_tree, parent_ino, name, name_len);
     if (err != BFS_OK) {
-        err = fs_cleanup_result(err, fs_restore_comment(fs, ino, &comment));
+        err = fs_cleanup_result(fs, err, fs_restore_comment(fs, ino, &comment));
         goto delete_out;
     }
     err = bfs_inode_delete(&fs->inode_tree, ino);
@@ -300,7 +315,7 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
                                                 name_len, ino, type);
         bfs_err_t comment_err = fs_restore_comment(fs, ino, &comment);
         if (rollback_err == BFS_OK) rollback_err = comment_err;
-        err = fs_cleanup_result(err, rollback_err);
+        err = fs_cleanup_result(fs, err, rollback_err);
         goto delete_out;
     }
     err = fs_queue_extent_tree_for_delete(fs, &blocks);
@@ -343,7 +358,7 @@ static bfs_err_t fs_rmdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
     }
     err = bfs_dir_remove(&fs->dir_tree, dir_ino, "..", 2);
     if (err != BFS_OK && err != BFS_ERR_NOTFOUND)
-        return fs_cleanup_result(err, fs_restore_comment(fs, dir_ino, &comment));
+        return fs_cleanup_result(fs, err, fs_restore_comment(fs, dir_ino, &comment));
     bool removed_dotdot = err == BFS_OK;
 
     err = bfs_dir_remove(&fs->dir_tree, parent_ino, name, name_len);
@@ -354,7 +369,7 @@ static bfs_err_t fs_rmdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
                                           parent_ino, BFS_INODE_DIR);
         bfs_err_t comment_err = fs_restore_comment(fs, dir_ino, &comment);
         if (rollback_err == BFS_OK) rollback_err = comment_err;
-        return fs_cleanup_result(err, rollback_err);
+        return fs_cleanup_result(fs, err, rollback_err);
     }
 
     err = bfs_inode_delete(&fs->inode_tree, dir_ino);
@@ -368,7 +383,7 @@ static bfs_err_t fs_rmdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
         }
         bfs_err_t comment_err = fs_restore_comment(fs, dir_ino, &comment);
         if (rollback_err == BFS_OK) rollback_err = comment_err;
-        return fs_cleanup_result(err, rollback_err);
+        return fs_cleanup_result(fs, err, rollback_err);
     }
     return BFS_OK;
 }
@@ -457,7 +472,7 @@ static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, uint32_t old_parent, const cha
             bfs_err_t remove_err = bfs_dir_remove(&fs->dir_tree, new_parent,
                                                   new_name, new_len);
             if (rollback_err == BFS_OK) rollback_err = remove_err;
-            return fs_cleanup_result(err, rollback_err);
+            return fs_cleanup_result(fs, err, rollback_err);
         }
     }
 
@@ -473,7 +488,7 @@ static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, uint32_t old_parent, const cha
         bfs_err_t remove_err = bfs_dir_remove(&fs->dir_tree, new_parent,
                                               new_name, new_len);
         if (rollback_err == BFS_OK) rollback_err = remove_err;
-        return fs_cleanup_result(err, rollback_err);
+        return fs_cleanup_result(fs, err, rollback_err);
     }
     return BFS_OK;
 }
@@ -500,7 +515,7 @@ static bfs_err_t fs_make_hardlink_unlocked(bfs_fs_t *fs, uint32_t parent_ino, co
     if (err != BFS_OK) {
         bfs_err_t rollback_err = bfs_dir_remove(&fs->dir_tree, parent_ino, name,
                                                 name_len);
-        return fs_cleanup_result(err, rollback_err);
+        return fs_cleanup_result(fs, err, rollback_err);
     }
     return err;
 }
@@ -540,7 +555,7 @@ static bfs_err_t fs_make_softlink_unlocked(bfs_fs_t *fs, uint32_t parent_ino, co
         if (cleanup_err == BFS_OK)
             cleanup_err = bfs_inode_delete(&fs->inode_tree, ino);
         if (cleanup_err == BFS_OK) fs_release_ino_if_last(fs, ino);
-        err = fs_cleanup_result(err, cleanup_err);
+        err = fs_cleanup_result(fs, err, cleanup_err);
     }
     return err;
 }
@@ -556,7 +571,8 @@ static bool comment_key_cb(const char *name, uint8_t name_len,
         return false;
     }
     key->len = name_len;
-    memcpy(key->name, name, key->len);
+    /* The check above leaves a terminator slot in this 80-byte array. */
+    memcpy(key->name, name, key->len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     key->name[key->len] = 0;
     key->found = true;
     return true;
@@ -609,7 +625,7 @@ static bfs_err_t fs_set_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
         bfs_err_t rollback_err = bfs_dir_insert(&fs->dir_tree, comment_parent,
                                                 old_comment.name,
                                                 old_comment.len, ino, 0);
-        return fs_cleanup_result(err, rollback_err);
+        return fs_cleanup_result(fs, err, rollback_err);
     }
     return err;
 }
@@ -659,6 +675,7 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
         err = fs_create_file_unlocked(fs, parent_ino, name, name_len, ino_out);
+    err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -671,6 +688,7 @@ bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
         err = fs_mkdir_unlocked(fs, parent_ino, name, name_len, ino_out);
+    err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -683,6 +701,7 @@ bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
         err = fs_delete_file_unlocked(fs, parent_ino, name, name_len);
+    err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -695,6 +714,7 @@ bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
         err = fs_rmdir_unlocked(fs, parent_ino, name, name_len);
+    err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -708,6 +728,7 @@ bfs_err_t bfs_fs_rename(bfs_fs_t *fs, uint32_t old_parent, const char *old_name,
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
         err = fs_rename_unlocked(fs, old_parent, old_name, old_len, new_parent, new_name, new_len);
+    err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -721,6 +742,7 @@ bfs_err_t bfs_fs_make_hardlink(bfs_fs_t *fs, uint32_t parent_ino, const char *na
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
         err = fs_make_hardlink_unlocked(fs, parent_ino, name, name_len, target_ino);
+    err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -734,6 +756,7 @@ bfs_err_t bfs_fs_make_softlink(bfs_fs_t *fs, uint32_t parent_ino, const char *na
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
         err = fs_make_softlink_unlocked(fs, parent_ino, name, name_len, target_path, path_len);
+    err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
@@ -747,6 +770,7 @@ bfs_err_t bfs_fs_set_comment(bfs_fs_t *fs, uint32_t ino, const char *comment, ui
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
         err = fs_set_comment_unlocked(fs, ino, comment, len);
+    err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
