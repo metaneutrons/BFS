@@ -27,6 +27,8 @@ typedef struct bfs_freespace {
     uint32_t total_free;            /* total free blocks (accounting) */
     uint32_t global_reserve;        /* blocks reserved for metadata (not data) */
     bool in_alloc;                  /* recursion guard */
+    /* Read by iface_error in alloc.c, outside header-only analysis. */
+    // cppcheck-suppress unusedStructMember
     bfs_err_t last_error;           /* reason the last allocation returned NULL */
 
     /* Emergency pool: last-resort blocks when reserve is empty during COW.

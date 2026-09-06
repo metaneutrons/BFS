@@ -189,6 +189,25 @@ static void test_crc_corruption_detected(void)
     int32_t result = bfs_file_read(&f2, readbuf, BLK_SIZE);
     TEST_ASSERT_EQ(result, BFS_ERR_CORRUPT);
 
+    /* Partial writes/truncation must not bless corrupt retained bytes with a new CRC. */
+    TEST_ASSERT_EQ(bfs_file_seek(&f2, 8, BFS_SEEK_SET), 8);
+    TEST_ASSERT_EQ(bfs_file_write(&f2, "X", 1), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(f2.offset, 8);
+    TEST_ASSERT_EQ(bfs_file_truncate(&f2, 16), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(f2.size, BLK_SIZE);
+    bfs_blk_t after;
+    TEST_ASSERT_EQ(bfs_extent_lookup(&f2.extents, 0, &after), BFS_OK);
+    TEST_ASSERT_EQ(after, disk_blk);
+    TEST_ASSERT_EQ(bfs_bio_read(fs.bio, disk_blk, readbuf), BFS_OK);
+    TEST_ASSERT_MEM_EQ(readbuf, corrupt, sizeof(corrupt));
+
+    /* Replacing every byte is allowed: no corrupted old contents are retained. */
+    TEST_ASSERT_EQ(bfs_file_seek(&f2, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_write(&f2, data, sizeof(data)), BLK_SIZE);
+    TEST_ASSERT_EQ(bfs_file_seek(&f2, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_read(&f2, readbuf, sizeof(readbuf)), BLK_SIZE);
+    TEST_ASSERT_MEM_EQ(readbuf, data, sizeof(data));
+
     bfs_fs_abandon(&fs);
     bfs_bio_close(bio);
     unlink(TEST_IMG);

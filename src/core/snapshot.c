@@ -92,6 +92,13 @@ static bool snapshot_name_contains(const char *name, char needle)
     return false;
 }
 
+static size_t snapshot_name_length(const char *name)
+{
+    size_t length = 0;
+    while (length < BFS_SNAPSHOT_NAME_MAX && name[length]) length++;
+    return length;
+}
+
 static bfs_err_t ensure_snapshot_trees(bfs_fs_t *fs)
 {
     /* Initialize snapshot tree if not yet done */
@@ -252,7 +259,7 @@ bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
 {
     if (!fs || !fs->mounted || !name) return BFS_ERR_INVAL;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
-    size_t nlen = strlen(name);
+    size_t nlen = snapshot_name_length(name);
     if (nlen == 0 || nlen >= BFS_SNAPSHOT_NAME_MAX ||
         snapshot_name_contains(name, '/') || snapshot_name_contains(name, ':') ||
         is_deleting_name(name))
@@ -369,6 +376,34 @@ static void block_vec_sort(block_vec_t *blocks)
     }
 }
 
+static bfs_err_t snapshot_queue_reclaimed(bfs_fs_t *fs, const block_vec_t *blocks,
+                                          const uint32_t *counts)
+{
+    uint32_t pending_before = fs->pending_count;
+    for (size_t i = 0; i < blocks->count; i++) {
+        if (counts[i] != 1u) continue;
+        bfs_err_t err = bfs_fs_queue_pending_free(fs, blocks->items[i]);
+        if (err != BFS_OK) {
+            fs->pending_count = pending_before;
+            return err;
+        }
+    }
+    return BFS_OK;
+}
+
+static bfs_err_t snapshot_restore_counts(bfs_fs_t *fs, const block_vec_t *blocks,
+                                         const uint32_t *counts, size_t processed)
+{
+    bfs_err_t result = BFS_OK;
+    while (processed > 0) {
+        processed--;
+        if (counts[processed] <= 1u) continue;
+        bfs_err_t err = bfs_refcount_inc(&fs->refcount, blocks->items[processed]);
+        if (err != BFS_OK && result == BFS_OK) result = err;
+    }
+    return result;
+}
+
 static bfs_err_t snapshot_ref_dec_blocks_atomic(bfs_fs_t *fs,
                                                  block_vec_t *blocks)
 {
@@ -410,27 +445,11 @@ static bfs_err_t snapshot_ref_dec_blocks_atomic(bfs_fs_t *fs,
         }
     }
 
-    if (err == BFS_OK) {
-        uint32_t pending_before_data = fs->pending_count;
-        for (size_t i = 0; i < blocks->count; i++) {
-            if (counts[i] != 1u) continue;
-            err = bfs_fs_queue_pending_free(fs, blocks->items[i]);
-            if (err != BFS_OK) break;
-        }
-        if (err != BFS_OK)
-            fs->pending_count = pending_before_data;
-    }
+    if (err == BFS_OK)
+        err = snapshot_queue_reclaimed(fs, blocks, counts);
 
     if (err != BFS_OK) {
-        bfs_err_t rollback_err = BFS_OK;
-        while (processed > 0) {
-            processed--;
-            if (counts[processed] <= 1u) continue;
-            bfs_err_t one = bfs_refcount_inc(&fs->refcount,
-                                             blocks->items[processed]);
-            if (one != BFS_OK && rollback_err == BFS_OK)
-                rollback_err = one;
-        }
+        bfs_err_t rollback_err = snapshot_restore_counts(fs, blocks, counts, processed);
         if (rollback_err != BFS_OK)
             err = rollback_err;
     }
@@ -710,7 +729,7 @@ bfs_err_t bfs_snapshot_find_by_name_unlocked(bfs_fs_t *fs, const char *name,
                                       bfs_snapshot_record_t *rec_out)
 {
     if (!fs || !fs->mounted || !name || !name[0] ||
-        strlen(name) >= BFS_SNAPSHOT_NAME_MAX)
+        snapshot_name_length(name) >= BFS_SNAPSHOT_NAME_MAX)
         return BFS_ERR_INVAL;
     find_name_ctx_t fc = {
         .name = name,

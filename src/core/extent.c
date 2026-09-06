@@ -154,6 +154,27 @@ bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
     return extent_insert_raw(et, file_block, disk_block, 1, crc);
 }
 
+static bfs_err_t extent_rollback_remap(bfs_extent_tree_t *et, uint32_t file_block,
+                                      uint32_t found_key,
+                                      const bfs_extent_val_t *found_val,
+                                      bool inserted_left, bool inserted_mid)
+{
+    bfs_err_t result = BFS_OK;
+    if (inserted_mid) {
+        uint32_t key = bfs_be32(file_block);
+        result = bfs_btree_delete(&et->tree, &key);
+    }
+    if (inserted_left) {
+        bfs_err_t err = bfs_btree_delete(&et->tree, &found_key);
+        if (result == BFS_OK) result = err;
+    }
+    bfs_err_t err = bfs_btree_insert(&et->tree, &found_key, found_val);
+    if (result == BFS_OK) result = err;
+    /* Tell the caller that neither the old nor new mapping has proven ownership. */
+    if (result != BFS_OK) et->tree.free_sink_err = result;
+    return result;
+}
+
 bfs_err_t bfs_extent_remap_block_crc(bfs_extent_tree_t *et, uint32_t file_block,
                                      bfs_blk_t new_disk_block, uint32_t crc,
                                      bfs_blk_t *old_disk_block_out)
@@ -209,21 +230,8 @@ bfs_err_t bfs_extent_remap_block_crc(bfs_extent_tree_t *et, uint32_t file_block,
     return BFS_OK;
 
 rollback: {
-        bfs_err_t rollback_err = BFS_OK;
-        if (inserted_mid) {
-            uint32_t key = bfs_be32(file_block);
-            bfs_err_t cleanup_err = bfs_btree_delete(&et->tree, &key);
-            if (cleanup_err != BFS_OK) rollback_err = cleanup_err;
-        }
-        if (inserted_left) {
-            uint32_t key = bfs_be32(fb);
-            bfs_err_t cleanup_err = bfs_btree_delete(&et->tree, &key);
-            if (cleanup_err != BFS_OK && rollback_err == BFS_OK)
-                rollback_err = cleanup_err;
-        }
-        bfs_err_t restore_err = bfs_btree_insert(&et->tree, &found_key, &found_val);
-        if (restore_err != BFS_OK && rollback_err == BFS_OK)
-            rollback_err = restore_err;
+        bfs_err_t rollback_err = extent_rollback_remap(et, file_block, found_key,
+            &found_val, inserted_left != 0, inserted_mid != 0);
         return rollback_err == BFS_OK ? err : rollback_err;
     }
 }

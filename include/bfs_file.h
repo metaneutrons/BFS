@@ -19,6 +19,8 @@ typedef struct {
     uint32_t            inode_nr;
     uint64_t            size;       /* file size in bytes */
     uint64_t            offset;     /* current read/write position */
+    /* Compared with fs->recovery_generation by file.c handle validation. */
+    // cppcheck-suppress unusedStructMember
     uint64_t            recovery_generation;
 } bfs_file_t;
 

@@ -92,6 +92,10 @@ static void test_multiple_snapshots(void) {
 
 static void test_snapshot_name_validation(void) {
     bfs_fs_t *fs = setup();
+    char unterminated[BFS_SNAPSHOT_NAME_MAX];
+    memset(unterminated, 'x', sizeof(unterminated));
+    TEST_ASSERT_EQ(bfs_snapshot_create(fs, unterminated), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, unterminated, NULL, NULL), BFS_ERR_INVAL);
 
     TEST_ASSERT_EQ(bfs_snapshot_create(fs, NULL), BFS_ERR_INVAL);
     TEST_ASSERT_EQ(bfs_snapshot_create(fs, ""), BFS_ERR_INVAL);

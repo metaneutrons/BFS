@@ -116,6 +116,20 @@ static int32_t file_finish_write(bfs_file_t *f, uint32_t total, bfs_err_t error)
     return total > 0 ? (int32_t)total : (int32_t)error;
 }
 
+static bfs_err_t file_read_checked_block(bfs_file_t *f, uint32_t file_block,
+                                         bfs_blk_t disk_block, uint8_t *buffer)
+{
+    bfs_err_t err = bfs_bio_read(f->fs->bio, disk_block, buffer);
+    if (err != BFS_OK || !f->extents.data_checksums) return err;
+    bfs_extent_val_t value;
+    err = bfs_extent_lookup_val(&f->extents, file_block, &value);
+    if (err != BFS_OK) return err;
+    uint32_t stored = bfs_be32(value.data_crc32);
+    if (stored != 0 && stored != bfs_crc32(0, buffer, f->fs->bio->block_size))
+        return BFS_ERR_CORRUPT;
+    return BFS_OK;
+}
+
 int32_t bfs_file_read_unlocked(bfs_file_t *f, void *buf, uint32_t len)
 {
     bfs_err_t handle_err = file_handle_error(f);
@@ -148,23 +162,8 @@ int32_t bfs_file_read_unlocked(bfs_file_t *f, void *buf, uint32_t len)
         } else if (err != BFS_OK) {
             return (total > 0) ? (int32_t)total : (int32_t)err;
         } else {
-            err = bfs_bio_read(f->fs->bio, disk_blk, blk_buf);
+            err = file_read_checked_block(f, file_blk, disk_blk, blk_buf);
             if (err != BFS_OK) { return (total > 0) ? (int32_t)total : (int32_t)err; }
-
-            /* Verify data CRC32 if checksums enabled */
-            if (f->extents.data_checksums) {
-                bfs_extent_val_t ev;
-                err = bfs_extent_lookup_val(&f->extents, file_blk, &ev);
-                if (err != BFS_OK)
-                    return (total > 0) ? (int32_t)total : (int32_t)err;
-                uint32_t stored = bfs_be32(ev.data_crc32);
-                if (stored != 0) {
-                    uint32_t computed = bfs_crc32(0, blk_buf, bs);
-                    if (computed != stored) {
-                        return (total > 0) ? (int32_t)total : (int32_t)BFS_ERR_CORRUPT;
-                    }
-                }
-            }
 
             memcpy(out, blk_buf + blk_off, chunk);
         }
@@ -265,8 +264,8 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
             }
             cow_block = shared_block || f->extents.data_checksums;
             if (blk_off != 0 || chunk < bs) {
-                /* Partial writes need the old block contents. */
-                err = bfs_bio_read(f->fs->bio, disk_blk, blk_buf);
+                /* Verify retained data before calculating a replacement CRC. */
+                err = file_read_checked_block(f, file_blk, disk_blk, blk_buf);
                 if (err != BFS_OK) return file_finish_write(f, total, err);
             }
         }
