@@ -12,12 +12,13 @@
 /* Compute CRC32 for a superblock (sets sb->crc32 = 0 during computation) */
 uint32_t bfs_sb_compute_crc(const bfs_superblock_t *sb);
 
-/* Validate a superblock: checks magic, version, CRC32, block_size.
+/* Validate a superblock: checks magic, version, CRC32, and block size.
  * Returns BFS_OK if valid. */
 bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb);
 
 /* Read the best (highest valid txn_id) superblock from the device.
- * Tries both primary (block 0) and backup (block 1).
+ * Tries the primary and partition-midpoint backup copies and requires their
+ * recorded geometry to match the device.
  * Returns BFS_OK on success, BFS_ERR_CORRUPT if neither is valid. */
 bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out);
 

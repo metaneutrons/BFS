@@ -21,6 +21,7 @@ AMIGA_CFLAGS = -std=c99 -Wall -O2 -m68020 -noixemul -fomit-frame-pointer \
 
 # ── Sources ─────────────────────────────────────────────────
 CORE_SRC = $(wildcard src/core/*.c)
+HOST_HEADERS = $(wildcard include/*.h tests/*.h)
 CORE_SRC_AMIGA = $(filter-out src/core/crc32.c,$(CORE_SRC))
 TEST_SRC = $(wildcard tests/test_*.c)
 EMU_SRC  = tests/block_device_emu.c
@@ -52,22 +53,24 @@ quality-gates:
 host-test: $(TEST_BINS)
 	@echo "=== Running tests ==="
 	@fail=0; \
-	for t in $(TEST_BINS); do \
-		echo "--- $$t ---"; \
-		$$t || fail=1; \
+	for t in $(notdir $(TEST_BINS)); do \
+		echo "--- $(BUILD_HOST)/$$t ---"; \
+		(cd $(BUILD_HOST) && ./$$t) || fail=1; \
 	done; \
 	if [ $$fail -eq 0 ]; then echo "\n=== ALL TESTS PASSED ==="; \
 	else echo "\n=== SOME TESTS FAILED ===" && exit 1; fi
 
 tools: $(BUILD_HOST)/bfsfsck
 
-$(BUILD_HOST)/bfsfsck: tools/bfsfsck.c $(CORE_SRC) $(EMU_SRC)
+$(BUILD_HOST)/bfsfsck: tools/bfsfsck.c $(CORE_SRC) $(EMU_SRC) $(HOST_HEADERS)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
 
-$(BUILD_HOST)/test_%: tests/test_%.c $(CORE_SRC) $(EMU_SRC)
+$(BUILD_HOST)/test_%: tests/test_%.c $(CORE_SRC) $(EMU_SRC) $(HOST_HEADERS)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
+
+$(BUILD_HOST)/test_fsck: $(BUILD_HOST)/bfsfsck
 
 amiga:
 	@mkdir -p $(BUILD_AMIGA)

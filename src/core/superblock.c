@@ -16,11 +16,20 @@
 #include <string.h>
 #include <stdlib.h>
 
+static uint64_t get_backup_offset(const bfs_superblock_t *sb);
+
 /* Raw byte-offset I/O for superblock access (before block_size is known) */
 static bfs_err_t bio_read_raw(bfs_bio_t *bio, uint64_t byte_offset, void *buf, uint32_t len)
 {
+    if (!bio || !bio->ops || !bio->ops->read_block || !buf || len == 0 ||
+        !bfs_block_size_valid(bio->block_size))
+        return BFS_ERR_INVAL;
+    uint64_t device_bytes = (uint64_t)bio->block_count * bio->block_size;
+    if (byte_offset > device_bytes || len > device_bytes - byte_offset)
+        return BFS_ERR_INVAL;
     uint32_t blk = (uint32_t)(byte_offset / bio->block_size);
     uint32_t off = (uint32_t)(byte_offset % bio->block_size);
+    if (len > bio->block_size - off) return BFS_ERR_INVAL;
     uint8_t *tmp = malloc(bio->block_size);
     if (!tmp) return BFS_ERR_NOMEM;
     bfs_err_t err = bfs_bio_read(bio, blk, tmp);
@@ -31,8 +40,15 @@ static bfs_err_t bio_read_raw(bfs_bio_t *bio, uint64_t byte_offset, void *buf, u
 
 static bfs_err_t bio_write_raw(bfs_bio_t *bio, uint64_t byte_offset, const void *buf, uint32_t len)
 {
+    if (!bio || !bio->ops || !bio->ops->read_block || !bio->ops->write_block ||
+        !buf || len == 0 || !bfs_block_size_valid(bio->block_size))
+        return BFS_ERR_INVAL;
+    uint64_t device_bytes = (uint64_t)bio->block_count * bio->block_size;
+    if (byte_offset > device_bytes || len > device_bytes - byte_offset)
+        return BFS_ERR_INVAL;
     uint32_t blk = (uint32_t)(byte_offset / bio->block_size);
     uint32_t off = (uint32_t)(byte_offset % bio->block_size);
+    if (len > bio->block_size - off) return BFS_ERR_INVAL;
     uint8_t *tmp = malloc(bio->block_size);
     if (!tmp) return BFS_ERR_NOMEM;
     /* Read-modify-write */
@@ -54,12 +70,22 @@ static bfs_err_t bio_write_raw(bfs_bio_t *bio, uint64_t byte_offset, const void 
 
 uint32_t bfs_sb_compute_crc(const bfs_superblock_t *sb)
 {
+    if (!sb) return 0;
     size_t crc_offset = offsetof(bfs_superblock_t, crc32);
     return bfs_crc32(0, sb, crc_offset);
 }
 
+static bool sb_root_valid(bfs_blk_t root, uint32_t block_size,
+                          bfs_blk_t block_count, bfs_blk_t backup_block)
+{
+    if (root == BFS_BLK_NULL) return true;
+    return root >= bfs_data_start_block(block_size) && root < block_count &&
+           root != backup_block;
+}
+
 bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
 {
+    if (!sb) return BFS_ERR_INVAL;
     if (bfs_be32(sb->magic) != BFS_SB_MAGIC)
         return BFS_ERR_CORRUPT;
     if (bfs_be32(sb->version) != BFS_SB_VERSION)
@@ -71,6 +97,63 @@ bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
 
     if (bfs_be32(sb->crc32) != bfs_sb_compute_crc(sb))
         return BFS_ERR_CORRUPT;
+
+    bfs_blk_t block_count = bfs_be32(sb->block_count);
+    uint64_t device_bytes = (uint64_t)block_count * bs;
+    uint64_t backup_offset = get_backup_offset(sb);
+    if (block_count == 0 || backup_offset > device_bytes ||
+        BFS_SB_SIZE > device_bytes - backup_offset ||
+        (backup_offset % BFS_SB_SIZE) != 0)
+        return BFS_ERR_CORRUPT;
+    bfs_blk_t backup_block = (bfs_blk_t)(backup_offset / bs);
+
+    const uint32_t known_options = BFS_OPT_DATA_CHECKSUMS | BFS_OPT_SNAPSHOTS |
+                                   BFS_OPT_DATA_ORDERED;
+    if ((bfs_be32(sb->options) & ~known_options) != 0 ||
+        bfs_be64(sb->txn_id) == 0 ||
+        bfs_be32(sb->free_blocks) > block_count ||
+        bfs_be32(sb->global_reserve) > block_count ||
+        bfs_be32(sb->next_ino) <= 1u ||
+        bfs_be32(sb->next_ino) > 0x80000000u)
+        return BFS_ERR_CORRUPT;
+
+    bool terminated = false;
+    for (uint32_t i = 0; i < BFS_VOLNAME_MAX; i++) {
+        uint8_t c = sb->volname[i];
+        if (c == 0) {
+            terminated = true;
+            break;
+        }
+        if (c == ':' || c == '/') return BFS_ERR_CORRUPT;
+    }
+    if (!terminated || sb->volname[0] == 0)
+        return BFS_ERR_CORRUPT;
+
+    const uint32_t roots[] = {
+        sb->dir_tree_root, sb->extent_tree_root, sb->free_tree_root,
+        sb->inode_tree_root, sb->refcount_tree_root, sb->snapshot_tree_root,
+    };
+    for (size_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++) {
+        if (!sb_root_valid(bfs_be32(roots[i]), bs, block_count, backup_block))
+            return BFS_ERR_CORRUPT;
+    }
+    if (bfs_be32(sb->snapshot_tree_root) == BFS_BLK_NULL &&
+        bfs_be32(sb->refcount_tree_root) != BFS_BLK_NULL)
+        return BFS_ERR_CORRUPT;
+
+    uint32_t emergency_count = bfs_be32(sb->emergency_count);
+    if (emergency_count > BFS_EMERGENCY_POOL_SIZE)
+        return BFS_ERR_CORRUPT;
+    for (uint32_t i = 0; i < emergency_count; i++) {
+        bfs_blk_t blk = bfs_be32(sb->emergency_pool[i]);
+        if (!sb_root_valid(blk, bs, block_count, backup_block) ||
+            blk == BFS_BLK_NULL)
+            return BFS_ERR_CORRUPT;
+        for (uint32_t j = 0; j < i; j++) {
+            if (bfs_be32(sb->emergency_pool[j]) == blk)
+                return BFS_ERR_CORRUPT;
+        }
+    }
 
     return BFS_OK;
 }
@@ -93,16 +176,29 @@ static uint64_t get_backup_offset(const bfs_superblock_t *sb)
            bfs_be32(sb->sb_backup_offset_lo);
 }
 
+static bool sb_matches_device(const bfs_superblock_t *sb, const bfs_bio_t *bio)
+{
+    return bfs_be32(sb->block_size) == bio->block_size &&
+           bfs_be32(sb->block_count) == bio->block_count &&
+           get_backup_offset(sb) ==
+               bfs_default_backup_offset(bio->block_count, bio->block_size);
+}
+
 bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
 {
+    if (!bio || !bio->ops || !bio->ops->read_block || !sb_out ||
+        !bfs_block_size_valid(bio->block_size) || bio->block_count == 0)
+        return BFS_ERR_INVAL;
     bfs_superblock_t sb_a, sb_b;
 
     /* Always read A from byte 0 */
     bfs_err_t e_a = read_sb_at(bio, BFS_SB_OFFSET_A, &sb_a);
-    int v_a = (e_a == BFS_OK && bfs_sb_validate(&sb_a) == BFS_OK);
+    int v_a = (e_a == BFS_OK && bfs_sb_validate(&sb_a) == BFS_OK &&
+               sb_matches_device(&sb_a, bio));
 
     /* Read B from the offset stored in A, or try partition midpoint as fallback */
     int v_b = 0;
+    bfs_err_t e_b = BFS_OK;
     uint64_t b_off = 0;
     if (v_a) {
         b_off = get_backup_offset(&sb_a);
@@ -112,8 +208,9 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
         b_off = bfs_default_backup_offset(bio->block_count, bio->block_size);
     }
     if (b_off > 0) {
-        bfs_err_t e_b = read_sb_at(bio, b_off, &sb_b);
-        v_b = (e_b == BFS_OK && bfs_sb_validate(&sb_b) == BFS_OK);
+        e_b = read_sb_at(bio, b_off, &sb_b);
+        v_b = (e_b == BFS_OK && bfs_sb_validate(&sb_b) == BFS_OK &&
+               sb_matches_device(&sb_b, bio));
     }
 
     if (v_a && v_b) {
@@ -123,6 +220,8 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
     } else if (v_b) {
         *sb_out = sb_b;
     } else {
+        if (e_a != BFS_OK) return e_a;
+        if (e_b != BFS_OK) return e_b;
         return BFS_ERR_CORRUPT;
     }
     return BFS_OK;
@@ -130,6 +229,10 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
 
 bfs_err_t bfs_sb_write(bfs_bio_t *bio, bfs_superblock_t *sb)
 {
+    if (!bio || !bio->ops || !bio->ops->read_block || !bio->ops->write_block ||
+        !bio->ops->sync || !sb || !bfs_block_size_valid(bio->block_size) ||
+        !sb_matches_device(sb, bio))
+        return BFS_ERR_INVAL;
     /* Compute CRC */
     sb->crc32 = bfs_be32(bfs_sb_compute_crc(sb));
 
@@ -138,12 +241,14 @@ bfs_err_t bfs_sb_write(bfs_bio_t *bio, bfs_superblock_t *sb)
     /* Read both to determine which is older */
     bfs_superblock_t sb_a, sb_b;
     bfs_err_t e_a = read_sb_at(bio, BFS_SB_OFFSET_A, &sb_a);
-    int v_a = (e_a == BFS_OK && bfs_sb_validate(&sb_a) == BFS_OK);
+    int v_a = (e_a == BFS_OK && bfs_sb_validate(&sb_a) == BFS_OK &&
+               sb_matches_device(&sb_a, bio));
 
     int v_b = 0;
     if (backup_off > 0) {
         bfs_err_t e_b = read_sb_at(bio, backup_off, &sb_b);
-        v_b = (e_b == BFS_OK && bfs_sb_validate(&sb_b) == BFS_OK);
+        v_b = (e_b == BFS_OK && bfs_sb_validate(&sb_b) == BFS_OK &&
+               sb_matches_device(&sb_b, bio));
     }
 
     /* Write to the older slot */
@@ -169,6 +274,7 @@ bfs_err_t bfs_sb_write(bfs_bio_t *bio, bfs_superblock_t *sb)
 
 bfs_err_t bfs_sb_write_raw(bfs_bio_t *bio, uint64_t byte_offset, const bfs_superblock_t *sb)
 {
+    if (!sb) return BFS_ERR_INVAL;
     uint8_t buf[BFS_SB_SIZE];
     memset(buf, 0, BFS_SB_SIZE);
     memcpy(buf, sb, sizeof(*sb));

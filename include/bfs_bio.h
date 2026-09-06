@@ -42,19 +42,27 @@ struct bfs_bio {
 
 /* Convenience wrappers */
 static inline bfs_err_t bfs_bio_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf) {
+    if (!bio || !bio->ops || !bio->ops->read_block || !buf ||
+        blk >= bio->block_count)
+        return BFS_ERR_INVAL;
     return bio->ops->read_block(bio, blk, buf);
 }
 
 static inline bfs_err_t bfs_bio_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf) {
+    if (!bio || !bio->ops || !bio->ops->write_block || !buf ||
+        blk >= bio->block_count)
+        return BFS_ERR_INVAL;
     return bio->ops->write_block(bio, blk, buf);
 }
 
 static inline bfs_err_t bfs_bio_sync(bfs_bio_t *bio) {
+    if (!bio || !bio->ops || !bio->ops->sync)
+        return BFS_ERR_INVAL;
     return bio->ops->sync(bio);
 }
 
 static inline void bfs_bio_close(bfs_bio_t *bio) {
-    if (bio && bio->ops->close) bio->ops->close(bio);
+    if (bio && bio->ops && bio->ops->close) bio->ops->close(bio);
 }
 
 #endif /* BFS_BIO_H */

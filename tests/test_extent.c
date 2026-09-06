@@ -148,6 +148,32 @@ static void test_truncate_all(void)
     unlink(TEST_IMG);
 }
 
+static void test_truncate_inside_extent(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bfs_freespace_t *fs = make_fs(bio);
+
+    bfs_extent_tree_t et;
+    TEST_ASSERT_EQ(bfs_extent_init(&et, bio, fs, BFS_BLK_NULL, 1), BFS_OK);
+    bfs_blk_t data_start;
+    TEST_ASSERT_EQ(bfs_extent_append(&et, 0, 10, &data_start), BFS_OK);
+    TEST_ASSERT_EQ(bfs_extent_truncate_batch(&et, 5, 0), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_extent_truncate(&et, 5), BFS_OK);
+
+    for (uint32_t i = 0; i < 5; i++) {
+        bfs_blk_t mapped = BFS_BLK_NULL;
+        TEST_ASSERT_EQ(bfs_extent_lookup(&et, i, &mapped), BFS_OK);
+        TEST_ASSERT_EQ(mapped, data_start + i);
+    }
+    bfs_blk_t mapped = BFS_BLK_NULL;
+    TEST_ASSERT_EQ(bfs_extent_lookup(&et, 5, &mapped), BFS_ERR_NOTFOUND);
+
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 /* ── Test: large file (many extents) ───────────────────────── */
 
 static void test_large_file(void)
@@ -182,5 +208,6 @@ TEST_SUITE_BEGIN("Extent Tree")
     TEST_RUN(test_fragmented_file);
     TEST_RUN(test_truncate);
     TEST_RUN(test_truncate_all);
+    TEST_RUN(test_truncate_inside_extent);
     TEST_RUN(test_large_file);
 TEST_SUITE_END()

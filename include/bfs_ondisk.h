@@ -115,7 +115,7 @@ typedef struct BFS_PACKED {
     uint32_t num_keys;    /* number of keys in this node */
     uint16_t level;       /* 0 = leaf, >0 = internal (height from leaf) */
     uint16_t flags;       /* reserved */
-    uint32_t right_sibling; /* next node at same level (leaf only, 0=none) */
+    uint32_t right_sibling; /* legacy leaf hint; traversal uses parent/child links */
     /* Followed by: key/value or key/child data */
 } bfs_btnode_hdr_t;
 

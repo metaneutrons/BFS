@@ -137,8 +137,15 @@ static void test_alloc_free_cycles(void)
     uint32_t free_after = fs->total_free;
 
     /* Free all of them */
-    for (int i = 0; i < 100; i++)
-        TEST_ASSERT_EQ(bfs_freespace_free(fs, blocks[i], 1), BFS_OK);
+    for (int i = 0; i < 100; i++) {
+        bfs_err_t err = bfs_freespace_free(fs, blocks[i], 1);
+        if (err != BFS_OK)
+            fprintf(stderr,
+                    "free cycle failed: index=%d block=%u total=%u reserve=%u root=%u error=%d\n",
+                    i, blocks[i], fs->total_free, fs->reserve_count,
+                    fs->tree.root, err);
+        TEST_ASSERT_EQ(err, BFS_OK);
+    }
 
     /* Free count should increase (COW overhead means not exactly +100) */
     TEST_ASSERT(fs->total_free >= free_after + 90);

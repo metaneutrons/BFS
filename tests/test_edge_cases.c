@@ -658,7 +658,7 @@ static void test_random_operations_fuzz(void)
     /* Verify consistency: every file marked as existing should be findable */
     for (int i = 0; i < POOL_SIZE; i++) {
         char name[16];
-        int nlen = snprintf(name, sizeof(name), "fz_%03u", i);
+        int nlen = snprintf(name, sizeof(name), "fz_%03d", i);
         uint32_t found_ino, type;
         bfs_err_t err = bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, name, (uint8_t)nlen, &found_ino, &type);
         if (exists[i]) {

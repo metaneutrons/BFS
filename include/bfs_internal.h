@@ -13,6 +13,9 @@
 #include "bfs_file.h"
 #include "bfs_snapshot.h"
 
+/* Reserve memory before an atomic reclaim unit; never commits or drains. */
+bfs_err_t bfs_fs_reserve_pending(bfs_fs_t *fs, uint32_t slots);
+
 /* file.c — caller holds fs->lock */
 bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr);
 int32_t   bfs_file_read_unlocked(bfs_file_t *f, void *buf, uint32_t len);
@@ -27,5 +30,9 @@ bfs_err_t bfs_snapshot_find_by_name_unlocked(bfs_fs_t *fs, const char *name,
                                              uint32_t *id_out,
                                              bfs_snapshot_record_t *rec_out);
 uint32_t  bfs_snapshot_next_id_unlocked(bfs_fs_t *fs);
+
+/* fs.c — caller holds fs->lock. Discard the working COW transaction and reload
+ * the newest valid on-disk superblock after a multi-step operation fails. */
+bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs);
 
 #endif /* BFS_INTERNAL_H */

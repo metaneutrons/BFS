@@ -29,7 +29,10 @@
  * later replaced by the free-space-tree allocator. */
 typedef struct bfs_allocator {
     bfs_blk_t (*alloc)(struct bfs_allocator *a);
-    void (*dealloc)(struct bfs_allocator *a, bfs_blk_t blk);
+    bfs_err_t (*dealloc)(struct bfs_allocator *a, bfs_blk_t blk);
+    /* Explains a BFS_BLK_NULL allocation result. Optional allocators default to
+     * BFS_ERR_NOSPC when this callback is absent. */
+    bfs_err_t (*error)(struct bfs_allocator *a);
     void *ctx;
 } bfs_allocator_t;
 
@@ -77,7 +80,9 @@ typedef struct {
     bfs_err_t (*defer)(void *ctx, bfs_blk_t blk);
     /* Free slots in the queue right now (for all-or-nothing batch sizing). */
     uint32_t (*headroom)(void *ctx);
-    /* Maximum slots the queue can ever hold (a longer run can never fit). */
+    /* Optional memory-only growth before a mutation; must NOT commit or drain. */
+    bfs_err_t (*reserve)(void *ctx, uint32_t slots);
+    /* Fixed capacity when reserve is absent; baseline capacity otherwise. */
     uint32_t capacity;
 } bfs_free_sink_t;
 
@@ -93,10 +98,8 @@ typedef struct bfs_btree {
     /* Where COW'd old blocks go for deferred free (zeroed = standalone tree). */
     bfs_free_sink_t   free_sink;
 
-    /* Sticky error latched if free_sink.defer() ever reports the queue full
-     * mid-COW (i.e. a block would otherwise be dropped/leaked). With correct
-     * headroom reservation by the caller this stays BFS_OK; insert/delete
-     * surface it as BFS_ERR_NOSPC instead of silently leaking. */
+    /* Sticky reclamation error from either the deferred-free sink or allocator.
+     * Mutations surface it instead of silently leaking a block. */
     bfs_err_t         free_sink_err;
 } bfs_btree_t;
 
@@ -163,6 +166,6 @@ bfs_err_t bfs_btree_compact_build_swap(bfs_btree_t *tree, bfs_blk_t *old_root_ou
  * transaction, deallocs immediately if current). Lets the fs-level compaction
  * free an old tree's nodes one at a time, draining the queue between them. A
  * read/alloc failure leaves the block unfreed rather than crashing. */
-void bfs_btree_free_block(bfs_btree_t *tree, bfs_blk_t blk);
+bfs_err_t bfs_btree_free_block(bfs_btree_t *tree, bfs_blk_t blk);
 
 #endif /* BFS_BTREE_H */

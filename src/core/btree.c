@@ -29,6 +29,25 @@
 
 static uint8_t *alloc_buf(const bfs_btree_t *tree) { return malloc(tree->bio->block_size); }
 
+static bool tree_shape_valid(const bfs_btree_t *tree)
+{
+    if (!tree || !tree->bio) return false;
+    if (tree->root == BFS_BLK_NULL) return tree->height == 0;
+    return tree->root < tree->bio->block_count && tree->height > 0 &&
+           tree->height <= MAX_TREE_DEPTH;
+}
+
+static bfs_err_t mutation_headroom(const bfs_btree_t *tree, uint32_t blocks)
+{
+    if (!tree->free_sink.defer || blocks == 0) return BFS_OK;
+    if (!tree->free_sink.headroom || tree->free_sink.capacity == 0)
+        return BFS_ERR_INVAL;
+    if (blocks > tree->free_sink.capacity)
+        return BFS_ERR_NOSPC;
+    return blocks <= tree->free_sink.headroom(tree->free_sink.ctx)
+               ? BFS_OK : BFS_ERR_AGAIN;
+}
+
 /* Node layout/capacity/CRC accessors live in bfs_btree_internal.h — shared with
  * the invariant test (tests/test_invariants.c) so it validates the real layout,
  * not a hand-kept copy. */
@@ -37,6 +56,8 @@ static uint8_t *alloc_buf(const bfs_btree_t *tree) { return malloc(tree->bio->bl
 
 static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
 {
+    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
+        return BFS_ERR_CORRUPT;
     bfs_err_t err = bfs_bio_read(tree->bio, blk, buf);
     if (err != BFS_OK) return err;
 
@@ -55,20 +76,81 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
         uint32_t nkeys = bfs_be32(hdr->num_keys);
         uint32_t max_keys = (level == BFS_BTNODE_LEAF)
                             ? leaf_max_keys(tree) : internal_max_keys(tree);
-        if (level > MAX_TREE_DEPTH || nkeys > max_keys)
+        if (level >= MAX_TREE_DEPTH || nkeys == 0 || nkeys > max_keys ||
+            bfs_be16(hdr->flags) != 0)
             return BFS_ERR_CORRUPT;
+        bfs_blk_t sibling = bfs_be32(hdr->right_sibling);
+        if (sibling != BFS_BLK_NULL &&
+            (level != BFS_BTNODE_LEAF || sibling >= tree->bio->block_count))
+            return BFS_ERR_CORRUPT;
+        for (uint32_t i = 1; i < nkeys; i++) {
+            if (tree->ops->key_compare(node_key(tree, buf, i - 1),
+                                       node_key(tree, buf, i)) >= 0)
+                return BFS_ERR_CORRUPT;
+        }
+        if (level != BFS_BTNODE_LEAF) {
+            for (uint32_t i = 0; i <= nkeys; i++) {
+                bfs_blk_t child = get_child(tree, buf, i);
+                if (child == BFS_BLK_NULL || child >= tree->bio->block_count)
+                    return BFS_ERR_CORRUPT;
+            }
+        }
     }
     return BFS_OK;
 }
 
 static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
 {
+    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
+        return BFS_ERR_CORRUPT;
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     hdr->magic = bfs_be32(BFS_NODE_MAGIC);
     hdr->txn_id = bfs_be64(bfs_btree_txn_id(tree));
     hdr->crc32 = 0;
     hdr->crc32 = bfs_be32(node_compute_crc(tree, buf));
     return bfs_bio_write(tree->bio, blk, buf);
+}
+
+static bfs_err_t node_read_at_level(const bfs_btree_t *tree, bfs_blk_t blk,
+                                    uint8_t *buf, uint16_t expected_level)
+{
+    bfs_err_t err = node_read(tree, blk, buf);
+    if (err != BFS_OK) return err;
+    return node_level(buf) == expected_level ? BFS_OK : BFS_ERR_CORRUPT;
+}
+
+typedef struct {
+    uint8_t lower[BFS_MAX_KEY_SIZE];
+    uint8_t upper[BFS_MAX_KEY_SIZE];
+    bool have_lower;
+    bool have_upper;
+} node_bounds_t;
+
+static void child_bounds(const bfs_btree_t *tree, uint8_t *parent,
+                          uint32_t child, node_bounds_t *bounds)
+{
+    if (child > 0) {
+        memcpy(bounds->lower, node_key(tree, parent, child - 1), tree->ops->key_size);
+        bounds->have_lower = true;
+    }
+    if (child < num_keys(parent)) {
+        memcpy(bounds->upper, node_key(tree, parent, child), tree->ops->key_size);
+        bounds->have_upper = true;
+    }
+}
+
+static bfs_err_t node_read_bounded(const bfs_btree_t *tree, bfs_blk_t blk,
+                                   uint8_t *buf, uint16_t level,
+                                   const node_bounds_t *bounds)
+{
+    bfs_err_t err = node_read_at_level(tree, blk, buf, level);
+    if (err != BFS_OK) return err;
+    if ((bounds->have_lower && tree->ops->key_compare(
+             node_key(tree, buf, 0), bounds->lower) < 0) ||
+        (bounds->have_upper && tree->ops->key_compare(
+             node_key(tree, buf, num_keys(buf) - 1), bounds->upper) >= 0))
+        return BFS_ERR_CORRUPT;
+    return BFS_OK;
 }
 
 static void node_init(const bfs_btree_t *tree, uint8_t *buf, uint16_t level)
@@ -111,6 +193,13 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
                      bfs_allocator_t *alloc, const bfs_btree_ops_t *ops,
                      bfs_blk_t root, uint64_t txn_id)
 {
+    if (!tree || !bio || !bio->ops || !bio->ops->read_block ||
+        !bio->ops->write_block || !alloc || !alloc->alloc || !alloc->dealloc ||
+        !ops || !ops->key_compare || ops->key_size == 0 ||
+        ops->key_size > BFS_MAX_KEY_SIZE || ops->val_size == 0 ||
+        !bfs_block_size_valid(bio->block_size) || bio->block_count == 0 ||
+        (root != BFS_BLK_NULL && root >= bio->block_count))
+        return BFS_ERR_INVAL;
     tree->bio = bio;
     tree->alloc = alloc;
     tree->ops = ops;
@@ -120,6 +209,9 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
     tree->txn_id_fallback = txn_id;
     tree->free_sink = (bfs_free_sink_t){0};
     tree->free_sink_err = BFS_OK;
+
+    if (leaf_max_keys(tree) < 3 || internal_max_keys(tree) < 3)
+        return BFS_ERR_INVAL;
 
     if (root != BFS_BLK_NULL) {
         uint8_t *buf = malloc(bio->block_size);
@@ -134,17 +226,22 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
 
 bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
 {
+    if (!tree || !tree->bio || !tree->ops || !key || !val_out)
+        return BFS_ERR_INVAL;
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
 
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
     bfs_blk_t blk = tree->root;
     uint32_t depth = 0;
+    uint16_t expected_level = (uint16_t)(tree->height - 1);
+    node_bounds_t bounds = {0};
 
     while (1) {
-        if (depth++ > MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
-        bfs_err_t err = node_read(tree, blk, buf);
+        if (depth++ >= MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
+        bfs_err_t err = node_read_bounded(tree, blk, buf, expected_level, &bounds);
         if (err != BFS_OK) { free(buf); return err; }
 
         bool found;
@@ -156,14 +253,101 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
             free(buf);
             return BFS_OK;
         }
+        if (expected_level == 0) { free(buf); return BFS_ERR_CORRUPT; }
         /* Internal: child[idx] has keys < key[idx], child[idx+1] has keys >= key[idx] */
-        blk = get_child(tree, buf, found ? idx + 1 : idx);
+        uint32_t child = found ? idx + 1 : idx;
+        child_bounds(tree, buf, child, &bounds);
+        blk = get_child(tree, buf, child);
+        expected_level--;
     }
 }
 
 /* ── Insert helpers ────────────────────────────────────────── */
 
-static bfs_err_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf, bfs_blk_t *out_blk);
+#define BTREE_MUTATION_MAX_BLOCKS (4u * MAX_TREE_DEPTH + 8u)
+
+typedef struct {
+    bfs_blk_t new_blocks[BTREE_MUTATION_MAX_BLOCKS];
+    uint32_t new_count;
+    bfs_blk_t retired_blocks[BTREE_MUTATION_MAX_BLOCKS];
+    uint64_t retired_txns[BTREE_MUTATION_MAX_BLOCKS];
+    uint32_t retired_count;
+} btree_mutation_t;
+
+static bfs_err_t allocator_failure(bfs_btree_t *tree)
+{
+    if (tree->alloc->error) {
+        bfs_err_t err = tree->alloc->error(tree->alloc);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_ERR_NOSPC;
+}
+
+static void latch_reclaim_error(bfs_btree_t *tree, bfs_err_t err)
+{
+    if (err != BFS_OK && tree->free_sink_err == BFS_OK)
+        tree->free_sink_err = err;
+}
+
+static bfs_blk_t mutation_alloc(bfs_btree_t *tree, btree_mutation_t *mutation)
+{
+    bfs_blk_t blk = tree->alloc->alloc(tree->alloc);
+    if (blk == BFS_BLK_NULL) return BFS_BLK_NULL;
+    if (mutation->new_count >= BTREE_MUTATION_MAX_BLOCKS) {
+        latch_reclaim_error(tree, tree->alloc->dealloc(tree->alloc, blk));
+        latch_reclaim_error(tree, BFS_ERR_NOSPC);
+        return BFS_BLK_NULL;
+    }
+    mutation->new_blocks[mutation->new_count++] = blk;
+    return blk;
+}
+
+static bfs_err_t mutation_retire_txn(btree_mutation_t *mutation, bfs_blk_t blk,
+                                     uint64_t block_txn)
+{
+    if (blk == BFS_BLK_NULL) return BFS_OK;
+    for (uint32_t i = 0; i < mutation->retired_count; i++) {
+        if (mutation->retired_blocks[i] == blk) return BFS_OK;
+    }
+    if (mutation->retired_count >= BTREE_MUTATION_MAX_BLOCKS)
+        return BFS_ERR_NOSPC;
+    mutation->retired_blocks[mutation->retired_count] = blk;
+    mutation->retired_txns[mutation->retired_count] = block_txn;
+    mutation->retired_count++;
+    return BFS_OK;
+}
+
+static bfs_err_t mutation_retire(btree_mutation_t *mutation, bfs_blk_t blk,
+                                 const uint8_t *buf)
+{
+    const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
+    return mutation_retire_txn(mutation, blk, bfs_be64(hdr->txn_id));
+}
+
+static void mutation_abort(bfs_btree_t *tree, btree_mutation_t *mutation)
+{
+    for (uint32_t i = 0; i < mutation->new_count; i++)
+        latch_reclaim_error(tree,
+                            tree->alloc->dealloc(tree->alloc,
+                                                 mutation->new_blocks[i]));
+}
+
+static void mutation_commit(bfs_btree_t *tree, btree_mutation_t *mutation)
+{
+    for (uint32_t i = 0; i < mutation->retired_count; i++) {
+        bfs_blk_t blk = mutation->retired_blocks[i];
+        if (mutation->retired_txns[i] >= bfs_btree_txn_id(tree)) {
+            latch_reclaim_error(tree, tree->alloc->dealloc(tree->alloc, blk));
+        } else if (tree->free_sink.defer) {
+            latch_reclaim_error(tree,
+                                tree->free_sink.defer(tree->free_sink.ctx, blk));
+        }
+    }
+}
+
+static bfs_err_t cow_node(bfs_btree_t *tree, btree_mutation_t *mutation,
+                          bfs_blk_t old_blk, uint8_t *buf,
+                          bfs_blk_t *out_blk);
 
 /* Centralized node deallocation. Blocks from the current transaction are 
  * freed immediately; older blocks are queued for post-commit reclamation. */
@@ -175,7 +359,7 @@ static void btree_free_node(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *buf
 
     if (block_txn >= bfs_btree_txn_id(tree)) {
         /* Current-transaction block: free it immediately. */
-        tree->alloc->dealloc(tree->alloc, blk);
+        latch_reclaim_error(tree, tree->alloc->dealloc(tree->alloc, blk));
     } else if (tree->free_sink.defer) {
         /* Older block: it must NOT be freed mid-COW (a crash before commit would
          * corrupt the last committed state were it reused), so defer it to the
@@ -190,32 +374,19 @@ static void btree_free_node(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *buf
     /* else: standalone tree, older block — nothing to do. */
 }
 
-static bfs_err_t cow_node(bfs_btree_t *tree, bfs_blk_t old_blk, uint8_t *buf, bfs_blk_t *out_blk)
+static bfs_err_t cow_node(bfs_btree_t *tree, btree_mutation_t *mutation,
+                          bfs_blk_t old_blk, uint8_t *buf,
+                          bfs_blk_t *out_blk)
 {
-    if (old_blk != BFS_BLK_NULL && tree->txn_id_ptr != NULL) {
-        const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
-        if (bfs_be64(hdr->txn_id) >= bfs_btree_txn_id(tree)) {
-            /* Same transaction owns the block: rewrite in place. */
-            bfs_err_t err = node_write(tree, old_blk, buf);
-            if (err == BFS_OK) *out_blk = old_blk;
-            return err;
-        }
-    }
-
-    bfs_blk_t new_blk = tree->alloc->alloc(tree->alloc);
-    if (new_blk == BFS_BLK_NULL) return BFS_ERR_NOSPC;
-
-    if (old_blk != BFS_BLK_NULL) {
-        btree_free_node(tree, old_blk, buf);
-    }
+    const bfs_btnode_hdr_t *old_hdr = (const bfs_btnode_hdr_t *)buf;
+    uint64_t old_txn = bfs_be64(old_hdr->txn_id);
+    bfs_blk_t new_blk = mutation_alloc(tree, mutation);
+    if (new_blk == BFS_BLK_NULL) return allocator_failure(tree);
 
     bfs_err_t err = node_write(tree, new_blk, buf);
-    if (err != BFS_OK) {
-        /* Allocated but never written or referenced — return it to the allocator
-         * instead of leaking it, and propagate the real error (I/O, not NOSPC). */
-        tree->alloc->dealloc(tree->alloc, new_blk);
-        return err;
-    }
+    if (err != BFS_OK) return err;
+    err = mutation_retire_txn(mutation, old_blk, old_txn);
+    if (err != BFS_OK) return err;
     *out_blk = new_blk;
     return BFS_OK;
 }
@@ -264,7 +435,8 @@ typedef struct {
 
 /* Split a full leaf. Left keeps first half, right gets second half.
  * Median key (first key of right) is returned for parent insertion. */
-static bfs_err_t leaf_split(bfs_btree_t *tree, uint8_t *buf, split_result_t *result)
+static bfs_err_t leaf_split(bfs_btree_t *tree, btree_mutation_t *mutation,
+                            uint8_t *buf, split_result_t *result)
 {
     uint32_t n = num_keys(buf);
     uint32_t mid = n / 2;
@@ -285,14 +457,18 @@ static bfs_err_t leaf_split(bfs_btree_t *tree, uint8_t *buf, split_result_t *res
 
     hdr_of(buf)->num_keys = bfs_be32(mid);
 
-    bfs_blk_t right_blk = tree->alloc->alloc(tree->alloc);
-    if (right_blk == BFS_BLK_NULL) { free(right_buf); return BFS_ERR_NOSPC; }
+    bfs_blk_t right_blk = mutation_alloc(tree, mutation);
+    if (right_blk == BFS_BLK_NULL) {
+        free(right_buf);
+        return allocator_failure(tree);
+    }
 
     hdr_of(buf)->right_sibling = bfs_be32(right_blk);
 
-    if (node_write(tree, right_blk, right_buf) != BFS_OK) {
+    bfs_err_t write_err = node_write(tree, right_blk, right_buf);
+    if (write_err != BFS_OK) {
         free(right_buf);
-        return BFS_ERR_IO;
+        return write_err;
     }
 
     memcpy(result->median_key, node_key(tree, right_buf, 0), ks);
@@ -303,7 +479,8 @@ static bfs_err_t leaf_split(bfs_btree_t *tree, uint8_t *buf, split_result_t *res
 }
 
 /* Split a full internal node. Median key is promoted (not kept in either child). */
-static bfs_err_t internal_split(bfs_btree_t *tree, uint8_t *buf, split_result_t *result)
+static bfs_err_t internal_split(bfs_btree_t *tree, btree_mutation_t *mutation,
+                                uint8_t *buf, split_result_t *result)
 {
     uint32_t n = num_keys(buf);
     uint32_t mid = n / 2;
@@ -325,12 +502,16 @@ static bfs_err_t internal_split(bfs_btree_t *tree, uint8_t *buf, split_result_t 
 
     hdr_of(buf)->num_keys = bfs_be32(mid);
 
-    bfs_blk_t right_blk = tree->alloc->alloc(tree->alloc);
-    if (right_blk == BFS_BLK_NULL) { free(right_buf); return BFS_ERR_NOSPC; }
-
-    if (node_write(tree, right_blk, right_buf) != BFS_OK) {
+    bfs_blk_t right_blk = mutation_alloc(tree, mutation);
+    if (right_blk == BFS_BLK_NULL) {
         free(right_buf);
-        return BFS_ERR_IO;
+        return allocator_failure(tree);
+    }
+
+    bfs_err_t write_err = node_write(tree, right_blk, right_buf);
+    if (write_err != BFS_OK) {
+        free(right_buf);
+        return write_err;
     }
 
     result->new_right = right_blk;
@@ -348,7 +529,10 @@ typedef struct {
 
 bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
 {
+    if (!tree || !tree->bio || !tree->alloc || !key || !val)
+        return BFS_ERR_INVAL;
     tree->free_sink_err = BFS_OK;
+    btree_mutation_t mutation = {0};
     /* Empty tree: create a root leaf */
     if (tree->root == BFS_BLK_NULL) {
         uint8_t *buf = alloc_buf(tree);
@@ -356,15 +540,25 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
         node_init(tree, buf, BFS_BTNODE_LEAF);
         leaf_insert_at(tree, buf, 0, key, val);
 
-        bfs_blk_t blk = tree->alloc->alloc(tree->alloc);
-        if (blk == BFS_BLK_NULL) { free(buf); return BFS_ERR_NOSPC; }
+        bfs_blk_t blk = mutation_alloc(tree, &mutation);
+        if (blk == BFS_BLK_NULL) {
+            free(buf);
+            return allocator_failure(tree);
+        }
         bfs_err_t err = node_write(tree, blk, buf);
         free(buf);
-        if (err != BFS_OK) return err;
+        if (err != BFS_OK) {
+            mutation_abort(tree, &mutation);
+            return err;
+        }
         tree->root = blk;
         tree->height = 1;
-        return BFS_OK;
+        mutation_commit(tree, &mutation);
+        return tree->free_sink_err;
     }
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+    bfs_err_t preflight = mutation_headroom(tree, tree->height);
+    if (preflight != BFS_OK) return preflight;
 
     const uint32_t bs = tree->bio->block_size;
     bfs_err_t rc = BFS_OK;
@@ -380,7 +574,12 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
     bfs_blk_t blk = tree->root;
     while (1) {
         if (depth >= MAX_TREE_DEPTH) { rc = BFS_ERR_CORRUPT; goto insert_cleanup; }
-        bfs_err_t err = node_read(tree, blk, NBUF(depth));
+        if ((uint32_t)depth >= tree->height) {
+            rc = BFS_ERR_CORRUPT;
+            goto insert_cleanup;
+        }
+        uint16_t expected_level = (uint16_t)(tree->height - 1 - depth);
+        bfs_err_t err = node_read_at_level(tree, blk, NBUF(depth), expected_level);
         if (err != BFS_OK) { rc = err; goto insert_cleanup; }
         path[depth].blk = blk;
 
@@ -404,7 +603,7 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
     split_result_t split = { .did_split = false };
 
     if (num_keys(leaf) >= leaf_max_keys(tree)) {
-        bfs_err_t err = leaf_split(tree, leaf, &split);
+        bfs_err_t err = leaf_split(tree, &mutation, leaf, &split);
         if (err != BFS_OK) { rc = err; goto insert_cleanup; }
 
         /* Determine which half the new key goes into */
@@ -437,7 +636,7 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
 
     /* COW the leaf */
     bfs_blk_t new_blk;
-    rc = cow_node(tree, path[depth].blk, leaf, &new_blk);
+    rc = cow_node(tree, &mutation, path[depth].blk, leaf, &new_blk);
     if (rc != BFS_OK) goto insert_cleanup;
 
     /* Walk back up the path */
@@ -451,7 +650,7 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
             if (num_keys(node) >= internal_max_keys(tree)) {
                 /* Split the internal node FIRST, then insert into correct half */
                 split_result_t parent_split;
-                bfs_err_t err = internal_split(tree, node, &parent_split);
+                bfs_err_t err = internal_split(tree, &mutation, node, &parent_split);
                 if (err != BFS_OK) { rc = err; goto insert_cleanup; }
 
                 /* Determine which half gets the new key */
@@ -480,36 +679,45 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
             }
         }
 
-        rc = cow_node(tree, path[d].blk, node, &new_blk);
+        rc = cow_node(tree, &mutation, path[d].blk, node, &new_blk);
         if (rc != BFS_OK) goto insert_cleanup;
     }
 
-    tree->root = new_blk;
+    bfs_blk_t final_root = new_blk;
 
     /* If the root split, create a new root */
     if (split.did_split) {
         uint8_t *root_buf = alloc_buf(tree);
-        if (!root_buf) { rc = BFS_ERR_NOSPC; goto insert_cleanup; }
+        if (!root_buf) { rc = BFS_ERR_NOMEM; goto insert_cleanup; }
         node_init(tree, root_buf, node_level(NBUF(0)) + 1);
         set_child(tree, root_buf, 0, new_blk);
         memcpy(node_key(tree, root_buf, 0), split.median_key, tree->ops->key_size);
         set_child(tree, root_buf, 1, split.new_right);
         hdr_of(root_buf)->num_keys = bfs_be32(1);
 
-        bfs_blk_t root_blk = tree->alloc->alloc(tree->alloc);
-        if (root_blk == BFS_BLK_NULL) { free(root_buf); rc = BFS_ERR_NOSPC; goto insert_cleanup; }
+        bfs_blk_t root_blk = mutation_alloc(tree, &mutation);
+        if (root_blk == BFS_BLK_NULL) {
+            free(root_buf);
+            rc = allocator_failure(tree);
+            goto insert_cleanup;
+        }
         bfs_err_t err = node_write(tree, root_blk, root_buf);
         free(root_buf);
         if (err != BFS_OK) { rc = err; goto insert_cleanup; }
-        tree->root = root_blk;
+        final_root = root_blk;
         tree->height++;
     }
+    tree->root = final_root;
 
 insert_cleanup:
     free(node_bufs);
     #undef NBUF
+    if (rc == BFS_OK)
+        mutation_commit(tree, &mutation);
+    else
+        mutation_abort(tree, &mutation);
     if (rc == BFS_OK && tree->free_sink_err != BFS_OK)
-        rc = BFS_ERR_NOSPC;  /* deferred-free queue overflowed mid-COW (a block would leak) */
+        rc = tree->free_sink_err;
     return rc;
 }
 
@@ -517,9 +725,15 @@ insert_cleanup:
 
 bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val)
 {
+    if (!tree || !tree->bio || !tree->alloc || !key || !new_val)
+        return BFS_ERR_INVAL;
     tree->free_sink_err = BFS_OK;
+    btree_mutation_t mutation = {0};
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+    bfs_err_t preflight = mutation_headroom(tree, tree->height);
+    if (preflight != BFS_OK) return preflight;
 
     const uint32_t bs = tree->bio->block_size;
     uint32_t depth = tree->height > 0 ? tree->height : 2;
@@ -534,7 +748,12 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
     /* Descend to leaf */
     while (1) {
         if (d >= MAX_TREE_DEPTH) { free(node_bufs); return BFS_ERR_CORRUPT; }
-        bfs_err_t err = node_read(tree, blk, UBUF(d));
+        if ((uint32_t)d >= tree->height) {
+            free(node_bufs);
+            return BFS_ERR_CORRUPT;
+        }
+        bfs_err_t err = node_read_at_level(
+            tree, blk, UBUF(d), (uint16_t)(tree->height - 1 - d));
         if (err != BFS_OK) { free(node_bufs); return err; }
         path[d].blk = blk;
         if (is_leaf(UBUF(d))) break;
@@ -553,20 +772,25 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
 
     /* COW back up */
     bfs_blk_t new_blk;
-    bfs_err_t cerr = cow_node(tree, path[d].blk, UBUF(d), &new_blk);
-    if (cerr != BFS_OK) { free(node_bufs); return cerr; }
+    bfs_err_t cerr = cow_node(tree, &mutation, path[d].blk, UBUF(d), &new_blk);
+    if (cerr != BFS_OK) goto update_cleanup;
     for (int i = d - 1; i >= 0; i--) {
         set_child(tree, UBUF(i), path[i].child_idx, new_blk);
-        cerr = cow_node(tree, path[i].blk, UBUF(i), &new_blk);
-        if (cerr != BFS_OK) { free(node_bufs); return cerr; }
+        cerr = cow_node(tree, &mutation, path[i].blk, UBUF(i), &new_blk);
+        if (cerr != BFS_OK) goto update_cleanup;
     }
     tree->root = new_blk;
 
+update_cleanup:
     free(node_bufs);
     #undef UBUF
-    if (tree->free_sink_err != BFS_OK)
-        return BFS_ERR_NOSPC;  /* deferred-free queue overflowed mid-COW (a block would leak) */
-    return BFS_OK;
+    if (cerr == BFS_OK)
+        mutation_commit(tree, &mutation);
+    else
+        mutation_abort(tree, &mutation);
+    if (cerr == BFS_OK && tree->free_sink_err != BFS_OK)
+        cerr = tree->free_sink_err;
+    return cerr;
 }
 
 /* ── Scan ──────────────────────────────────────────────────── */
@@ -574,8 +798,10 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
 bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
                            bfs_scan_cb cb, void *ctx)
 {
+    if (!tree || !tree->bio || !tree->ops || !cb) return BFS_ERR_INVAL;
     if (tree->root == BFS_BLK_NULL)
         return BFS_OK;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
 
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
@@ -583,18 +809,25 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
     /* First: descend to the starting leaf */
     bfs_blk_t blk = tree->root;
     uint32_t descend_depth = 0;
+    uint16_t expected_level = (uint16_t)(tree->height - 1);
+    node_bounds_t bounds = {0};
     while (1) {
-        if (descend_depth++ > MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
-        bfs_err_t err = node_read(tree, blk, buf);
+        if (descend_depth++ >= MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
+        bfs_err_t err = node_read_bounded(tree, blk, buf, expected_level, &bounds);
         if (err != BFS_OK) { free(buf); return err; }
         if (is_leaf(buf)) break;
+        if (expected_level == 0) { free(buf); return BFS_ERR_CORRUPT; }
         if (start_key) {
             bool found;
             uint32_t idx = node_search(tree, buf, start_key, &found);
-            blk = get_child(tree, buf, found ? idx + 1 : idx);
+            uint32_t child = found ? idx + 1 : idx;
+            child_bounds(tree, buf, child, &bounds);
+            blk = get_child(tree, buf, child);
         } else {
+            child_bounds(tree, buf, 0, &bounds);
             blk = get_child(tree, buf, 0);
         }
+        expected_level--;
     }
 
     /* Process first leaf */
@@ -623,31 +856,27 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
         int depth = 0;
 
         bfs_blk_t cur = tree->root;
-        bool reached_leaf = false;
-
+        expected_level = (uint16_t)(tree->height - 1);
+        memset(&bounds, 0, sizeof(bounds));
         while (1) {
-            if (depth > MAX_TREE_DEPTH) { free(last); free(buf); return BFS_ERR_CORRUPT; }
-            bfs_err_t err = node_read(tree, cur, buf);
+            if (depth >= MAX_TREE_DEPTH) { free(last); free(buf); return BFS_ERR_CORRUPT; }
+            bfs_err_t err = node_read_bounded(tree, cur, buf, expected_level, &bounds);
             if (err != BFS_OK) { free(last); free(buf); return err; }
 
-            if (is_leaf(buf)) {
-                reached_leaf = true;
-                break;
-            }
+            if (is_leaf(buf)) break;
+            if (expected_level == 0) { free(last); free(buf); return BFS_ERR_CORRUPT; }
 
             bool found;
             uint32_t idx = node_search(tree, buf, last, &found);
             uint32_t ci = found ? idx + 1 : idx;
 
-            if (depth < MAX_TREE_DEPTH) {
-                path_blks[depth] = cur;
-                path_idx[depth] = ci;
-                depth++;
-            }
+            path_blks[depth] = cur;
+            path_idx[depth] = ci;
+            depth++;
+            child_bounds(tree, buf, ci, &bounds);
             cur = get_child(tree, buf, ci);
+            expected_level--;
         }
-
-        if (!reached_leaf) break;
 
         /* In the leaf, find first key > last */
         bool found;
@@ -668,18 +897,35 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
         /* Backtrack: try next child at deepest node with unvisited children */
         bool found_next = false;
         for (int d = depth - 1; d >= 0; d--) {
-            bfs_err_t err = node_read(tree, path_blks[d], buf);
-            if (err != BFS_OK) break;
+            uint16_t path_level = (uint16_t)(tree->height - 1 - d);
+            bfs_err_t err = node_read_at_level(tree, path_blks[d], buf,
+                                               path_level);
+            if (err != BFS_OK) { free(last); free(buf); return err; }
             uint32_t next_ci = path_idx[d] + 1;
             if (next_ci <= num_keys(buf)) {
+                memset(&bounds, 0, sizeof(bounds));
+                child_bounds(tree, buf, next_ci, &bounds);
                 cur = get_child(tree, buf, next_ci);
+                uint32_t left_depth = 0;
+                expected_level = (uint16_t)(path_level - 1);
                 while (1) {
-                    err = node_read(tree, cur, buf);
-                    if (err != BFS_OK) break;
+                    if (left_depth++ >= MAX_TREE_DEPTH) {
+                        free(last); free(buf); return BFS_ERR_CORRUPT;
+                    }
+                    err = node_read_bounded(tree, cur, buf, expected_level, &bounds);
+                    if (err != BFS_OK) { free(last); free(buf); return err; }
                     if (is_leaf(buf)) break;
+                    if (expected_level == 0) {
+                        free(last); free(buf); return BFS_ERR_CORRUPT;
+                    }
+                    child_bounds(tree, buf, 0, &bounds);
                     cur = get_child(tree, buf, 0);
+                    expected_level--;
                 }
                 if (num_keys(buf) > 0) {
+                    if (tree->ops->key_compare(node_key(tree, buf, 0), last) <= 0) {
+                        free(last); free(buf); return BFS_ERR_CORRUPT;
+                    }
                     n = num_keys(buf);
                     for (uint32_t i = 0; i < n; i++) {
                         if (!cb(node_key(tree, buf, i), leaf_val(tree, buf, i), ctx)) {
@@ -705,14 +951,15 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
 
 /* Find the rightmost key in the subtree rooted at blk. */
 static bfs_err_t rightmost_in_subtree(const bfs_btree_t *tree, bfs_blk_t blk,
+                                       uint16_t expected_level,
                                        void *key_out, void *val_out)
 {
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
     uint32_t depth = 0;
     while (1) {
-        if (depth++ > MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
-        bfs_err_t err = node_read(tree, blk, buf);
+        if (depth++ >= MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
+        bfs_err_t err = node_read_at_level(tree, blk, buf, expected_level);
         if (err != BFS_OK) { free(buf); return err; }
         uint32_t n = num_keys(buf);
         if (n == 0) { free(buf); return BFS_ERR_NOTFOUND; }
@@ -722,30 +969,37 @@ static bfs_err_t rightmost_in_subtree(const bfs_btree_t *tree, bfs_blk_t blk,
             free(buf);
             return BFS_OK;
         }
+        if (expected_level == 0) { free(buf); return BFS_ERR_CORRUPT; }
         blk = get_child(tree, buf, n); /* rightmost child */
+        expected_level--;
     }
 }
 
 bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
                                     void *key_out, void *val_out)
 {
+    if (!tree || !tree->bio || !tree->ops || !key || !key_out || !val_out)
+        return BFS_ERR_INVAL;
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
 
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
     bfs_blk_t blk = tree->root;
     uint32_t depth = 0;
+    uint16_t expected_level = (uint16_t)(tree->height - 1);
 
     /* Track the last internal node where we descended right (idx > 0).
      * If the leaf has no key <= search_key, the predecessor is the
      * rightmost key in child[turn_idx - 1] of that node. */
     bfs_blk_t turn_blk = BFS_BLK_NULL;
     uint32_t turn_child_idx = 0; /* child index we came from (the left sibling has the predecessor) */
+    uint16_t turn_level = 0;
 
     while (1) {
-        if (depth++ > MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
-        bfs_err_t err = node_read(tree, blk, buf);
+        if (depth++ >= MAX_TREE_DEPTH) { free(buf); return BFS_ERR_CORRUPT; }
+        bfs_err_t err = node_read_at_level(tree, blk, buf, expected_level);
         if (err != BFS_OK) { free(buf); return err; }
 
         bool found;
@@ -772,20 +1026,25 @@ bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
                 return BFS_ERR_NOTFOUND;
             }
             /* Re-read the turn node and descend into child[turn_child_idx - 1] */
-            err = node_read(tree, turn_blk, buf);
+            err = node_read_at_level(tree, turn_blk, buf, turn_level);
             if (err != BFS_OK) { free(buf); return err; }
             bfs_blk_t left = get_child(tree, buf, turn_child_idx - 1);
+            uint16_t left_level = (uint16_t)(node_level(buf) - 1);
             free(buf);
-            return rightmost_in_subtree(tree, left, key_out, val_out);
+            return rightmost_in_subtree(tree, left, left_level,
+                                        key_out, val_out);
         }
 
         /* Internal node: descend */
+        if (expected_level == 0) { free(buf); return BFS_ERR_CORRUPT; }
         uint32_t child_idx = found ? idx + 1 : idx;
         if (child_idx > 0) {
             turn_blk = blk;
             turn_child_idx = child_idx;
+            turn_level = expected_level;
         }
         blk = get_child(tree, buf, child_idx);
+        expected_level--;
     }
 }
 
@@ -830,9 +1089,14 @@ static uint32_t internal_min(const bfs_btree_t *tree)
 
 bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
 {
+    if (!tree || !tree->bio || !tree->alloc || !key) return BFS_ERR_INVAL;
     tree->free_sink_err = BFS_OK;
+    btree_mutation_t mutation = {0};
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+    bfs_err_t preflight = mutation_headroom(tree, 2u * tree->height + 1u);
+    if (preflight != BFS_OK) return preflight;
 
     const uint32_t bs = tree->bio->block_size;
     bfs_err_t rc = BFS_OK;
@@ -850,7 +1114,12 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
     bfs_blk_t blk = tree->root;
     while (1) {
         if (depth >= MAX_TREE_DEPTH) { rc = BFS_ERR_CORRUPT; goto delete_cleanup; }
-        bfs_err_t err = node_read(tree, blk, DNBUF(depth));
+        if ((uint32_t)depth >= tree->height) {
+            rc = BFS_ERR_CORRUPT;
+            goto delete_cleanup;
+        }
+        bfs_err_t err = node_read_at_level(
+            tree, blk, DNBUF(depth), (uint16_t)(tree->height - 1 - depth));
         if (err != BFS_OK) { rc = err; goto delete_cleanup; }
         path[depth].blk = blk;
 
@@ -875,13 +1144,14 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
     /* If root is a leaf, just COW and done (no minimum fill requirement for root) */
     if (depth == 0) {
         if (num_keys(leaf) == 0) {
-            btree_free_node(tree, path[0].blk, leaf);
+            rc = mutation_retire(&mutation, path[0].blk, leaf);
+            if (rc != BFS_OK) goto delete_cleanup;
             tree->root = BFS_BLK_NULL;
             tree->height = 0;
             goto delete_cleanup;
         }
         bfs_blk_t new_blk;
-        rc = cow_node(tree, path[0].blk, leaf, &new_blk);
+        rc = cow_node(tree, &mutation, path[0].blk, leaf, &new_blk);
         if (rc != BFS_OK) goto delete_cleanup;
         tree->root = new_blk;
         goto delete_cleanup;
@@ -900,7 +1170,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
         /* Try to borrow from right sibling */
         if (ci < parent_nkeys) {
             bfs_blk_t sib_blk = get_child(tree, parent, ci + 1);
-            if (node_read(tree, sib_blk, sib_buf) == BFS_OK && num_keys(sib_buf) > leaf_min(tree)) {
+            bfs_err_t sibling_err = node_read_at_level(tree, sib_blk, sib_buf, 0);
+            if (sibling_err != BFS_OK) { rc = sibling_err; goto delete_cleanup; }
+            if (num_keys(sib_buf) > leaf_min(tree)) {
                 /* Borrow first key/val from right sibling */
                 uint32_t ln = num_keys(leaf);
                 memcpy(node_key(tree, leaf, ln), node_key(tree, sib_buf, 0), ks);
@@ -913,7 +1185,7 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
 
                 /* COW the sibling */
                 bfs_blk_t new_sib;
-                rc = cow_node(tree, sib_blk, sib_buf, &new_sib);
+                rc = cow_node(tree, &mutation, sib_blk, sib_buf, &new_sib);
                 if (rc != BFS_OK) goto delete_cleanup;
                 set_child(tree, parent, ci + 1, new_sib);
                 goto cow_upward;
@@ -923,7 +1195,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
         /* Try to borrow from left sibling */
         if (ci > 0) {
             bfs_blk_t sib_blk = get_child(tree, parent, ci - 1);
-            if (node_read(tree, sib_blk, sib_buf) == BFS_OK && num_keys(sib_buf) > leaf_min(tree)) {
+            bfs_err_t sibling_err = node_read_at_level(tree, sib_blk, sib_buf, 0);
+            if (sibling_err != BFS_OK) { rc = sibling_err; goto delete_cleanup; }
+            if (num_keys(sib_buf) > leaf_min(tree)) {
                 /* Borrow last key/val from left sibling */
                 uint32_t sn = num_keys(sib_buf);
                 uint32_t ln = num_keys(leaf);
@@ -941,7 +1215,7 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
                 memcpy(node_key(tree, parent, ci - 1), node_key(tree, leaf, 0), ks);
 
                 bfs_blk_t new_sib;
-                rc = cow_node(tree, sib_blk, sib_buf, &new_sib);
+                rc = cow_node(tree, &mutation, sib_blk, sib_buf, &new_sib);
                 if (rc != BFS_OK) goto delete_cleanup;
                 set_child(tree, parent, ci - 1, new_sib);
                 goto cow_upward;
@@ -952,7 +1226,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
         if (ci < parent_nkeys) {
             /* Merge with right sibling into current leaf */
             bfs_blk_t sib_blk = get_child(tree, parent, ci + 1);
-            if (node_read(tree, sib_blk, sib_buf) == BFS_OK) {
+            bfs_err_t sibling_err = node_read_at_level(tree, sib_blk, sib_buf, 0);
+            if (sibling_err != BFS_OK) { rc = sibling_err; goto delete_cleanup; }
+            {
                 uint32_t ln = num_keys(leaf);
                 uint32_t sn = num_keys(sib_buf);
                 for (uint32_t i = 0; i < sn; i++) {
@@ -961,14 +1237,17 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
                 }
                 hdr_of(leaf)->num_keys = bfs_be32(ln + sn);
                 hdr_of(leaf)->right_sibling = hdr_of(sib_buf)->right_sibling;
-                btree_free_node(tree, sib_blk, sib_buf);
+                rc = mutation_retire(&mutation, sib_blk, sib_buf);
+                if (rc != BFS_OK) goto delete_cleanup;
                 internal_remove_at(tree, parent, ci);
                 merged = true;
             }
         } else if (ci > 0) {
             /* Merge current leaf into left sibling */
             bfs_blk_t sib_blk = get_child(tree, parent, ci - 1);
-            if (node_read(tree, sib_blk, sib_buf) == BFS_OK) {
+            bfs_err_t sibling_err = node_read_at_level(tree, sib_blk, sib_buf, 0);
+            if (sibling_err != BFS_OK) { rc = sibling_err; goto delete_cleanup; }
+            {
                 uint32_t sn = num_keys(sib_buf);
                 uint32_t ln = num_keys(leaf);
                 for (uint32_t i = 0; i < ln; i++) {
@@ -977,7 +1256,8 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
                 }
                 hdr_of(sib_buf)->num_keys = bfs_be32(sn + ln);
                 hdr_of(sib_buf)->right_sibling = hdr_of(leaf)->right_sibling;
-                btree_free_node(tree, path[depth].blk, leaf);
+                rc = mutation_retire(&mutation, path[depth].blk, leaf);
+                if (rc != BFS_OK) goto delete_cleanup;
 
                 /* Replace leaf with the merged sibling for COW upward */
                 memcpy(leaf, sib_buf, tree->bio->block_size);
@@ -993,7 +1273,7 @@ cow_upward:
     /* COW the leaf */
     {
         bfs_blk_t new_blk;
-        rc = cow_node(tree, path[depth].blk, leaf, &new_blk);
+        rc = cow_node(tree, &mutation, path[depth].blk, leaf, &new_blk);
         if (rc != BFS_OK) goto delete_cleanup;
 
         /* Walk back up, propagating merges */
@@ -1012,7 +1292,10 @@ cow_upward:
                 /* Try borrow from right sibling */
                 if (pci < pp_nkeys) {
                     bfs_blk_t sib_blk = get_child(tree, pp, pci + 1);
-                    if (node_read(tree, sib_blk, sib_buf) == BFS_OK && num_keys(sib_buf) > internal_min(tree)) {
+                    bfs_err_t sibling_err = node_read_at_level(
+                        tree, sib_blk, sib_buf, node_level(node));
+                    if (sibling_err != BFS_OK) { rc = sibling_err; goto delete_cleanup; }
+                    if (num_keys(sib_buf) > internal_min(tree)) {
                         uint32_t nn = num_keys(node);
                         /* Bring parent separator down */
                         memcpy(node_key(tree, node, nn), node_key(tree, pp, pci), ks);
@@ -1029,7 +1312,7 @@ cow_upward:
                         hdr_of(sib_buf)->num_keys = bfs_be32(sn - 1);
 
                         bfs_blk_t new_sib;
-                        rc = cow_node(tree, sib_blk, sib_buf, &new_sib);
+                        rc = cow_node(tree, &mutation, sib_blk, sib_buf, &new_sib);
                         if (rc != BFS_OK) goto delete_cleanup;
                         set_child(tree, pp, pci + 1, new_sib);
                         merged = false;
@@ -1040,7 +1323,10 @@ cow_upward:
                 /* Try borrow from left sibling */
                 if (pci > 0) {
                     bfs_blk_t sib_blk = get_child(tree, pp, pci - 1);
-                    if (node_read(tree, sib_blk, sib_buf) == BFS_OK && num_keys(sib_buf) > internal_min(tree)) {
+                    bfs_err_t sibling_err = node_read_at_level(
+                        tree, sib_blk, sib_buf, node_level(node));
+                    if (sibling_err != BFS_OK) { rc = sibling_err; goto delete_cleanup; }
+                    if (num_keys(sib_buf) > internal_min(tree)) {
                         uint32_t nn = num_keys(node);
                         uint32_t sn = num_keys(sib_buf);
                         /* Shift node entries right */
@@ -1057,7 +1343,7 @@ cow_upward:
                         hdr_of(sib_buf)->num_keys = bfs_be32(sn - 1);
 
                         bfs_blk_t new_sib;
-                        rc = cow_node(tree, sib_blk, sib_buf, &new_sib);
+                        rc = cow_node(tree, &mutation, sib_blk, sib_buf, &new_sib);
                         if (rc != BFS_OK) goto delete_cleanup;
                         set_child(tree, pp, pci - 1, new_sib);
                         merged = false;
@@ -1068,7 +1354,10 @@ cow_upward:
                 /* Merge internal nodes */
                 if (pci < pp_nkeys) {
                     bfs_blk_t sib_blk = get_child(tree, pp, pci + 1);
-                    if (node_read(tree, sib_blk, sib_buf) == BFS_OK) {
+                    bfs_err_t sibling_err = node_read_at_level(
+                        tree, sib_blk, sib_buf, node_level(node));
+                    if (sibling_err != BFS_OK) { rc = sibling_err; goto delete_cleanup; }
+                    {
                         uint32_t nn = num_keys(node);
                         uint32_t sn = num_keys(sib_buf);
                         memcpy(node_key(tree, node, nn), node_key(tree, pp, pci), ks);
@@ -1077,13 +1366,17 @@ cow_upward:
                         for (uint32_t i = 0; i <= sn; i++)
                             set_child(tree, node, nn + 1 + i, get_child(tree, sib_buf, i));
                         hdr_of(node)->num_keys = bfs_be32(nn + 1 + sn);
-                        btree_free_node(tree, sib_blk, sib_buf);
+                        rc = mutation_retire(&mutation, sib_blk, sib_buf);
+                        if (rc != BFS_OK) goto delete_cleanup;
                         internal_remove_at(tree, pp, pci);
                         /* merged stays true, will propagate up */
                     }
                 } else if (pci > 0) {
                     bfs_blk_t sib_blk = get_child(tree, pp, pci - 1);
-                    if (node_read(tree, sib_blk, sib_buf) == BFS_OK) {
+                    bfs_err_t sibling_err = node_read_at_level(
+                        tree, sib_blk, sib_buf, node_level(node));
+                    if (sibling_err != BFS_OK) { rc = sibling_err; goto delete_cleanup; }
+                    {
                         uint32_t sn = num_keys(sib_buf);
                         uint32_t nn = num_keys(node);
                         memcpy(node_key(tree, sib_buf, sn), node_key(tree, pp, pci - 1), ks);
@@ -1092,7 +1385,8 @@ cow_upward:
                         for (uint32_t i = 0; i <= nn; i++)
                             set_child(tree, sib_buf, sn + 1 + i, get_child(tree, node, i));
                         hdr_of(sib_buf)->num_keys = bfs_be32(sn + 1 + nn);
-                        btree_free_node(tree, path[d].blk, node);
+                        rc = mutation_retire(&mutation, path[d].blk, node);
+                        if (rc != BFS_OK) goto delete_cleanup;
                         memcpy(node, sib_buf, tree->bio->block_size);
                         path[d].blk = sib_blk;
                         internal_remove_at(tree, pp, pci - 1);
@@ -1104,61 +1398,130 @@ cow_upward:
             }
 
 cow_this:
-            rc = cow_node(tree, path[d].blk, node, &new_blk);
+            rc = cow_node(tree, &mutation, path[d].blk, node, &new_blk);
             if (rc != BFS_OK) goto delete_cleanup;
         }
 
-        tree->root = new_blk;
-
-        /* If root has only one child after merge, collapse it */
-        if (tree->height > 1) {
-            uint8_t *root_buf = alloc_buf(tree);
-            if (root_buf) {
-                if (node_read(tree, tree->root, root_buf) == BFS_OK &&
-                    !is_leaf(root_buf) && num_keys(root_buf) == 0) {
-                    bfs_blk_t child = get_child(tree, root_buf, 0);
-                    btree_free_node(tree, tree->root, root_buf);
-                    tree->root = child;
-                    tree->height--;
-                }
-                free(root_buf);
-            }
+        bfs_blk_t final_root = new_blk;
+        if (tree->height > 1 && !is_leaf(DNBUF(0)) &&
+            num_keys(DNBUF(0)) == 0) {
+            final_root = get_child(tree, DNBUF(0), 0);
+            rc = mutation_retire_txn(&mutation, new_blk,
+                                     bfs_btree_txn_id(tree));
+            if (rc != BFS_OK) goto delete_cleanup;
+            tree->height--;
         }
+        tree->root = final_root;
     }
 
 delete_cleanup:
     free(sib_buf);
     free(node_bufs);
     #undef DNBUF
+    if (rc == BFS_OK)
+        mutation_commit(tree, &mutation);
+    else
+        mutation_abort(tree, &mutation);
     if (rc == BFS_OK && tree->free_sink_err != BFS_OK)
-        rc = BFS_ERR_NOSPC;  /* deferred-free queue overflowed mid-COW (a block would leak) */
+        rc = tree->free_sink_err;
     return rc;
 }
 
 /* ── Walk all node blocks (for fsck) ───────────────────────── */
 
+typedef struct {
+    bfs_blk_t *slots;
+    size_t capacity;
+    size_t count;
+} block_set_t;
+
+static void block_set_destroy(block_set_t *set)
+{
+    free(set->slots);
+    set->slots = NULL;
+    set->capacity = set->count = 0;
+}
+
+static bfs_err_t block_set_grow(block_set_t *set)
+{
+    size_t new_capacity = set->capacity ? set->capacity * 2u : 256u;
+    if (new_capacity < set->capacity ||
+        new_capacity > SIZE_MAX / sizeof(*set->slots))
+        return BFS_ERR_NOMEM;
+
+    bfs_blk_t *new_slots = malloc(new_capacity * sizeof(*new_slots));
+    if (!new_slots) return BFS_ERR_NOMEM;
+    memset(new_slots, 0, new_capacity * sizeof(*new_slots));
+
+    for (size_t i = 0; i < set->capacity; i++) {
+        bfs_blk_t blk = set->slots[i];
+        if (blk == BFS_BLK_NULL) continue;
+        size_t slot = ((uint32_t)(blk * 2654435761u)) & (new_capacity - 1u);
+        while (new_slots[slot] != BFS_BLK_NULL)
+            slot = (slot + 1u) & (new_capacity - 1u);
+        new_slots[slot] = blk;
+    }
+    free(set->slots);
+    set->slots = new_slots;
+    set->capacity = new_capacity;
+    return BFS_OK;
+}
+
+static bfs_err_t block_set_add(block_set_t *set, bfs_blk_t blk)
+{
+    if (!set || blk == BFS_BLK_NULL) return BFS_ERR_INVAL;
+    if (set->capacity == 0 || set->count >= set->capacity / 2u) {
+        bfs_err_t err = block_set_grow(set);
+        if (err != BFS_OK) return err;
+    }
+
+    size_t slot = ((uint32_t)(blk * 2654435761u)) & (set->capacity - 1u);
+    while (set->slots[slot] != BFS_BLK_NULL) {
+        if (set->slots[slot] == blk) return BFS_ERR_EXISTS;
+        slot = (slot + 1u) & (set->capacity - 1u);
+    }
+    set->slots[slot] = blk;
+    set->count++;
+    return BFS_OK;
+}
+
 static bfs_err_t walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
-                                      bfs_node_walk_cb cb, void *ctx, int depth)
+                                      bfs_node_walk_cb cb, void *ctx, int depth,
+                                      uint16_t expected_level,
+                                      block_set_t *seen, const void *lower,
+                                      const void *upper)
 {
     if (blk == BFS_BLK_NULL) return BFS_OK;
-    if (depth > MAX_TREE_DEPTH) return BFS_ERR_CORRUPT;
+    if (depth >= MAX_TREE_DEPTH) return BFS_ERR_CORRUPT;
+    bfs_err_t err = block_set_add(seen, blk);
+    if (err == BFS_ERR_EXISTS) return BFS_ERR_CORRUPT;
+    if (err != BFS_OK) return err;
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
     /* node_read (not raw bfs_bio_read) so num_keys/level are validated before
      * the child-pointer loop below trusts num_keys. */
-    bfs_err_t err = node_read(tree, blk, buf);
+    err = node_read_at_level(tree, blk, buf, expected_level);
     if (err != BFS_OK) { free(buf); return err; }
 
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
+    uint32_t n = bfs_be32(hdr->num_keys);
+    if ((lower && tree->ops->key_compare(node_key(tree, buf, 0), lower) < 0) ||
+        (upper && tree->ops->key_compare(node_key(tree, buf, n - 1), upper) >= 0)) {
+        free(buf);
+        return BFS_ERR_CORRUPT;
+    }
     if (bfs_be16(hdr->level) > 0) {
         /* Internal node — recurse into children */
-        uint32_t n = bfs_be32(hdr->num_keys);
         uint32_t data_sz = tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
         uint32_t max_keys = (data_sz - 4) / (tree->ops->key_size + 4);
         uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + max_keys * tree->ops->key_size;
         for (uint32_t i = 0; i <= n; i++) {
-            err = walk_nodes_recursive(tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
-                                       cb, ctx, depth + 1);
+            if (expected_level == 0) { free(buf); return BFS_ERR_CORRUPT; }
+            err = walk_nodes_recursive(
+                tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
+                cb, ctx, depth + 1, (uint16_t)(expected_level - 1), seen,
+                i == 0 ? lower : node_key(tree, buf, i - 1),
+                i == n ? upper : node_key(tree, buf, i));
             if (err != BFS_OK) { free(buf); return err; }
         }
     }
@@ -1172,7 +1535,17 @@ static bfs_err_t walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
  * failure silently skips a subtree and corrupts the counts. */
 bfs_err_t bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx)
 {
-    return walk_nodes_recursive(tree, tree->root, cb, ctx, 0);
+    if (!tree || !tree->bio || !tree->ops || !cb) return BFS_ERR_INVAL;
+    if (tree->root == BFS_BLK_NULL)
+        return tree->height == 0 ? BFS_OK : BFS_ERR_CORRUPT;
+    if (tree->height == 0 || tree->height > MAX_TREE_DEPTH)
+        return BFS_ERR_CORRUPT;
+    block_set_t seen = {0};
+    bfs_err_t err = walk_nodes_recursive(tree, tree->root, cb, ctx, 0,
+                                         (uint16_t)(tree->height - 1), &seen,
+                                         NULL, NULL);
+    block_set_destroy(&seen);
+    return err;
 }
 
 /* ── Compaction ────────────────────────────────────────────── */
@@ -1193,30 +1566,50 @@ static bool compact_cb(const void *key, const void *val, void *ctx)
     return cc->rc == BFS_OK;
 }
 
-void bfs_btree_free_block(bfs_btree_t *tree, bfs_blk_t blk)
+bfs_err_t bfs_btree_free_block(bfs_btree_t *tree, bfs_blk_t blk)
 {
-    if (blk == BFS_BLK_NULL) return;
+    if (!tree || !tree->bio || !tree->alloc || blk == BFS_BLK_NULL)
+        return BFS_ERR_INVAL;
     uint8_t *buf = malloc(tree->bio->block_size);
-    if (!buf) return;
-    if (bfs_bio_read(tree->bio, blk, buf) == BFS_OK) {
+    if (!buf) return BFS_ERR_NOMEM;
+    bfs_err_t err = node_read(tree, blk, buf);
+    if (err == BFS_OK)
         btree_free_node(tree, blk, buf);
-    }
     free(buf);
+    if (err != BFS_OK) return err;
+    return tree->free_sink_err;
 }
 
-static void utilization_walk_recursive(const bfs_btree_t *tree, bfs_blk_t blk,
-                                       uint32_t *total_keys, uint32_t *total_capacity, int depth)
+static bfs_err_t utilization_walk_recursive(const bfs_btree_t *tree,
+                                            bfs_blk_t blk,
+                                            uint64_t *total_keys,
+                                            uint64_t *total_capacity,
+                                            int depth,
+                                            uint16_t expected_level,
+                                            block_set_t *seen,
+                                            const void *lower,
+                                            const void *upper)
 {
-    if (blk == BFS_BLK_NULL || depth > MAX_TREE_DEPTH) return;
+    if (blk == BFS_BLK_NULL) return BFS_OK;
+    if (depth >= MAX_TREE_DEPTH) return BFS_ERR_CORRUPT;
+    bfs_err_t err = block_set_add(seen, blk);
+    if (err == BFS_ERR_EXISTS) return BFS_ERR_CORRUPT;
+    if (err != BFS_OK) return err;
     uint8_t *buf = malloc(tree->bio->block_size);
-    if (!buf) return;
-    if (node_read(tree, blk, buf) != BFS_OK) {
+    if (!buf) return BFS_ERR_NOMEM;
+    err = node_read_at_level(tree, blk, buf, expected_level);
+    if (err != BFS_OK) {
         free(buf);
-        return;
+        return err;
     }
 
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     uint32_t n = bfs_be32(hdr->num_keys);
+    if ((lower && tree->ops->key_compare(node_key(tree, buf, 0), lower) < 0) ||
+        (upper && tree->ops->key_compare(node_key(tree, buf, n - 1), upper) >= 0)) {
+        free(buf);
+        return BFS_ERR_CORRUPT;
+    }
     *total_keys += n;
 
     if (bfs_be16(hdr->level) > 0) {
@@ -1227,8 +1620,20 @@ static void utilization_walk_recursive(const bfs_btree_t *tree, bfs_blk_t blk,
         uint32_t max_keys = (data_sz - 4) / (tree->ops->key_size + 4);
         uint32_t keys_end = sizeof(bfs_btnode_hdr_t) + max_keys * tree->ops->key_size;
         for (uint32_t i = 0; i <= n; i++) {
-            utilization_walk_recursive(tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
-                                       total_keys, total_capacity, depth + 1);
+            if (expected_level == 0) {
+                free(buf);
+                return BFS_ERR_CORRUPT;
+            }
+            err = utilization_walk_recursive(
+                tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
+                total_keys, total_capacity, depth + 1,
+                (uint16_t)(expected_level - 1), seen,
+                i == 0 ? lower : node_key(tree, buf, i - 1),
+                i == n ? upper : node_key(tree, buf, i));
+            if (err != BFS_OK) {
+                free(buf);
+                return err;
+            }
         }
     } else {
         /* Leaf node */
@@ -1236,44 +1641,81 @@ static void utilization_walk_recursive(const bfs_btree_t *tree, bfs_blk_t blk,
     }
 
     free(buf);
+    return BFS_OK;
 }
 
-static bool bfs_btree_needs_compaction(const bfs_btree_t *tree)
+static bfs_err_t bfs_btree_needs_compaction(const bfs_btree_t *tree,
+                                            bool *needed)
 {
-    if (tree->root == BFS_BLK_NULL) return false;
-    uint32_t total_keys = 0;
-    uint32_t total_capacity = 0;
-    utilization_walk_recursive(tree, tree->root, &total_keys, &total_capacity, 0);
-    if (total_capacity == 0) return false;
+    *needed = false;
+    if (tree->root == BFS_BLK_NULL) return BFS_OK;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+    uint64_t total_keys = 0;
+    uint64_t total_capacity = 0;
+    block_set_t seen = {0};
+    bfs_err_t err = utilization_walk_recursive(tree, tree->root, &total_keys,
+                                               &total_capacity, 0,
+                                               (uint16_t)(tree->height - 1),
+                                               &seen, NULL, NULL);
+    block_set_destroy(&seen);
+    if (err != BFS_OK) return err;
+    if (total_capacity == 0) return BFS_OK;
 
     /* Returns true if utilization is < 90% */
-    return (uint64_t)total_keys * BFS_COMPACT_THRESHOLD_DEN < (uint64_t)total_capacity * BFS_COMPACT_THRESHOLD_NUM;
+    *needed = total_keys * BFS_COMPACT_THRESHOLD_DEN <
+              total_capacity * BFS_COMPACT_THRESHOLD_NUM;
+    return BFS_OK;
+}
+
+typedef struct {
+    bfs_btree_t *tree;
+    bfs_err_t err;
+} discard_ctx_t;
+
+static void discard_node_cb(bfs_blk_t blk, void *ctx)
+{
+    discard_ctx_t *discard = (discard_ctx_t *)ctx;
+    if (discard->err == BFS_OK)
+        discard->err = discard->tree->alloc->dealloc(discard->tree->alloc, blk);
+}
+
+static bfs_err_t discard_tree(bfs_btree_t *tree)
+{
+    if (tree->root == BFS_BLK_NULL) return BFS_OK;
+    discard_ctx_t discard = { .tree = tree, .err = BFS_OK };
+    bfs_err_t walk_err = bfs_btree_walk_nodes(tree, discard_node_cb, &discard);
+    return walk_err != BFS_OK ? walk_err : discard.err;
 }
 
 bfs_err_t bfs_btree_compact_build_swap(bfs_btree_t *tree, bfs_blk_t *old_root_out)
 {
+    if (!tree || !tree->bio || !tree->alloc || !old_root_out)
+        return BFS_ERR_INVAL;
     *old_root_out = tree->root;
     if (tree->root == BFS_BLK_NULL) return BFS_OK;
 
     /* Skip if already well-packed (utilization >= 90%) to avoid write
      * amplification; *old_root_out stays == tree->root to signal "no swap". */
-    if (!bfs_btree_needs_compaction(tree)) {
-        return BFS_OK;
-    }
+    bool needed;
+    bfs_err_t err = bfs_btree_needs_compaction(tree, &needed);
+    if (err != BFS_OK || !needed) return err;
 
     bfs_btree_t new_tree;
-    bfs_btree_init(&new_tree, tree->bio, tree->alloc, tree->ops,
-                   BFS_BLK_NULL, bfs_btree_txn_id(tree));
-    new_tree.free_sink = tree->free_sink;
+    err = bfs_btree_init(&new_tree, tree->bio, tree->alloc, tree->ops,
+                         BFS_BLK_NULL, bfs_btree_txn_id(tree));
+    if (err != BFS_OK) return err;
     new_tree.txn_id_ptr = tree->txn_id_ptr;
 
     /* Build a dense copy by re-inserting every key. The new tree's own COW
      * frees are all current-transaction blocks (freed immediately, never
      * deferred), so building it does not touch the pending-free queue. */
     compact_ctx_t ctx = { .new_tree = &new_tree, .rc = BFS_OK };
-    bfs_btree_scan(tree, NULL, compact_cb, &ctx);
-    if (ctx.rc != BFS_OK)
-        return ctx.rc;  /* build failed: tree untouched, old root still live */
+    bfs_err_t scan_err = bfs_btree_scan(tree, NULL, compact_cb, &ctx);
+    if (scan_err != BFS_OK || ctx.rc != BFS_OK) {
+        bfs_err_t build_err = scan_err != BFS_OK ? scan_err : ctx.rc;
+        bfs_err_t cleanup_err = discard_tree(&new_tree);
+        return cleanup_err == BFS_OK ? build_err : cleanup_err;
+    }
 
     /* Swap the root to the freshly-built tree. The OLD nodes (rooted at
      * *old_root_out) stay referenced until the fs caller commits this swap and

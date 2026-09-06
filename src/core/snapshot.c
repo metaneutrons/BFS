@@ -18,6 +18,7 @@ static const bfs_btree_ops_t snap_ops = {
 
 uint64_t bfs_snapshot_record_txn_id(const bfs_snapshot_record_t *rec)
 {
+    if (!rec) return 0;
     return ((uint64_t)bfs_be32(rec->txn_id_hi) << 32) | bfs_be32(rec->txn_id_lo);
 }
 
@@ -25,6 +26,7 @@ bfs_err_t bfs_snapshot_open(const bfs_snapshot_record_t *rec, bfs_bio_t *bio,
                             bfs_allocator_t *alloc,
                             bfs_dir_tree_t *dir_out, bfs_btree_t *inode_out)
 {
+    if (!rec || !bio || (!dir_out && !inode_out)) return BFS_ERR_INVAL;
     uint64_t txn = bfs_snapshot_record_txn_id(rec);
     if (dir_out) {
         bfs_err_t err = bfs_dir_init(dir_out, bio, alloc, bfs_be32(rec->dir_tree_root), txn);
@@ -38,6 +40,14 @@ bfs_err_t bfs_snapshot_open(const bfs_snapshot_record_t *rec, bfs_bio_t *bio,
 }
 
 /* ── Helpers ───────────────────────────────────────────────── */
+
+static bfs_err_t snapshot_next_id_checked(bfs_fs_t *fs, uint32_t *id_out);
+
+static bfs_err_t snapshot_recover_after_error(bfs_fs_t *fs, bfs_err_t error)
+{
+    bfs_err_t reload_error = bfs_fs_reload_committed_unlocked(fs);
+    return reload_error == BFS_OK ? error : reload_error;
+}
 
 static void format_deleting_name(char *buf, uint32_t id)
 {
@@ -74,6 +84,14 @@ static bool is_deleting_name(const char *name)
     return true;
 }
 
+static bool snapshot_name_contains(const char *name, char needle)
+{
+    while (*name) {
+        if (*name++ == needle) return true;
+    }
+    return false;
+}
+
 static bfs_err_t ensure_snapshot_trees(bfs_fs_t *fs)
 {
     /* Initialize snapshot tree if not yet done */
@@ -105,6 +123,9 @@ static void block_vec_free(block_vec_t *v)
 static bfs_err_t block_vec_push(block_vec_t *v, bfs_blk_t blk)
 {
     if (v->count == v->cap) {
+        if (v->cap > SIZE_MAX / 2 ||
+            (v->cap ? v->cap * 2 : 256) > SIZE_MAX / sizeof(*v->items))
+            return BFS_ERR_NOMEM;
         size_t new_cap = v->cap ? v->cap * 2 : 256;
         bfs_blk_t *new_items = malloc(new_cap * sizeof(*new_items));
         if (!new_items) return BFS_ERR_NOMEM;
@@ -145,8 +166,9 @@ static bfs_err_t snapshot_ref_block(snap_ref_ctx_t *ctx, bfs_blk_t blk)
             err = block_vec_push(ctx->rollback, blk);
             if (err != BFS_OK) {
                 bool freed = false;
-                bfs_refcount_dec(&ctx->fs->refcount, blk, &freed);
-                return err;
+                bfs_err_t rollback_err = bfs_refcount_dec(&ctx->fs->refcount,
+                                                          blk, &freed);
+                return rollback_err == BFS_OK ? err : rollback_err;
             }
         }
         return BFS_OK;
@@ -206,31 +228,48 @@ static bfs_err_t snapshot_ref_graph(bfs_fs_t *fs, bfs_btree_t *dir_tree,
     snapshot_ref_walk(inode_tree, &rc);
     if (rc.err != BFS_OK) return rc.err;
 
-    rc.err = bfs_btree_scan(inode_tree, NULL, snapshot_ref_inode_cb, &rc);
-    return rc.err;
+    bfs_err_t scan_err = bfs_btree_scan(inode_tree, NULL,
+                                        snapshot_ref_inode_cb, &rc);
+    return rc.err != BFS_OK ? rc.err : scan_err;
 }
 
-static void snapshot_rollback_refs(bfs_fs_t *fs, block_vec_t *refs)
+static bfs_err_t snapshot_rollback_refs(bfs_fs_t *fs, block_vec_t *refs)
 {
+    bfs_err_t result = BFS_OK;
     while (refs->count > 0) {
         bool freed = false;
-        bfs_refcount_dec(&fs->refcount, refs->items[--refs->count], &freed);
+        bfs_err_t err = bfs_refcount_dec(&fs->refcount,
+                                         refs->items[--refs->count], &freed);
+        if (err != BFS_OK && result == BFS_OK)
+            result = err;
     }
+    return result;
 }
 
 /* ── Create ────────────────────────────────────────────────── */
 
 bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
 {
-    if (!fs->mounted) return BFS_ERR_INVAL;
+    if (!fs || !fs->mounted || !name) return BFS_ERR_INVAL;
+    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+    size_t nlen = strlen(name);
+    if (nlen == 0 || nlen >= BFS_SNAPSHOT_NAME_MAX ||
+        snapshot_name_contains(name, '/') || snapshot_name_contains(name, ':') ||
+        is_deleting_name(name))
+        return BFS_ERR_INVAL;
+
+    bfs_err_t err = bfs_snapshot_find_by_name_unlocked(fs, name, NULL, NULL);
+    if (err == BFS_OK) return BFS_ERR_EXISTS;
+    if (err != BFS_ERR_NOTFOUND) return err;
 
     /* Sync first to get a consistent state */
-    bfs_err_t err = bfs_txn_commit(fs);
-    if (err != BFS_OK) return err;
+    err = bfs_txn_commit(fs);
+    if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
 
     /* Ensure refcount + snapshot trees exist */
+    bool had_snapshots = fs->has_snapshots;
     err = ensure_snapshot_trees(fs);
-    if (err != BFS_OK) return err;
+    if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
 
     /* Build snapshot record */
     bfs_snapshot_record_t rec;
@@ -238,33 +277,45 @@ bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
     rec.dir_tree_root = bfs_be32(fs->dir_tree.tree.root);
     rec.inode_tree_root = bfs_be32(fs->inode_tree.root);
     { uint64_t t = bfs_txn_id(&fs->txn); rec.txn_id_hi = bfs_be32((uint32_t)(t >> 32)); rec.txn_id_lo = bfs_be32((uint32_t)t); }
-    size_t nlen = strlen(name);
-    if (nlen > BFS_SNAPSHOT_NAME_MAX - 1) nlen = BFS_SNAPSHOT_NAME_MAX - 1;
     memcpy(rec.name, name, nlen);
+
+    /* Validate the snapshot tree and reserve an ID before incrementing any
+     * refcounts, so a corrupt tree cannot leave partial refcount mutations. */
+    uint32_t next_id;
+    err = snapshot_next_id_checked(fs, &next_id);
+    if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
+
+    bfs_btree_t snap_tree;
+    bfs_blk_t snap_root = bfs_be32(fs->txn.sb_new.snapshot_tree_root);
+    err = bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
+                         &snap_ops, snap_root, bfs_txn_id(&fs->txn));
+    if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
+    snap_tree.free_sink = bfs_fs_free_sink(fs);
 
     block_vec_t rollback = {0};
     err = snapshot_ref_graph(fs, &fs->dir_tree.tree, &fs->inode_tree,
                              SNAP_REF_INC, &rollback);
     if (err != BFS_OK) {
-        snapshot_rollback_refs(fs, &rollback);
+        bfs_err_t rollback_err = snapshot_rollback_refs(fs, &rollback);
         block_vec_free(&rollback);
-        return err;
+        if (!had_snapshots && rollback_err == BFS_OK &&
+            fs->refcount.tree.root == BFS_BLK_NULL)
+            fs->has_snapshots = false;
+        return snapshot_recover_after_error(
+            fs, rollback_err == BFS_OK ? err : rollback_err);
     }
 
     /* Insert into snapshot tree (stored in superblock) */
-    uint32_t id = bfs_be32(bfs_snapshot_next_id_unlocked(fs));
-    bfs_btree_t snap_tree;
-    bfs_blk_t snap_root = bfs_be32(fs->txn.sb_new.snapshot_tree_root);
-    err = bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
-                         &snap_ops, snap_root, bfs_txn_id(&fs->txn));
-    if (err != BFS_OK) return err;
-    snap_tree.free_sink = bfs_fs_free_sink(fs);
-
+    uint32_t id = bfs_be32(next_id);
     err = bfs_btree_insert(&snap_tree, &id, &rec);
     if (err != BFS_OK) {
-        snapshot_rollback_refs(fs, &rollback);
+        bfs_err_t rollback_err = snapshot_rollback_refs(fs, &rollback);
         block_vec_free(&rollback);
-        return err;
+        if (!had_snapshots && rollback_err == BFS_OK &&
+            fs->refcount.tree.root == BFS_BLK_NULL)
+            fs->has_snapshots = false;
+        return snapshot_recover_after_error(
+            fs, rollback_err == BFS_OK ? err : rollback_err);
     }
 
     /* Update superblock */
@@ -272,20 +323,8 @@ bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
     fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
 
     err = bfs_txn_commit(fs);
-    if (err != BFS_OK) {
-        /* Do NOT roll back the refcount increments here. bfs_txn_commit writes the
-         * new superblock (snapshot record + refcount tree roots) and syncs it to
-         * stable storage before any reachable error return (a later drain-phase
-         * I/O failure), so on failure the snapshot and its incremented refcounts
-         * are already DURABLE and mutually consistent. Decrementing them now would
-         * diverge from the committed superblock, and a later sync would persist the
-         * under-counts — freeing blocks the durable snapshot still references
-         * (silent corruption). The snapshot is effectively created; surface the
-         * error but leave the consistent durable state intact. (The pre-commit
-         * failure paths above DO roll back, correctly — nothing was durable yet.) */
-    }
     block_vec_free(&rollback);
-    return err;
+    return err == BFS_OK ? BFS_OK : snapshot_recover_after_error(fs, err);
 }
 
 /* ── Delete ────────────────────────────────────────────────── */
@@ -295,7 +334,110 @@ typedef struct {
     uint32_t count;
     uint32_t last_ino;
     bfs_err_t err;
+    bool preflight;
 } reclaim_scan_ctx_t;
+
+typedef struct {
+    block_vec_t blocks;
+    size_t limit;
+    bfs_err_t err;
+} reclaim_blocks_t;
+
+static void reclaim_collect_block(bfs_blk_t blk, void *ctx)
+{
+    reclaim_blocks_t *c = (reclaim_blocks_t *)ctx;
+    if (c->err != BFS_OK) return;
+    if (blk == BFS_BLK_NULL || c->blocks.count >= c->limit) {
+        c->err = blk == BFS_BLK_NULL ? BFS_ERR_CORRUPT : BFS_ERR_NOSPC;
+        return;
+    }
+    c->err = block_vec_push(&c->blocks, blk);
+}
+
+static void block_vec_sort(block_vec_t *blocks)
+{
+    for (size_t gap = blocks->count / 2u; gap > 0; gap /= 2u) {
+        for (size_t i = gap; i < blocks->count; i++) {
+            bfs_blk_t value = blocks->items[i];
+            size_t j = i;
+            while (j >= gap && blocks->items[j - gap] > value) {
+                blocks->items[j] = blocks->items[j - gap];
+                j -= gap;
+            }
+            blocks->items[j] = value;
+        }
+    }
+}
+
+static bfs_err_t snapshot_ref_dec_blocks_atomic(bfs_fs_t *fs,
+                                                 block_vec_t *blocks)
+{
+    if (!fs || !blocks) return BFS_ERR_INVAL;
+    if (blocks->count == 0) return BFS_OK;
+    if (blocks->count > UINT32_MAX - BFS_BTREE_MAX_OP_FREES)
+        return BFS_ERR_NOSPC;
+
+    block_vec_sort(blocks);
+    for (size_t i = 1; i < blocks->count; i++) {
+        if (blocks->items[i] == blocks->items[i - 1])
+            return BFS_ERR_CORRUPT;
+    }
+
+    bfs_err_t err = bfs_fs_ensure_free_headroom(
+        fs, (uint32_t)blocks->count + BFS_BTREE_MAX_OP_FREES);
+    if (err != BFS_OK) return err;
+
+    uint32_t *counts = malloc(blocks->count * sizeof(*counts));
+    if (!counts) return BFS_ERR_NOMEM;
+    for (size_t i = 0; i < blocks->count; i++) {
+        err = bfs_refcount_get_checked(&fs->refcount, blocks->items[i],
+                                       &counts[i]);
+        if (err != BFS_OK) {
+            free(counts);
+            return err;
+        }
+    }
+
+    size_t processed = 0;
+    while (processed < blocks->count) {
+        bool freed = false;
+        err = bfs_refcount_dec(&fs->refcount, blocks->items[processed], &freed);
+        if (err != BFS_OK) break;
+        processed++;
+        if (freed != (counts[processed - 1u] == 1u)) {
+            err = BFS_ERR_CORRUPT;
+            break;
+        }
+    }
+
+    if (err == BFS_OK) {
+        uint32_t pending_before_data = fs->pending_count;
+        for (size_t i = 0; i < blocks->count; i++) {
+            if (counts[i] != 1u) continue;
+            err = bfs_fs_queue_pending_free(fs, blocks->items[i]);
+            if (err != BFS_OK) break;
+        }
+        if (err != BFS_OK)
+            fs->pending_count = pending_before_data;
+    }
+
+    if (err != BFS_OK) {
+        bfs_err_t rollback_err = BFS_OK;
+        while (processed > 0) {
+            processed--;
+            if (counts[processed] <= 1u) continue;
+            bfs_err_t one = bfs_refcount_inc(&fs->refcount,
+                                             blocks->items[processed]);
+            if (one != BFS_OK && rollback_err == BFS_OK)
+                rollback_err = one;
+        }
+        if (rollback_err != BFS_OK)
+            err = rollback_err;
+    }
+
+    free(counts);
+    return err;
+}
 
 static bool reclaim_inode_cb(const void *key, const void *val, void *ctx)
 {
@@ -303,60 +445,116 @@ static bool reclaim_inode_cb(const void *key, const void *val, void *ctx)
     uint32_t ino = bfs_load_be32(key);
     const bfs_inode_t *inode = (const bfs_inode_t *)val;
 
-    snap_ref_ctx_t rc = {
-        .fs = c->fs,
-        .mode = SNAP_REF_DEC,
-        .rollback = NULL,
+    uint32_t cap = bfs_fs_pending_cap(c->fs);
+    reclaim_blocks_t collect = {
+        .blocks = {0},
+        .limit = cap >= BFS_PENDING_FREES_MAX ? c->fs->bio->block_count :
+                 cap > BFS_BTREE_MAX_OP_FREES
+                     ? cap - BFS_BTREE_MAX_OP_FREES : 0,
         .err = BFS_OK,
     };
-
-    /* Refcount-decrement this inode's extent node blocks AND data blocks. */
-    {
-        bfs_err_t werr = bfs_extent_walk(rc.fs->bio, &rc.fs->freespace, rc.fs->live_txn_id,
-                                         bfs_be32(inode->extent_root),
-                                         snapshot_ref_node_cb, snapshot_ref_node_cb, &rc);
-        if (rc.err == BFS_OK) rc.err = werr;
+    bfs_err_t walk_err = bfs_extent_walk(
+        c->fs->bio, &c->fs->freespace, c->fs->live_txn_id,
+        bfs_be32(inode->extent_root), reclaim_collect_block,
+        reclaim_collect_block, &collect);
+    if (walk_err != BFS_OK)
+        collect.err = walk_err;
+    if (collect.err == BFS_OK && c->preflight) {
+        block_vec_sort(&collect.blocks);
+        for (size_t i = 1; i < collect.blocks.count; i++) {
+            if (collect.blocks.items[i] == collect.blocks.items[i - 1]) {
+                collect.err = BFS_ERR_CORRUPT;
+                break;
+            }
+        }
+        if (collect.err == BFS_OK) {
+            collect.err = collect.blocks.count > UINT32_MAX - BFS_BTREE_MAX_OP_FREES
+                ? BFS_ERR_NOSPC : bfs_fs_reserve_pending(
+                    c->fs, (uint32_t)collect.blocks.count + BFS_BTREE_MAX_OP_FREES);
+        }
     }
+    if (collect.err == BFS_OK && !c->preflight)
+        collect.err = snapshot_ref_dec_blocks_atomic(c->fs, &collect.blocks);
+    block_vec_free(&collect.blocks);
 
-    if (rc.err != BFS_OK) {
-        c->err = rc.err;
+    if (collect.err != BFS_OK) {
+        c->err = collect.err;
         return false; /* Stop scan */
     }
 
     c->last_ino = ino;
     c->count++;
-    /* End the batch at 50 inodes OR when the deferred-free queue is running low,
-     * so the outer loop commits (draining the queue) and resumes from c->last_ino.
-     * The 50-inode cap alone can overflow the queue for inode-heavy snapshots;
-     * bounding by headroom too keeps each transaction's deferred frees within the
-     * queue (#41) instead of relying on the count and hitting the overflow latch
-     * mid-batch (which would stall the reclaim). */
-    if (c->count >= 50 ||
-        bfs_fs_pending_cap(c->fs) - c->fs->pending_count < BFS_FS_OP_FREE_RESERVE) {
-        return false; /* Stop scan for this batch */
+    /* Persist progress after every inode. This makes the record cursor and its
+     * refcount changes one COW transaction, so an interrupted deletion never
+     * replays a partially reclaimed inode. */
+    return c->preflight;
+}
+
+static bfs_err_t snapshot_preflight_delete(bfs_fs_t *fs,
+                                            const bfs_snapshot_record_t *rec)
+{
+    bfs_dir_tree_t dir;
+    bfs_btree_t inodes;
+    bfs_err_t err = bfs_snapshot_open(rec, fs->bio,
+                                     bfs_freespace_allocator(&fs->freespace),
+                                     &dir, &inodes);
+    if (err != BFS_OK) return err;
+    reclaim_scan_ctx_t scan = {.fs = fs, .preflight = true};
+    err = bfs_btree_scan(&inodes, NULL, reclaim_inode_cb, &scan);
+    if (err != BFS_OK) return err;
+    if (scan.err != BFS_OK) return scan.err;
+
+    uint32_t cap = bfs_fs_pending_cap(fs);
+    reclaim_blocks_t collect = {
+        .limit = cap >= BFS_PENDING_FREES_MAX ? fs->bio->block_count :
+                 cap > BFS_BTREE_MAX_OP_FREES
+                     ? cap - BFS_BTREE_MAX_OP_FREES : 0,
+    };
+    err = bfs_btree_walk_nodes(&dir.tree, reclaim_collect_block, &collect);
+    if (err == BFS_OK && collect.err == BFS_OK)
+        err = bfs_btree_walk_nodes(&inodes, reclaim_collect_block, &collect);
+    if (err == BFS_OK) err = collect.err;
+    if (err == BFS_OK) {
+        err = collect.blocks.count > UINT32_MAX - BFS_BTREE_MAX_OP_FREES
+            ? BFS_ERR_NOSPC : bfs_fs_reserve_pending(
+                fs, (uint32_t)collect.blocks.count + BFS_BTREE_MAX_OP_FREES);
     }
-    return true;
+    block_vec_free(&collect.blocks);
+    return err;
 }
 
 bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
 {
+    if (!fs || !fs->mounted || snapshot_id == 0) return BFS_ERR_INVAL;
+    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     if (!fs->has_snapshots) return BFS_ERR_NOTFOUND;
+
+    /* Establish a clean durable baseline. Every later reclaim unit either
+     * commits its cursor with its refcount changes or reloads from disk. */
+    bfs_err_t err = bfs_txn_commit(fs);
+    if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
 
     /* Find the snapshot */
     bfs_btree_t snap_tree;
     bfs_blk_t snap_root = bfs_be32(fs->txn.sb_new.snapshot_tree_root);
-    bfs_err_t err = bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
-                                   &snap_ops, snap_root, bfs_txn_id(&fs->txn));
+    err = bfs_btree_init(&snap_tree, fs->bio,
+                         bfs_freespace_allocator(&fs->freespace),
+                         &snap_ops, snap_root, bfs_txn_id(&fs->txn));
     if (err != BFS_OK) return err;
     snap_tree.free_sink = bfs_fs_free_sink(fs);
 
     uint32_t key = bfs_be32(snapshot_id);
     bfs_snapshot_record_t rec;
-    if (bfs_btree_search(&snap_tree, &key, &rec) != BFS_OK)
-        return BFS_ERR_NOTFOUND;
+    err = bfs_btree_search(&snap_tree, &key, &rec);
+    if (err != BFS_OK)
+        return err;
 
     /* Rename to .deleting_<id> first if not already renamed */
     if (!is_deleting_name((const char *)rec.name)) {
+        /* Reject an oversized or unreadable graph before making deletion
+         * resumable; otherwise every later mount would retry the same failure. */
+        err = snapshot_preflight_delete(fs, &rec);
+        if (err != BFS_OK) return err;
         char new_name[BFS_SNAPSHOT_NAME_MAX];
         format_deleting_name(new_name, snapshot_id);
         memset(rec.name, 0, sizeof(rec.name));
@@ -364,11 +562,11 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
         rec.timestamp = bfs_be32(0); /* Init last_reclaimed_ino to 0 */
 
         err = bfs_btree_update(&snap_tree, &key, &rec);
-        if (err != BFS_OK) return err;
+        if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
 
         fs->txn.sb_new.snapshot_tree_root = bfs_be32(snap_tree.root);
         err = bfs_txn_commit(fs);
-        if (err != BFS_OK) return err;
+        if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
     }
 
     /* Decrement refcounts for all nodes and file data in the snapshot graph progressively. */
@@ -379,7 +577,7 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
         bfs_btree_t old_inode;
         err = bfs_snapshot_open(&rec, fs->bio, bfs_freespace_allocator(&fs->freespace),
                                 &old_dir, &old_inode);
-        if (err != BFS_OK) return err;
+        if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
 
         uint32_t last_reclaimed = bfs_be32(rec.timestamp);
         reclaim_scan_ctx_t c = {
@@ -394,47 +592,59 @@ bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
         uint32_t start_key = bfs_be32(next_ino);
 
         err = bfs_btree_scan(&old_inode, &start_key, reclaim_inode_cb, &c);
-        if (err != BFS_OK) return err;
-        if (c.err != BFS_OK) return c.err;
+        if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
+        if (c.err != BFS_OK) return snapshot_recover_after_error(fs, c.err);
 
         if (c.count == 0) {
             /* No more inodes to reclaim! We are done with the inode data blocks */
             done = true;
 
-            /* Decrement refcounts of the tree nodes themselves */
-            snap_ref_ctx_t rc = {
-                .fs = fs,
-                .mode = SNAP_REF_DEC,
-                .rollback = NULL,
+            /* Validate and collect both metadata trees before changing a
+             * refcount, reserving the complete atomic reclaim unit in memory. */
+            uint32_t cap = bfs_fs_pending_cap(fs);
+            reclaim_blocks_t collect = {
+                .blocks = {0},
+                .limit = cap >= BFS_PENDING_FREES_MAX ? fs->bio->block_count :
+                         cap > BFS_BTREE_MAX_OP_FREES
+                             ? cap - BFS_BTREE_MAX_OP_FREES : 0,
                 .err = BFS_OK,
             };
-            snapshot_ref_walk(&old_dir.tree, &rc);
-            if (rc.err != BFS_OK) return rc.err;
-
-            snapshot_ref_walk(&old_inode, &rc);
-            if (rc.err != BFS_OK) return rc.err;
+            err = bfs_btree_walk_nodes(&old_dir.tree, reclaim_collect_block,
+                                       &collect);
+            if (err == BFS_OK && collect.err == BFS_OK)
+                err = bfs_btree_walk_nodes(&old_inode, reclaim_collect_block,
+                                           &collect);
+            if (err == BFS_OK) err = collect.err;
+            if (err == BFS_OK)
+                err = snapshot_ref_dec_blocks_atomic(fs, &collect.blocks);
+            block_vec_free(&collect.blocks);
+            if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
 
             /* Finally, remove the snapshot record from the snapshot tree completely */
             err = bfs_btree_delete(&snap_tree, &key);
-            if (err != BFS_OK) return err;
+            if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
+            if (snap_tree.root == BFS_BLK_NULL &&
+                fs->refcount.tree.root != BFS_BLK_NULL)
+                return snapshot_recover_after_error(fs, BFS_ERR_CORRUPT);
+            fs->has_snapshots = snap_tree.root != BFS_BLK_NULL;
             fs->txn.sb_new.snapshot_tree_root = bfs_be32(snap_tree.root);
             fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
 
             err = bfs_txn_commit(fs);
-            if (err != BFS_OK) return err;
+            if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
         } else {
-            /* We reclaimed c.count inodes in this batch (up to 50) */
+            /* Persist the single fully reclaimed inode. */
             /* Update the last reclaimed ino in the snapshot record */
             rec.timestamp = bfs_be32(c.last_ino);
 
             err = bfs_btree_update(&snap_tree, &key, &rec);
-            if (err != BFS_OK) return err;
+            if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
 
             fs->txn.sb_new.snapshot_tree_root = bfs_be32(snap_tree.root);
             fs->txn.sb_new.refcount_tree_root = bfs_be32(fs->refcount.tree.root);
 
             err = bfs_txn_commit(fs);
-            if (err != BFS_OK) return err;
+            if (err != BFS_OK) return snapshot_recover_after_error(fs, err);
         }
     }
     return BFS_OK;
@@ -457,12 +667,16 @@ static bool list_scan_cb(const void *key, const void *val, void *ctx)
 
 bfs_err_t bfs_snapshot_list_unlocked(bfs_fs_t *fs, bfs_snapshot_list_cb cb, void *ctx)
 {
+    if (!fs || !fs->mounted || !cb) return BFS_ERR_INVAL;
+    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     bfs_blk_t snap_root = bfs_be32(fs->txn.sb_new.snapshot_tree_root);
     if (snap_root == 0 || snap_root == BFS_BLK_NULL) return BFS_OK;
 
     bfs_btree_t snap_tree;
-    bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
-                   &snap_ops, snap_root, bfs_txn_id(&fs->txn));
+    bfs_err_t err = bfs_btree_init(&snap_tree, fs->bio,
+                                   bfs_freespace_allocator(&fs->freespace),
+                                   &snap_ops, snap_root, bfs_txn_id(&fs->txn));
+    if (err != BFS_OK) return err;
 
     list_ctx_t lc = { cb, ctx };
     return bfs_btree_scan(&snap_tree, NULL, list_scan_cb, &lc);
@@ -495,6 +709,9 @@ bfs_err_t bfs_snapshot_find_by_name_unlocked(bfs_fs_t *fs, const char *name,
                                       uint32_t *id_out,
                                       bfs_snapshot_record_t *rec_out)
 {
+    if (!fs || !fs->mounted || !name || !name[0] ||
+        strlen(name) >= BFS_SNAPSHOT_NAME_MAX)
+        return BFS_ERR_INVAL;
     find_name_ctx_t fc = {
         .name = name,
         .id_out = id_out,
@@ -519,22 +736,40 @@ static bool max_scan_cb(const void *key, const void *val, void *ctx)
     return true;
 }
 
-uint32_t bfs_snapshot_next_id_unlocked(bfs_fs_t *fs)
+static bfs_err_t snapshot_next_id_checked(bfs_fs_t *fs, uint32_t *id_out)
 {
+    if (!fs || !fs->mounted || !id_out) return BFS_ERR_INVAL;
+    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     bfs_blk_t snap_root = bfs_be32(fs->txn.sb_new.snapshot_tree_root);
-    if (snap_root == 0 || snap_root == BFS_BLK_NULL) return 1;
+    if (snap_root == 0 || snap_root == BFS_BLK_NULL) {
+        *id_out = 1;
+        return BFS_OK;
+    }
 
     bfs_btree_t snap_tree;
-    bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
-                   &snap_ops, snap_root, bfs_txn_id(&fs->txn));
+    bfs_err_t err = bfs_btree_init(&snap_tree, fs->bio,
+                                   bfs_freespace_allocator(&fs->freespace),
+                                   &snap_ops, snap_root, bfs_txn_id(&fs->txn));
+    if (err != BFS_OK) return err;
 
     max_ctx_t mc = { 0 };
-    bfs_btree_scan(&snap_tree, NULL, max_scan_cb, &mc);
-    return mc.max_id + 1;
+    err = bfs_btree_scan(&snap_tree, NULL, max_scan_cb, &mc);
+    if (err != BFS_OK) return err;
+    if (mc.max_id == UINT32_MAX) return BFS_ERR_NOSPC;
+    *id_out = mc.max_id + 1;
+    return BFS_OK;
+}
+
+uint32_t bfs_snapshot_next_id_unlocked(bfs_fs_t *fs)
+{
+    uint32_t id = 0;
+    if (snapshot_next_id_checked(fs, &id) != BFS_OK) return 0;
+    return id;
 }
 
 bfs_err_t bfs_snapshot_create(bfs_fs_t *fs, const char *name)
 {
+    if (!fs || !fs->mounted) return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_snapshot_create_unlocked(fs, name);
     bfs_lock_unlock(&fs->lock);
@@ -543,6 +778,7 @@ bfs_err_t bfs_snapshot_create(bfs_fs_t *fs, const char *name)
 
 bfs_err_t bfs_snapshot_delete(bfs_fs_t *fs, uint32_t snapshot_id)
 {
+    if (!fs || !fs->mounted || snapshot_id == 0) return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_snapshot_delete_unlocked(fs, snapshot_id);
     bfs_lock_unlock(&fs->lock);
@@ -567,6 +803,12 @@ static bool snap_collect_cb(uint32_t id, const bfs_snapshot_record_t *rec, void 
 {
     snap_collect_t *c = (snap_collect_t *)ctx;
     if (c->count == c->cap) {
+        if (c->cap > SIZE_MAX / 2 ||
+            (c->cap ? c->cap * 2 : 32) > SIZE_MAX / sizeof(*c->ids) ||
+            (c->cap ? c->cap * 2 : 32) > SIZE_MAX / sizeof(*c->recs)) {
+            c->oom = true;
+            return false;
+        }
         size_t new_cap = c->cap ? c->cap * 2 : 32;
         uint32_t *ni = malloc(new_cap * sizeof(*ni));
         bfs_snapshot_record_t *nr = malloc(new_cap * sizeof(*nr));
@@ -585,6 +827,7 @@ static bool snap_collect_cb(uint32_t id, const bfs_snapshot_record_t *rec, void 
 
 bfs_err_t bfs_snapshot_list(bfs_fs_t *fs, bfs_snapshot_list_cb cb, void *ctx)
 {
+    if (!fs || !fs->mounted || !cb) return BFS_ERR_INVAL;
     snap_collect_t c = { NULL, NULL, 0, 0, false };
 
     bfs_lock_read(&fs->lock);
@@ -611,6 +854,9 @@ bfs_err_t bfs_snapshot_find_by_name(bfs_fs_t *fs, const char *name,
                                       uint32_t *id_out,
                                       bfs_snapshot_record_t *rec_out)
 {
+    if (!fs || !fs->mounted || !name || !name[0] ||
+        strlen(name) >= BFS_SNAPSHOT_NAME_MAX)
+        return BFS_ERR_INVAL;
     bfs_lock_read(&fs->lock);
     bfs_err_t err = bfs_snapshot_find_by_name_unlocked(fs, name, id_out, rec_out);
     bfs_lock_unlock(&fs->lock);
@@ -619,6 +865,7 @@ bfs_err_t bfs_snapshot_find_by_name(bfs_fs_t *fs, const char *name,
 
 uint32_t bfs_snapshot_next_id(bfs_fs_t *fs)
 {
+    if (!fs || !fs->mounted) return 0;
     bfs_lock_read(&fs->lock);
     uint32_t id = bfs_snapshot_next_id_unlocked(fs);
     bfs_lock_unlock(&fs->lock);
@@ -646,33 +893,37 @@ static bool resume_scan_cb(const void *key, const void *val, void *ctx)
 
 bfs_err_t bfs_snapshot_resume_deletions(bfs_fs_t *fs)
 {
+    if (!fs || !fs->mounted)
+        return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
-    bfs_blk_t snap_root = bfs_be32(fs->txn.sb_new.snapshot_tree_root);
-    if (snap_root == 0 || snap_root == BFS_BLK_NULL) {
-        bfs_lock_unlock(&fs->lock);
-        return BFS_OK;
-    }
+    bfs_err_t err = fs->recovery_error;
+    while (err == BFS_OK) {
+        bfs_blk_t snap_root = bfs_be32(fs->txn.sb_new.snapshot_tree_root);
+        if (snap_root == BFS_BLK_NULL)
+            break;
 
-    bfs_btree_t snap_tree;
-    bfs_err_t err = bfs_btree_init(&snap_tree, fs->bio, bfs_freespace_allocator(&fs->freespace),
-                                   &snap_ops, snap_root, bfs_txn_id(&fs->txn));
-    if (err != BFS_OK) {
-        bfs_lock_unlock(&fs->lock);
-        return err;
-    }
-    snap_tree.free_sink = bfs_fs_free_sink(fs);
+        bfs_btree_t snap_tree;
+        err = bfs_btree_init(&snap_tree, fs->bio,
+                             bfs_freespace_allocator(&fs->freespace),
+                             &snap_ops, snap_root, bfs_txn_id(&fs->txn));
+        if (err != BFS_OK)
+            break;
 
-    /* To avoid modifying the tree while scanning, we collect all IDs of deleting snapshots first */
-    resume_ctx_t c = { .fs = fs, .count = 0 };
-    err = bfs_btree_scan(&snap_tree, NULL, resume_scan_cb, &c);
-    if (err != BFS_OK) {
-        bfs_lock_unlock(&fs->lock);
-        return err;
-    }
+        /* Collect before mutating; repeat so more than 32 interrupted deletions
+         * are handled without retaining an unbounded in-memory ID list. */
+        resume_ctx_t c = { .fs = fs, .count = 0 };
+        err = bfs_btree_scan(&snap_tree, NULL, resume_scan_cb, &c);
+        if (err != BFS_OK || c.count == 0)
+            break;
 
-    for (uint32_t i = 0; i < c.count; i++) {
-        bfs_snapshot_delete_unlocked(fs, c.delete_ids[i]);
+        for (uint32_t i = 0; i < c.count; i++) {
+            err = bfs_snapshot_delete_unlocked(fs, c.delete_ids[i]);
+            if (err != BFS_OK)
+                break;
+        }
+        if (err != BFS_OK)
+            break;
     }
     bfs_lock_unlock(&fs->lock);
-    return BFS_OK;
+    return err;
 }

@@ -4,6 +4,7 @@
 
 #include "test_harness.h"
 #include "block_device_emu.h"
+#include <errno.h>
 #include <unistd.h>
 
 #define TEST_IMG "test_bio.img"
@@ -27,6 +28,15 @@ static void test_invalid_block_size(void)
     TEST_ASSERT(bio_emu_create(TEST_IMG, 300, 100) == NULL);   /* not power of 2 */
     TEST_ASSERT(bio_emu_create(TEST_IMG, 256, 100) == NULL);   /* below minimum */
     TEST_ASSERT(bio_emu_create(TEST_IMG, 131072, 100) == NULL); /* above maximum */
+}
+
+static void test_invalid_block_count(void)
+{
+    unlink(TEST_IMG);
+    errno = 0;
+    TEST_ASSERT(bio_emu_create(TEST_IMG, BLK_SIZE, 0) == NULL);
+    TEST_ASSERT_EQ(errno, EINVAL);
+    TEST_ASSERT(access(TEST_IMG, F_OK) != 0);
 }
 
 static void test_write_read_roundtrip(void)
@@ -108,6 +118,7 @@ static void test_sync(void)
 TEST_SUITE_BEGIN("Block Device Emulator")
     TEST_RUN(test_create_device);
     TEST_RUN(test_invalid_block_size);
+    TEST_RUN(test_invalid_block_count);
     TEST_RUN(test_write_read_roundtrip);
     TEST_RUN(test_out_of_bounds);
     TEST_RUN(test_reopen_persistence);

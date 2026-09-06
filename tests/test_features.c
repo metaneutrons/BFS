@@ -136,6 +136,17 @@ static void test_softlink_create_read(void)
 
 /* ── File comments ─────────────────────────────────────────── */
 
+static bool count_entries_cb(const char *name, uint8_t name_len,
+                             uint32_t inode_nr, uint32_t entry_type, void *ctx)
+{
+    (void)name;
+    (void)name_len;
+    (void)inode_nr;
+    (void)entry_type;
+    (*(uint32_t *)ctx)++;
+    return true;
+}
+
 static void test_comment_set_get(void)
 {
     bfs_fs_t *fs = setup();
@@ -155,6 +166,32 @@ static void test_comment_set_get(void)
     TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, "Updated", 7), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_get_comment(fs, ino, buf, 80), BFS_OK);
     TEST_ASSERT_MEM_EQ(buf, "Updated", 7);
+    uint32_t comment_count = 0;
+    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, ino | 0x80000000u,
+                                count_entries_cb, &comment_count), BFS_OK);
+    TEST_ASSERT_EQ(comment_count, 1);
+
+    TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, NULL, 1), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino,
+        "12345678901234567890123456789012345678901234567890123456789012345678901234567890",
+        80), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(fs, UINT32_MAX - 1, "missing", 7),
+                   BFS_ERR_INVAL);
+
+    TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, NULL, 0), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_get_comment(fs, ino, buf, 80), BFS_ERR_NOTFOUND);
+    comment_count = 0;
+    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, ino | 0x80000000u,
+                                count_entries_cb, &comment_count), BFS_OK);
+    TEST_ASSERT_EQ(comment_count, 0);
+
+    TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, "delete me", 9), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_delete_file(fs, BFS_ROOT_INO, "noted.txt", 9),
+                   BFS_OK);
+    comment_count = 0;
+    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, ino | 0x80000000u,
+                                count_entries_cb, &comment_count), BFS_OK);
+    TEST_ASSERT_EQ(comment_count, 0);
 
     teardown(fs);
 }
@@ -251,8 +288,10 @@ static void test_delete_frees_blocks(void)
     uint32_t free_after_write = fs->freespace.total_free;
     TEST_ASSERT(free_after_write < free_before); /* blocks consumed */
 
-    /* Delete file — blocks should be freed */
+    /* Delete file, then cross the transaction boundary that reclaims its
+     * deferred data and extent-tree blocks. */
     TEST_ASSERT_EQ(bfs_fs_delete_file(fs, BFS_ROOT_INO, "big.dat", 7), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
 
     /* Free space should increase (data blocks returned) */
     TEST_ASSERT(fs->freespace.total_free > free_after_write);

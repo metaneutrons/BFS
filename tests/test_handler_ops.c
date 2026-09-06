@@ -16,12 +16,14 @@
 #include <string.h>
 #include <stdlib.h>
 
+#define TEST_IMG "test_handler_ops.img"
+
 static bfs_bio_t *bio;
 static bfs_fs_t fs;
 
 static void setup(void)
 {
-    bio = bio_emu_create("/tmp/test_handler_ops.img", 4096, 8192);
+    bio = bio_emu_create(TEST_IMG, 4096, 8192);
     TEST_ASSERT(bio != NULL);
     TEST_ASSERT(bfs_fs_format(bio, "Test", 0) == BFS_OK);
     TEST_ASSERT(bfs_fs_mount(&fs, bio) == BFS_OK);
@@ -31,6 +33,7 @@ static void teardown(void)
 {
     bfs_fs_unmount(&fs);
     bfs_bio_close(bio);
+    unlink(TEST_IMG);
 }
 
 /* Simulate handler: create file, write, close+sync */
@@ -133,6 +136,7 @@ static void test_handler_fill_and_recover(void)
 {
     setup();
     uint8_t *buf = malloc(65536);
+    TEST_ASSERT(buf != NULL);
     memset(buf, 0xAA, 65536);
     uint32_t total = 0;
 
