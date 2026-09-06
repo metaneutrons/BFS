@@ -17,8 +17,9 @@ COMPLETION = b"BFS-TEST-COMPLETE\t1\n"
 
 
 def test_inventory(path, filter_name=""):
-    if filter_name and not re.fullmatch(r"[A-Za-z0-9_-]+", filter_name):
+    if filter_name and not re.fullmatch(r"[A-Za-z0-9_-]+(?:\+[A-Za-z0-9_-]+)*", filter_name):
         raise ValueError("invalid test filter")
+    filters = filter_name.split("+") if filter_name else [""]
     names = []
     for line in path.read_text(encoding="ascii").splitlines():
         if line == "/* SPDX-License-Identifier: MPL-2.0 */":
@@ -26,7 +27,7 @@ def test_inventory(path, filter_name=""):
         match = re.fullmatch(r"BFS_TEST\(([a-z0-9_]+), (test_[a-z0-9_]+)\)", line)
         if not match:
             raise ValueError("invalid guest test inventory")
-        if not filter_name or filter_name in match[1]:
+        if any(token in match[1] for token in filters):
             names.append(match[1])
     if not names or len(set(names)) != len(names):
         raise ValueError("empty or duplicate guest test inventory")

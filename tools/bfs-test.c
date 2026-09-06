@@ -520,6 +520,7 @@ static void test_fill_disk(void)
     const char *T = "fill_08";
     char rel[32];
     int i, total = 0, file_count = quick_mode ? 4 : 10;
+    const char *failure = NULL;
 
     for (i = 0; i < file_count; i++) {
         progress(i, file_count);
@@ -527,26 +528,30 @@ static void test_fill_disk(void)
         if (i >= 10) *p++ = '0' + (i / 10);
         *p++ = '0' + (i % 10); *p = 0;
 
-        if (!write_seeded(vpath(rel), 64 * 1024, 0xF100 + i)) break;
+        if (!write_seeded(vpath(rel), 64 * 1024, 0xF100 + i)) {
+            failure = "write";
+            break;
+        }
         total++;
     }
-    if (total < 3) { fail(T, "too few"); goto cl; }
+    if (!failure && total < 3) failure = "too few";
+
+    for (i = 0; !failure && i < total; i++) {
+        char *p = rel; *p++ = 'F';
+        if (i >= 10) *p++ = '0' + (i / 10);
+        *p++ = '0' + (i % 10); *p = 0;
+
+        if (!verify_seeded(vpath(rel), 64 * 1024, 0xF100 + i))
+            failure = "verify";
+    }
 
     for (i = 0; i < total; i++) {
         char *p = rel; *p++ = 'F';
         if (i >= 10) *p++ = '0' + (i / 10);
         *p++ = '0' + (i % 10); *p = 0;
-
-        if (!verify_seeded(vpath(rel), 64 * 1024, 0xF100 + i)) { fail(T, "verify"); goto cl; }
+        if (!DeleteFile(vpath(rel)) && !failure) failure = "cleanup";
     }
-    pass(T);
-cl:
-    for (i = 0; i < total; i++) {
-        char *p = rel; *p++ = 'F';
-        if (i >= 10) *p++ = '0' + (i / 10);
-        *p++ = '0' + (i % 10); *p = 0;
-        DeleteFile(vpath(rel));
-    }
+    if (failure) fail(T, failure); else pass(T);
 }
 
 static void test_alloc_cycles(void)
@@ -1595,6 +1600,7 @@ static void test_exnext_complete(void)
     const char *T = "exnext_37";
     int i;
     int file_count = quick_mode ? 16 : 50;
+    BOOL ok = TRUE;
     BPTR lock = CreateDir(vpath("exdir"));
     if (!lock) { fail(T, "mkdir"); return; }
     UnLock(lock);
@@ -1628,10 +1634,10 @@ static void test_exnext_complete(void)
 
     /* Every file plus the '..' entry must be returned exactly once. */
     if (count != file_count + 1) {
-        fail(T, "count"); put("  got="); putnum(count);
+        ok = FALSE;
+        put("  got="); putnum(count);
         put(" want="); putnum(file_count + 1); put("\n");
     }
-    else { pass(T); }
 
     /* Cleanup */
     for (i = 0; i < file_count; i++) {
@@ -1639,9 +1645,10 @@ static void test_exnext_complete(void)
         const char *s = "exdir/item_";
         while (*s) *p++ = *s++;
         *p++ = '0' + (i / 10); *p++ = '0' + (i % 10); *p = 0;
-        DeleteFile(vpath(rel));
+        if (!DeleteFile(vpath(rel))) ok = FALSE;
     }
-    DeleteFile(vpath("exdir"));
+    if (!DeleteFile(vpath("exdir"))) ok = FALSE;
+    if (ok) pass(T); else fail(T, "count or cleanup");
 }
 
 /* ── Test table ────────────────────────────────────────────── */
@@ -1654,17 +1661,42 @@ static const struct { const char *name; test_fn fn; } all_tests[] = {
     {NULL, NULL}
 };
 
-static int has_substr(const char *str, const char *sub)
+static int filter_valid(const char *filter)
 {
-    if (!sub || !sub[0]) return 1;
-    /* Check if sub appears anywhere in str */
-    const char *s;
-    for (s = str; *s; s++) {
-        const char *a = s, *b = sub;
-        while (*b && *a == *b) { a++; b++; }
-        if (!*b) return 1;
+    int expect_term = 1;
+    if (!filter || !filter[0]) return 1;
+    for (; *filter; filter++) {
+        if (*filter == '+') {
+            if (expect_term) return 0;
+            expect_term = 1;
+        } else if ((*filter >= 'A' && *filter <= 'Z') ||
+                   (*filter >= 'a' && *filter <= 'z') ||
+                   (*filter >= '0' && *filter <= '9') ||
+                   *filter == '_' || *filter == '-') {
+            expect_term = 0;
+        } else {
+            return 0;
+        }
     }
-    return 0;
+    return !expect_term;
+}
+
+static int filter_matches(const char *str, const char *filter)
+{
+    const char *start = filter;
+    if (!filter || !filter[0]) return 1;
+    while (1) {
+        const char *end = start;
+        while (*end && *end != '+') end++;
+        const char *s;
+        for (s = str; *s; s++) {
+            const char *a = s, *b = start;
+            while (b < end && *a == *b) { a++; b++; }
+            if (b == end) return 1;
+        }
+        if (!*end) return 0;
+        start = end + 1;
+    }
 }
 
 static BOOL log_completion(BOOL publish)
@@ -1702,6 +1734,7 @@ int main(void)
         put("Usage: bfs-test VOLUME [LOG=path] [filter] [QUICK]\n");
         put("  bfs-test DH1:                   (run all)\n");
         put("  bfs-test DH1: large             (run matching)\n");
+        put("  bfs-test DH1: a+b               (run matching filters)\n");
         put("  bfs-test DH1: LOG=SYS:test.log  (CI mode)\n");
         put("  bfs-test DH1: LOG=SYS:x large   (both)\n");
         me->pr_WindowPtr = oldwin;
@@ -1763,6 +1796,13 @@ int main(void)
             me->pr_WindowPtr = oldwin;
             return 5;
         }
+        if (!filter_valid(s)) {
+            put("FILTER contains unsupported characters or empty terms\n");
+            if (logfh) Close(logfh);
+            FreeArgs(rdargs);
+            me->pr_WindowPtr = oldwin;
+            return 5;
+        }
         while (*s && d < filterbuf + 63) *d++ = *s++;
         *d = 0;
         filter = filterbuf;
@@ -1786,7 +1826,7 @@ int main(void)
 
     int i;
     for (i = 0; all_tests[i].name; i++) {
-        if (!has_substr(all_tests[i].name, filter)) continue;
+        if (!filter_matches(all_tests[i].name, filter)) continue;
         int previous_run = tests_run, previous_fail = tests_fail;
         io_failed = FALSE;
         put(" RUN  "); put(all_tests[i].name); put("\n");

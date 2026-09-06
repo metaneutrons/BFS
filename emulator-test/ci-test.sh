@@ -20,7 +20,7 @@ case "$profile" in
     *) printf 'ERROR: BFS_TEST_PROFILE must be full or quick.\n' >&2; exit 2 ;;
 esac
 
-[[ -z "$filter" || "$filter" =~ ^[A-Za-z0-9_-]+$ ]] || {
+[[ -z "$filter" || "$filter" =~ ^[A-Za-z0-9_-]+(\+[A-Za-z0-9_-]+)*$ ]] || {
     printf 'ERROR: BFS_TEST_FILTER contains unsupported characters.\n' >&2
     exit 2
 }
@@ -68,7 +68,13 @@ else
     cp "$script_dir/startup/ci-test" "$system_dir/S/Startup-Sequence"
 fi
 if [[ "$profile" == quick ]]; then
-    printf 'C:bfs-test DH1: LOG=SYS:bfs-test.result QUICK\n' > "$system_dir/S/Startup-Sequence"
+    if [[ -n "$filter" ]]; then
+        printf 'C:bfs-test DH1: LOG=SYS:bfs-test.result %s QUICK\n' "$filter" \
+            > "$system_dir/S/Startup-Sequence"
+    else
+        printf 'C:bfs-test DH1: LOG=SYS:bfs-test.result QUICK\n' \
+            > "$system_dir/S/Startup-Sequence"
+    fi
 fi
 
 if [[ -n "$fixture" ]]; then
