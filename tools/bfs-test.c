@@ -377,7 +377,7 @@ static BPTR locate_relative(BPTR lock, const char *name)
     ULONG storage[65];
     UBYTE *bstr = (UBYTE *)storage;
     ULONG len = 0;
-    while (name[len] && len < 255) len++;
+    while (len < 255 && name[len]) len++;
     bstr[0] = len;
     tool_memcpy(bstr + 1, name, len);
     struct FileLock *base = BADDR(lock);
