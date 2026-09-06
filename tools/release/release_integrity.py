@@ -45,7 +45,10 @@ def read_archive(path, tag):
                 check=True,
             )
         else:
-            subprocess.run(["gzip", "-t", str(path)], check=True)
+            try:
+                subprocess.run(["gzip", "-t", str(path)], check=True)
+            except subprocess.CalledProcessError as error:
+                raise ValueError("invalid gzip archive") from error
             normalized = path
         with tarfile.open(normalized, "r:*") as archive:
             entries = archive.getmembers()
