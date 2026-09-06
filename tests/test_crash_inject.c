@@ -147,6 +147,7 @@ static void test_crash_during_create(void)
         uint32_t ino;
         bfs_fs_create_file(&fs, BFS_ROOT_INO, "newfile", 7, &ino);
         bfs_fs_sync(&fs);
+        bfs_fs_abandon(&fs);
         bfs_bio_close(bio);
         TEST_ASSERT(verify_after_crash());
     }
@@ -175,6 +176,7 @@ static void test_crash_during_delete(void)
         cb.writes_before_crash = cp;
         bfs_fs_delete_file(&fs, BFS_ROOT_INO, "existing", 8);
         bfs_fs_sync(&fs);
+        bfs_fs_abandon(&fs);
         bfs_bio_close(bio);
         TEST_ASSERT(verify_after_crash());
     }
@@ -211,6 +213,7 @@ static void test_crash_during_write(void)
         memset(data, 0xBB, BLK_SIZE);
         bfs_file_write(&f, data, BLK_SIZE);
         bfs_fs_sync(&fs);
+        bfs_fs_abandon(&fs);
         bfs_bio_close(bio);
         TEST_ASSERT(verify_after_crash());
     }
@@ -246,6 +249,7 @@ static void test_crash_during_sync(void)
         cb.write_count = 0;
         cb.writes_before_crash = cp;
         bfs_fs_sync(&fs);
+        bfs_fs_abandon(&fs);
         bfs_bio_close(bio);
         TEST_ASSERT(verify_after_crash());
     }
