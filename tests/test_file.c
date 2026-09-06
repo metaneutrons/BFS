@@ -201,6 +201,37 @@ static void test_truncate_regrow_zeroes_tail(void)
     teardown(fs);
 }
 
+static void test_shared_handles_refresh_inode_state(void)
+{
+    bfs_fs_t *fs = setup();
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "shared", 6, &ino), BFS_OK);
+    bfs_file_t first, second;
+    TEST_ASSERT_EQ(bfs_file_open(&first, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&second, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&first, "abcdef", 6), 6);
+    char data[8] = {0};
+    TEST_ASSERT_EQ(bfs_file_read(&second, data, sizeof(data)), 6);
+    TEST_ASSERT_MEM_EQ(data, "abcdef", 6);
+    TEST_ASSERT_EQ(bfs_file_seek(&second, 0, BFS_SEEK_END), 6);
+    TEST_ASSERT_EQ(bfs_file_write(&second, "gh", 2), 2);
+    TEST_ASSERT_EQ(bfs_file_seek(&first, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_read(&first, data, sizeof(data)), 8);
+    TEST_ASSERT_MEM_EQ(data, "abcdefgh", 8);
+    TEST_ASSERT_EQ(bfs_file_truncate(&second, 2), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&first, 0, BFS_SEEK_END), 2);
+    TEST_ASSERT_EQ(bfs_file_write(&first, "XY", 2), 2);
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&second, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_read(&second, data, sizeof(data)), 4);
+    TEST_ASSERT_MEM_EQ(data, "abXY", 4);
+    TEST_ASSERT_EQ(bfs_fs_delete_file(fs, BFS_ROOT_INO, "shared", 6), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&first, 0, BFS_SEEK_SET), BFS_ERR_NOTFOUND);
+    TEST_ASSERT_EQ(bfs_file_write(&second, "bad", 3), BFS_ERR_NOTFOUND);
+    teardown(fs);
+}
+
 TEST_SUITE_BEGIN("File I/O")
     TEST_RUN(test_write_read);
     TEST_RUN(test_cross_block_write);
@@ -208,4 +239,5 @@ TEST_SUITE_BEGIN("File I/O")
     TEST_RUN(test_truncate);
     TEST_RUN(test_large_file);
     TEST_RUN(test_truncate_regrow_zeroes_tail);
+    TEST_RUN(test_shared_handles_refresh_inode_state);
 TEST_SUITE_END()

@@ -447,6 +447,29 @@ bfs_err_t bfs_file_truncate_unlocked(bfs_file_t *f, uint64_t new_size)
     return file_finish_truncate(f, BFS_OK);
 }
 
+static bfs_err_t file_refresh_unlocked(bfs_file_t *f)
+{
+    bfs_err_t err = file_handle_error(f);
+    if (err != BFS_OK) return err;
+    if (f->extents.tree.free_sink_err != BFS_OK) {
+        f->fs->recovery_error = f->extents.tree.free_sink_err;
+        return f->fs->recovery_error;
+    }
+    bfs_inode_t inode;
+    err = bfs_inode_read(&f->fs->inode_tree, f->inode_nr, &inode);
+    if (err != BFS_OK) return err;
+    uint64_t size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
+    if (bfs_be32(inode.extent_root) == f->extents.tree.root && size == f->size)
+        return BFS_OK;
+    /* Another handle published a new inode. Keep this handle's independent offset. */
+    bfs_file_t current;
+    err = bfs_file_open_unlocked(&current, f->fs, f->inode_nr);
+    if (err != BFS_OK) return err;
+    current.offset = f->offset;
+    *f = current;
+    return BFS_OK;
+}
+
 bfs_err_t bfs_file_open(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
 {
     if (!f || !fs || !fs->mounted || inode_nr == 0) return BFS_ERR_INVAL;
@@ -460,7 +483,8 @@ int64_t bfs_file_seek(bfs_file_t *f, int64_t offset, int mode)
 {
     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;
     bfs_lock_write(&f->fs->lock);
-    int64_t result = file_seek_unlocked(f, offset, mode);
+    bfs_err_t err = file_refresh_unlocked(f);
+    int64_t result = err == BFS_OK ? file_seek_unlocked(f, offset, mode) : err;
     bfs_lock_unlock(&f->fs->lock);
     return result;
 }
@@ -477,7 +501,8 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len)
      * never touch fs->scratch and keep the shared read lock, so they still run
      * concurrently.) */
     bfs_lock_write(&f->fs->lock);
-    int32_t err = bfs_file_read_unlocked(f, buf, len);
+    int32_t err = file_refresh_unlocked(f);
+    if (err == BFS_OK) err = bfs_file_read_unlocked(f, buf, len);
     bfs_lock_unlock(&f->fs->lock);
     return err;
 }
@@ -487,7 +512,8 @@ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
     if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf))
         return BFS_ERR_INVAL;
     bfs_lock_write(&f->fs->lock);
-    int32_t err = bfs_file_write_unlocked(f, buf, len);
+    int32_t err = file_refresh_unlocked(f);
+    if (err == BFS_OK) err = bfs_file_write_unlocked(f, buf, len);
     bfs_lock_unlock(&f->fs->lock);
     return err;
 }
@@ -496,7 +522,8 @@ bfs_err_t bfs_file_truncate(bfs_file_t *f, uint64_t new_size)
 {
     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;
     bfs_lock_write(&f->fs->lock);
-    bfs_err_t err = bfs_file_truncate_unlocked(f, new_size);
+    bfs_err_t err = file_refresh_unlocked(f);
+    if (err == BFS_OK) err = bfs_file_truncate_unlocked(f, new_size);
     bfs_lock_unlock(&f->fs->lock);
     return err;
 }
