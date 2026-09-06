@@ -114,7 +114,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends fs-uae xvfb libarchive-tools
+          sudo apt-get install -y -qq --no-install-recommends fs-uae xvfb libarchive-tools musl
           tools/install-lha.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
