@@ -98,6 +98,12 @@ class AmigaRunnerTests(unittest.TestCase):
             RUNNER.run_emulator([sys.executable, "-c", "raise SystemExit(0)"],
                                 self.result, self.root / "log", 1)
 
+    def test_command_validation(self):
+        for command in ([], "echo unsafe", [None], ["/nonexistent/bfs-emulator"]):
+            with self.subTest(command=command):
+                with self.assertRaises(ValueError):
+                    RUNNER.run_emulator(command, self.result, self.root / "log", 1)
+
 
 if __name__ == "__main__":
     unittest.main()

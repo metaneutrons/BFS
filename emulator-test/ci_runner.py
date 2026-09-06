@@ -7,7 +7,9 @@ import os
 from pathlib import Path
 import re
 import signal
-import subprocess
+import shutil
+# This local CLI launches the operator's emulator; it does not accept remote commands.
+import subprocess  # nosec B404
 import sys
 import time
 
@@ -84,6 +86,12 @@ def stop_process_group(process):
 def run_emulator(command, result, log, timeout):
     if timeout <= 0:
         raise ValueError("timeout must be positive")
+    if not isinstance(command, list) or not command or not all(isinstance(arg, str) for arg in command):
+        raise ValueError("emulator command must be a nonempty argument list")
+    executable = shutil.which(command[0])
+    if executable is None:
+        raise ValueError("emulator executable was not found")
+    command = [str(Path(executable).resolve()), *command[1:]]
     completion = result.with_name(result.name + ".done")
     if result.exists() or completion.exists():
         raise ValueError("stale guest result or completion record")
@@ -94,7 +102,9 @@ def run_emulator(command, result, log, timeout):
     process = None
     try:
         with log.open("wb") as output:
-            process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,
+            # Trusted local argv, resolved executable and no shell. Guest data never enters argv.
+            # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args, python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+            process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT, shell=False,  # nosec B603
                                        start_new_session=True)
             deadline = time.monotonic() + timeout
             while not completion.exists():

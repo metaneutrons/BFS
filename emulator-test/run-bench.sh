@@ -29,7 +29,8 @@ rm -f "$WB/Results/"*.uaem
 CFG=$(mktemp)
 PID=
 TIMER_PID=
-# shellcheck disable=SC2329
+# Called indirectly by the EXIT trap below (SC2317 on older ShellCheck).
+# shellcheck disable=SC2329,SC2317
 cleanup() {
     if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
         kill "$PID" 2>/dev/null

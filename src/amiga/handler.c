@@ -215,7 +215,8 @@ static UBYTE *AllocateBstr(const UBYTE *text, uint8_t len)
     UBYTE *bstr = (UBYTE *)AllocVec((ULONG)len + 2, MEMF_PUBLIC | MEMF_CLEAR);
     if (!bstr) return NULL;
     bstr[0] = len;
-    memcpy(&bstr[1], text, len);
+    /* Allocation above includes the length byte, len bytes and a terminator. */
+    memcpy(&bstr[1], text, len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     return bstr;
 }
 
@@ -431,7 +432,8 @@ static bool FindLockName(const char *name, uint8_t name_len,
         (name_len == 2 && name[0] == '.' && name[1] == '.'))
         return true;
 
-    memcpy(lookup->name, name, name_len);
+    /* NameForLock supplies BFS_NAME_MAX + 1 bytes; name_len is uint8_t. */
+    memcpy(lookup->name, name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     lookup->name[name_len] = 0;
     lookup->name_len = name_len;
     lookup->found = true;
@@ -445,7 +447,8 @@ static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
         uint8_t len = 0;
         const char *volname = h->fs.txn.sb.volname;
         while (len < BFS_VOLNAME_MAX && volname[len]) len++;
-        memcpy(name, volname, len);
+        /* The caller supplies BFS_NAME_MAX + 1, exceeding BFS_VOLNAME_MAX. */
+        memcpy(name, volname, len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         name[len] = 0;
         *name_len = len;
         return BFS_OK;
@@ -468,6 +471,32 @@ static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
 /* ── BSTR / path helpers ──────────────────────────────────── */
 
 /* Extract the parent inode and final component from a lock-relative BSTR path. */
+static bfs_err_t ResolveDirectories(struct bfs_handler *h, uint32_t *parent,
+                                    const char **name, uint8_t *len)
+{
+    while (*len > 0) {
+        uint8_t component = 0;
+        while (component < *len && (*name)[component] != '/') component++;
+        uint8_t remaining = *len - component;
+        if (component && (remaining == 0 || remaining == 1)) break;
+
+        uint32_t ino, type;
+        if (component == 0 && *parent == BFS_ROOT_INO) {
+            ino = BFS_ROOT_INO;
+        } else {
+            const char *key = component ? *name : "..";
+            bfs_err_t err = bfs_dir_lookup(&h->fs.dir_tree, *parent, key,
+                                           component ? component : 2, &ino, &type);
+            if (err != BFS_OK) return err;
+            if (type != BFS_INODE_DIR) return BFS_ERR_INVAL;
+        }
+        *parent = ino;
+        *name += component + 1;
+        *len -= component + 1;
+    }
+    return BFS_OK;
+}
+
 static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
                              char *namebuf, uint8_t *namelen_out,
                              uint32_t *parent_out,
@@ -488,7 +517,7 @@ static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
         return BFS_OK;
     }
     uint8_t len = bstr[0];
-    char *name = (char *)&bstr[1];
+    const char *name = (const char *)&bstr[1];
 
     /* Skip volume prefix (e.g. "VOL:") — resets to root */
     for (uint8_t i = 0; i < len; i++) {
@@ -500,49 +529,11 @@ static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
         }
     }
 
-    /* Resolve path components separated by '/' */
-    while (len > 0) {
-        /* Find next separator */
-        uint8_t comp_len = 0;
-        while (comp_len < len && name[comp_len] != '/') comp_len++;
-
-        if (comp_len == 0) {
-            /* Leading or double '/' = parent directory */
-            uint32_t par_ino, par_type;
-            if (bfs_dir_lookup(&h->fs.dir_tree, parent_ino, "..", 2, &par_ino, &par_type) == BFS_OK)
-                parent_ino = par_ino;
-            else
-                parent_ino = BFS_ROOT_INO;
-            name++;
-            len--;
-            continue;
-        }
-
-        /* Check if this is the last component (the filename) */
-        uint8_t remaining = len - comp_len;
-        if (remaining == 0 || (remaining == 1 && name[comp_len] == '/')) {
-            /* Last component — this is the filename */
-            memcpy(namebuf, name, comp_len);
-            namebuf[comp_len] = 0;
-            *namelen_out = comp_len;
-            *parent_out = parent_ino;
-            return BFS_OK;
-        }
-
-        /* Intermediate component — must be a directory, resolve it */
-        uint32_t ino, type;
-        bfs_err_t err = bfs_dir_lookup(&h->fs.dir_tree, parent_ino, name,
-                                       comp_len, &ino, &type);
-        if (err != BFS_OK) return err;
-        if (type != BFS_INODE_DIR) return BFS_ERR_INVAL;
-
-        parent_ino = ino;
-        name += comp_len + 1; /* skip component + '/' */
-        len -= comp_len + 1;
-    }
-
-    /* Final component (or empty path) */
-    memcpy(namebuf, name, len);
+    bfs_err_t err = ResolveDirectories(h, &parent_ino, &name, &len);
+    if (err != BFS_OK) return err;
+    if (len && name[len - 1] == '/') len--;
+    /* All callers supply BFS_NAME_MAX + 1 bytes; a BSTR length is at most 255. */
+    memcpy(namebuf, name, len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     namebuf[len] = 0;
     *namelen_out = len;
     *parent_out = parent_ino;
@@ -734,8 +725,10 @@ static void FillFib(struct FileInfoBlock *fib, const char *name, uint8_t name_le
 static void FillFib64(struct FileInfoBlock *fib, uint64_t size)
 {
     uint64_t blocks = size / 512 + (size % 512 != 0);
-    memcpy(fib->fib_Reserved, &size, sizeof(size));
-    memcpy(fib->fib_Reserved + sizeof(size), &blocks, sizeof(blocks));
+    _Static_assert(sizeof(fib->fib_Reserved) >= 2 * sizeof(uint64_t), "FIB quadword capacity");
+    /* Two adjacent quadwords fit the reserved ABI region verified above. */
+    memcpy(fib->fib_Reserved, &size, sizeof(size)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    memcpy(fib->fib_Reserved + sizeof(size), &blocks, sizeof(blocks)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     if (size > INT32_MAX) fib->fib_Size = 0;
     if (blocks > INT32_MAX) fib->fib_NumBlocks = 0;
 }
@@ -2160,7 +2153,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         }
         int64_t offset;
         uint64_t value = f->offset;
-        memcpy(&offset, (const void *)pkt->dp_Arg2, sizeof(offset));
+        /* MorphOS ABI supplies two aligned quadwords; destination is int64_t. */
+        memcpy(&offset, (const void *)pkt->dp_Arg2, sizeof(offset)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         if (pkt->dp_Type == BFS_ACTION_SET_FILE_SIZE64) {
             res2 = ResizeFile(h, f, offset, pkt->dp_Arg3, INT64_MAX, &value);
         } else {
@@ -2170,7 +2164,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             res2 = position < 0 ? Pfs4ToDosError((bfs_err_t)position) : 0;
         }
         if (!res2) {
-            memcpy((void *)pkt->dp_Arg4, &value, sizeof(value));
+            /* The caller-owned output is exactly one ABI quadword. */
+            memcpy((void *)pkt->dp_Arg4, &value, sizeof(value)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
             res1 = DOSTRUE;
         }
         break;
@@ -2339,7 +2334,8 @@ void EntryPoint(void)
         int vlen = 0;
         while (vlen < BFS_VOLNAME_MAX && h->fs.txn.sb.volname[vlen]) vlen++;
         char vname[BFS_VOLNAME_MAX + 1];
-        memcpy(vname, h->fs.txn.sb.volname, vlen);
+        /* vlen is bounded above by BFS_VOLNAME_MAX; leave room for NUL. */
+        memcpy(vname, h->fs.txn.sb.volname, vlen); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         vname[vlen] = 0;
         h->volnode = RegisterVolumeNode(h, vname);
         if (!h->volnode) {
