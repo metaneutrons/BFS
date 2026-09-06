@@ -51,6 +51,12 @@ fi
 
 mkdir -p "$destination"
 install -m 0755 "${binaries[0]}" "$destination/lha"
-lha_version=$("$destination/lha" 2>&1)
-grep -q 'LHa for UNIX' <<< "$lha_version"
+if ! lha_version=$("$destination/lha" --version 2>&1); then
+    printf 'ERROR: installed LHa could not execute:\n%s\n' "$lha_version" >&2
+    exit 1
+fi
+if [[ "$lha_version" != *'LHa for UNIX'* ]]; then
+    printf 'ERROR: installed binary is not LHa for UNIX.\n' >&2
+    exit 1
+fi
 printf 'Installed pinned LHA %s in %s.\n' "$version" "$destination"
