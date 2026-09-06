@@ -10,6 +10,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
+      - name: Reject tracked binary artifacts
+        run: make repository-audit
       - run: make host-test
       - run: make tools build/host/mkbfs   # compile-check host tools so they don't bit-rot
 
@@ -72,10 +74,10 @@ jobs:
           ADF=test.adf
           xdftool $ADF create size=dd + format "Test" ofs + boot install
           xdftool $ADF makedir C
-          for f in C/*; do [ -f "$f" ] && xdftool $ADF write "$f" "C/$(basename $f)"; done
+          for f in C/*; do [ -f "$f" ] && xdftool $ADF write "$f" "C/$(basename "$f")"; done
           [ -f System/Format ] && xdftool $ADF write System/Format C/Format
           xdftool $ADF makedir Libs
-          for f in Libs/*; do [ -f "$f" ] && xdftool $ADF write "$f" "Libs/$(basename $f)"; done
+          for f in Libs/*; do [ -f "$f" ] && xdftool $ADF write "$f" "Libs/$(basename "$f")"; done
           xdftool $ADF makedir L
           xdftool $ADF write build/amiga/bfshandler L/bfshandler
           xdftool $ADF write build/amiga/bfs-stresstest C/bfs-stresstest

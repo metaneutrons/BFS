@@ -13,7 +13,7 @@ WB_SRC="${BFS_WB_DIR:-$HOME/Documents/fswb/amigaos/amiga-os-3.2/Workbench3.2}"
 IMAGE="$SCRIPT_DIR/test-drive.hdf"
 
 BFS_HANDLER="$BUILD_DIR/amiga/bfshandler"
-PFS3_HANDLER="${BFS_PFS3_HANDLER:-$HOME/Source/pfs3aio/pfs3aio}"
+PFS3_HANDLER="${BFS_PFS3_HANDLER:-$SCRIPT_DIR/.cache/pfs3aio}"
 BFS_TEST="$BUILD_DIR/amiga/bfs-test"
 
 # ── Prereqs ────────────────────────────────────────────────────

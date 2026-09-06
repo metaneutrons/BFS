@@ -32,6 +32,8 @@ contrib/homebrew/*.bottle*
 emulator-test/.wb32/
 emulator-test/ci-test.hdf
 emulator-test/.assets/
+.cache/
+*.fs-uae
 emulator-test/bench.hdf
 emulator-test/.bench-wb/
 emulator-test/bench-bfs.hdf

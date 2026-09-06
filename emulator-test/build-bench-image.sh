@@ -21,16 +21,16 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 
-ROM="$SCRIPT_DIR/.assets/A1200.47.102.rom"
-PFS3="$SCRIPT_DIR/benchmark/wb/L/pfs3aio"
-DISKSPEED="$SCRIPT_DIR/.cache/DiskSpeed"
-ASSETS="$SCRIPT_DIR/.assets"
+ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
+ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
+PFS3="${BFS_PFS3_HANDLER:-$SCRIPT_DIR/.cache/pfs3aio}"
+DISKSPEED="${BFS_DISKSPEED:-$SCRIPT_DIR/.cache/DiskSpeed}"
 
 # ── Prerequisites ─────────────────────────────────────────────
-[ -f "$ROM" ] || { echo "ERROR: ROM not found: $ROM"; exit 1; }
-[ -f "$PFS3" ] || { echo "ERROR: pfs3aio not found: $PFS3"; exit 1; }
-[ -f "$DISKSPEED" ] || { echo "ERROR: DiskSpeed not found: $DISKSPEED"; exit 1; }
-[ -d "$ASSETS/C" ] || { echo "ERROR: .assets/C/ not found"; exit 1; }
+[ -f "$ROM" ] || { echo "ERROR: ROM not found: $ROM (set BFS_ROM_FILE)"; exit 1; }
+[ -f "$PFS3" ] || { echo "ERROR: pfs3aio not found: $PFS3 (set BFS_PFS3_HANDLER)"; exit 1; }
+[ -f "$DISKSPEED" ] || { echo "ERROR: DiskSpeed not found: $DISKSPEED (set BFS_DISKSPEED)"; exit 1; }
+[ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
 command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
 [ -f "$PROJECT_DIR/build/amiga/bfshandler" ] || { echo "ERROR: run 'make amiga' first"; exit 1; }
 [ -f "$PROJECT_DIR/build/host/mkbfs" ] || { echo "ERROR: run 'make build/host/mkbfs' first"; exit 1; }
