@@ -7,6 +7,11 @@ SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMEOUT="${1:-300}"
 
+[[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ERROR: timeout must be a positive integer" >&2
+    exit 2
+}
+
 ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
 ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
 DISKSPEED="${BFS_DISKSPEED:-$SCRIPT_DIR/.cache/DiskSpeed}"
@@ -22,9 +27,9 @@ WB="$SCRIPT_DIR/.wb32"
 if [ ! -d "$WB/C" ]; then
     [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
     mkdir -p "$WB/C" "$WB/L" "$WB/Libs" "$WB/S" "$WB/Devs"
-    cp "$ASSETS/C/"* "$WB/C/" 2>/dev/null || true
-    cp "$ASSETS/L/"* "$WB/L/" 2>/dev/null || true
-    cp "$ASSETS/Libs/"* "$WB/Libs/" 2>/dev/null || true
+    cp -R "$ASSETS/C/." "$WB/C/"
+    if [ -d "$ASSETS/L" ]; then cp -R "$ASSETS/L/." "$WB/L/"; fi
+    if [ -d "$ASSETS/Libs" ]; then cp -R "$ASSETS/Libs/." "$WB/Libs/"; fi
 fi
 
 # Deploy handler + DiskSpeed
@@ -34,16 +39,28 @@ cp "$DISKSPEED" "$WB/C/DiskSpeed"
 # ── Create test HDF (128MB, pre-formatted BFS) ────────────────
 HDF="$SCRIPT_DIR/bench.hdf"
 rm -f "$HDF"
+PART_FILE=$(mktemp)
+PID=
+TIMER_PID=
+cleanup() {
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        if kill "$PID" 2>/dev/null; then :; fi
+    fi
+    if [ -n "$TIMER_PID" ] && kill "$TIMER_PID" 2>/dev/null; then
+        if wait "$TIMER_PID" 2>/dev/null; then :; fi
+    fi
+    rm -f "$PART_FILE" "$HDF"
+}
+trap cleanup EXIT
 rdbtool -f "$HDF" create size=128Mi cyls=256 heads=16 secs=32 \
     + init \
     + add name=BFS start=2 end=255 dostype=0x42465300 bootable=False \
     + fsadd "$PROJECT_DIR/build/amiga/bfshandler" version=1.0 dostype=0x42465300 >/dev/null 2>&1
 
-PART_FILE=$(mktemp)
 PART_BLOCKS=$(( (254 * 16 * 32 * 512) / 4096 ))
-dd if=/dev/zero of="$PART_FILE" bs=4096 count="$PART_BLOCKS" 2>/dev/null
+dd if=/dev/zero of="$PART_FILE" bs=4096 count="$PART_BLOCKS" status=none
 "$PROJECT_DIR/build/host/mkbfs" "$PART_FILE" >/dev/null
-dd if="$PART_FILE" of="$HDF" bs=512 seek=1024 conv=notrunc 2>/dev/null
+dd if="$PART_FILE" of="$HDF" bs=512 seek=1024 conv=notrunc status=none
 rm -f "$PART_FILE"
 
 # ── Write Startup-Sequence ────────────────────────────────────
@@ -87,10 +104,19 @@ echo "Starting FS-UAE..."
 
 FSEMU_AUDIO_DRIVER=null fs-uae "$CFG" &
 PID=$!
-(sleep "$TIMEOUT" && kill $PID 2>/dev/null) &
+(
+    sleep "$TIMEOUT"
+    if kill -0 "$PID" 2>/dev/null; then
+        kill "$PID" 2>/dev/null
+    fi
+) &
 TIMER_PID=$!
-wait $PID 2>/dev/null || true
-kill $TIMER_PID 2>/dev/null || true
+if wait "$PID" 2>/dev/null; then :; fi
+PID=
+if kill "$TIMER_PID" 2>/dev/null; then
+    if wait "$TIMER_PID" 2>/dev/null; then :; fi
+fi
+TIMER_PID=
 
 # ── Show results ──────────────────────────────────────────────
 RESULT="$WB/bench.txt"
@@ -103,5 +129,4 @@ echo ""
 echo "=== Results ==="
 cat "$RESULT"
 
-# Clean up HDF
-rm -f "$HDF"
+# The EXIT trap removes the temporary partition and HDF.

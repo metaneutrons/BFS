@@ -85,7 +85,9 @@ static bfs_err_t amiga_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
     if (ab->access_mode != ACCESS_STD)
         req->iotd_Req.io_Actual = (ULONG)(byte_off >> 32);
 
-    return DoIO((struct IORequest *)req) ? BFS_ERR_IO : BFS_OK;
+    if (DoIO((struct IORequest *)req) || req->iotd_Req.io_Actual != bio->block_size)
+        return BFS_ERR_IO;
+    return BFS_OK;
 }
 
 static bfs_err_t amiga_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
@@ -114,7 +116,9 @@ static bfs_err_t amiga_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
     if (ab->access_mode != ACCESS_STD)
         req->iotd_Req.io_Actual = (ULONG)(byte_off >> 32);
 
-    return DoIO((struct IORequest *)req) ? BFS_ERR_IO : BFS_OK;
+    if (DoIO((struct IORequest *)req) || req->iotd_Req.io_Actual != bio->block_size)
+        return BFS_ERR_IO;
+    return BFS_OK;
 }
 
 static bfs_err_t amiga_sync(bfs_bio_t *bio)
@@ -124,12 +128,19 @@ static bfs_err_t amiga_sync(bfs_bio_t *bio)
 
     /* Flush device buffers and ensure data is physically written */
     req->iotd_Req.io_Command = CMD_UPDATE;
-    DoIO((struct IORequest *)req);
+    req->iotd_Req.io_Data = NULL;
+    req->iotd_Req.io_Length = 0;
+    req->iotd_Req.io_Offset = 0;
+    req->iotd_Req.io_Actual = 0;
+    if (DoIO((struct IORequest *)req) != 0)
+        return BFS_ERR_IO;
 
     /* Turn off the floppy motor if applicable (standard Amiga behavior) */
-    req->iotd_Req.io_Command = TD_MOTOR;
-    req->iotd_Req.io_Length = 0;
-    DoIO((struct IORequest *)req);
+    if (ab->removable) {
+        req->iotd_Req.io_Command = TD_MOTOR;
+        req->iotd_Req.io_Length = 0;
+        DoIO((struct IORequest *)req);
+    }
 
     return BFS_OK;
 }
@@ -149,7 +160,7 @@ static const bfs_bio_ops_t amiga_bio_ops = {
 static UWORD detect_access_mode(struct IOExtTD *req)
 {
     /* 1. Try New Style Device (NSD) query */
-    struct NSDeviceQueryResult nsdqr;
+    struct NSDeviceQueryResult nsdqr = {0};
     req->iotd_Req.io_Command = NSCMD_DEVICEQUERY;
     req->iotd_Req.io_Data = &nsdqr;
     req->iotd_Req.io_Length = sizeof(nsdqr);
@@ -160,9 +171,12 @@ static UWORD detect_access_mode(struct IOExtTD *req)
         nsdqr.DeviceType == NSDEVTYPE_TRACKDISK) {
         UWORD *cmds = nsdqr.SupportedCommands;
         if (cmds) {
-            for (int i = 0; cmds[i]; i++) {
-                if (cmds[i] == NSCMD_TD_READ64) return ACCESS_NSD;
+            bool can_read = false, can_write = false;
+            for (int i = 0; i < 256 && cmds[i]; i++) {
+                if (cmds[i] == NSCMD_TD_READ64) can_read = true;
+                if (cmds[i] == NSCMD_TD_WRITE64) can_write = true;
             }
+            if (can_read && can_write) return ACCESS_NSD;
         }
     }
 
@@ -182,12 +196,24 @@ static UWORD detect_access_mode(struct IOExtTD *req)
 
 /* ── Public API ────────────────────────────────────────────── */
 
-void bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
-                        struct MsgPort *port, struct DosEnvec *env)
+bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
+                        struct MsgPort *port, struct DosEnvec *env,
+                        bool removable)
 {
+    if (!ab || !request || !port || !env || env->de_TableSize < DE_NUMBUFFERS ||
+        env->de_SizeBlock < 128 || env->de_SizeBlock > BFS_MAX_BLOCK_SIZE / 4u ||
+        (env->de_SizeBlock & (env->de_SizeBlock - 1u)) != 0 ||
+        !env->de_Surfaces || !env->de_BlocksPerTrack ||
+        env->de_HighCyl < env->de_LowCyl)
+        return BFS_ERR_INVAL;
     /* Calculate geometry from MountList environment vector */
     uint32_t sector_size = (uint32_t)env->de_SizeBlock << 2;
     uint64_t sectors_per_cyl = (uint64_t)env->de_Surfaces * (uint64_t)env->de_BlocksPerTrack;
+    if (sectors_per_cyl > UINT64_MAX / sector_size)
+        return BFS_ERR_INVAL;
+    uint64_t cylinder_bytes = sectors_per_cyl * sector_size;
+    if ((uint64_t)env->de_HighCyl + 1u > UINT64_MAX / cylinder_bytes)
+        return BFS_ERR_INVAL;
     uint64_t total_sectors = ((uint64_t)env->de_HighCyl - (uint64_t)env->de_LowCyl + 1) * sectors_per_cyl;
     uint64_t start_sector = (uint64_t)env->de_LowCyl * sectors_per_cyl;
 
@@ -199,9 +225,17 @@ void bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
     ab->partition_start_byte = start_sector * sector_size;
     ab->sector_size = sector_size;
     ab->total_sectors = total_sectors;
+    ab->removable = removable;
 
-    /* Detect device capabilities */
-    ab->access_mode = detect_access_mode(request);
+    /* Standard commands are both sufficient and most compatible below 4 GiB. */
+    uint64_t partition_end = ab->partition_start_byte + partition_size_bytes(ab);
+    if (partition_end >= ab->partition_start_byte && partition_end <= (1ULL << 32))
+        ab->access_mode = ACCESS_STD;
+    else
+        ab->access_mode = detect_access_mode(request);
+    if (partition_end > (1ULL << 32) && ab->access_mode == ACCESS_STD)
+        return BFS_ERR_INVAL;
+    return BFS_OK;
 }
 
 void bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size)
@@ -209,4 +243,18 @@ void bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size)
     uint64_t blocks = partition_size_bytes(ab) / fs_block_size;
     ab->base.block_size = fs_block_size;
     ab->base.block_count = (blocks > UINT32_MAX) ? UINT32_MAX : (bfs_blk_t)blocks;
+}
+
+bfs_err_t bfs_amiga_bio_probe_superblock(amiga_bio_t *ab, bfs_superblock_t *sb)
+{
+    if (!ab || !sb) return BFS_ERR_INVAL;
+    bfs_err_t result = BFS_ERR_CORRUPT;
+    for (uint32_t bs = BFS_MIN_BLOCK_SIZE; bs <= BFS_MAX_BLOCK_SIZE; bs *= 2u) {
+        bfs_amiga_bio_set_blocksize(ab, bs);
+        bfs_err_t err = bfs_sb_read(&ab->base, sb);
+        if (err == BFS_OK) return BFS_OK;
+        if (err == BFS_ERR_IO || err == BFS_ERR_NOMEM) result = err;
+    }
+    bfs_amiga_bio_set_blocksize(ab, ab->sector_size);
+    return result;
 }

@@ -44,12 +44,12 @@ int main(void)
     struct DevProc *dvp = GetDeviceProc(drive, NULL);
     if (dvp) {
         port = dvp->dvp_Port;
-        FreeDeviceProc(dvp);
     }
     if (!port) {
         PutStr("Cannot find handler for ");
         PutStr(drive);
         PutStr("\n");
+        if (dvp) FreeDeviceProc(dvp);
         FreeArgs(rdargs);
         me->pr_WindowPtr = oldwin;
         return 20;
@@ -58,7 +58,15 @@ int main(void)
     /* Build BSTR name */
     UBYTE bstr[BFS_NAME_BSTR_MAX];
     int nlen = 0;
-    while (name[nlen] && nlen < 31) { bstr[nlen + 1] = name[nlen]; nlen++; }  /* BFS_VOLNAME_MAX - 1 */
+    while (name[nlen]) nlen++;
+    if (nlen < 1 || nlen >= 32) {
+        PutStr("Volume names must contain 1 to 31 characters.\n");
+        FreeDeviceProc(dvp);
+        FreeArgs(rdargs);
+        me->pr_WindowPtr = oldwin;
+        return 10;
+    }
+    for (int i = 0; i < nlen; i++) bstr[i + 1] = (UBYTE)name[i];
     bstr[0] = nlen;
 
     PutStr("Formatting ");
@@ -68,16 +76,29 @@ int main(void)
     PutStr("\"...\n");
 
     /* Inhibit, format, un-inhibit */
-    Inhibit(drive, DOSTRUE);
+    if (!Inhibit(drive, DOSTRUE)) {
+        PrintFault(IoErr(), "bfsformat");
+        FreeDeviceProc(dvp);
+        FreeArgs(rdargs);
+        me->pr_WindowPtr = oldwin;
+        return 20;
+    }
     LONG res = DoPkt(port, ACTION_FORMAT, (LONG)MKBADDR(bstr), 0, 0, 0, 0);
-    Inhibit(drive, DOSFALSE);
+    LONG format_error = IoErr();
+    LONG uninhibited = Inhibit(drive, DOSFALSE);
+    LONG uninhibit_error = IoErr();
+    FreeDeviceProc(dvp);
 
     me->pr_WindowPtr = oldwin;
 
-    if (res) {
+    if (!uninhibited) {
+        PrintFault(uninhibit_error, "bfsformat");
+        FreeArgs(rdargs);
+        return 20;
+    } else if (res) {
         PutStr("Format complete.\n");
     } else {
-        PutStr("Format FAILED.\n");
+        PrintFault(format_error, "bfsformat");
         FreeArgs(rdargs);
         return 20;
     }

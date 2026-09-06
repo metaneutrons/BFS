@@ -10,14 +10,13 @@
 # 6. Read test-report.txt from WB dir
 # 7. Run verify, exit with result
 #
-set -e
+set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(dirname "$SCRIPT_DIR")"
 BUILD_DIR="$PROJECT_DIR/build/amiga"
 BUILD_HOST="$PROJECT_DIR/build/host"
 CONFIG_DIR="$SCRIPT_DIR/config"
-AROS_DIR="$SCRIPT_DIR/aros"
 HDF="$SCRIPT_DIR/bfs-stress.hdf"
 HDF_SIZE=256  # MB
 TIMEOUT=120
@@ -40,7 +39,7 @@ check_prereqs() {
 
 build_all() {
     echo "=== Building handler + stress test ==="
-    make -C "$PROJECT_DIR" amiga amiga-stresstest
+    make -C "$PROJECT_DIR" amiga amiga-stresstest build/host/mkbfs
 
     echo "=== Building verify tool ==="
     mkdir -p "$BUILD_HOST"
@@ -51,7 +50,8 @@ build_all() {
 
 create_hdf() {
     echo "=== Creating ${HDF_SIZE}MB test HDF ==="
-    dd if=/dev/zero of="$HDF" bs=1M count=$HDF_SIZE 2>/dev/null
+    dd if=/dev/zero of="$HDF" bs=1M count="$HDF_SIZE" status=none
+    "$BUILD_HOST/mkbfs" "$HDF" 4096 BFSStress
     echo "Created: $HDF"
 }
 
@@ -62,6 +62,7 @@ create_config() {
     local KICKSTART="${AMIGA_KICKSTART:-${HOME}/Documents/amiga/rom/kick.a1200.47.102.rom}"
     local WB_DIR="${AMIGA_WORKBENCH:-${HOME}/Documents/fswb/amigaos/amiga-os-3.2/Workbench3.2}"
 
+    mkdir -p "$CONFIG_DIR"
     cat > "$CONF" << EOF
 [fs-uae]
 amiga_model = A1200
@@ -92,8 +93,8 @@ automatic_input_grab = 0
 EOF
     fi
 
-    echo "Created config: $CONF"
-    echo "$CONF"
+    printf 'Created config: %s\n' "$CONF" >&2
+    printf '%s\n' "$CONF"
 }
 
 # ── Install stress test binary into WB ─────────────────────────
@@ -104,7 +105,10 @@ install_stresstest() {
     local S_DIR="$WB_DIR/S"
 
     echo "=== Installing stress test binary ==="
+    [ -d "$C_DIR" ] || { echo "ERROR: Workbench C directory not found: $C_DIR"; exit 1; }
+    [ -d "$S_DIR" ] || { echo "ERROR: Workbench S directory not found: $S_DIR"; exit 1; }
     cp "$BUILD_DIR/bfs-stresstest" "$C_DIR/bfs-stresstest"
+    rm -f "$WB_DIR/test-report.txt" "$REPORT"
 
     # Write Startup-Sequence that runs the stress test
     cat > "$S_DIR/Startup-Sequence" << 'EOF'
@@ -122,18 +126,46 @@ EOF
 
 run_emulator() {
     local CONF="$1"
+    local emulator_rc=0
     echo "=== Running FS-UAE (timeout ${TIMEOUT}s) ==="
 
     if command -v gtimeout &>/dev/null; then
-        gtimeout "$TIMEOUT" fs-uae "$CONF" 2>&1 || true
+        if gtimeout "$TIMEOUT" fs-uae "$CONF" 2>&1; then
+            emulator_rc=0
+        else
+            emulator_rc=$?
+        fi
     elif command -v timeout &>/dev/null; then
-        timeout "$TIMEOUT" fs-uae "$CONF" 2>&1 || true
+        if timeout "$TIMEOUT" fs-uae "$CONF" 2>&1; then
+            emulator_rc=0
+        else
+            emulator_rc=$?
+        fi
     else
-        # macOS fallback: background + sleep + kill
+        local PID TIMER_PID
         fs-uae "$CONF" &
-        local PID=$!
-        sleep "$TIMEOUT" && kill "$PID" 2>/dev/null &
-        wait "$PID" 2>/dev/null || true
+        PID=$!
+        (
+            sleep "$TIMEOUT"
+            if kill -0 "$PID" 2>/dev/null; then
+                kill "$PID" 2>/dev/null
+            fi
+        ) &
+        TIMER_PID=$!
+        if wait "$PID" 2>/dev/null; then
+            emulator_rc=0
+        else
+            emulator_rc=$?
+        fi
+        if kill "$TIMER_PID" 2>/dev/null; then
+            if wait "$TIMER_PID" 2>/dev/null; then :; fi
+        fi
+    fi
+
+    if [ "$emulator_rc" -ne 0 ] && [ "$emulator_rc" -ne 124 ] && \
+       [ "$emulator_rc" -ne 143 ]; then
+        printf 'WARNING: FS-UAE exited with status %s; validating the fresh report.\n' \
+            "$emulator_rc" >&2
     fi
 }
 

@@ -1,2 +1,1 @@
-bfs-test DH1: >SYS:bfs-test.result
-Assign >NIL: RESULT: EXISTS SYS:bfs-test.result
+C:bfs-test DH1: LOG=SYS:bfs-test.result

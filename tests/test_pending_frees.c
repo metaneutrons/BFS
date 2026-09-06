@@ -59,6 +59,9 @@ static void setup(void)
 static void teardown(void)
 {
     bfs_fs_unmount(&g_fs);
+    bfs_fs_abandon(&g_fs);
+    bfs_bio_close(g_bio);
+    g_bio = NULL;
     unlink(TEST_IMG);
 }
 

@@ -80,9 +80,9 @@ static void test_io_error_during_read(void)
                                      &found_ino, &type);
     TEST_ASSERT_EQ(err, BFS_ERR_CORRUPT);
 
-    /* Clean teardown — unmount will fail but we just close the bio */
+    /* Discard in-memory state without writing back into the corrupt image. */
+    bfs_fs_abandon(fs);
     bfs_bio_close(fs->bio);
-    fs->mounted = false;
     unlink(TEST_IMG);
 }
 

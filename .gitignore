@@ -3,6 +3,7 @@ build/
 dist*/
 *.o
 *.d
+*.gcov
 
 # Generated Python bytecode
 __pycache__/

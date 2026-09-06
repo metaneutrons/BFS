@@ -6,6 +6,7 @@
 #include "bfs_btree.h"
 #include "block_device_emu.h"
 #include <unistd.h>
+#include <stdlib.h>
 
 /* Forward declarations for bootstrap allocator */
 typedef struct {
@@ -56,6 +57,7 @@ static void test_empty_tree_search(void)
     make_key(&key, 42);
     TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_ERR_NOTFOUND);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -84,6 +86,7 @@ static void test_single_insert_search(void)
     make_key(&key, 101);
     TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &result), BFS_ERR_NOTFOUND);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -106,6 +109,7 @@ static void test_duplicate_insert(void)
     TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
     TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_ERR_EXISTS);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -142,6 +146,7 @@ static void test_sequential_inserts(void)
     /* Tree should have grown beyond 1 level */
     TEST_ASSERT(tree.height > 1);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -172,6 +177,7 @@ static void test_reverse_inserts(void)
         TEST_ASSERT_EQ(read_key(&result), i + 1000);
     }
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -219,6 +225,7 @@ static void test_scan_all(void)
     for (uint32_t i = 0; i < 200; i++)
         TEST_ASSERT_EQ(sc.keys[i], i);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -251,6 +258,7 @@ static void test_scan_from_key(void)
     TEST_ASSERT_EQ(sc.keys[0], 50);
     TEST_ASSERT_EQ(sc.keys[74], 198);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -295,6 +303,7 @@ static void test_cow_old_root_preserved(void)
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     TEST_ASSERT_EQ(bfs_be32(hdr->magic), BFS_NODE_MAGIC);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -321,6 +330,7 @@ static void test_single_delete(void)
     /* Delete non-existent key */
     TEST_ASSERT_EQ(bfs_btree_delete(&tree, &key), BFS_ERR_NOTFOUND);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -355,6 +365,7 @@ static void test_delete_all(void)
     /* Tree should be empty */
     TEST_ASSERT_EQ(tree.root, BFS_BLK_NULL);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -394,6 +405,7 @@ static void test_delete_reverse(void)
 
     TEST_ASSERT_EQ(tree.root, BFS_BLK_NULL);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -443,6 +455,7 @@ static void test_insert_delete_interleaved(void)
     for (uint32_t i = 0; i < 100; i++)
         TEST_ASSERT_EQ(sc.keys[i], i * 2 + 1);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -463,6 +476,7 @@ static void test_search_floor_empty_tree(void)
     make_key(&key, 10);
     TEST_ASSERT_EQ(bfs_btree_search_floor(&tree, &key, &key_out, &val_out), BFS_ERR_NOTFOUND);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -489,6 +503,7 @@ static void test_search_floor_key_smaller_than_all(void)
     make_key(&search, 5);
     TEST_ASSERT_EQ(bfs_btree_search_floor(&tree, &search, &key_out, &val_out), BFS_ERR_NOTFOUND);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -517,6 +532,7 @@ static void test_search_floor_key_larger_than_all(void)
     TEST_ASSERT_EQ(read_key(&key_out), 20);
     TEST_ASSERT_EQ(read_key(&val_out), 200);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
@@ -547,6 +563,7 @@ static void test_search_floor_exact_match(void)
     TEST_ASSERT_EQ(read_key(&key_out), 20);
     TEST_ASSERT_EQ(read_key(&val_out), 200);
 
+    free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }

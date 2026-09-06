@@ -13,7 +13,7 @@
 - **O(n) directory scans** — linear search through linked blocks
 - **Anode chains** — file extent lookup is O(n) in fragment count
 - **No checksums** — silent corruption goes undetected
-- **~1.6 TB limit** — 32-bit block numbers × 512-byte blocks
+- **~1.6 TB limit** — practical PFS3 partition-size ceiling
 
 BFS is a **clean-break successor** with a modern on-disk format. It is NOT a
 fork of PFS3 — it is a complete fresh implementation from scratch with zero shared
@@ -31,12 +31,12 @@ code.
 | Snapshots | — | B+tree based (Read-only) |
 | Defragmentation | Offline | **Online Compaction** |
 | Max filename | 107 chars | 255 chars |
-| Max volume size | ~1.6 TB | 16 TB (4K blocks) |
+| Max volume size | ~1.6 TB | 4 TiB at 1K blocks; 16 TiB at 4K |
 | Hard links | Yes | Yes |
 | Soft links | Yes | Yes |
 | File comments | Yes | Yes |
 | Free space tracking | Bitmap | Self-hosting B+tree |
-| Automated tests | — | **220 tests** + emulator integration |
+| Automated tests | — | Core, fault-injection and emulator suites |
 
 ## Architecture
 
@@ -71,8 +71,8 @@ The B+tree engine is shared across all metadata types, utilizing a **dynamic tra
 
 ## Limitations
 
-- **Data blocks are not COW'd** — metadata is always consistent; data consistency can be enforced using the optional `data=ordered` mode.
-- **Very large snapshots** — creating or deleting a snapshot on an extremely large volume (or reclaiming a single multi-GB shared file) can exhaust the bounded deferred-free queue and fail safely with an out-of-space error rather than completing; a resumable reclaim is on the roadmap. Ordinary metadata operations reserve queue headroom up front and never overflow.
+- **Data update atomicity** — snapshot-shared data uses COW; unshared live data can be overwritten in place. Ordered writes do not make those in-place updates atomic.
+- **Reclamation and memory** — deletion is crash-resumable at committed inode boundaries. Large reclaim units reserve memory before mutation and can exceed the inline deferred-free queue, but memory exhaustion still prevents completion. Deferred frees are not a persistent journal; interrupted operations can leak space. See [failure semantics](docs/failure-semantics.md).
 - **Needs real-world testing** — no production use on actual Amiga hardware yet.
 
 ## Building
@@ -85,7 +85,7 @@ make host-test
 
 ### Amiga handler (cross-compile)
 
-Requires [bebbo's m68k-amigaos-gcc](https://github.com/bebbo/amiga-gcc):
+Requires the [AmigaPorts m68k-amigaos-gcc toolchain](https://github.com/AmigaPorts/m68k-amigaos-gcc):
 
 ```bash
 brew install metaneutrons/tap/amiga-gcc   # macOS
@@ -93,6 +93,13 @@ make amiga
 ```
 
 Output: `build/amiga/bfshandler`
+
+`make release` builds separate handlers for 68020, 68030, 68040, 68060 and Apollo
+68080. The unsuffixed `bfshandler` is the 68020 build; `bfshandler.080` targets
+Apollo without AMMX. The command-line utilities use the same explicit libnix
+runtime as the handler. A successful build is not physical hardware qualification.
+
+Release acceptance follows the [release-readiness plan](docs/plans/release-readiness.md).
 
 ### Stress test binary
 
@@ -114,7 +121,7 @@ make bench
 
 ## Testing
 
-220 host tests across 28 suites:
+The host suites cover:
 
 - **B+tree** — insert, split, delete, merge, scan, COW isolation, **compaction**
 - **Free space** — alloc, free, coalesce, self-hosting, disk-full
@@ -133,7 +140,7 @@ make bench
 - **Model checking** — property-based invariant verification (12,500 checks)
 - **Real-world** — large directory workloads, fragmentation patterns
 - **Hunt** — targeted regression tests
-- **Snapshots** — create, delete, list, mount (read-only)
+- **Snapshots** — create, delete, list, and inspect read-only snapshot metadata
 - **Deferred-free queue** — headroom reserve, non-silent overflow latch, compaction mass-free, no-leak under delete-storm churn
 
 ### Emulator integration test

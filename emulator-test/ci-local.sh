@@ -10,8 +10,17 @@ PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 TIMEOUT="${1:-300}"
 FILTER="${2:-}"
 
-ROM="${BFS_ROM_FILE:-$SCRIPT_DIR/.assets/A1200.47.102.rom}"
-WB_ISO="${BFS_WB_ISO:-/Volumes/retro/Amiga/OS/3.2/AmigaOS3.2CD.iso}"
+[[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ERROR: timeout must be a positive integer" >&2
+    exit 2
+}
+[[ -z "$FILTER" || "$FILTER" =~ ^[A-Za-z0-9_-]+$ ]] || {
+    echo "ERROR: filter contains unsupported characters" >&2
+    exit 2
+}
+
+ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
+ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
 
 # ── Verify prerequisites ──────────────────────────────────────
 [ -f "$ROM" ] || { echo "ERROR: ROM not found: $ROM"; exit 1; }
@@ -23,12 +32,11 @@ command -v fs-uae >/dev/null || { echo "ERROR: fs-uae not found"; exit 1; }
 WB="$SCRIPT_DIR/.wb32"
 if [ ! -d "$WB/C" ]; then
     echo "Setting up minimal WB3.2 environment..."
-    ASSETS="$SCRIPT_DIR/.assets"
     if [ -d "$ASSETS/C" ]; then
         mkdir -p "$WB/C" "$WB/L" "$WB/Libs" "$WB/S" "$WB/Devs"
-        cp "$ASSETS/C/"* "$WB/C/" 2>/dev/null || true
-        cp "$ASSETS/L/"* "$WB/L/" 2>/dev/null || true
-        cp "$ASSETS/Libs/"* "$WB/Libs/" 2>/dev/null || true
+        cp -R "$ASSETS/C/." "$WB/C/"
+        if [ -d "$ASSETS/L" ]; then cp -R "$ASSETS/L/." "$WB/L/"; fi
+        if [ -d "$ASSETS/Libs" ]; then cp -R "$ASSETS/Libs/." "$WB/Libs/"; fi
     else
         echo "ERROR: .assets/C/ not found. Run setup first."
         exit 1
@@ -42,17 +50,31 @@ cp "$PROJECT_DIR/build/amiga/bfs-test" "$WB/C/"
 # ── Create test HDF with pre-formatted BFS partition ──────────
 HDF="$SCRIPT_DIR/ci-test.hdf"
 rm -f "$HDF"
+PART_FILE=$(mktemp)
+PID=
+TIMER_PID=
+# Called indirectly by the EXIT trap below (SC2317 on older ShellCheck).
+# shellcheck disable=SC2329,SC2317
+cleanup() {
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        if kill "$PID" 2>/dev/null; then :; fi
+    fi
+    if [ -n "$TIMER_PID" ] && kill "$TIMER_PID" 2>/dev/null; then
+        if wait "$TIMER_PID" 2>/dev/null; then :; fi
+    fi
+    rm -f "$PART_FILE"
+}
+trap cleanup EXIT
 rdbtool -f "$HDF" create size=128Mi cyls=256 heads=16 secs=32 \
     + init \
     + add name=BFS start=2 end=255 dostype=0x42465300 bootable=False \
     + fsadd "$PROJECT_DIR/build/amiga/bfshandler" version=1.0 dostype=0x42465300 >/dev/null 2>&1
 
 # Format partition area with BFS
-PART_FILE=$(mktemp)
 PART_BLOCKS=$(( (254 * 16 * 32 * 512) / 4096 ))
-dd if=/dev/zero of="$PART_FILE" bs=4096 count="$PART_BLOCKS" 2>/dev/null
+dd if=/dev/zero of="$PART_FILE" bs=4096 count="$PART_BLOCKS" status=none
 "$PROJECT_DIR/build/host/mkbfs" "$PART_FILE" >/dev/null
-dd if="$PART_FILE" of="$HDF" bs=512 seek=1024 conv=notrunc 2>/dev/null
+dd if="$PART_FILE" of="$HDF" bs=512 seek=1024 conv=notrunc status=none
 rm -f "$PART_FILE"
 
 # ── Write Startup-Sequence ────────────────────────────────────
@@ -94,10 +116,19 @@ echo "Starting FS-UAE..."
 
 FSEMU_AUDIO_DRIVER=null fs-uae "$CFG" &
 PID=$!
-(sleep "$TIMEOUT" && kill $PID 2>/dev/null) &
+(
+    sleep "$TIMEOUT"
+    if kill -0 "$PID" 2>/dev/null; then
+        kill "$PID" 2>/dev/null
+    fi
+) &
 TIMER_PID=$!
-wait $PID 2>/dev/null || true
-kill $TIMER_PID 2>/dev/null || true
+if wait "$PID" 2>/dev/null; then :; fi
+PID=
+if kill "$TIMER_PID" 2>/dev/null; then
+    if wait "$TIMER_PID" 2>/dev/null; then :; fi
+fi
+TIMER_PID=
 
 # ── Evaluate results ──────────────────────────────────────────
 RESULT="$WB/result.txt"
@@ -107,25 +138,32 @@ if [ ! -f "$RESULT" ]; then
 fi
 
 # Parse structured log: "# SUMMARY\tpass\trun\tfail"
-SUMMARY=$(grep "^# SUMMARY" "$RESULT" 2>/dev/null || true)
+SUMMARY=
+if summary_lines=$(grep "^# SUMMARY" "$RESULT" 2>/dev/null); then
+    SUMMARY=$(printf '%s\n' "$summary_lines" | tail -n 1)
+fi
 if [ -n "$SUMMARY" ]; then
-    PASS=$(echo "$SUMMARY" | cut -f2)
-    RUN=$(echo "$SUMMARY" | cut -f3)
-    FAIL=$(echo "$SUMMARY" | cut -f4)
+    IFS=$'\t' read -r marker PASS RUN FAIL <<< "$SUMMARY"
+    [[ "$marker" == "# SUMMARY" && "$PASS" =~ ^[0-9]+$ &&
+       "$RUN" =~ ^[0-9]+$ && "$FAIL" =~ ^[0-9]+$ ]] || {
+        echo "ERROR: malformed test summary" >&2
+        exit 1
+    }
 else
-    PASS=$(grep -c "^PASS" "$RESULT" 2>/dev/null || true)
-    FAIL=$(grep -c "^FAIL" "$RESULT" 2>/dev/null || true)
+    PASS=$(awk -F '\t' '$1 == "PASS" { count++ } END { print count + 0 }' "$RESULT")
+    FAIL=$(awk -F '\t' '$1 == "FAIL" { count++ } END { print count + 0 }' "$RESULT")
+    RUN=$((PASS + FAIL))
 fi
 PASS=${PASS:-0}
 FAIL=${FAIL:-0}
+RUN=${RUN:-0}
 
 echo ""
 echo "=== Results: $PASS passed, $FAIL failed ==="
-grep "^FAIL" "$RESULT" 2>/dev/null | while IFS='	' read -r _ name detail; do
-    echo "  FAIL $name: $detail"
-done
+awk -F '\t' '$1 == "FAIL" { printf "  FAIL %s: %s\n", $2, $3 }' "$RESULT"
 
-[ "$FAIL" -eq 0 ] && [ "$PASS" -gt 0 ] && echo "ALL TESTS PASSED" && exit 0
+[ "$FAIL" -eq 0 ] && [ "$RUN" -gt 0 ] && [ "$PASS" -eq "$RUN" ] && \
+    echo "ALL TESTS PASSED" && exit 0
 [ "$FAIL" -gt 0 ] && exit 1
 echo "WARNING: Tests may have been interrupted (timeout)"
 exit 2
