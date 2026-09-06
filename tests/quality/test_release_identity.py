@@ -24,7 +24,7 @@ class ReleaseIdentityTests(unittest.TestCase):
         self.git("commit", "-qm", "test: identity fixture")
 
     def git(self, *arguments):
-        return subprocess.run(["git", *arguments], cwd=self.root,  # nosec B603
+        return subprocess.run(["/usr/bin/git", *arguments], cwd=self.root,  # nosec B603
                               check=True, capture_output=True, text=True)
 
     def write_versions(self, version):
