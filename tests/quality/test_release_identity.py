@@ -1,7 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 import json
 from pathlib import Path
-import shutil
 import subprocess  # nosec B404 - isolated local Git fixtures and the reviewed identity gate
 import tempfile
 import unittest
@@ -25,7 +24,7 @@ class ReleaseIdentityTests(unittest.TestCase):
         self.git("commit", "-qm", "test: identity fixture")
 
     def git(self, *arguments):
-        return subprocess.run([shutil.which("git"), *arguments], cwd=self.root,  # nosec B603
+        return subprocess.run(["git", *arguments], cwd=self.root,  # nosec B603
                               check=True, capture_output=True, text=True)
 
     def write_versions(self, version):

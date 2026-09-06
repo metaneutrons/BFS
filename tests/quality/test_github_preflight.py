@@ -13,7 +13,7 @@ import github_preflight as preflight
 
 class GithubPreflightTests(unittest.TestCase):
     def test_write_access_advertisement_and_denial(self):
-        with patch.dict("os.environ", {"GH_TOKEN": "isolated_test_value"}):
+        with patch.dict("os.environ", {"GH_TOKEN": "ghs_fixture"}):
             for payload in (b"001f# service=git-receive-pack\n", b"not a Git advertisement"):
                 with patch.object(preflight, "urlopen", return_value=io.BytesIO(payload)):
                     if payload.startswith(b"001f"):
@@ -41,7 +41,7 @@ class GithubPreflightTests(unittest.TestCase):
     def test_only_explicit_404_means_absent(self):
         for code in (401, 403, 404, 429, 500):
             error = HTTPError("https://api.github.com/", code, "fixture", {}, None)
-            with patch.dict("os.environ", {"GH_TOKEN": "isolated_test_value"}), \
+            with patch.dict("os.environ", {"GH_TOKEN": "ghs_fixture"}), \
                     patch.object(preflight, "urlopen", side_effect=error):
                 if code == 404:
                     self.assertIsNone(preflight.api_get("fixture", allow_missing=True))
@@ -52,7 +52,7 @@ class GithubPreflightTests(unittest.TestCase):
                     preflight.api_get("fixture")
 
     def test_valid_json_and_network_failure(self):
-        with patch.dict("os.environ", {"GH_TOKEN": "isolated_test_value"}):
+        with patch.dict("os.environ", {"GH_TOKEN": "ghs_fixture"}):
             with patch.object(preflight, "urlopen", return_value=io.BytesIO(b'{"id": 1}')):
                 self.assertEqual(preflight.api_get("fixture"), {"id": 1})
             with patch.object(preflight, "urlopen", side_effect=URLError("network unavailable")):
