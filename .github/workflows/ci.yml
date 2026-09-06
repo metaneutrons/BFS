@@ -1,135 +1,151 @@
-name: BFS
+name: BFS CI
 
 on:
   push:
-    branches: [master, main]
+    branches: [main]
   pull_request:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
 jobs:
-  host-tests:
-    runs-on: ubuntu-latest
+  commit-hygiene:
+    name: Commit Hygiene
+    runs-on: ubuntu-24.04
     steps:
-      - uses: actions/checkout@v7
-      - name: Reject tracked binary artifacts
-        run: make repository-audit
-      - run: make host-test
-      - run: make tools build/host/mkbfs   # compile-check host tools so they don't bit-rot
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Check pull request and commit attribution
+        run: tools/check-commit-hygiene.sh
+
+  quality:
+    name: Repository Quality
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0
+      - name: Install pinned CI tools
+        run: |
+          set -euo pipefail
+          tools/install-ci-tools.sh "$RUNNER_TEMP/bin"
+          echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+      - name: Validate repository and quality gates
+        run: |
+          set -euo pipefail
+          make repository-audit
+          make quality-gates
+          make shellcheck
+          make actionlint
+          make secrets-scan
+
+  host-tests:
+    name: Host Tests (${{ matrix.compiler }})
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Build and run host tests
+        env:
+          HOST_CC: ${{ matrix.compiler }}
+        run: make host-test HOST_CC="$HOST_CC"
+      - name: Compile host tools
+        env:
+          HOST_CC: ${{ matrix.compiler }}
+        run: make tools build/host/mkbfs HOST_CC="$HOST_CC"
+
+  sanitizers:
+    name: Address and Undefined Behavior Sanitizers
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run sanitizer suite
+        run: make sanitize HOST_CC=clang
+
+  static-analysis:
+    name: Clang Static Analyzer
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Analyze core and host block device
+        run: make analyze
+
+  coverage:
+    name: Coverage
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install uv
+        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        with:
+          version: 0.8.17
+      - name: Enforce line coverage floor
+        run: make coverage HOST_CC=gcc GCOVR='uvx --from gcovr==8.3 gcovr'
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: coverage-report
+          path: build/coverage.xml
+          if-no-files-found: error
 
   integration-test:
-    runs-on: ubuntu-latest
+    name: Amiga Integration Test
+    runs-on: ubuntu-24.04
     needs: host-tests
-    timeout-minutes: 20
+    timeout-minutes: 45
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
 
-      - name: Prepare environment
-        id: prep
+      - name: Install emulator and pinned cross-compiler
+        id: toolchain
         env:
-          CI_TEST_ENV: ${{ secrets.CI_TEST_ENV }}
-          GH_TOKEN: ${{ github.token }}
+          AMIGA_GCC_IMAGE: amigadev/m68k-amigaos-gcc@sha256:b18080e6ffca8f793e0f539536a9138e9d2a548ca1a301c7483f43ee15fedfed
         run: |
-          # The emulator test needs a Kickstart ROM + Workbench assets that are
-          # encrypted in a private release and cannot live in the repo. Without
-          # the secret (forks, fork PRs) we genuinely cannot run it, so we skip
-          # and the job stays green. But when the secret IS present, a download,
-          # decrypt or test failure must fail the build — that is the whole point.
-          if [ -z "$CI_TEST_ENV" ]; then
-            echo "No CI_TEST_ENV secret (fork or fork PR) — skipping integration test."
-            echo "skip=true" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          ASSET_NAME="${CI_TEST_ENV%%|*}"
-          ASSET_KEY="${CI_TEST_ENV##*|}"
-          gh release download ci-assets --pattern "$ASSET_NAME"
-          openssl enc -d -aes-256-cbc -pbkdf2 -pass "pass:$ASSET_KEY" -in "$ASSET_NAME" | tar xz
-          rm -f "$ASSET_NAME"
-          echo "skip=false" >> "$GITHUB_OUTPUT"
-
-      - name: Install emulator and cross-compiler
-        if: steps.prep.outputs.skip != 'true'
-        run: |
+          set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq fs-uae xvfb python3-pip wget
-          pip3 install amitools
-          # bebbo m68k-amigaos-gcc (prebuilt) — same toolchain as release.yml
-          wget -q https://github.com/bebbo/amiga-gcc/releases/latest/download/amiga-gcc-ubuntu-latest.tar.gz
-          sudo tar xzf amiga-gcc-ubuntu-latest.tar.gz -C /opt/
-          echo "/opt/amiga/bin" >> "$GITHUB_PATH"
+          sudo apt-get install -y -qq --no-install-recommends fs-uae xvfb
 
-      - name: Build Amiga handler
-        if: steps.prep.outputs.skip != 'true'
-        # AMIGA_PREFIX must be passed on the command line: the Makefile assigns it
-        # with '=', which overrides the environment, so an exported value is ignored.
-        run: make amiga amiga-stresstest AMIGA_PREFIX=/opt/amiga/m68k-amigaos
+          docker pull "$AMIGA_GCC_IMAGE"
+          container=$(docker create "$AMIGA_GCC_IMAGE")
+          trap 'docker rm -f "$container" >/dev/null 2>&1' EXIT
+          docker cp "$container:/opt/amiga" "$RUNNER_TEMP/amiga"
+          echo "$RUNNER_TEMP/amiga/bin" >> "$GITHUB_PATH"
+          echo "prefix=$RUNNER_TEMP/amiga/m68k-amigaos" >> "$GITHUB_OUTPUT"
 
-      - name: Prepare test image
-        if: steps.prep.outputs.skip != 'true'
+      - name: Build and run the Amiga integration suite
         run: |
-          # Format the test image with the real mkbfs tool (no throwaway heredoc)
-          make build/host/mkbfs
-          dd if=/dev/zero of=test.hdf bs=1M count=256 2>/dev/null
-          ./build/host/mkbfs test.hdf 4096 Vol
+          set -euo pipefail
+          make release AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
+          make ci-test AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
 
-          # Build test media
-          ADF=test.adf
-          xdftool $ADF create size=dd + format "Test" ofs + boot install
-          xdftool $ADF makedir C
-          for f in C/*; do [ -f "$f" ] && xdftool $ADF write "$f" "C/$(basename "$f")"; done
-          [ -f System/Format ] && xdftool $ADF write System/Format C/Format
-          xdftool $ADF makedir Libs
-          for f in Libs/*; do [ -f "$f" ] && xdftool $ADF write "$f" "Libs/$(basename "$f")"; done
-          xdftool $ADF makedir L
-          xdftool $ADF write build/amiga/bfshandler L/bfshandler
-          xdftool $ADF write build/amiga/bfs-stresstest C/bfs-stresstest
-          xdftool $ADF makedir S
-          printf 'Assign C: Test:C\nAssign L: Test:L\nAssign LIBS: Test:Libs\nC:bfs-stresstest DH0: >Test:result\n' > /tmp/s
-          xdftool $ADF write /tmp/s S/Startup-Sequence
+      - name: Preserve emulator evidence
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        with:
+          name: amiga-integration-evidence
+          path: build/emulator/run.*
+          if-no-files-found: error
 
-      - name: Run emulator and check results
-        if: steps.prep.outputs.skip != 'true'
+  ci-success:
+    name: CI Success
+    if: always()
+    needs:
+      [commit-hygiene, quality, host-tests, sanitizers, static-analysis, coverage, integration-test]
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Require every preceding job
+        env:
+          NEEDS: ${{ toJSON(needs) }}
         run: |
-          ROM=$(find . -maxdepth 1 -name "*.rom" | head -1)
-          if [ -z "$ROM" ]; then
-            echo "::error::No Kickstart ROM found in the decrypted assets"
-            exit 1
-          fi
-          cat > /tmp/test.cfg << EOF
-          [fs-uae]
-          amiga_model = A1200
-          chip_memory = 2048
-          fast_memory = 8192
-          cpu = 68020
-          kickstart_file = $(pwd)/$ROM
-          floppy_drive_0 = $(pwd)/test.adf
-          hard_drive_0 = $(pwd)/test.hdf
-          floppy_speed = 0
-          uae_cpu_speed = max
-          window_hidden = 1
-          EOF
-          # Retry to absorb emulator flakiness, then REQUIRE a result. A missing
-          # result, any FAIL, or zero PASS markers all fail the build.
-          REPORT=""
-          for attempt in 1 2 3; do
-            echo "fs-uae run, attempt $attempt..."
-            xvfb-run -a timeout 180 fs-uae /tmp/test.cfg 2>/dev/null || true
-            REPORT=$(xdftool test.adf read result 2>/dev/null || true)
-            [ -n "$REPORT" ] && break
-            echo "No result file produced; retrying."
-          done
-          if [ -z "$REPORT" ]; then
-            echo "::error::Emulator produced no result after 3 attempts"
-            exit 1
-          fi
-          echo "----- result -----"; echo "$REPORT"; echo "------------------"
-          PASS=$(echo "$REPORT" | grep -c "PASS" || true)
-          FAIL=$(echo "$REPORT" | grep -c "FAIL" || true)
-          echo "### Integration Test: $PASS passed, $FAIL failed" >> "$GITHUB_STEP_SUMMARY"
-          if [ "$FAIL" -gt 0 ]; then
-            echo "::error::Amiga integration test reported $FAIL failure(s)"
-            exit 1
-          fi
-          if [ "$PASS" -eq 0 ]; then
-            echo "::error::Amiga integration test produced no PASS markers"
-            exit 1
-          fi
-          echo "Integration test passed ($PASS checks)."
+          set -euo pipefail
+          tools/check-ci-results.sh

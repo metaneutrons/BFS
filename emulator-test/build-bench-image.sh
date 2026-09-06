@@ -42,9 +42,9 @@ WB="$SCRIPT_DIR/.bench-wb"
 rm -rf "$WB"
 mkdir -p "$WB/C" "$WB/L" "$WB/Libs" "$WB/S" "$WB/Devs" "$WB/Results"
 
-cp "$ASSETS/C/"* "$WB/C/" 2>/dev/null || true
-cp "$ASSETS/L/"* "$WB/L/" 2>/dev/null || true
-cp "$ASSETS/Libs/"* "$WB/Libs/" 2>/dev/null || true
+cp -R "$ASSETS/C/." "$WB/C/"
+if [ -d "$ASSETS/L" ]; then cp -R "$ASSETS/L/." "$WB/L/"; fi
+if [ -d "$ASSETS/Libs" ]; then cp -R "$ASSETS/Libs/." "$WB/Libs/"; fi
 cp "$DISKSPEED" "$WB/C/DiskSpeed"
 cp "$PROJECT_DIR/build/amiga/bfshandler" "$WB/L/"
 cp "$PFS3" "$WB/L/pfs3aio"
@@ -107,10 +107,12 @@ rdbtool -f "$BFS_HDF" create size=256Mi cyls=512 heads=16 secs=32 \
 BFS_OFFSET=$(( 2 * 16 * 32 * 512 ))
 BFS_BLOCKS=$(( (510 * 16 * 32 * 512) / 4096 ))
 PART_FILE=$(mktemp)
-dd if=/dev/zero of="$PART_FILE" bs=4096 count="$BFS_BLOCKS" 2>/dev/null
+trap 'rm -f "$PART_FILE"' EXIT
+dd if=/dev/zero of="$PART_FILE" bs=4096 count="$BFS_BLOCKS" status=none
 "$PROJECT_DIR/build/host/mkbfs" "$PART_FILE" >/dev/null
-dd if="$PART_FILE" of="$BFS_HDF" bs=512 seek=$(( BFS_OFFSET / 512 )) conv=notrunc 2>/dev/null
+dd if="$PART_FILE" of="$BFS_HDF" bs=512 seek=$(( BFS_OFFSET / 512 )) conv=notrunc status=none
 rm -f "$PART_FILE"
+trap - EXIT
 echo "  BFS: $BFS_HDF ($(du -h "$BFS_HDF" | cut -f1))"
 
 # ── Create PFS3 HDF (256MB) ──────────────────────────────────
@@ -132,5 +134,5 @@ echo ""
 echo "For real hardware, create a single RDB image:"
 echo "  Partition 1: FFS boot (copy $WB contents)"
 echo "  Partition 2: BFS 256MB (DosType 0x42465300)"
-echo "  Partition 3: PFS3 256MB (DosType 0x50445303)"
+echo "  Partition 3: PFS3 256MB (DosType 0x50465303)"
 echo "  Add bfshandler + pfs3aio to RDB filesystem entries"

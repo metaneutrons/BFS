@@ -20,7 +20,13 @@ BFS_TEST="$BUILD_DIR/amiga/bfs-test"
 echo "=== Building Test Drive Image ==="
 [ -f "$BFS_HANDLER" ] || { echo "ERROR: build bfshandler first (make amiga)"; exit 1; }
 [ -f "$BFS_TEST" ] || { echo "ERROR: build bfs-test first (make amiga-test)"; exit 1; }
+[ -d "$WB_SRC/C" ] || { echo "ERROR: Workbench commands not found: $WB_SRC/C"; exit 1; }
+command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
+command -v xdftool >/dev/null || { echo "ERROR: xdftool not found"; exit 1; }
 [ -f "$PFS3_HANDLER" ] || { echo "WARN: PFS3 handler not found at $PFS3_HANDLER"; PFS3_HANDLER=""; }
+
+TMP_DIR=$(mktemp -d)
+trap 'rm -rf "$TMP_DIR"' EXIT
 
 # ── Create RDB image with 3 partitions ─────────────────────────
 rm -f "$IMAGE"
@@ -38,25 +44,31 @@ xdftool "$IMAGE" open part=0 + makedir S + makedir C + makedir L + makedir Devs 
 # System commands
 for f in Mount Assign Dir Echo Type MakeDir Delete Rename Copy Wait Info \
          Format List Execute Run SetPatch Version Resident; do
-    [ -f "$WB_SRC/C/$f" ] && xdftool "$IMAGE" open part=0 + write "$WB_SRC/C/$f" C/$f 2>/dev/null || true
+    if [ -f "$WB_SRC/C/$f" ]; then
+        xdftool "$IMAGE" open part=0 + write "$WB_SRC/C/$f" "C/$f"
+    fi
 done
 
 # Libs
 for f in version.library diskfont.library mathieeedoubbas.library; do
-    [ -f "$WB_SRC/Libs/$f" ] && xdftool "$IMAGE" open part=0 + write "$WB_SRC/Libs/$f" Libs/$f 2>/dev/null || true
+    if [ -f "$WB_SRC/Libs/$f" ]; then
+        xdftool "$IMAGE" open part=0 + write "$WB_SRC/Libs/$f" "Libs/$f"
+    fi
 done
 
 # Handlers
 echo "Installing handlers..."
 xdftool "$IMAGE" open part=0 + write "$BFS_HANDLER" L/bfshandler
-[ -n "$PFS3_HANDLER" ] && xdftool "$IMAGE" open part=0 + write "$PFS3_HANDLER" L/pfs3handler || true
+if [ -n "$PFS3_HANDLER" ]; then
+    xdftool "$IMAGE" open part=0 + write "$PFS3_HANDLER" L/pfs3handler
+fi
 
 # Test binary
 echo "Installing bfs-test..."
 xdftool "$IMAGE" open part=0 + write "$BFS_TEST" C/bfs-test
 
 # ── Mountlist entries for DH1 (BFS) and DH2 (PFS3) ────────────
-cat > /tmp/mountlist-dh1 << 'EOF'
+cat > "$TMP_DIR/mountlist-dh1" << 'EOF'
 Handler = L:bfshandler
 Stacksize = 32768
 Priority = 5
@@ -72,7 +84,7 @@ BufMemType = 0
 DosType = 0x42465300
 EOF
 
-cat > /tmp/mountlist-dh2 << 'EOF'
+cat > "$TMP_DIR/mountlist-dh2" << 'EOF'
 Handler = L:pfs3handler
 Stacksize = 16384
 Priority = 5
@@ -88,11 +100,13 @@ BufMemType = 0
 DosType = 0x50465303
 EOF
 
-xdftool "$IMAGE" open part=0 + write /tmp/mountlist-dh1 Devs/DOSDrivers/DH1
-[ -n "$PFS3_HANDLER" ] && xdftool "$IMAGE" open part=0 + write /tmp/mountlist-dh2 Devs/DOSDrivers/DH2 || true
+xdftool "$IMAGE" open part=0 + write "$TMP_DIR/mountlist-dh1" Devs/DOSDrivers/DH1
+if [ -n "$PFS3_HANDLER" ]; then
+    xdftool "$IMAGE" open part=0 + write "$TMP_DIR/mountlist-dh2" Devs/DOSDrivers/DH2
+fi
 
 # ── Startup-Sequence ───────────────────────────────────────────
-cat > /tmp/startup-seq << 'EOF'
+cat > "$TMP_DIR/startup-seq" << 'EOF'
 C:SetPatch >NIL: QUIET
 C:Version >NIL:
 Echo "=== BFS CI Test ==="
@@ -104,7 +118,7 @@ Echo "Running integrity tests..."
 C:bfs-test DH1:
 Echo "=== Complete ==="
 EOF
-xdftool "$IMAGE" open part=0 + write /tmp/startup-seq S/Startup-Sequence
+xdftool "$IMAGE" open part=0 + write "$TMP_DIR/startup-seq" S/Startup-Sequence
 
 # ── Summary ────────────────────────────────────────────────────
 echo ""
