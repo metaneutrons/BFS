@@ -1,0 +1,11 @@
+libnix: a C link library for AmigaOS/m68k
+
+Upstream declaration: "This is Public Domain."
+https://github.com/AmigaPorts/libnix/blob/b6a079d2e2c699b14d06043a2b12b4f7d2ee8505/README.md
+
+Authors named by upstream:
+Matthias Fleischer
+Gunther Nikl
+Stefan "Bebbo" Franke
+
+This notice records the upstream declaration, not a new license grant by BFS.
