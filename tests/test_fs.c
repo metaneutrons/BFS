@@ -124,6 +124,7 @@ static void test_crash_recovery(void)
     /* Create another file but DON'T sync (simulate crash) */
     TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, BFS_ROOT_INO, "lost.txt", 8, 201, BFS_INODE_FILE), BFS_OK);
     /* No sync — just close the bio (simulating power loss) */
+    bfs_fs_abandon(&fs);
     bfs_bio_close(bio);
 
     /* Reopen — should recover to last committed state */

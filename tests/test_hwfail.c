@@ -102,6 +102,7 @@ static void test_torn_write_btree_node(void)
     bfs_err_t err = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "file0", 5, &found_ino, &type);
     TEST_ASSERT_EQ(err, BFS_ERR_CORRUPT);
 
+    bfs_fs_abandon(&fs);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
