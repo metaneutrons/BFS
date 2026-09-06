@@ -2,7 +2,8 @@
 import json
 import os
 from pathlib import Path
-import subprocess
+# Exercise the actual fixed repository script without a shell command string.
+import subprocess  # nosec B404
 import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -12,7 +13,7 @@ JOBS = ("commit-hygiene", "coverage", "host-tests", "integration-test",
 
 class AggregateGateTests(unittest.TestCase):
     def check(self, results):
-        return subprocess.run(["bash", str(ROOT / "tools/check-ci-results.sh")],
+        return subprocess.run(["/bin/bash", str(ROOT / "tools/check-ci-results.sh")],  # nosec B603
                               env={**os.environ, "NEEDS": json.dumps(results)},
                               capture_output=True, check=False).returncode
 

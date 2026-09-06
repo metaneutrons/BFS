@@ -372,6 +372,55 @@ static void test_deep_dirs(void)
     pass(T);
 }
 
+static BPTR locate_relative(BPTR lock, const char *name)
+{
+    ULONG storage[65];
+    UBYTE *bstr = (UBYTE *)storage;
+    ULONG len = 0;
+    while (name[len] && len < 255) len++;
+    bstr[0] = len;
+    tool_memcpy(bstr + 1, name, len);
+    struct FileLock *base = BADDR(lock);
+    return DoPkt(base->fl_Task, ACTION_LOCATE_OBJECT, lock,
+                 (LONG)MKBADDR(bstr), SHARED_LOCK, 0, 0);
+}
+
+static BOOL check_relative_paths(BPTR child, BPTR expected)
+{
+    const char *paths[] = {"/leaf", "//path/leaf", ":path/leaf", "../leaf"};
+    BOOL ok = TRUE;
+    unsigned i;
+    for (i = 0; i < sizeof(paths) / sizeof(paths[0]); i++) {
+        BPTR found = locate_relative(child, paths[i]);
+        if (!found || SameLock(found, expected) != LOCK_SAME) ok = FALSE;
+        if (found) UnLock(found);
+    }
+    const char *bad[] = {"missing//leaf", "/leaf/child"};
+    for (i = 0; i < sizeof(bad) / sizeof(bad[0]); i++) {
+        BPTR found = locate_relative(child, bad[i]);
+        if (found || !IoErr()) ok = FALSE;
+        if (found) UnLock(found);
+    }
+    return ok;
+}
+
+static void test_relative_paths(void)
+{
+    BPTR parent = CreateDir(vpath("path"));
+    BPTR child = parent ? CreateDir(vpath("path/child")) : 0;
+    BOOL ok = child && write_seeded(vpath("path/leaf"), 3, 17);
+    BPTR expected = ok ? Lock(vpath("path/leaf"), SHARED_LOCK) : 0;
+    ok = expected && check_relative_paths(child, expected);
+    if (expected) UnLock(expected);
+    if (child) UnLock(child);
+    if (parent) UnLock(parent);
+    if (!DeleteFile(vpath("path/leaf"))) ok = FALSE;
+    if (!DeleteFile(vpath("path/child"))) ok = FALSE;
+    if (!DeleteFile(vpath("path"))) ok = FALSE;
+    if (ok) pass("path_45");
+    else fail("path_45", "parent traversal, volume prefix, or intermediate lookup error");
+}
+
 static void test_long_name(void)
 {
     const char *T = "longname_05";
@@ -1088,9 +1137,6 @@ static void test_morphos_packets(void)
 static BOOL scan_exall_batches(BPTR lock, struct ExAllControl *control)
 {
     ULONG storage[40];
-    char pattern[32];
-    if (ParsePatternNoCase("(a|b)", pattern, sizeof(pattern)) < 0) return FALSE;
-    control->eac_MatchString = pattern;
     ULONG seen = 0, batches = 0;
     for (;;) {
         BOOL more = ExAll(lock, (struct ExAllData *)storage, sizeof(storage), ED_COMMENT, control);
@@ -1122,6 +1168,9 @@ static void test_exall_batches(void)
     BPTR lock = CreateDir(vpath("exall"));
     struct ExAllControl *control = AllocDosObject(DOS_EXALLCONTROL, NULL);
     BOOL ok = lock && control;
+    char pattern[32];
+    if (ok) ok = ParsePatternNoCase("(a|b)", pattern, sizeof(pattern)) >= 0;
+    if (ok) control->eac_MatchString = pattern;
     int i;
     for (i = 0; i < 3 && ok; i++) {
         ok = write_seeded(vpath(names[i]), 3, 123);

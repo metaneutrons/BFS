@@ -1,4 +1,4 @@
-# Core static-analysis review
+# Static-analysis review
 
 Scope: PR #12, reviewed against the 34 added Codacy findings at commit
 `5f6fa492280fa3f1bc9d73e6de0d060a61145978`. This document records dispositions,
@@ -69,3 +69,36 @@ regression evidence are recorded on the milestone issue, not inferred here.
 - Failed extent-remap rollback marks ownership uncertain; callers must recover
   rather than free a replacement that may still be referenced. A persistent
   write-failure regression covers failed replacement and restoration inserts.
+
+## Amiga integration review
+
+PR #13 introduced 25 Codacy findings at `c722e8c`. Each is reviewed separately;
+the quality threshold remains unchanged.
+
+- Split path-directory traversal from BSTR decoding and result copying. During
+  review, a failed parent lookup was found to fall back to the root silently.
+  Only an explicit traversal above the root now stays at root; other lookup
+  errors propagate. The guest `path_45` group exercises relative parent paths,
+  volume-prefix reset, and missing/non-directory intermediates. It does not
+  claim to inject device I/O faults into DOS path traversal.
+- Move the ExAll match-pattern buffer into the owner of its control object, so
+  the control never retains the address of an expired local array.
+- The Python runner accepts a nonempty argv list, resolves the executable and
+  calls it without a shell. Its command is an operator-controlled local CLI
+  argument, never guest input. Call-scoped Bandit/Opengrep annotations record
+  that intentional trust boundary. The aggregate test invokes the fixed script
+  using `/bin/bash`; no command string is constructed.
+- `amiga_bio.removable` is used by the device change-state check; its header-only
+  unused-member finding is annotated individually.
+- Eight newly reported handler copies have explicit bounds proofs: allocated
+  BSTR length plus two bytes; 256-byte name destinations with uint8 lengths;
+  bounded volume names; two FIB quadwords checked with a static assertion; and
+  caller-owned MorphOS ABI quadwords. AmigaOS has no process memory isolation:
+  packet callers must supply valid storage of the documented ABI size. The
+  handler rejects absent and misaligned quadword pointers, but cannot prove
+  that arbitrary caller addresses designate allocated memory.
+
+All copy annotations apply only to Flawfinder's individual call and Opengrep's
+`c_buffer_rule-memcpy-CopyMemory` rule. Cleanup functions in the optional emulator
+launchers are invoked by their adjacent EXIT traps; local ShellCheck annotations
+cover the old and new analyzer names for this indirect-call false positive.
