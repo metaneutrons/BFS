@@ -4,7 +4,6 @@
 import io
 import json
 import pathlib
-import subprocess
 import sys
 import tarfile
 import tempfile
@@ -87,7 +86,7 @@ class IntegrityTests(unittest.TestCase):
     def test_corrupted_compressed_archive(self):
         path = self.archive()
         path.write_bytes(path.read_bytes()[:-8])
-        with self.assertRaises(subprocess.CalledProcessError):
+        with self.assertRaisesRegex(ValueError, "invalid gzip archive"):
             release.read_archive(path, TAG)
 
     def test_metadata_identity_flags_and_digests(self):

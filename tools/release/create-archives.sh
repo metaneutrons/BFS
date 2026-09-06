@@ -105,8 +105,9 @@ for file in "${required[@]}" BUILD-METADATA.json LICENSE README.md THIRD-PARTY.m
 done
 (
     cd "$staging"
-    # Generic headers omit host UID/GID and Unix-specific metadata.
-    lha cq2g "$lha_file" "${lha_inputs[@]}"
+    # Generic mode resets the header level; select level 2 afterwards for paths.
+    # This retains portable headers without host UID/GID or Unix-specific metadata.
+    lha cq2g2 "$lha_file" "${lha_inputs[@]}"
 )
 
 [[ -s "$tar_file" && -s "$lha_file" ]]
