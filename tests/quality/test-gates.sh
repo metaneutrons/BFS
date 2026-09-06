@@ -22,7 +22,19 @@ fi
 
 printf 'plain text\n' > "$tmp/text.txt"
 "$root/tools/check-no-binaries.sh" "$tmp/text.txt" >/dev/null
+# Linux libmagic has classified this ASCII source as a Sega Pico ROM.
+"$root/tools/check-no-binaries.sh" "$root/tests/test_fsck.c" >/dev/null
 printf '\000\001\002' > "$tmp/binary"
+cp "$tmp/binary" "$tmp/disguised.c"
+if "$root/tools/check-no-binaries.sh" "$tmp/disguised.c" >/dev/null 2>&1; then
+    printf 'ERROR: binary fixture with a source extension passed.\n' >&2
+    exit 1
+fi
+printf '#!/bin/sh\nprintf harmless\n\000\001\002' > "$tmp/disguised.sh"
+if "$root/tools/check-no-binaries.sh" "$tmp/disguised.sh" >/dev/null 2>&1; then
+    printf 'ERROR: binary-padded script passed.\n' >&2
+    exit 1
+fi
 if "$root/tools/check-no-binaries.sh" "$tmp/binary" >/dev/null 2>&1; then
     printf 'ERROR: binary fixture passed.\n' >&2
     exit 1

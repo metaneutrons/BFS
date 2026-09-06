@@ -13,7 +13,7 @@ status=0
 
 check_file() {
     local path="$1"
-    local mime
+    local mime encoding
 
     if [ ! -e "$path" ] && [ ! -L "$path" ]; then
         printf 'ERROR: tracked path is missing: %s\n' "$path" >&2
@@ -24,13 +24,16 @@ check_file() {
     mime="$(file --brief --mime-type -- "$path")"
     mime="${mime%%$'\n'*}"
     case "$mime" in
-        text/*|application/json|application/xml|application/x-empty|inode/x-empty|inode/symlink)
-            ;;
-        *)
-            printf 'ERROR: tracked binary artifact: %s (%s)\n' "$path" "$mime" >&2
-            status=1
-            ;;
+        application/x-empty|inode/x-empty|inode/symlink) return ;;
     esac
+    # Soft magic can mistake source text at a fixed offset for a ROM, or label
+    # a binary-padded shebang as text. Classify bytes independently of that magic.
+    encoding="$(file --brief --mime-encoding --exclude=soft -- "$path")"
+    case "$encoding" in
+        us-ascii|utf-8) return ;;
+    esac
+    printf 'ERROR: tracked binary artifact: %s (%s, %s)\n' "$path" "$mime" "$encoding" >&2
+    status=1
 }
 
 if [ "$#" -gt 0 ]; then
