@@ -519,8 +519,9 @@ static void test_fill_disk(void)
 {
     const char *T = "fill_08";
     char rel[32];
-    int i, total = 0, file_count = quick_mode ? 4 : 10;
+    int i, total = 0, attempted = 0, file_count = quick_mode ? 4 : 10;
     const char *failure = NULL;
+    BOOL cleanup_failed = FALSE;
 
     for (i = 0; i < file_count; i++) {
         progress(i, file_count);
@@ -528,6 +529,8 @@ static void test_fill_disk(void)
         if (i >= 10) *p++ = '0' + (i / 10);
         *p++ = '0' + (i % 10); *p = 0;
 
+        /* A short write can leave a partial file behind on a full volume. */
+        attempted = i + 1;
         if (!write_seeded(vpath(rel), 64 * 1024, 0xF100 + i)) {
             failure = "write";
             break;
@@ -545,12 +548,14 @@ static void test_fill_disk(void)
             failure = "verify";
     }
 
-    for (i = 0; i < total; i++) {
+    for (i = 0; i < attempted; i++) {
         char *p = rel; *p++ = 'F';
         if (i >= 10) *p++ = '0' + (i / 10);
         *p++ = '0' + (i % 10); *p = 0;
-        if (!DeleteFile(vpath(rel)) && !failure) failure = "cleanup";
+        if (!DeleteFile(vpath(rel)) && IoErr() != ERROR_OBJECT_NOT_FOUND)
+            cleanup_failed = TRUE;
     }
+    if (cleanup_failed) failure = failure ? "write/cleanup" : "cleanup";
     if (failure) fail(T, failure); else pass(T);
 }
 
