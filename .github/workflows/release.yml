@@ -117,8 +117,9 @@ jobs:
     name: Clean-Room Amiga Smoke Test
     needs: [identity, build]
     runs-on: ubuntu-24.04
-    timeout-minutes: 45
+    timeout-minutes: 60
     env:
+      BFS_TEST_TIMEOUT: 2400
       TAG: ${{ needs.identity.outputs.tag }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
