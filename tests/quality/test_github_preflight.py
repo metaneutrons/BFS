@@ -1,5 +1,6 @@
 # SPDX-License-Identifier: MPL-2.0
 import io
+import json
 from pathlib import Path
 import secrets
 import sys
@@ -13,6 +14,11 @@ import github_preflight as preflight
 
 
 class GithubPreflightTests(unittest.TestCase):
+    class JsonResponse(io.BytesIO):
+        def __init__(self, payload, headers=None):
+            super().__init__(json.dumps(payload).encode())
+            self.headers = headers or {}
+
     def test_write_access_advertisement_and_denial(self):
         with patch.dict("os.environ", {"GH_TOKEN": secrets.token_hex(16)}):
             for payload in (b"001f# service=git-receive-pack\n", b"not a Git advertisement"):
@@ -86,6 +92,27 @@ class GithubPreflightTests(unittest.TestCase):
             for field, value in (("name", "wrong"), ("size", 8), ("state", "new"), ("digest", "wrong")):
                 with self.subTest(field=field), self.assertRaises(ValueError):
                     preflight.asset_identity({"assets": [{**asset, field: value}]}, root)
+
+    def test_draft_release_lookup_falls_back_to_paginated_list(self):
+        tag = "v1.0.0-test"
+        release = {"id": 1, "tag_name": tag, "draft": True, "prerelease": True, "assets": []}
+        first_page = [{"id": 2, "tag_name": "v0.9.0-test"}]
+        second_page = [release]
+        not_found = HTTPError("fixture", 404, "draft releases are omitted", {}, None)
+        with patch.dict("os.environ", {"GH_TOKEN": secrets.token_hex(16)}), \
+                patch.object(preflight, "urlopen", side_effect=[
+                    not_found,
+                    self.JsonResponse(first_page, {"Link": '<https://api.github.com/repos/metaneutrons/BFS/releases?page=2>; rel="next"'}),
+                    self.JsonResponse(second_page),
+                ]):
+            self.assertEqual(preflight.release_for_tag(tag), release)
+
+    def test_release_lookup_rejects_missing_non_draft_release(self):
+        not_found = HTTPError("fixture", 404, "missing", {}, None)
+        with patch.dict("os.environ", {"GH_TOKEN": secrets.token_hex(16)}), \
+                patch.object(preflight, "urlopen", side_effect=[not_found, self.JsonResponse([])]):
+            with self.assertRaisesRegex(ValueError, "release for tag .* is missing"):
+                preflight.release_for_tag("v1.0.0-test")
 
 
 if __name__ == "__main__":

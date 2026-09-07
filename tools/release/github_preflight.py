@@ -15,24 +15,70 @@ from urllib.request import Request, urlopen
 from release_integrity import digest, package_name, require
 
 REPOSITORY = "metaneutrons/BFS"
+API_ROOT = "https://api.github.com/"
 
 
-def api_get(path, allow_missing=False):
+def api_json(path, allow_missing=False):
     token = os.environ.get("GH_TOKEN", "")
     # RFC 6750 bearer syntax also accepts the current JWT-shaped installation tokens.
     require(re.fullmatch(r"[A-Za-z0-9._~+/-]+=*", token), "GitHub token is missing or malformed")
-    request = Request("https://api.github.com/" + path, headers={
+    url = path if path.startswith(API_ROOT) else API_ROOT + path
+    request = Request(url, headers={
         "Authorization": "Bearer " + token, "Accept": "application/vnd.github+json",
         "X-GitHub-Api-Version": "2022-11-28", "User-Agent": "BFS-release-preflight",
     })
     try:
         with urlopen(request, timeout=30) as response:  # nosec B310 - fixed HTTPS GitHub API
-            return json.load(response)
+            return json.load(response), getattr(response, "headers", {})
     except HTTPError as error:
         if error.code == 404 and allow_missing:
             return None
         # Never echo a request, headers or API error body that could contain credentials.
         raise ValueError(f"GitHub preflight failed with HTTP {error.code}") from None
+
+
+def api_get(path, allow_missing=False):
+    result = api_json(path, allow_missing=allow_missing)
+    return None if result is None else result[0]
+
+
+def api_list(path):
+    result = api_json(path)
+    require(result is not None, "GitHub list response is missing")
+    payload, headers = result
+    require(type(payload) is list, "GitHub list response is not an array")
+    return payload, headers
+
+
+def next_api_path(headers):
+    for link in headers.get("Link", "").split(","):
+        match = re.search(r"<([^>]+)>;\s*rel=\"next\"", link)
+        if match:
+            url = match.group(1)
+            require(url.startswith(API_ROOT), "GitHub pagination URL is invalid")
+            return url[len(API_ROOT):]
+    return None
+
+
+def release_for_tag(tag, allow_missing=False):
+    path = f"repos/{REPOSITORY}/releases/tags/{quote(tag, safe='')}"
+    release = api_get(path, allow_missing=True)
+    if release is not None:
+        return release
+
+    # GitHub's tag endpoint omits draft releases. Search the authenticated list
+    # so the upload stage can verify the draft created immediately beforehand.
+    path = f"repos/{REPOSITORY}/releases?per_page=100"
+    while path:
+        releases, headers = api_list(path)
+        for candidate in releases:
+            if candidate.get("tag_name") == tag:
+                return candidate
+        path = next_api_path(headers)
+
+    if allow_missing:
+        return None
+    raise ValueError(f"GitHub release for tag {tag} is missing")
 
 
 def contents_write_access():
@@ -127,7 +173,7 @@ def main():
         require(content.get("type") == "file", "release workflow is missing from the tag")
         return
     require(commit == os.environ.get("GITHUB_SHA"), "tag does not identify this release run")
-    release = api_get(f"repos/{REPOSITORY}/releases/tags/{quote(tag, safe='')}", allow_missing=stage == "draft")
+    release = release_for_tag(tag, allow_missing=stage == "draft")
     exists = release_state(release, tag, stage)
     if stage not in ("draft", "upload"):
         require(len(sys.argv) == 4, "candidate directory is required")
