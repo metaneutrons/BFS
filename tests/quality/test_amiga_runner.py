@@ -22,7 +22,7 @@ class AmigaRunnerTests(unittest.TestCase):
         self.marker = self.root / "result.done"
         self.names = RUNNER.test_inventory(ROOT / "tools/bfs-test-cases.def")
         self.valid = ("# BFS Test Log\n# PROFILE\tfull\n# STATUS\tNAME\t[DETAIL]\n" +
-                      "".join(f"PASS\t{name}\n" for name in self.names) +
+                      "".join(f"# RUN\t{name}\nPASS\t{name}\n" for name in self.names) +
                       f"# SUMMARY\t{len(self.names)}\t{len(self.names)}\t0\n")
 
     def verify(self, data=None, profile="full"):
@@ -68,6 +68,18 @@ class AmigaRunnerTests(unittest.TestCase):
                             f"# SUMMARY\t{len(self.names) - 1}\t{len(self.names)}\t1")
         with self.assertRaisesRegex(ValueError, "integration failed"):
             self.verify(data)
+
+    def test_run_marker_must_match_status_order(self):
+        self.marker.write_bytes(RUNNER.COMPLETION)
+        cases = [
+            (self.valid.replace("# RUN\tbasic_01\n", "# RUN\tunknown\n"), "inventory mismatch"),
+            (self.valid.replace("# RUN\tmany_03\n", "# RUN\tbasic_01\n"), "inventory mismatch"),
+            (self.valid.replace("# RUN\tbasic_01\n", ""), "inventory count mismatch"),
+        ]
+        for data, reason in cases:
+            with self.subTest(reason=reason):
+                with self.assertRaisesRegex(ValueError, reason):
+                    self.verify(data)
 
     def test_inventory_is_nonempty_unique_and_well_formed(self):
         inventory = self.root / "inventory.def"
