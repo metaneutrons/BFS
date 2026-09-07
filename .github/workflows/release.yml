@@ -159,7 +159,7 @@ jobs:
           BFS_TEST_HDF: ${{ github.workspace }}/smoke/bfs-smoke.hdf
         run: |
           set -euo pipefail
-          emulator-test/ci-test.sh
+          timeout --signal=TERM --kill-after=30s 2500s emulator-test/ci-test.sh
 
       - name: Prove corrupted handler is rejected
         env:
@@ -181,7 +181,8 @@ jobs:
           set +e
           BFS_BUILD_DIR="$RUNNER_TEMP/smoke-negative" \
           BFS_HANDLER="$RUNNER_TEMP/corrupt/bfshandler.020" \
-          BFS_TEST_TIMEOUT=30 emulator-test/ci-test.sh \
+          BFS_TEST_TIMEOUT=30 timeout --signal=TERM --kill-after=10s 60s \
+          emulator-test/ci-test.sh \
             >"$RUNNER_TEMP/negative-smoke.log" 2>&1
           status=$?
           set -e
