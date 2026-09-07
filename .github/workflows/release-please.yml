@@ -29,7 +29,9 @@ jobs:
         run: |
           set -euo pipefail
           [[ "$CLIENT_ID" =~ ^Iv[0-9A-Za-z]+$ ]]
-          jq -e '.packages["."].draft == true and .packages["."]."force-tag-creation" == true' \
+          jq -e '.packages["."].draft == true and
+            .packages["."]."force-tag-creation" == true and
+            .packages["."]."include-component-in-tag" == false' \
             release-please-config.json >/dev/null
       - name: Mint repository-scoped app token
         id: app-token
