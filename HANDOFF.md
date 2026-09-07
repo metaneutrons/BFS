@@ -6,9 +6,9 @@ Stand: 2026-09-08. Repository: `metaneutrons/BFS`.
 
 Die Release-Abnahme M4 ist abgeschlossen. Die Release-Codebasis steht auf
 `f2deb47b2a689bd4e8dbcef36f3de449a5265095` (`chore(main): release 0.1.1`).
-Der endgueltige Repository-HEAD von `main` ist danach
-`a4e07a7b0166572c3e7911ce08023cbaf263a6c5` (`docs: finalize release handoff`),
-und der stabile Release `v0.1.1` ist oeffentlich als `latest` publiziert.
+Die Abschlussdokumentation wurde danach in PR #24 und PR #25 auf dieser
+Release-Codebasis ergaenzt. Der stabile Release `v0.1.1` ist oeffentlich als
+`latest` publiziert.
 
 Qualifiziert und gebaut sind Amiga-Handler fuer 68020, 68030, 68040, 68060
 und Apollo 68080. Der 68080-Build verwendet kein AMMX. Es liegt keine
