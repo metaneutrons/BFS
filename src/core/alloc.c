@@ -16,7 +16,26 @@
 #include "bfs_alloc.h"
 #include <string.h>
 
-#define BFS_ALLOC_RESERVE_REFILL_TARGET (BFS_ALLOC_RESERVE_SIZE * 3 / 4)
+#define BFS_ALLOC_RESERVE_MIN 16u
+#define BFS_ALLOC_RESERVE_DEPTH_MARGIN 4u
+
+/* A reserve must cover a free-space-tree COW path, its possible ancestor
+ * splits, and a small amount of compound-operation headroom. Replenishing to
+ * a fixed 96 blocks made every small transaction move dozens of unused blocks
+ * through the free-space tree at commit time. Scale the reserve with the
+ * actual tree height while retaining the fixed array's hard upper bound. */
+static uint32_t reserve_refill_target(const bfs_freespace_t *fs)
+{
+    uint32_t height = fs->tree.height;
+    uint32_t target;
+
+    if (height > (BFS_ALLOC_RESERVE_SIZE - BFS_ALLOC_RESERVE_MIN) /
+                BFS_ALLOC_RESERVE_DEPTH_MARGIN)
+        return BFS_ALLOC_RESERVE_SIZE;
+    target = BFS_ALLOC_RESERVE_MIN +
+             height * BFS_ALLOC_RESERVE_DEPTH_MARGIN;
+    return target > BFS_ALLOC_RESERVE_SIZE ? BFS_ALLOC_RESERVE_SIZE : target;
+}
 
 /* ── B+tree ops for free space tree ────────────────────────── */
 
@@ -193,8 +212,8 @@ bfs_err_t bfs_freespace_add(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count
      * no block with which to refill the reserve once COW is fully atomic. */
     if (fs->reserve_count == 0 && fs->tree.root == BFS_BLK_NULL) {
         uint32_t seed_count = count;
-        if (seed_count > BFS_ALLOC_RESERVE_REFILL_TARGET)
-            seed_count = BFS_ALLOC_RESERVE_REFILL_TARGET;
+        if (seed_count > reserve_refill_target(fs))
+            seed_count = reserve_refill_target(fs);
         for (uint32_t i = 0; i < seed_count; i++)
             fs->reserve[fs->reserve_count++] = start++;
         count -= seed_count;
@@ -609,7 +628,8 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
         return BFS_ERR_INVAL;
     if (fs->global_reserve == UINT32_MAX)
         return BFS_OK;
-    while (fs->reserve_count < BFS_ALLOC_RESERVE_REFILL_TARGET &&
+    uint32_t target = reserve_refill_target(fs);
+    while (fs->reserve_count < target &&
            fs->total_free > fs->global_reserve + 1) {
         fs->in_alloc = true;
 
