@@ -115,6 +115,9 @@ static void lognum(LONG n)
 
 static void progress(LONG cur, LONG total)
 {
+    /* CI consumes the result file; console repaint traffic is disproportionately
+     * expensive under FS-UAE and provides no machine-readable evidence. */
+    if (logfh) return;
     LONG pct = (cur * 100) / total;
     char bar[16] = "..........";
     LONG filled = pct / 10;
@@ -122,7 +125,10 @@ static void progress(LONG cur, LONG total)
     put("\r  ["); put(bar); put("] "); putnum(pct); put("%");
 }
 
-static void progress_done(void) { put("\r                        \r"); }
+static void progress_done(void)
+{
+    if (!logfh) put("\r                        \r");
+}
 
 static void fail(const char *name, const char *detail)
 {
@@ -1835,6 +1841,7 @@ int main(void)
         int previous_run = tests_run, previous_fail = tests_fail;
         io_failed = FALSE;
         put(" RUN  "); put(all_tests[i].name); put("\n");
+        logput("# RUN\t"); logput(all_tests[i].name); logput("\n");
         all_tests[i].fn();
         if (tests_run != previous_run + 1)
             fail(all_tests[i].name, "test did not report exactly one result");

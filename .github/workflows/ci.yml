@@ -133,7 +133,8 @@ jobs:
           make release AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
           tools/release/qualify-archives.sh "v$(cat version.txt)-ci.$GITHUB_RUN_ID" \
             "$(git show -s --format=%ct HEAD)" build/ci-archives
-          make ci-test AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
+          timeout --signal=TERM --kill-after=30s 2500s \
+            make ci-test AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
 
       - name: Preserve emulator evidence
         if: always()

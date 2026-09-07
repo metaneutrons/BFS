@@ -48,10 +48,15 @@ def verify_result(result, profile, names):
     expected_header = ["# BFS Test Log", f"# PROFILE\t{profile}", "# STATUS\tNAME\t[DETAIL]"]
     if lines[:3] != expected_header:
         raise ValueError("guest log header/profile mismatch")
-    if len(lines) != len(names) + 4:
+    if len(lines) != 2 * len(names) + 4:
         raise ValueError("guest result inventory count mismatch")
     passed = 0
-    for name, line in zip(names, lines[3:-1], strict=True):
+    status_lines = lines[3:-1]
+    for offset, name in enumerate(names):
+        run_line = status_lines[2 * offset]
+        line = status_lines[2 * offset + 1]
+        if run_line != f"# RUN\t{name}":
+            raise ValueError(f"guest result inventory mismatch at {name}")
         fields = line.split("\t")
         if fields == ["PASS", name]:
             passed += 1
