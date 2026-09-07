@@ -186,7 +186,7 @@ jobs:
           status=$?
           set -e
           [[ "$status" -eq 1 ]]
-          grep -Eq 'ERROR: emulator (exited|timed out) before guest completion' \
+          grep -Eq 'ERROR: (emulator (exited|timed out) before guest completion|Amiga integration failed \([1-9][0-9]*/[1-9][0-9]* failed\))' \
             "$RUNNER_TEMP/negative-smoke.log"
 
       - name: Preserve smoke evidence
