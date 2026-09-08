@@ -6,6 +6,10 @@
 > **⚠️ WARNING: Experimental software.** BFS has not yet been battle-tested.
 > Always keep backups of your data and use at your own risk.
 
+> **Release status:** v0.1.1 is qualified by the host and AROS/FS-UAE
+> integration gates and ships handler builds for 68020, 68030, 68040, 68060 and
+> 68080. Physical Apollo 68080 hardware and AMMX are not qualified.
+
 ## Motivation
 
 [PFS3](https://github.com/tonioni/pfs3aio) is the gold standard Amiga filesystem — fast, reliable, and battle-tested for over 30 years. But its 1990s architecture has hard limits:
@@ -27,16 +31,20 @@ code.
 | File extent lookup | O(n) anode chain | O(log n) B+tree |
 | Metadata checksums | None | CRC32 on every block |
 | Crash safety | Journal replay | COW + dual superblocks |
-| Data consistency | None | Optional `data=ordered` mode |
+| Data consistency | None | Optional `data=ordered` core API mode |
 | Snapshots | — | B+tree based (Read-only) |
-| Defragmentation | Offline | **Online Compaction** |
+| Metadata compaction | — | **Online B+tree compaction** |
 | Max filename | 107 chars | 255 chars |
-| Max volume size | ~1.6 TB | 4 TiB at 1K blocks; 16 TiB at 4K |
+| Max volume size | ~1.6 TB (~1.46 TiB, practical) | 4 TiB at 1K blocks; 16 TiB at 4K blocks (format address limit) |
 | Hard links | Yes | Yes |
 | Soft links | Yes | Yes |
 | File comments | Yes | Yes |
 | Free space tracking | Bitmap | Self-hosting B+tree |
 | Automated tests | — | Core, fault-injection and emulator suites |
+
+The PFS3 figure is a practical decimal-size limit. The BFS figures are binary
+TiB limits imposed by the on-disk block address space; 16 TiB is approximately
+17.59 TB.
 
 ## Architecture
 
@@ -62,6 +70,9 @@ code.
 
 The B+tree engine is shared across all metadata types, utilizing a **dynamic transaction tracking** architecture that ensures session-wide consistency and safe COW reclamation. It supports **online compaction** for metadata trees to maintain performance without downtime.
 
+`data=ordered` and metadata compaction are core API capabilities. The current
+Amiga `bfsformat` command does not expose arbitrary format-option flags.
+
 - **Directory tree** — (parent_id, hash, name) → inode
 - **Extent tree** — file_block → (disk_block, length)
 - **Inode tree** — inode_id → metadata
@@ -73,7 +84,7 @@ The B+tree engine is shared across all metadata types, utilizing a **dynamic tra
 
 - **Data update atomicity** — snapshot-shared data uses COW; unshared live data can be overwritten in place. Ordered writes do not make those in-place updates atomic.
 - **Reclamation and memory** — deletion is crash-resumable at committed inode boundaries. Large reclaim units reserve memory before mutation and can exceed the inline deferred-free queue, but memory exhaustion still prevents completion. Deferred frees are not a persistent journal; interrupted operations can leak space. See [failure semantics](docs/failure-semantics.md).
-- **Needs real-world testing** — no production use on actual Amiga hardware yet.
+- **Physical hardware qualification** — no production use on actual Amiga hardware has been established. In particular, the 68080 build has not yet been qualified on Apollo hardware and AMMX is not used.
 
 ## Building
 
@@ -82,6 +93,9 @@ The B+tree engine is shared across all metadata types, utilizing a **dynamic tra
 ```bash
 make host-test
 ```
+
+The default compiler is the platform `cc`. Run the same suite with GCC by
+setting `HOST_CC=gcc` where GCC is installed.
 
 ### Amiga handler (cross-compile)
 
@@ -136,8 +150,8 @@ The host suites cover:
 - **Edge cases** — boundary conditions, overflow, corruption handling
 - **Robustness** — concurrent-style ops, resource exhaustion
 - **Hardware failure** — simulated I/O errors, partial writes
-- **Crash injection** — power-loss simulation at every write point
-- **Model checking** — property-based invariant verification (12,500 checks)
+- **Crash injection** — bounded power-loss simulation across create, delete, write and sync cut points
+- **Model checking** — five fixed PRNG seeds, 2,500 random operations and invariant checks after every operation
 - **Real-world** — large directory workloads, fragmentation patterns
 - **Hunt** — targeted regression tests
 - **Snapshots** — create, delete, list, and inspect read-only snapshot metadata
