@@ -42,6 +42,8 @@ typedef enum {
     BFS_ERR_NOTEMPTY = -7,
     BFS_ERR_INVAL = -8,
     BFS_ERR_AGAIN = -9,   /* operation incomplete, caller should retry */
+    BFS_ERR_UNSUPPORTED = -10, /* intact, but incompatible on-disk format */
+    BFS_ERR_OVERFLOW = -11, /* geometry exceeds the block address range */
 } bfs_err_t;
 
 /* On-disk structures use big-endian (68k native byte order).

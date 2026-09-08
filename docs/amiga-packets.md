@@ -37,6 +37,23 @@ packet tests cover the boundaries independently of the installed dos.library's
 choice of protocol. This is wire-level testing under AROS, not qualification of
 native MorphOS, OS4 or physical Apollo hardware.
 
+## Format diagnostics
+
+`BFS_ACTION_FORMAT_ERROR` (3004) is a read-only BFS extension. Argument 1 is a
+text-buffer pointer; argument 2 is its capacity, at least `BFS_FORMAT_ERROR_MAX`
+(192 bytes). Invalid arguments return DOSFALSE / `ERROR_BAD_NUMBER` without
+writing to the buffer. Otherwise the handler writes 192 bytes, including a
+NUL-terminated diagnosis and zero padding. DOSTRUE / error 0 means an
+incompatible format was recognized; DOSFALSE / error 0 means no such diagnosis
+exists. It is available before a successful mount and while inhibited. Older
+handlers return `ERROR_ACTION_NOT_KNOWN`.
+
+Ordinary packets still use the standard numeric `ERROR_NOT_IMPLEMENTED` for an
+incompatible format. Interactive callers additionally receive a one-time
+requester naming the actual format version and supported version. The caller's
+`pr_WindowPtr == -1` suppresses this requester. Unknown option bits are reported
+separately from newer or older unsupported versions.
+
 ## References
 
 - [AmigaOS SetProtection](https://developer.amigaos3.net/autodocs/dos.library/SetProtection.html)

@@ -186,14 +186,23 @@ static bool snapshot_mark_cb(uint32_t id, const bfs_snapshot_record_t *rec, void
     return true;
 }
 
-static bfs_bio_t *open_detected_bio(const char *path)
+static bfs_bio_t *open_detected_bio(const char *path, bfs_err_t *error,
+                                   char message[BFS_FORMAT_ERROR_MAX])
 {
+    *error = BFS_ERR_CORRUPT;
     for (uint32_t size = BFS_MIN_BLOCK_SIZE; size <= BFS_MAX_BLOCK_SIZE; size *= 2) {
         bfs_bio_t *probe = bio_emu_open(path, size);
         if (!probe) continue;
         bfs_superblock_t sb;
-        if (bfs_sb_read(probe, &sb) == BFS_OK) return probe;
+        bfs_err_t err = bfs_sb_read(probe, &sb);
+        if (err == BFS_OK) { *error = BFS_OK; return probe; }
         bfs_bio_close(probe);
+        if (err == BFS_ERR_UNSUPPORTED) {
+            bfs_sb_describe_unsupported(&sb, message);
+            *error = err;
+            return NULL;
+        }
+        if (err == BFS_ERR_IO || err == BFS_ERR_NOMEM) *error = err;
     }
     return NULL;
 }
@@ -257,8 +266,16 @@ int main(int argc, char **argv)
     }
     int fix = argc == 3;
 
-    bfs_bio_t *bio = open_detected_bio(argv[1]);
-    if (!bio) { fprintf(stderr, "Cannot open %s\n", argv[1]); return 1; }
+    bfs_err_t open_error;
+    char format_error[BFS_FORMAT_ERROR_MAX] = {0};
+    bfs_bio_t *bio = open_detected_bio(argv[1], &open_error, format_error);
+    if (!bio) {
+        if (open_error == BFS_ERR_UNSUPPORTED)
+            fprintf(stderr, "%s\n", format_error);
+        else
+            fprintf(stderr, "Cannot open %s (error %d)\n", argv[1], open_error);
+        return 1;
+    }
 
     printf("=== BFS Filesystem Check ===\n");
 
@@ -267,8 +284,9 @@ int main(int argc, char **argv)
     /* A read-only check must not commit or resume interrupted deletions. The
      * write guard makes such a mount fail, leaving explicit repair to --fix. */
     bfs_fs_t fs;
-    if (bfs_fs_mount(&fs, fix ? bio : &inspect.base) != BFS_OK) {
-        fprintf(stderr, "Mount failed\n");
+    bfs_err_t mount_error = bfs_fs_mount(&fs, fix ? bio : &inspect.base);
+    if (mount_error != BFS_OK) {
+        fprintf(stderr, "Mount failed (error %d)\n", mount_error);
         bfs_bio_close(bio);
         return 1;
     }

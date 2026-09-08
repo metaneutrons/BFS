@@ -236,6 +236,31 @@ static void test_sb_raw_write_bounds(void)
     unlink(TEST_IMG);
 }
 
+static void test_sb_v2_golden_bytes(void)
+{
+    static const uint8_t expected[BFS_SB_SIZE] = {
+        [0] = 0x42, [1] = 0x46, [2] = 0x53, [7] = 2,
+        [10] = 0x10, [15] = 64, [23] = 1, [51] = 62, [63] = 2,
+        [64] = 'T', [65] = 'e', [66] = 's', [67] = 't',
+        [68] = 'V', [69] = 'o', [70] = 'l', [101] = 2,
+        [236] = 0x10, [237] = 0xeb, [238] = 0x3c, [239] = 0xfc,
+    };
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bfs_superblock_t sb;
+    make_test_sb(&sb, 1);
+    TEST_ASSERT_EQ(bfs_sb_compute_crc(&sb), 0x10eb3cfcu);
+    TEST_ASSERT_EQ(bfs_sb_write(bio, &sb), BFS_OK);
+    uint8_t buf[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, BLK_COUNT / 2, buf), BFS_OK);
+    TEST_ASSERT_MEM_EQ(buf, expected, sizeof(expected));
+    memcpy(&sb, expected, sizeof(sb));
+    TEST_ASSERT_EQ(bfs_sb_validate(&sb), BFS_OK);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("Superblock")
     TEST_RUN(test_sb_roundtrip);
     TEST_RUN(test_sb_corruption_detected);
@@ -247,4 +272,5 @@ TEST_SUITE_BEGIN("Superblock")
     TEST_RUN(test_sb_rejects_device_geometry_mismatch);
     TEST_RUN(test_sb_validate_structural_fields);
     TEST_RUN(test_sb_raw_write_bounds);
+    TEST_RUN(test_sb_v2_golden_bytes);
 TEST_SUITE_END()
