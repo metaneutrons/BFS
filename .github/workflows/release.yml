@@ -98,7 +98,7 @@ jobs:
           (cd smoke && sha256sum bfs-smoke.hdf > bfs-smoke.hdf.sha256)
 
       - name: Upload unsigned release payloads
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: unsigned-release-payloads
           path: dist/*
@@ -106,7 +106,7 @@ jobs:
           retention-days: 1
 
       - name: Upload smoke-test fixture
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-smoke-fixture
           path: smoke/*
@@ -192,7 +192,7 @@ jobs:
 
       - name: Preserve smoke evidence
         if: always()
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-smoke-evidence
           path: |
@@ -317,7 +317,7 @@ jobs:
           grep -Eq '(HTTP 404|404 Not Found)' "$RUNNER_TEMP/negative-attestation.log"
 
       - name: Upload complete release candidate
-        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4.6.2
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: release-candidate
           path: dist/*
