@@ -1,5 +1,8 @@
 # On-disk compatibility contract
 
+The normative byte layout is [BFS v2 on-disk format](on-disk-format.md). This
+document defines compatibility and refusal behavior on top of that layout.
+
 The current on-disk format remains **v2**, independently of the driver release
 version. This hardening does not add 64-bit block addresses or migrate volumes.
 

@@ -4,7 +4,7 @@
  *
  * Single global directory tree. Key is composite:
  *   (parent_id:u32, name_hash:u32, name_len:u8, name:up to 255 bytes)
- * Value is inode number (u32).
+ * Value is {inode number, inode type}, two big-endian u32 fields.
  *
  * Case-insensitive lookup using Amiga international character folding.
  * FNV-1a hash of the case-folded name for fast comparison.

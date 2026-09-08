@@ -6,9 +6,10 @@
  * All multi-byte fields must be accessed through bfs_beXX() on host.
  *
  * Disk layout:
- *   Byte 0:       Primary superblock (512 bytes)
- *   Byte 4096:    First data block (B+tree nodes, inodes, data)
- *   Byte part/2:  Backup superblock (512 bytes, at partition midpoint)
+ *   Byte 0:       Primary superblock slot (512 bytes)
+ *   Byte 4096:    First eligible physical block boundary; actual block number
+ *                 is ceil(4096 / block_size)
+ *   Byte part/2:  Backup superblock slot (512 bytes, at partition midpoint)
  */
 
 #ifndef BFS_ONDISK_H
@@ -29,7 +30,7 @@
 #endif
 
 /*
- * Superblock — written to blocks 0 and 1 (alternating).
+ * Superblock — written to byte 0 and the partition-midpoint slot (alternating).
  * The one with the higher valid txn_id is current.
  * Occupies the first BFS_SB_SIZE (512) bytes of the block; rest is zero-padded.
  */
@@ -43,7 +44,7 @@
 
 /* Format-time option flags */
 #define BFS_OPT_DATA_CHECKSUMS  (1u << 0)  /* per-extent data CRC32 */
-#define BFS_OPT_SNAPSHOTS       (1u << 1)  /* snapshot support enabled (future) */
+#define BFS_OPT_SNAPSHOTS       (1u << 1)  /* recognized legacy option; roots signal presence */
 #define BFS_OPT_DATA_ORDERED    (1u << 2)  /* flush data to disk before metadata commit */
 
 /* Superblock version */
@@ -62,7 +63,9 @@ typedef struct BFS_PACKED {
 
     /* B+tree root block pointers (0 = tree empty/not yet created) */
     uint32_t dir_tree_root;      /* directory B+tree */
-    uint32_t extent_tree_root;   /* extent B+tree */
+    /* Legacy global extent root; current writer leaves zero. */
+    // cppcheck-suppress unusedStructMember
+    uint32_t extent_tree_root;
     uint32_t free_tree_root;     /* free space B+tree */
     uint32_t inode_tree_root;    /* inode B+tree */
 
@@ -127,8 +130,7 @@ BFS_PACKED_END
 _Static_assert(sizeof(bfs_btnode_hdr_t) == 28, "btnode header size");
 
 /*
- * Inode — stored as value in directory B+tree (inline) or in
- * dedicated inode blocks for large metadata.
+ * Inode — stored as the value of a dedicated inode B+tree keyed by inode_nr.
  */
 #define BFS_INODE_FILE     0
 #define BFS_INODE_DIR      1
@@ -179,8 +181,8 @@ typedef struct BFS_PACKED {
 BFS_PACKED_END
 
 /*
- * Extent entry — used in per-file extent B+tree.
- * Key is file-relative block offset.
+ * Logical extent record used in a per-file extent B+tree. The fixed-size tree
+ * stores file_block as its key and the remaining fields as its leaf value.
  */
 BFS_PACKED_BEGIN
 typedef struct BFS_PACKED {
@@ -192,8 +194,8 @@ typedef struct BFS_PACKED {
 BFS_PACKED_END
 
 /*
- * Free space entry — used in free space B+tree.
- * Key is the starting block number.
+ * Logical free-space record. The tree stores block as key and length as value
+ * in separate fixed-capacity node arrays.
  */
 BFS_PACKED_BEGIN
 typedef struct BFS_PACKED {
@@ -206,8 +208,8 @@ _Static_assert(sizeof(bfs_free_extent_t) == 8, "free_extent size");
 
 /* ── On-disk geometry helpers (single source of truth) ─────── */
 
-/* First filesystem block — block 0 sits at byte BFS_DATA_OFFSET. Format (the
- * writer) and fsck (the reader) must agree on this, so both derive it here. */
+/* First eligible physical block after the fixed 4096-byte bootstrap region.
+ * Format (the writer) and fsck (the reader) must agree on this derivation. */
 static inline bfs_blk_t bfs_data_start_block(uint32_t block_size)
 {
     return (BFS_DATA_OFFSET + block_size - 1) / block_size;

@@ -4,7 +4,8 @@
  *
  * Superblock layout on disk:
  *   Byte 0:              Superblock A (512 bytes, zero-padded)
- *   Byte 4096:           First data block (block 0 of the filesystem)
+ *   Byte 4096:           First eligible region; physical block is
+ *                        ceil(4096 / block_size)
  *   Byte partition/2:    Superblock B (512 bytes, for disaster recovery)
  *
  * On commit: write to the older of A/B (alternating).

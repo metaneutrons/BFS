@@ -81,7 +81,7 @@ static inline bfs_blk_t *bfs_fs_pending_items(bfs_fs_t *fs)
 }
 
 /* Format a fresh BFS filesystem.
- * block_size: 512..65536, power of 2
+ * block_size: 1024..65536, power of 2
  * volname: null-terminated, max 31 chars */
 bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options);
 

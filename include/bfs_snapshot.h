@@ -22,9 +22,14 @@ typedef struct BFS_PACKED {
     uint32_t inode_tree_root;
     uint32_t txn_id_hi;
     uint32_t txn_id_lo;
-    uint32_t timestamp;          /* AmigaOS DateStamp days since 1978 */
+    /* Zero for a normal snapshot; last fully reclaimed inode while deletion
+     * is resumable under the .deleting_<id> name. */
+    // cppcheck-suppress unusedStructMember
+    uint32_t timestamp;
     uint8_t  name[BFS_SNAPSHOT_NAME_MAX];
 } bfs_snapshot_record_t;
+
+_Static_assert(sizeof(bfs_snapshot_record_t) == 52, "v2 snapshot record layout is frozen");
 
 /* Create a snapshot of the current filesystem state. */
 bfs_err_t bfs_snapshot_create(bfs_fs_t *fs, const char *name);

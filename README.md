@@ -35,7 +35,7 @@ code.
 | Snapshots | — | B+tree based (Read-only) |
 | Metadata compaction | — | **Online B+tree compaction** |
 | Max filename | 107 chars | 255 chars |
-| Max volume size | ~1.6 TB (~1.46 TiB, practical) | 4 TiB at 1K blocks; 16 TiB at 4K blocks (format address limit) |
+| Address-space ceiling | ~1.6 TB (~1.46 TiB, practical) | <4 TiB at 1 KiB blocks; <16 TiB at 4 KiB blocks (format address limit) |
 | Hard links | Yes | Yes |
 | Soft links | Yes | Yes |
 | File comments | Yes | Yes |
@@ -73,12 +73,14 @@ The B+tree engine is shared across all metadata types, utilizing a **dynamic tra
 `data=ordered` and metadata compaction are core API capabilities. The current
 Amiga `bfsformat` command does not expose arbitrary format-option flags.
 
-- **Directory tree** — (parent_id, hash, name) → inode
-- **Extent tree** — file_block → (disk_block, length)
+The normative v2 byte layout is documented in [the on-disk format specification](docs/on-disk-format.md).
+
+- **Directory tree** — (parent_id, hash, name) → (inode, type)
+- **Extent tree** — file_block → (disk_block, length, data CRC32)
 - **Inode tree** — inode_id → metadata
 - **Free space tree** — block_nr → length (self-hosting)
 - **Refcount tree** — block_nr → refcount (snapshot block sharing)
-- **Snapshot tree** — snapshot_id → record (tree roots + name)
+- **Snapshot tree** — snapshot_id → record (tree roots + cursor + name)
 
 ## Limitations
 

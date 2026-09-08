@@ -140,8 +140,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key);
  * Returns BFS_OK or BFS_ERR_NOTFOUND. */
 bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val);
 
-/* Scan keys >= start_key. Calls cb for each key/value pair.
- * If start_key is NULL, scans from the beginning. */
+/* Scan keys >= start_key. Calls cb for each key/value pair. Traversal follows
+ * parent/child links, not the on-disk right_sibling legacy leaf hint. If
+ * start_key is NULL, scanning starts from the beginning. */
 bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
                            bfs_scan_cb cb, void *ctx);
 
