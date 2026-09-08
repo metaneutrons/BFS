@@ -26,6 +26,7 @@ AMIGA_CFLAGS = -std=c99 $(AMIGA_WARNINGS) -O2 -m68020 -noixemul -fomit-frame-poi
 
 # ── Sources ─────────────────────────────────────────────────
 CORE_SRC = $(wildcard src/core/*.c)
+HOST_SRC = $(wildcard src/host/*.c)
 HOST_HEADERS = $(wildcard include/*.h tests/*.h)
 CORE_SRC_AMIGA = $(filter-out src/core/crc32.c,$(CORE_SRC))
 TEST_SRC = $(wildcard tests/test_*.c)
@@ -110,6 +111,10 @@ $(BUILD_HOST)/bfsfsck: tools/bfsfsck.c $(CORE_SRC) $(EMU_SRC) $(HOST_HEADERS)
 $(BUILD_HOST)/test_%: tests/test_%.c $(CORE_SRC) $(EMU_SRC) $(HOST_HEADERS)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
+
+$(BUILD_HOST)/test_posix_bio: tests/test_posix_bio.c $(CORE_SRC) $(HOST_SRC) $(HOST_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(HOST_SRC)
 
 $(BUILD_HOST)/test_fsck: $(BUILD_HOST)/bfsfsck
 
