@@ -1,5 +1,8 @@
 # Filesystem failure semantics
 
+The normative byte layout is [BFS v2 on-disk format](on-disk-format.md). This
+document defines operation and recovery behavior, not an alternate layout.
+
 BFS uses copy-on-write metadata and an alternating superblock commit boundary.
 Successful file writes update the inode before returning, including short writes.
 They are not durable until a successful sync. With ordered data enabled, the

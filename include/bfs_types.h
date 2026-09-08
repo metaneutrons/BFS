@@ -18,7 +18,7 @@
 #include <stdbool.h>
 #include <string.h>
 
-/* Block number — 32-bit, max 16TB with 4K blocks */
+/* Block number — 32-bit; at 4 KiB, address-space ceiling is 16 TiB minus 4 KiB */
 typedef uint32_t bfs_blk_t;
 
 /* Inode number */

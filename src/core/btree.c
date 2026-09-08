@@ -13,7 +13,8 @@
  *                 child[i+1] contains keys >= key[i].
  *                 So N keys → N+1 children.
  *
- * Leaf nodes: key[i]/val[i] are the actual data. right_sibling links leaves.
+ * Leaf nodes: key[i]/val[i] are the actual data. right_sibling is a legacy
+ * hint; traversal uses parent/child links because COW can leave it stale.
  *
  * COW: on modification, allocate a new block, copy+modify, update parent.
  *      Old blocks are freed after transaction commit.
