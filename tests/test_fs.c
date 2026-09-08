@@ -11,6 +11,20 @@
 #define BLK_SIZE 4096
 #define BLK_COUNT 4096  /* 16MB */
 
+typedef struct {
+    bfs_bio_t base;
+    bfs_bio_t *inner;
+} readonly_bio_t;
+
+static bfs_err_t readonly_bio_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+{
+    return bfs_bio_read(((readonly_bio_t *)bio)->inner, blk, buf);
+}
+
+static const bfs_bio_ops_t readonly_bio_ops = {
+    .read_block = readonly_bio_read,
+};
+
 /* ── Test: format and mount ────────────────────────────────── */
 
 static void test_format_mount(void)
@@ -271,6 +285,38 @@ static void test_format_both_copies_mountable(void)
     }
 }
 
+static void test_readonly_mount_does_not_commit(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "ReadOnly", 0), BFS_OK);
+
+    bfs_superblock_t before;
+    TEST_ASSERT_EQ(bfs_sb_read(bio, &before), BFS_OK);
+
+    readonly_bio_t readonly = {
+        .base = {
+            .ops = &readonly_bio_ops,
+            .block_size = bio->block_size,
+            .block_count = bio->block_count,
+        },
+        .inner = bio,
+    };
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount_readonly(&fs, &readonly.base), BFS_OK);
+    TEST_ASSERT(fs.mounted);
+    TEST_ASSERT(fs.read_only);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+
+    bfs_superblock_t after;
+    TEST_ASSERT_EQ(bfs_sb_read(bio, &after), BFS_OK);
+    TEST_ASSERT_EQ(bfs_be64(after.txn_id), bfs_be64(before.txn_id));
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("Filesystem")
     TEST_RUN(test_format_mount);
     TEST_RUN(test_format_rejects_invalid_volume_names);
@@ -280,4 +326,5 @@ TEST_SUITE_BEGIN("Filesystem")
     TEST_RUN(test_multiple_syncs);
     TEST_RUN(test_superblock_alternation);
     TEST_RUN(test_format_both_copies_mountable);
+    TEST_RUN(test_readonly_mount_does_not_commit);
 TEST_SUITE_END()

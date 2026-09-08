@@ -51,6 +51,7 @@ typedef struct bfs_fs {
     uint32_t           next_ino;   /* next inode number to allocate */
     uint32_t           options;    /* BFS_OPT_* flags */
     bool               mounted;
+    bool               read_only;  /* lifecycle forbids recovery and commits */
     bfs_err_t          recovery_error; /* nonzero: abandon/remount required */
     /* Shared between fs.c recovery and file.c handle validation. */
     // cppcheck-suppress unusedStructMember
@@ -87,6 +88,11 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options);
 
 /* Mount an existing BFS filesystem. */
 bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio);
+
+/* Mount an existing committed BFS state without any write-side recovery or
+ * commit. Close it with bfs_fs_unmount(), which only releases resources for a
+ * read-only filesystem. */
+bfs_err_t bfs_fs_mount_readonly(bfs_fs_t *fs, bfs_bio_t *bio);
 
 /* Sync: commit all pending changes to disk (the full transaction commit lives in
  * txn.c as bfs_txn_commit(fs); this is just the public, lock-taking wrapper). */
