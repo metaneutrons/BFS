@@ -119,12 +119,15 @@ static bfs_err_t sparse_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
     sparse_bio_t *sparse = (sparse_bio_t *)bio;
     sparse->reads++;
     if (sparse->read_error != BFS_OK) return sparse->read_error;
+    if (bio->block_size < sizeof(bfs_superblock_t)) return BFS_ERR_INVAL;
     memset(buf, 0, bio->block_size);
     uint64_t offset = (uint64_t)blk * bio->block_size;
-    if (offset == 0) memcpy(buf, &sparse->copies[0], sizeof(bfs_superblock_t));
+    /* The caller allocates block_size bytes; the header fits as checked above. */
+    if (offset == 0) memcpy(buf, &sparse->copies[0], sizeof(bfs_superblock_t)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     if (sparse->backup >= offset && sparse->backup - offset <=
         bio->block_size - sizeof(bfs_superblock_t))
-        memcpy((uint8_t *)buf + (size_t)(sparse->backup - offset),
+        /* The condition above bounds both the offset and the full header. */
+        memcpy((uint8_t *)buf + (size_t)(sparse->backup - offset), /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
                &sparse->copies[1], sizeof(bfs_superblock_t));
     return BFS_OK;
 }
@@ -144,7 +147,8 @@ static void init_sparse(sparse_bio_t *sparse, uint32_t bs, uint32_t count)
     sb->block_count = bfs_be32(count);
     sb->txn_id = bfs_be64(1);
     sb->next_ino = bfs_be32(2);
-    memcpy(sb->volname, "Sparse", 7);
+    /* A seven-byte literal, including NUL, fits the 32-byte label. */
+    memcpy(sb->volname, "Sparse", 7); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     sb->sb_backup_offset_hi = bfs_be32((uint32_t)(sparse->backup >> 32));
     sb->sb_backup_offset_lo = bfs_be32((uint32_t)sparse->backup);
     sb->crc32 = bfs_be32(bfs_sb_compute_crc(sb));
@@ -219,6 +223,7 @@ static void test_probe_failure_restores_geometry(void)
     bfs_superblock_t out;
     sparse.read_error = BFS_ERR_IO;
     TEST_ASSERT_EQ(bfs_sb_probe(&sparse.base, 4096 * 256, &out), BFS_ERR_IO);
+    TEST_ASSERT_EQ(sparse.read_error, BFS_ERR_IO);
     TEST_ASSERT_EQ(sparse.base.block_size, 512);
     sparse.read_error = BFS_OK;
     memset(sparse.copies, 0, sizeof(sparse.copies));

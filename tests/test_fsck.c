@@ -22,8 +22,8 @@ static int run_fsck(bool fix)
             _exit(126);
         close(output);
         /* Fixed executable/arguments in the test build directory, with no shell. */
-        execl("./bfsfsck", "bfsfsck", IMAGE, fix ? "--fix" : (char *)NULL,
-              (char *)NULL); /* Flawfinder: ignore */
+        execl("./bfsfsck", "bfsfsck", IMAGE, fix ? "--fix" : (char *)NULL, /* Flawfinder: ignore */
+              (char *)NULL);
         _exit(127);
     }
     int status;

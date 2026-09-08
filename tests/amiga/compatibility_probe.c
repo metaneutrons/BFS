@@ -20,6 +20,7 @@ static BOOL check_format(LONG expected)
     BOOL ok = !result && IoErr() == ERROR_BAD_NUMBER && message[0] == 0x55;
     result = DoPkt(port, BFS_ACTION_FORMAT_ERROR, (LONG)message, sizeof(message), 0, 0, 0);
     ok = ok && IoErr() == 0 && message[sizeof(message) - 1] == 0;
+    message[sizeof(message) - 1] = 0;
     if (expected) {
         ok = ok && result && strstr(message, expected == 3 ?
             "version 3 is too new" : "version 2 uses unsupported options 0x80000000");
@@ -27,7 +28,8 @@ static BOOL check_format(LONG expected)
         BPTR diagnosis = Open("SYS:diagnosis.txt", MODE_NEWFILE);
         if (!diagnosis) ok = FALSE;
         else {
-            LONG length = (LONG)strlen(message);
+            LONG length = 0;
+            while (length < (LONG)sizeof(message) && message[length]) length++;
             if (Write(diagnosis, message, length) != length) ok = FALSE;
             if (!Close(diagnosis)) ok = FALSE;
         }

@@ -241,7 +241,8 @@ static void SetMountError(struct bfs_handler *h, bfs_err_t err,
     char message[BFS_FORMAT_ERROR_MAX] = {0};
     if (err == BFS_ERR_UNSUPPORTED) bfs_sb_describe_unsupported(sb, message);
     if (strcmp(message, h->format_error) != 0) h->format_error_reported = false;
-    memcpy(h->format_error, message, sizeof(message));
+    /* Both arrays have BFS_FORMAT_ERROR_MAX bytes. */
+    memcpy(h->format_error, message, sizeof(message)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     h->mount_error = err;
 }
 
@@ -950,7 +951,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             res2 = ERROR_BAD_NUMBER;
             break;
         }
-        memcpy(buffer, h->format_error, BFS_FORMAT_ERROR_MAX);
+        /* Packet capacity was checked above; the source has exactly this size. */
+        memcpy(buffer, h->format_error, BFS_FORMAT_ERROR_MAX); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         res1 = h->format_error[0] ? DOSTRUE : DOSFALSE;
         res2 = 0;
         break;

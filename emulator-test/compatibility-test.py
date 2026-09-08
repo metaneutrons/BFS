@@ -20,6 +20,7 @@ ROOT = Path(__file__).resolve().parent.parent
 
 def run_checked(argv):
     # Fixed local build tools, no shell or guest-provided commands.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args, python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
     subprocess.run([str(value) for value in argv], check=True, shell=False)  # nosec B603
 
 
@@ -39,23 +40,28 @@ def alter_copy(image, slot, options=False, damaged=False):
         stream.write(header)
 
 
-def main():
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--handler", type=Path, default=ROOT / "build/amiga/bfshandler")
-    args = parser.parse_args()
+def prepare_media():
     runtime = ROOT / "build/emulator"
     runtime.mkdir(parents=True, exist_ok=True)
     rom = runtime / "aros"
     run_checked([ROOT / "tools/install-aros-rom.sh", rom])
-    emulator = shutil.which("fs-uae")
-    if not emulator:
-        raise ValueError("fs-uae is required")
     work = Path(tempfile.mkdtemp(prefix="run.compat-", dir=runtime))
     print(f"Compatibility evidence: {work}", flush=True)
     clean = work / "clean.hdf"
     with clean.open("wb") as stream:
         stream.truncate(32 * 1024 * 1024)
     run_checked([ROOT / "build/host/mkbfs", clean, "4096", "Compat"])
+    return work, rom, clean
+
+
+def main():
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--handler", type=Path, default=ROOT / "build/amiga/bfshandler")
+    args = parser.parse_args()
+    emulator = shutil.which("fs-uae")
+    if not emulator:
+        raise ValueError("fs-uae is required")
+    work, rom, clean = prepare_media()
     scenarios = [("v2", None, False, False, 0),
                  ("new-primary", 0, False, False, 3),
                  ("new-backup", 1, False, False, 3),

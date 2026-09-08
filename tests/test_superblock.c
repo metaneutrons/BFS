@@ -255,7 +255,8 @@ static void test_sb_v2_golden_bytes(void)
     uint8_t buf[BLK_SIZE];
     TEST_ASSERT_EQ(bfs_bio_read(bio, BLK_COUNT / 2, buf), BFS_OK);
     TEST_ASSERT_MEM_EQ(buf, expected, sizeof(expected));
-    memcpy(&sb, expected, sizeof(sb));
+    /* The 512-byte golden slot contains the complete 240-byte structure. */
+    memcpy(&sb, expected, sizeof(sb)); // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     TEST_ASSERT_EQ(bfs_sb_validate(&sb), BFS_OK);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
