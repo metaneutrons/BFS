@@ -163,6 +163,9 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     fs.mounted = true;
     err = bfs_txn_commit(&fs);
     fs.mounted = false;
+    /* Replace the remaining bootstrap-only copy before reporting success.
+     * Either superblock must mount the completed filesystem on a fresh disk. */
+    if (err == BFS_OK) err = bfs_sb_write(bio, &fs.txn.sb);
 out:
     free(fs.pending_frees_dynamic);
     bfs_lock_destroy(&fs.lock);
