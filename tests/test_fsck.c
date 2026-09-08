@@ -11,7 +11,7 @@
 
 #define IMAGE "test_fsck.img"
 
-static int run_fsck(void)
+static int run_fsck(bool fix)
 {
     pid_t child = fork();
     if (child < 0) return -1;
@@ -22,7 +22,8 @@ static int run_fsck(void)
             _exit(126);
         close(output);
         /* Fixed executable/arguments in the test build directory, with no shell. */
-        execl("./bfsfsck", "bfsfsck", IMAGE, (char *)NULL); /* Flawfinder: ignore */
+        execl("./bfsfsck", "bfsfsck", IMAGE, fix ? "--fix" : (char *)NULL, /* Flawfinder: ignore */
+              (char *)NULL);
         _exit(127);
     }
     int status;
@@ -50,7 +51,7 @@ static void test_clean_snapshot_and_readonly_check(void)
     TEST_ASSERT(before != NULL);
     for (uint32_t block = 0; block < bio->block_count; block++)
         TEST_ASSERT_EQ(bfs_bio_read(bio, block, before + (size_t)block * bio->block_size), BFS_OK);
-    TEST_ASSERT_EQ(run_fsck(), 0);
+    TEST_ASSERT_EQ(run_fsck(false), 0);
     uint8_t after[4096];
     for (uint32_t block = 0; block < bio->block_count; block++) {
         TEST_ASSERT_EQ(bfs_bio_read(bio, block, after), BFS_OK);
@@ -64,12 +65,55 @@ static void test_clean_snapshot_and_readonly_check(void)
     TEST_ASSERT_EQ(bfs_extent_lookup(&file.extents, 0, &data), BFS_OK);
     TEST_ASSERT_EQ(bfs_refcount_inc(&fs.refcount, data), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
-    TEST_ASSERT_EQ(run_fsck(), 2);
+    TEST_ASSERT_EQ(run_fsck(false), 2);
     bfs_bio_close(bio);
     unlink(IMAGE);
     unlink("test_fsck.log");
 }
 
+static void test_unsupported_format_never_repaired(void)
+{
+    for (unsigned option = 0; option < 2; option++) {
+        for (unsigned slot = 0; slot < 2; slot++) {
+            unlink(IMAGE);
+            bfs_bio_t *bio = bio_emu_create(IMAGE, 4096, 256);
+            TEST_ASSERT(bio != NULL);
+            TEST_ASSERT_EQ(bfs_fs_format(bio, "Future", 0), BFS_OK);
+            bfs_superblock_t sb;
+            TEST_ASSERT_EQ(bfs_sb_read(bio, &sb), BFS_OK);
+            if (option) sb.options = bfs_be32(0x80000000u);
+            else sb.version = bfs_be32(BFS_SB_VERSION + 1);
+            sb.crc32 = bfs_be32(bfs_sb_compute_crc(&sb));
+            uint64_t offset = slot ? bfs_default_backup_offset(256, 4096) : 0;
+            TEST_ASSERT_EQ(bfs_sb_write_raw(bio, offset, &sb), BFS_OK);
+            TEST_ASSERT_EQ(bfs_bio_sync(bio), BFS_OK);
+            uint8_t *before = malloc(4096 * 256);
+            TEST_ASSERT(before != NULL);
+            for (unsigned block = 0; block < 256; block++)
+                TEST_ASSERT_EQ(bfs_bio_read(bio, block, before + block * 4096), BFS_OK);
+            TEST_ASSERT_EQ(run_fsck(false), 1);
+            TEST_ASSERT_EQ(run_fsck(true), 1);
+            FILE *log = fopen("test_fsck.log", "r");
+            TEST_ASSERT(log != NULL);
+            char message[256];
+            TEST_ASSERT(fgets(message, sizeof(message), log) != NULL);
+            TEST_ASSERT_EQ(fclose(log), 0);
+            TEST_ASSERT(strstr(message, option ? "version 2 uses unsupported options 0x80000000" :
+                                                "version 3 is too new") != NULL);
+            uint8_t after[4096];
+            for (unsigned block = 0; block < 256; block++) {
+                TEST_ASSERT_EQ(bfs_bio_read(bio, block, after), BFS_OK);
+                TEST_ASSERT_MEM_EQ(after, before + block * 4096, sizeof(after));
+            }
+            free(before);
+            bfs_bio_close(bio);
+            unlink(IMAGE);
+            unlink("test_fsck.log");
+        }
+    }
+}
+
 TEST_SUITE_BEGIN("Filesystem Checker")
     TEST_RUN(test_clean_snapshot_and_readonly_check);
+    TEST_RUN(test_unsupported_format_never_repaired);
 TEST_SUITE_END()

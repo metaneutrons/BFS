@@ -99,6 +99,10 @@ typedef struct BFS_PACKED {
 
 BFS_PACKED_END
 _Static_assert(sizeof(bfs_superblock_t) <= BFS_SB_SIZE, "superblock must fit in one sector");
+_Static_assert(sizeof(bfs_superblock_t) == 240, "v2 superblock layout is frozen");
+_Static_assert(offsetof(bfs_superblock_t, version) == 4, "v2 version offset");
+_Static_assert(offsetof(bfs_superblock_t, options) == 56, "v2 options offset");
+_Static_assert(offsetof(bfs_superblock_t, crc32) == 236, "v2 CRC offset");
 
 /*
  * B+tree node header — first bytes of every B+tree block.

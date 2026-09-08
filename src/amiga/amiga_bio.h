@@ -24,7 +24,7 @@ typedef struct amiga_bio {
 bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
                         struct MsgPort *port, struct DosEnvec *env,
                         bool removable);
-void bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size);
+bfs_err_t bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size);
 bfs_err_t bfs_amiga_bio_probe_superblock(amiga_bio_t *ab, bfs_superblock_t *sb);
 
 #endif /* BFS_AMIGA_BIO_H */

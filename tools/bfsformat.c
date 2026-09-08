@@ -14,6 +14,7 @@
 #include <dos/rdargs.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include "../include/bfs_diagnostics.h"
 
 #define ACTION_FORMAT 1020
 
@@ -55,6 +56,18 @@ int main(void)
         return 20;
     }
 
+    char format_message[BFS_FORMAT_ERROR_MAX] = {0};
+    if (DoPkt(port, BFS_ACTION_FORMAT_ERROR, (LONG)format_message,
+              sizeof(format_message), 0, 0, 0)) {
+        format_message[sizeof(format_message) - 1] = 0;
+        PutStr(format_message);
+        PutStr("\n");
+        FreeDeviceProc(dvp);
+        FreeArgs(rdargs);
+        me->pr_WindowPtr = oldwin;
+        return 20;
+    }
+
     /* Build BSTR name */
     UBYTE bstr[BFS_NAME_BSTR_MAX];
     int nlen = 0;
@@ -87,6 +100,11 @@ int main(void)
     LONG format_error = IoErr();
     LONG uninhibited = Inhibit(drive, DOSFALSE);
     LONG uninhibit_error = IoErr();
+    if (!res && format_error == ERROR_NOT_IMPLEMENTED) {
+        DoPkt(port, BFS_ACTION_FORMAT_ERROR, (LONG)format_message,
+              sizeof(format_message), 0, 0, 0);
+        format_message[sizeof(format_message) - 1] = 0;
+    }
     FreeDeviceProc(dvp);
 
     me->pr_WindowPtr = oldwin;
@@ -98,7 +116,8 @@ int main(void)
     } else if (res) {
         PutStr("Format complete.\n");
     } else {
-        PrintFault(format_error, "bfsformat");
+        if (format_message[0]) { PutStr(format_message); PutStr("\n"); }
+        else PrintFault(format_error, "bfsformat");
         FreeArgs(rdargs);
         return 20;
     }

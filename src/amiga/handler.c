@@ -20,6 +20,7 @@
 #include <devices/timer.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
+#include <proto/intuition.h>
 #include <string.h>
 
 #include "bfs_fs.h"
@@ -117,6 +118,9 @@ struct bfs_handler {
     bfs_cache_t cache;
     bool dirty;
     bool write_protected;
+    bfs_err_t mount_error;
+    char format_error[BFS_FORMAT_ERROR_MAX];
+    bool format_error_reported;
     struct DosList *volnode;
     struct bfs_notify *notify_list;
     struct bfs_open_file *open_files;
@@ -231,6 +235,37 @@ static void ReplaceVolumeNodeName(struct bfs_handler *h, UBYTE *new_name)
 
 static bool HandlerIsInUse(const struct bfs_handler *h);
 
+static void SetMountError(struct bfs_handler *h, bfs_err_t err,
+                          const bfs_superblock_t *sb)
+{
+    char message[BFS_FORMAT_ERROR_MAX] = {0};
+    if (err == BFS_ERR_UNSUPPORTED) bfs_sb_describe_unsupported(sb, message);
+    if (strcmp(message, h->format_error) != 0) h->format_error_reported = false;
+    /* Both arrays have BFS_FORMAT_ERROR_MAX bytes. */
+    memcpy(h->format_error, message, sizeof(message)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    h->mount_error = err;
+}
+
+static void ReportFormatError(struct bfs_handler *h, struct MsgPort *reply_port)
+{
+    if (h->mount_error != BFS_ERR_UNSUPPORTED || h->format_error_reported ||
+        !reply_port || (reply_port->mp_Flags & PF_ACTION) != PA_SIGNAL || !reply_port->mp_SigTask ||
+        ((struct Task *)reply_port->mp_SigTask)->tc_Node.ln_Type != NT_PROCESS)
+        return;
+    struct Process *caller = (struct Process *)reply_port->mp_SigTask;
+    if (caller->pr_WindowPtr == (APTR)-1) return;
+    struct IntuitionBase *IntuitionBase =
+        (struct IntuitionBase *)OpenLibrary("intuition.library", 37);
+    if (!IntuitionBase) return;
+    struct EasyStruct request = {
+        sizeof(struct EasyStruct), 0, "BFS: unsupported disk format",
+        h->format_error, "OK",
+    };
+    h->format_error_reported = true;
+    EasyRequestArgs((struct Window *)caller->pr_WindowPtr, &request, NULL, NULL);
+    CloseLibrary((struct Library *)IntuitionBase);
+}
+
 static bool TryRemountMedia(struct bfs_handler *h)
 {
     if (HandlerIsInUse(h)) return false;
@@ -239,18 +274,19 @@ static bool TryRemountMedia(struct bfs_handler *h)
     bfs_cache_destroy(&h->cache);
 
     amiga_bio_t *ab = (amiga_bio_t *)(h + 1);
-    bfs_amiga_bio_set_blocksize(ab, ab->sector_size);
 
     bfs_superblock_t sb;
     bfs_err_t err = bfs_amiga_bio_probe_superblock(ab, &sb);
+    SetMountError(h, err, &sb);
     if (err != BFS_OK) return false;
 
-    bfs_amiga_bio_set_blocksize(ab, bfs_be32(sb.block_size));
     err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
                          h->dosenvec->de_NumBuffers);
+    h->mount_error = err;
     if (err != BFS_OK) return false;
 
     err = bfs_fs_mount(&h->fs, &h->cache.bio);
+    SetMountError(h, err, &h->fs.txn.sb);
     if (err != BFS_OK) return false;
 
     h->volnode = RegisterVolumeNode(h, (const char *)h->fs.txn.sb.volname);
@@ -552,6 +588,8 @@ static LONG Pfs4ToDosError(bfs_err_t err)
     case BFS_ERR_NOTEMPTY: return ERROR_DIRECTORY_NOT_EMPTY;
     case BFS_ERR_NOMEM:    return ERROR_NO_FREE_STORE;
     case BFS_ERR_INVAL:    return ERROR_BAD_NUMBER;
+    case BFS_ERR_OVERFLOW: return ERROR_BAD_NUMBER;
+    case BFS_ERR_UNSUPPORTED: return ERROR_NOT_IMPLEMENTED;
     case BFS_ERR_CORRUPT:  return ERROR_NOT_A_DOS_DISK;
     case BFS_ERR_AGAIN:    return ERROR_DISK_FULL;
     case BFS_ERR_IO:       return ERROR_SEEK_ERROR;
@@ -635,7 +673,8 @@ static void HandleDosPacket64(bfs_dos_packet64_t *packet, struct bfs_handler *h)
     bool getter = packet->type == BFS_ACTION_GET_FILE_POSITION64 ||
                   packet->type == BFS_ACTION_GET_FILE_SIZE64;
     packet->result = getter ? -1 : DOSFALSE;
-    packet->error = ERROR_NOT_A_DOS_DISK;
+    packet->error = h->mount_error == BFS_ERR_UNSUPPORTED ?
+                    Pfs4ToDosError(h->mount_error) : ERROR_NOT_A_DOS_DISK;
     if (!h->fs.mounted) return;
     if (h->fs.recovery_error != BFS_OK) {
         packet->error = Pfs4ToDosError(h->fs.recovery_error);
@@ -881,12 +920,14 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     if (pkt->dp_Type >= BFS_ACTION_CHANGE_FILE_POSITION64 &&
         pkt->dp_Type <= BFS_ACTION_GET_FILE_SIZE64) {
         if (pkt->dp_Res1 != BFS_DP64_INIT) goto reply;
+        if (!h->fs.mounted) ReportFormatError(h, pkt->dp_Port);
         HandleDosPacket64((bfs_dos_packet64_t *)pkt, h);
         ReplyPacket(pkt, h);
         return;
     }
 
     if (!h->fs.mounted && pkt->dp_Type != ACTION_FORMAT &&
+        pkt->dp_Type != BFS_ACTION_FORMAT_ERROR &&
         pkt->dp_Type != ACTION_DIE && pkt->dp_Type != ACTION_DISK_INFO &&
         pkt->dp_Type != ACTION_INFO &&
         pkt->dp_Type != ACTION_CURRENT_VOLUME &&
@@ -896,11 +937,26 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         pkt->dp_Type != ACTION_FREE_LOCK &&
         pkt->dp_Type != ACTION_END &&
         pkt->dp_Type != ACTION_REMOVE_NOTIFY) {
-        res2 = ERROR_NOT_A_DOS_DISK;
+        res2 = h->mount_error != BFS_OK ? Pfs4ToDosError(h->mount_error) :
+                                        ERROR_NOT_A_DOS_DISK;
+        ReportFormatError(h, pkt->dp_Port);
         goto reply;
     }
 
     switch (pkt->dp_Type) {
+
+    case BFS_ACTION_FORMAT_ERROR: {
+        char *buffer = (char *)pkt->dp_Arg1;
+        if (!buffer || pkt->dp_Arg2 < BFS_FORMAT_ERROR_MAX) {
+            res2 = ERROR_BAD_NUMBER;
+            break;
+        }
+        /* Packet capacity was checked above; the source has exactly this size. */
+        memcpy(buffer, h->format_error, BFS_FORMAT_ERROR_MAX); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+        res1 = h->format_error[0] ? DOSTRUE : DOSFALSE;
+        res2 = 0;
+        break;
+    }
 
     /* ── LOCATE_OBJECT ─────────────────────────────────────── */
     case ACTION_LOCATE_OBJECT: {
@@ -1948,6 +2004,10 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     /* ── ACTION_FORMAT ─────────────────────────────────────── */
     case ACTION_FORMAT: {
         if (h->write_protected) { res2 = ERROR_DISK_WRITE_PROTECTED; break; }
+        if (h->mount_error == BFS_ERR_UNSUPPORTED) {
+            ReportFormatError(h, pkt->dp_Port);
+            res2 = Pfs4ToDosError(h->mount_error); break;
+        }
         if (HandlerIsInUse(h)) { res2 = ERROR_OBJECT_IN_USE; break; }
         UBYTE *bname = (UBYTE *)BADDR(pkt->dp_Arg1);
         if (!bname || bname[0] == 0 || bname[0] >= BFS_VOLNAME_MAX) {
@@ -1958,15 +2018,19 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         memcpy(volname, &bname[1], nlen);
         volname[nlen] = 0;
 
-        bfs_err_t err = BFS_OK;
+        /* Check the proposed geometry before unmounting or changing the cache. */
+        amiga_bio_t *ab = (amiga_bio_t *)(h + 1);
+        amiga_bio_t proposed = *ab;
+        bfs_err_t err = bfs_amiga_bio_set_blocksize(&proposed, 4096);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         if (h->fs.mounted) err = bfs_fs_unmount(&h->fs);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         h->dirty = false;
         h->notify_pending = false;
         RemoveVolumeNode(h);
         /* Set block size to 4096 (BFS default) and reinit cache */
-        amiga_bio_t *ab = (amiga_bio_t *)(h + 1);
-        bfs_amiga_bio_set_blocksize(ab, 4096);
+        ab->base.block_size = proposed.base.block_size;
+        ab->base.block_count = proposed.base.block_count;
         bfs_cache_destroy(&h->cache);
         err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
                              h->dosenvec->de_NumBuffers);
@@ -1977,6 +2041,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         memset(&h->fs, 0, sizeof(h->fs));
         bfs_cache_invalidate(&h->cache);
         err = bfs_fs_mount(&h->fs, &h->cache.bio);
+        SetMountError(h, err, &h->fs.txn.sb);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         h->volnode = RegisterVolumeNode(h, volname);
         if (!h->volnode) {
@@ -2318,16 +2383,16 @@ void EntryPoint(void)
     bfs_superblock_t sb;
     bfs_err_t mount_err = bfs_amiga_bio_probe_superblock((amiga_bio_t *)(h + 1), &sb);
     if (mount_err == BFS_OK) {
-        uint32_t fs_bs = bfs_be32(sb.block_size);
-        bfs_amiga_bio_set_blocksize((struct amiga_bio *)(h + 1), fs_bs);
         mount_err = bfs_cache_init(&h->cache, (bfs_bio_t *)(h + 1),
                                    h->dosenvec->de_NumBuffers);
-        if (mount_err == BFS_OK)
+        if (mount_err == BFS_OK) {
             mount_err = bfs_fs_mount(&h->fs, &h->cache.bio);
+            if (mount_err == BFS_ERR_UNSUPPORTED) sb = h->fs.txn.sb;
+        }
     }
-    /* If mount fails (unformatted disk), continue anyway.
-     * Like PFS3: accept packets, return ERROR_NOT_A_DOS_DISK for most,
-     * but allow ACTION_FORMAT to format the disk. */
+    /* Stay available for unformatted media, but retain incompatible-format
+     * errors so ordinary packets and ACTION_FORMAT cannot overwrite it. */
+    SetMountError(h, mount_err, &sb);
     if (mount_err != BFS_OK) {
         h->fs.bio = (bfs_bio_t *)(h + 1);
     }

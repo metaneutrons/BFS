@@ -1,5 +1,19 @@
 # Changelog
 
+## [0.1.3](https://github.com/metaneutrons/BFS/compare/v0.1.2...v0.1.3) (2026-09-08)
+
+
+### Bug Fixes
+
+* **ci:** harden release signing with Cosign 3.1.3 ([c3277ea](https://github.com/metaneutrons/BFS/commit/c3277eaf8cbd76cb65216bc4abba054728a03c30))
+
+## [0.1.2](https://github.com/metaneutrons/BFS/compare/v0.1.1...v0.1.2) (2026-09-08)
+
+
+### Bug Fixes
+
+* harden format compatibility and fresh-volume recovery ([#31](https://github.com/metaneutrons/BFS/issues/31)) ([4839f78](https://github.com/metaneutrons/BFS/commit/4839f780adf608e0e083525e0a4c3fae6c855d98))
+
 ## [0.1.1](https://github.com/metaneutrons/BFS/compare/v0.1.0...v0.1.1) (2026-09-07)
 
 

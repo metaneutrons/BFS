@@ -219,7 +219,8 @@ bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
 
     ab->base.ops = &amiga_bio_ops;
     ab->base.block_size = sector_size; /* initial block size = sector size */
-    ab->base.block_count = (total_sectors > UINT32_MAX) ? UINT32_MAX : (bfs_blk_t)total_sectors;
+    /* Unrepresentable sector geometry stays inactive until filesystem probing. */
+    ab->base.block_count = (total_sectors > UINT32_MAX) ? 0 : (bfs_blk_t)total_sectors;
     ab->request = request;
     ab->port = port;
     ab->partition_start_byte = start_sector * sector_size;
@@ -238,23 +239,14 @@ bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
     return BFS_OK;
 }
 
-void bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size)
+bfs_err_t bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size)
 {
-    uint64_t blocks = partition_size_bytes(ab) / fs_block_size;
-    ab->base.block_size = fs_block_size;
-    ab->base.block_count = (blocks > UINT32_MAX) ? UINT32_MAX : (bfs_blk_t)blocks;
+    if (!ab) return BFS_ERR_INVAL;
+    return bfs_bio_set_geometry(&ab->base, partition_size_bytes(ab), fs_block_size);
 }
 
 bfs_err_t bfs_amiga_bio_probe_superblock(amiga_bio_t *ab, bfs_superblock_t *sb)
 {
     if (!ab || !sb) return BFS_ERR_INVAL;
-    bfs_err_t result = BFS_ERR_CORRUPT;
-    for (uint32_t bs = BFS_MIN_BLOCK_SIZE; bs <= BFS_MAX_BLOCK_SIZE; bs *= 2u) {
-        bfs_amiga_bio_set_blocksize(ab, bs);
-        bfs_err_t err = bfs_sb_read(&ab->base, sb);
-        if (err == BFS_OK) return BFS_OK;
-        if (err == BFS_ERR_IO || err == BFS_ERR_NOMEM) result = err;
-    }
-    bfs_amiga_bio_set_blocksize(ab, ab->sector_size);
-    return result;
+    return bfs_sb_probe(&ab->base, partition_size_bytes(ab), sb);
 }
