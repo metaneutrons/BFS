@@ -57,6 +57,26 @@ jobs:
           cosign verify-blob --bundle fixture/payload.sigstore.json \
             --certificate-oidc-issuer https://token.actions.githubusercontent.com \
             --certificate-identity "$identity" fixture/payload.txt
+          for policy in identity issuer; do
+            expected_identity="$identity"
+            expected_issuer=https://token.actions.githubusercontent.com
+            if [[ "$policy" == identity ]]; then
+              expected_identity=https://example.invalid/untrusted-signer
+            else
+              expected_issuer=https://example.invalid/untrusted-issuer
+            fi
+            set +e
+            cosign verify-blob --offline --bundle fixture/payload.sigstore.json \
+              --certificate-oidc-issuer "$expected_issuer" \
+              --certificate-identity "$expected_identity" fixture/payload.txt \
+              > "$RUNNER_TEMP/policy-negative-$policy.log" 2>&1
+            policy_status=$?
+            set -e
+            [[ "$policy_status" -eq 1 ]]
+            grep -Eiq '(certificate|identity|issuer|subject)' \
+              "$RUNNER_TEMP/policy-negative-$policy.log"
+            printf 'Expected rejection for incorrect %s policy.\n' "$policy"
+          done
           for asset in fixture/payload.txt fixture/payload.sigstore.json; do
             gh attestation verify "$asset" --repo "$GITHUB_REPOSITORY" \
               --signer-workflow "$signer" --source-ref "$GITHUB_REF"
