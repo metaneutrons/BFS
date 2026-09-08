@@ -88,14 +88,19 @@ bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
     if (!sb) return BFS_ERR_INVAL;
     if (bfs_be32(sb->magic) != BFS_SB_MAGIC)
         return BFS_ERR_CORRUPT;
-    if (bfs_be32(sb->version) != BFS_SB_VERSION)
+    if (bfs_be32(sb->crc32) != bfs_sb_compute_crc(sb))
         return BFS_ERR_CORRUPT;
+
+    /* Classify incompatibility only after verifying the frozen v2 envelope.
+     * A bit flip in version/options must still permit ordinary recovery. */
+    const uint32_t known_options = BFS_OPT_DATA_CHECKSUMS | BFS_OPT_SNAPSHOTS |
+                                   BFS_OPT_DATA_ORDERED;
+    if (bfs_be32(sb->version) != BFS_SB_VERSION ||
+        (bfs_be32(sb->options) & ~known_options) != 0)
+        return BFS_ERR_UNSUPPORTED;
 
     uint32_t bs = bfs_be32(sb->block_size);
     if (!bfs_block_size_valid(bs))
-        return BFS_ERR_CORRUPT;
-
-    if (bfs_be32(sb->crc32) != bfs_sb_compute_crc(sb))
         return BFS_ERR_CORRUPT;
 
     bfs_blk_t block_count = bfs_be32(sb->block_count);
@@ -107,10 +112,7 @@ bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
         return BFS_ERR_CORRUPT;
     bfs_blk_t backup_block = (bfs_blk_t)(backup_offset / bs);
 
-    const uint32_t known_options = BFS_OPT_DATA_CHECKSUMS | BFS_OPT_SNAPSHOTS |
-                                   BFS_OPT_DATA_ORDERED;
-    if ((bfs_be32(sb->options) & ~known_options) != 0 ||
-        bfs_be64(sb->txn_id) == 0 ||
+    if (bfs_be64(sb->txn_id) == 0 ||
         bfs_be32(sb->free_blocks) > block_count ||
         bfs_be32(sb->global_reserve) > block_count ||
         bfs_be32(sb->next_ino) <= 1u ||
@@ -158,6 +160,54 @@ bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
     return BFS_OK;
 }
 
+/* The freestanding Amiga handler has no hosted stdio runtime. */
+static void message_text(char **cursor, const char *end, const char *text)
+{
+    while (*text && *cursor < end) *(*cursor)++ = *text++;
+    **cursor = 0;
+}
+
+static void message_number(char **cursor, const char *end, uint32_t number,
+                            bool hex)
+{
+    char digits[11];
+    char *p = digits + sizeof(digits) - 1;
+    *p = 0;
+    unsigned base = hex ? 16 : 10;
+    do {
+        *--p = "0123456789abcdef"[number % base];
+        number /= base;
+    } while (number);
+    if (hex) while (digits + sizeof(digits) - 1 - p < 8) *--p = '0';
+    message_text(cursor, end, p);
+}
+
+void bfs_sb_describe_unsupported(const bfs_superblock_t *sb,
+                                 char message[BFS_FORMAT_ERROR_MAX])
+{
+    if (!message) return;
+    message[0] = 0;
+    if (bfs_sb_validate(sb) != BFS_ERR_UNSUPPORTED) return;
+    uint32_t version = bfs_be32(sb->version);
+    char *cursor = message;
+    const char *end = message + BFS_FORMAT_ERROR_MAX - 1;
+    message_text(&cursor, end, "BFS format version ");
+    message_number(&cursor, end, version, false);
+    if (version != BFS_SB_VERSION) {
+        message_text(&cursor, end, version > BFS_SB_VERSION ?
+                     " is too new.\n" : " is not supported.\n");
+        message_text(&cursor, end, "This driver supports version ");
+        message_number(&cursor, end, BFS_SB_VERSION, false);
+        message_text(&cursor, end, version > BFS_SB_VERSION ?
+                     ".\nUse a newer BFS driver." : ".\nUse a compatible BFS driver.");
+    } else {
+        message_text(&cursor, end, " uses unsupported options 0x");
+        message_number(&cursor, end, bfs_be32(sb->options) &
+                       ~(BFS_OPT_DATA_CHECKSUMS | BFS_OPT_SNAPSHOTS | BFS_OPT_DATA_ORDERED), true);
+        message_text(&cursor, end, ".\nUse a compatible BFS driver.");
+    }
+}
+
 /* Read superblock from a byte offset */
 static bfs_err_t read_sb_at(bfs_bio_t *bio, uint64_t byte_offset, bfs_superblock_t *sb)
 {
@@ -193,7 +243,9 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
 
     /* Always read A from byte 0 */
     bfs_err_t e_a = read_sb_at(bio, BFS_SB_OFFSET_A, &sb_a);
-    int v_a = (e_a == BFS_OK && bfs_sb_validate(&sb_a) == BFS_OK &&
+    bfs_err_t check_a = e_a == BFS_OK ? bfs_sb_validate(&sb_a) : e_a;
+    if (check_a == BFS_ERR_UNSUPPORTED) { *sb_out = sb_a; return check_a; }
+    int v_a = (check_a == BFS_OK &&
                sb_matches_device(&sb_a, bio));
 
     /* Read B from the offset stored in A, or try partition midpoint as fallback */
@@ -209,7 +261,9 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
     }
     if (b_off > 0) {
         e_b = read_sb_at(bio, b_off, &sb_b);
-        v_b = (e_b == BFS_OK && bfs_sb_validate(&sb_b) == BFS_OK &&
+        bfs_err_t check_b = e_b == BFS_OK ? bfs_sb_validate(&sb_b) : e_b;
+        if (check_b == BFS_ERR_UNSUPPORTED) { *sb_out = sb_b; return check_b; }
+        v_b = (check_b == BFS_OK &&
                sb_matches_device(&sb_b, bio));
     }
 
@@ -227,6 +281,36 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
     return BFS_OK;
 }
 
+bfs_err_t bfs_sb_probe(bfs_bio_t *bio, uint64_t device_bytes,
+                       bfs_superblock_t *sb_out)
+{
+    if (!bio || !bio->ops || !bio->ops->read_block || !sb_out)
+        return BFS_ERR_INVAL;
+    uint32_t saved_size = bio->block_size;
+    bfs_blk_t saved_count = bio->block_count;
+    bfs_err_t result = BFS_ERR_CORRUPT;
+    bool tried = false;
+    for (uint32_t bs = BFS_MIN_BLOCK_SIZE; bs <= BFS_MAX_BLOCK_SIZE; bs *= 2u) {
+        bfs_err_t err = bfs_bio_set_geometry(bio, device_bytes, bs);
+        if (err != BFS_OK) {
+            if (!tried) result = err;
+            continue;
+        }
+        if (!tried) result = BFS_ERR_CORRUPT;
+        tried = true;
+        err = bfs_sb_read(bio, sb_out);
+        if (err == BFS_OK) return BFS_OK;
+        if (err == BFS_ERR_UNSUPPORTED) {
+            result = err;
+            break;
+        }
+        if (err == BFS_ERR_IO || err == BFS_ERR_NOMEM) result = err;
+    }
+    bio->block_size = saved_size;
+    bio->block_count = saved_count;
+    return result;
+}
+
 bfs_err_t bfs_sb_write(bfs_bio_t *bio, bfs_superblock_t *sb)
 {
     if (!bio || !bio->ops || !bio->ops->read_block || !bio->ops->write_block ||
@@ -235,19 +319,27 @@ bfs_err_t bfs_sb_write(bfs_bio_t *bio, bfs_superblock_t *sb)
         return BFS_ERR_INVAL;
     /* Compute CRC */
     sb->crc32 = bfs_be32(bfs_sb_compute_crc(sb));
+    bfs_err_t check = bfs_sb_validate(sb);
+    if (check != BFS_OK) return check;
 
     uint64_t backup_off = get_backup_offset(sb);
 
     /* Read both to determine which is older */
     bfs_superblock_t sb_a, sb_b;
     bfs_err_t e_a = read_sb_at(bio, BFS_SB_OFFSET_A, &sb_a);
-    int v_a = (e_a == BFS_OK && bfs_sb_validate(&sb_a) == BFS_OK &&
+    if (e_a != BFS_OK) return e_a;
+    bfs_err_t check_a = bfs_sb_validate(&sb_a);
+    if (check_a == BFS_ERR_UNSUPPORTED) return check_a;
+    int v_a = (check_a == BFS_OK &&
                sb_matches_device(&sb_a, bio));
 
     int v_b = 0;
     if (backup_off > 0) {
         bfs_err_t e_b = read_sb_at(bio, backup_off, &sb_b);
-        v_b = (e_b == BFS_OK && bfs_sb_validate(&sb_b) == BFS_OK &&
+        if (e_b != BFS_OK) return e_b;
+        bfs_err_t check_b = bfs_sb_validate(&sb_b);
+        if (check_b == BFS_ERR_UNSUPPORTED) return check_b;
+        v_b = (check_b == BFS_OK &&
                sb_matches_device(&sb_b, bio));
     }
 

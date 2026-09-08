@@ -243,6 +243,34 @@ static void test_superblock_alternation(void)
     unlink(TEST_IMG);
 }
 
+static void test_format_both_copies_mountable(void)
+{
+    const uint32_t sizes[] = {1024, 4096, 65536};
+    for (unsigned i = 0; i < sizeof(sizes) / sizeof(sizes[0]); i++) {
+        for (unsigned slot = 0; slot < 2; slot++) {
+            unlink(TEST_IMG);
+            bfs_bio_t *bio = bio_emu_create(TEST_IMG, sizes[i], 256);
+            TEST_ASSERT(bio != NULL);
+            TEST_ASSERT_EQ(bfs_fs_format(bio, "Dual", 0), BFS_OK);
+            uint8_t *block = malloc(sizes[i]);
+            TEST_ASSERT(block != NULL);
+            bfs_blk_t number = slot ? 128 : 0;
+            TEST_ASSERT_EQ(bfs_bio_read(bio, number, block), BFS_OK);
+            block[7] ^= 0x80; /* Damage the version without updating its CRC. */
+            TEST_ASSERT_EQ(bfs_bio_write(bio, number, block), BFS_OK);
+            free(block);
+            bfs_fs_t fs;
+            TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+            uint32_t ino, type;
+            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, 0, "/", 1, &ino, &type), BFS_OK);
+            TEST_ASSERT_EQ(ino, BFS_ROOT_INO);
+            TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+            bfs_bio_close(bio);
+            unlink(TEST_IMG);
+        }
+    }
+}
+
 TEST_SUITE_BEGIN("Filesystem")
     TEST_RUN(test_format_mount);
     TEST_RUN(test_format_rejects_invalid_volume_names);
@@ -251,4 +279,5 @@ TEST_SUITE_BEGIN("Filesystem")
     TEST_RUN(test_abandon_discards_uncommitted_state);
     TEST_RUN(test_multiple_syncs);
     TEST_RUN(test_superblock_alternation);
+    TEST_RUN(test_format_both_copies_mountable);
 TEST_SUITE_END()

@@ -192,6 +192,14 @@ amiga-test: amiga
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o $(BUILD_AMIGA)/bfs-test tools/bfs-test.c $(AMIGA_TOOL_LDFLAGS)
 
+.PHONY: compatibility-test
+compatibility-test: amiga $(BUILD_HOST)/mkbfs
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+		-o build/amiga/compatibility-probe tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+		-o build/amiga/bfsformat tools/bfsformat.c $(AMIGA_TOOL_LDFLAGS)
+	python3 emulator-test/compatibility-test.py
+
 # ── CI integration test ─────────────────────────────────────
 ci-test: amiga amiga-test $(BUILD_HOST)/mkbfs
 	@emulator-test/ci-test.sh

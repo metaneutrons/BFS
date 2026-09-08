@@ -40,6 +40,21 @@ struct bfs_bio {
     bfs_blk_t block_count; /* total blocks on device */
 };
 
+/* Select filesystem geometry without truncating the block address range.
+ * A trailing partial block is unused, as in existing v2 volumes.
+ * Failure leaves the previous geometry unchanged. */
+static inline bfs_err_t bfs_bio_set_geometry(bfs_bio_t *bio, uint64_t bytes,
+                                             uint32_t block_size)
+{
+    if (!bio || !bfs_block_size_valid(block_size) || bytes < block_size)
+        return BFS_ERR_INVAL;
+    uint64_t blocks = bytes / block_size;
+    if (blocks > UINT32_MAX) return BFS_ERR_OVERFLOW;
+    bio->block_size = block_size;
+    bio->block_count = (bfs_blk_t)blocks;
+    return BFS_OK;
+}
+
 /* Convenience wrappers */
 static inline bfs_err_t bfs_bio_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf) {
     if (!bio || !bio->ops || !bio->ops->read_block || !buf ||
