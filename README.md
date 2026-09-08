@@ -35,12 +35,16 @@ code.
 | Snapshots | — | B+tree based (Read-only) |
 | Metadata compaction | — | **Online B+tree compaction** |
 | Max filename | 107 chars | 255 chars |
-| Max volume size | ~1.6 TB | 4 TiB at 1K blocks; 16 TiB at 4K |
+| Max volume size | ~1.6 TB (~1.46 TiB, practical) | 4 TiB at 1K blocks; 16 TiB at 4K blocks (format address limit) |
 | Hard links | Yes | Yes |
 | Soft links | Yes | Yes |
 | File comments | Yes | Yes |
 | Free space tracking | Bitmap | Self-hosting B+tree |
 | Automated tests | — | Core, fault-injection and emulator suites |
+
+The PFS3 figure is a practical decimal-size limit. The BFS figures are binary
+TiB limits imposed by the on-disk block address space; 16 TiB is approximately
+17.59 TB.
 
 ## Architecture
 
