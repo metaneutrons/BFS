@@ -32,6 +32,8 @@ jobs:
             --require-hashes tools/release/requirements.txt
           "$RUNNER_TEMP/spdx-validation/bin/python" -c 'import spdx_tools'
       - uses: sigstore/cosign-installer@6f9f17788090df1f26f669e9d70d6ae9567deba6 # v4.1.2
+        with:
+          cosign-release: v3.1.3
       - name: Sign fixture with the release command
         run: |
           set -euo pipefail
