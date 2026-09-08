@@ -21,7 +21,8 @@ AmigaOS, PFS3, and DiskSpeed assets; see `emulator-test/README.md` for the local
 
 Substantial changes use a versioned plan in `docs/plans/`, linked to an epic and
 milestone issues. Plans own requirements; issues own progress and acceptance
-evidence. See [release readiness](docs/plans/release-readiness.md).
+evidence. See [release readiness](docs/plans/release-readiness.md) and the
+[format and cross-platform plan](docs/plans/cross-platform-development.md).
 
 Commit messages and pull request titles must follow Conventional Commits. Accepted types are
 `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, and `revert`.
