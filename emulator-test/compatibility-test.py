@@ -69,13 +69,15 @@ def main():
             (system / directory).mkdir(parents=True)
         shutil.copyfile(args.handler, system / "L/bfshandler")
         shutil.copyfile(ROOT / "build/amiga/compatibility-probe", system / "C/compatibility-probe")
+        shutil.copyfile(ROOT / "build/amiga/bfsformat", system / "C/bfsformat")
         image = case / "test.hdf"
         shutil.copyfile(clean, image)
         if slot is not None:
             alter_copy(image, slot, options, damaged)
         before = hashlib.sha256(image.read_bytes()).digest()
+        startup = "FailAt 21\nC:bfsformat DH1: Test >SYS:format-message.txt\n" if expected else ""
         (system / "S/Startup-Sequence").write_text(
-            f"C:compatibility-probe {expected}\n", encoding="ascii")
+            startup + f"C:compatibility-probe {expected}\n", encoding="ascii")
         config = case / "test.fs-uae"
         config.write_text(f"""[fs-uae]
 amiga_model = A1200
@@ -105,6 +107,10 @@ automatic_input_grab = 0
             raise ValueError(f"{name}: guest compatibility probe failed")
         if expected and hashlib.sha256(image.read_bytes()).digest() != before:
             raise ValueError(f"{name}: incompatible media was modified")
+        if expected:
+            diagnosis = (system / "diagnosis.txt").read_bytes()
+            if (system / "format-message.txt").read_bytes() != diagnosis + b"\n":
+                raise ValueError(f"{name}: bfsformat did not report the driver diagnosis")
         print(f"PASS {name}", flush=True)
 
 

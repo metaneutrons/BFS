@@ -196,6 +196,8 @@ amiga-test: amiga
 compatibility-test: amiga $(BUILD_HOST)/mkbfs
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/compatibility-probe tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+		-o build/amiga/bfsformat tools/bfsformat.c $(AMIGA_TOOL_LDFLAGS)
 	python3 emulator-test/compatibility-test.py
 
 # ── CI integration test ─────────────────────────────────────
