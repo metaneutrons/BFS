@@ -460,7 +460,7 @@ static void bfs_fuse_readdir(fuse_req_t request, fuse_ino_t inode, size_t size,
     readdir_request_t scan = {
         .request = request,
         /* Offsets 0 and 1 belong to . and ..; scanned entries begin at 2. */
-        .state = { ctx, inode, buffer, size, 0, 2, (uint64_t)offset, BFS_OK, false },
+        .state = { ctx, inode, buffer, size, 0, 0, (uint64_t)offset, BFS_OK, false },
     };
     uint32_t parent = BFS_ROOT_INO;
     if (inode != BFS_ROOT_INO) {
