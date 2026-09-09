@@ -46,7 +46,8 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 
 # ── Phony targets ───────────────────────────────────────────
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
-	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release
+	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release \
+	conformance conformance-test
 
 setup:
 	@command -v lefthook >/dev/null 2>&1 || { \
@@ -108,6 +109,23 @@ sanitize:
 		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L'
 
 tools: $(BUILD_HOST)/bfsfsck $(BUILD_HOST)/mkbfs
+
+CONFORMANCE_CORE = $(BUILD_HOST)/bfs-conformance-core
+CONFORMANCE_POSIX = $(BUILD_HOST)/bfs-conformance-posix
+
+conformance: $(CONFORMANCE_CORE) $(CONFORMANCE_POSIX)
+
+conformance-test: conformance tools
+
+	@python3 -m unittest discover -s tests/conformance -p 'test_*.py' -v
+
+$(CONFORMANCE_CORE): tools/bfs-conformance-core.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
+
+$(CONFORMANCE_POSIX): tools/bfs-conformance-posix.c
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $<
 
 $(BUILD_HOST)/obj/core/%.o: src/core/%.c $(CORE_HEADERS)
 	@mkdir -p $(dir $@)

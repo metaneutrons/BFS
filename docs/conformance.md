@@ -1,0 +1,90 @@
+# BFS Conformance and Format Oracle
+
+Status: M4 execution artifact. This document defines the test harness protocol;
+it does not add a filesystem capability or change the v2 format.
+
+## Boundaries
+
+`bfs-conformance` is an orchestrator around separately built observations.
+
+| Component | Links BFS core | Responsibility |
+| --- | --- | --- |
+| `build/host/bfs-conformance-core` | Yes | Creates and removes its own temporary image, then exercises documented core operations over the production POSIX transport. |
+| `build/host/bfs-conformance-posix` | No | Observes a supplied mounted directory through OS calls only. It is read-only until a later milestone explicitly adds mutation cases. |
+| `tools/bfs-format-oracle.py` | No | Independently decodes committed v2 bytes and emits a normalized manifest. It has no write path. |
+
+`tools/check-conformance-linkage.sh` rejects a mounted backend that exports a
+`bfs_*` symbol. Its test compiles a deliberately contaminated counterprobe to
+prove that this rule detects the failure it is intended to detect.
+
+The Direct backend accepts no image pathname. It allocates a unique directory
+below `/tmp`, creates a mode-0600 image within it, formats only that image, and
+removes the image and directory before reporting success. Cleanup failure is an
+`error`, never a pass. The Mounted backend requires a caller-owned,
+non-root directory owned by the calling user and makes no mutation.
+
+## Running
+
+Build and run the deterministic direct smoke replay:
+
+```sh
+make conformance-test
+tools/bfs-conformance.py --backend core \
+  --replay tests/conformance/replays/smoke-v1.jsonl
+```
+
+Mounted mode is meaningful only once a separately qualified mount exists. It
+does not treat a missing mount fixture as a pass:
+
+```sh
+tools/bfs-conformance.py --backend posix --root /path/to/mounted/bfs \
+  --case empty-volume
+```
+
+The status is `pass`, `fail`, `skip`, or `error`. Exit codes are respectively
+0, 1, 2, and 3. `skip` is reserved for a declared inapplicable case or an
+unavailable mounted fixture; it cannot satisfy a full-milestone acceptance
+claim. Malformed replay data, missing backend output, timeout, backend crash,
+invalid JSON, no selected case, and cleanup failure are `error` outcomes.
+
+## Replay and Result Format
+
+A replay is JSON Lines. Its first record has type `bfs-conformance-replay`,
+`format_version: 1`, a `catalog_version`, and an integer `seed`. It contains
+one or more unique `{ "type": "case", "id": "..." }` records followed by
+exactly `{ "type": "complete" }`. The catalog is versioned in
+`tests/conformance/scenarios.json`; its stable contract IDs let target-specific
+implementations report equivalent cases without sharing code.
+
+The result is a single JSON object with format and catalog versions, selected
+backend, seed, per-case records, overall status, and identities for the Git
+revision, backend executable bytes, platform, and Python runtime. A backend
+record must identify the requested case and carry one of the four statuses.
+The orchestrator rejects anything else rather than guessing intent.
+
+## Oracle
+
+`tools/bfs-format-oracle.py IMAGE` reads a complete regular image and emits a
+stable JSON manifest for its selected committed superblock, live namespace,
+file content SHA-256 values, and visible snapshots. It implements the v2
+superblock selection, CRC32, node layout, bounded recursive tree walk, range,
+cycle, capacity, key ordering, directory-name hash, inode, extent, and snapshot
+rules directly from `docs/on-disk-format.md`. It does not import headers,
+link `libbfs`, or call a production codec/tree routine.
+
+The oracle fails closed on incompatible versions/options, CRC failure, invalid
+geometry, out-of-range child/extent pointers, cycles, excessive node count,
+malformed directory keys, and invalid inode references. It intentionally does
+not repair media or infer uncommitted state. A future fault adapter may model
+acknowledged versus persisted writes, reordering, and tears through generated
+images; terminating a daemon alone is not evidence of simulated power loss.
+
+## Native DOS Adapter Design
+
+The catalog is target-neutral. The future AROS and MorphOS adapter will read a
+replay, execute its named cases through the native DOS packet/device boundary,
+and emit the same one-record JSON schema through a host-captured serial or file
+channel. It must map unavailable native runtime/SDK fixtures to `error`, not
+to `skip`; only individual catalog cases explicitly marked inapplicable may
+skip. That adapter belongs to M8/M9, after their SDK and runtime contracts are
+available. It will not copy the classic handler or introduce a second core.
