@@ -38,24 +38,15 @@ static int open_root(const char *requested)
     return descriptor;
 }
 
-static int read_exact(int descriptor, const char *expected, size_t length)
-{
-    char buffer[64];
-    if (length > sizeof(buffer)) return -1;
-    size_t total = 0;
-    while (total < length) {
-        ssize_t got = read(descriptor, buffer + total, length - total);
-        if (got <= 0) return -1;
-        total += (size_t)got;
-    }
-    return memcmp(buffer, expected, length) == 0 ? 0 : -1;
-}
-
 static int test_regular_file(int root)
 {
     int file = openat(root, "oracle.txt", O_RDONLY | O_CLOEXEC);
     if (file < 0) return -1;
-    int result = read_exact(file, "oracle contents", 15);
+    const char expected[] = "oracle contents";
+    char actual[sizeof(expected) - 1u];
+    ssize_t got = read(file, actual, sizeof(actual));
+    int result = got == (ssize_t)sizeof(actual) && memcmp(actual, expected, sizeof(actual)) == 0
+                     ? 0 : -1;
     if (close(file) != 0) result = -1;
     return result;
 }
