@@ -179,7 +179,7 @@ jobs:
           done
           test "${#runs[@]}" -eq 1
           test -f "${runs[0]}/test.hdf"
-          make fuse HOST_CC=gcc
+          make fuse conformance build/host/conformance-fixture-writer HOST_CC=gcc
           python3 tests/fuse/test_fuse_mount.py --amiga-image "${runs[0]}/test.hdf"
 
       - name: Preserve emulator evidence
