@@ -150,7 +150,8 @@ static bool backing_size(int fd, const struct stat *st, uint64_t *size_out)
 
 bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *options)
 {
-    if (!path || !options || !bfs_block_size_valid(options->block_size)) {
+    if (!path || !options || !options->lock ||
+        !bfs_block_size_valid(options->block_size)) {
         errno = EINVAL;
         return NULL;
     }

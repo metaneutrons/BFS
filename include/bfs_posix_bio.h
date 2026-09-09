@@ -11,7 +11,7 @@ typedef struct {
     uint64_t byte_length; /* Zero selects the complete remaining backing store. */
     uint32_t block_size;  /* Valid BFS block size used for the initial probe. */
     bool writable;
-    bool lock;            /* Acquire a non-blocking advisory range lock. */
+    bool lock;            /* Must request a non-blocking advisory range lock. */
 } bfs_posix_bio_options_t;
 
 typedef struct {
@@ -22,8 +22,8 @@ typedef struct {
 
 /* Open an existing regular image or supported block device range. The function
  * never creates, truncates, formats, or discovers partitions by pathname.
- * Writable mode is restricted to regular images until raw-device ownership
- * checks are available. */
+ * A non-blocking advisory lock is mandatory. Writable mode is restricted to
+ * regular images until raw-device ownership checks are available. */
 bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *options);
 
 /* Read transport counters. They are primarily evidence for the read-only

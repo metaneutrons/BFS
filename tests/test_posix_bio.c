@@ -93,6 +93,9 @@ static void test_rejects_invalid_range(void)
         .block_size = BLOCK_SIZE,
     };
     TEST_ASSERT(bfs_posix_bio_open(path, &options) == NULL);
+    options.byte_offset = 0;
+    options.byte_length = 0;
+    TEST_ASSERT(bfs_posix_bio_open(path, &options) == NULL);
     unlink(path);
 }
 
