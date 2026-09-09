@@ -97,17 +97,29 @@ static bool ascii_hex(uint8_t c, uint8_t *value)
     return false;
 }
 
+static bool copy_bytes(char *destination, size_t capacity, size_t *offset,
+                       const char *source, size_t length)
+{
+    if (!destination || !offset || !source || *offset > capacity ||
+        length > capacity - *offset)
+        return false;
+    for (size_t index = 0; index < length; index++) destination[*offset + index] = source[index];
+    *offset += length;
+    return true;
+}
+
 /* Decode only a complete escape. A malformed escape remains a direct name. */
 static bfs_err_t decode_name(const char *name, char raw[BFS_NAME_MAX], uint8_t *length)
 {
     if (!name || !length) return BFS_ERR_INVAL;
-    size_t direct_length = strlen(name);
+    size_t direct_length = strnlen(name, BFS_NAME_MAX + 1u);
     if (direct_length == 0 || direct_length > BFS_NAME_MAX) return BFS_ERR_INVAL;
 
     if (direct_length <= BFS_FUSE_ESCAPE_PREFIX_LEN ||
         memcmp(name, BFS_FUSE_ESCAPE_PREFIX, BFS_FUSE_ESCAPE_PREFIX_LEN) != 0 ||
         ((direct_length - BFS_FUSE_ESCAPE_PREFIX_LEN) & 1u) != 0) {
-        memcpy(raw, name, direct_length);
+        size_t copied = 0;
+        if (!copy_bytes(raw, BFS_NAME_MAX, &copied, name, direct_length)) return BFS_ERR_OVERFLOW;
         *length = (uint8_t)direct_length;
         return BFS_OK;
     }
@@ -118,7 +130,8 @@ static bfs_err_t decode_name(const char *name, char raw[BFS_NAME_MAX], uint8_t *
         uint8_t high, low;
         if (!ascii_hex((uint8_t)name[BFS_FUSE_ESCAPE_PREFIX_LEN + index * 2u], &high) ||
             !ascii_hex((uint8_t)name[BFS_FUSE_ESCAPE_PREFIX_LEN + index * 2u + 1u], &low)) {
-            memcpy(raw, name, direct_length);
+            size_t copied = 0;
+            if (!copy_bytes(raw, BFS_NAME_MAX, &copied, name, direct_length)) return BFS_ERR_OVERFLOW;
             *length = (uint8_t)direct_length;
             return BFS_OK;
         }
@@ -132,6 +145,7 @@ static bfs_err_t encode_name(const char *raw, uint8_t raw_length,
                              char encoded[2u * BFS_NAME_MAX + BFS_FUSE_ESCAPE_PREFIX_LEN + 1u])
 {
     static const char hex[] = "0123456789ABCDEF";
+    if (!raw || raw_length == 0) return BFS_ERR_INVAL;
     bool direct = raw_length != 1 || raw[0] != '.';
     direct = direct && !(raw_length == 2 && raw[0] == '.' && raw[1] == '.');
     direct = direct && (raw_length < BFS_FUSE_ESCAPE_PREFIX_LEN ||
@@ -140,13 +154,19 @@ static bfs_err_t encode_name(const char *raw, uint8_t raw_length,
         direct = raw[index] != '\0' && raw[index] != '/';
 
     if (direct) {
-        memcpy(encoded, raw, raw_length);
+        size_t copied = 0;
+        if (!copy_bytes(encoded, 2u * BFS_NAME_MAX + BFS_FUSE_ESCAPE_PREFIX_LEN + 1u,
+                        &copied, raw, raw_length))
+            return BFS_ERR_OVERFLOW;
         encoded[raw_length] = '\0';
         return BFS_OK;
     }
     size_t encoded_length = BFS_FUSE_ESCAPE_PREFIX_LEN + (size_t)raw_length * 2u;
     if (encoded_length > 255u) return BFS_ERR_OVERFLOW;
-    memcpy(encoded, BFS_FUSE_ESCAPE_PREFIX, BFS_FUSE_ESCAPE_PREFIX_LEN);
+    size_t copied = 0;
+    if (!copy_bytes(encoded, 2u * BFS_NAME_MAX + BFS_FUSE_ESCAPE_PREFIX_LEN + 1u,
+                    &copied, BFS_FUSE_ESCAPE_PREFIX, BFS_FUSE_ESCAPE_PREFIX_LEN))
+        return BFS_ERR_OVERFLOW;
     for (uint8_t index = 0; index < raw_length; index++) {
         uint8_t value = (uint8_t)raw[index];
         encoded[BFS_FUSE_ESCAPE_PREFIX_LEN + index * 2u] = hex[value >> 4];
@@ -244,22 +264,30 @@ static bfs_err_t lookup_child(const bfs_fuse_ctx_t *ctx, fuse_ino_t parent,
     return bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, raw, length, child_out, NULL);
 }
 
+typedef struct {
+    char *buffer;
+    size_t capacity;
+    size_t length;
+    bool found;
+    bool corrupt;
+} comment_view_t;
+
 static bool comment_scan(const char *name, uint8_t name_length, uint32_t inode,
                          uint32_t entry_type, void *opaque)
 {
     (void)inode;
     (void)entry_type;
-    struct {
-        char *buffer;
-        size_t length;
-        bool found;
-        bool corrupt;
-    } *result = opaque;
-    if (result->found || name_length > BFS_FUSE_COMMENT_MAX) {
+    comment_view_t *result = opaque;
+    if (!result) return false;
+    if (result->found || name_length > result->capacity) {
         result->corrupt = true;
         return false;
     }
-    memcpy(result->buffer, name, name_length);
+    size_t copied = 0;
+    if (!copy_bytes(result->buffer, result->capacity, &copied, name, name_length)) {
+        result->corrupt = true;
+        return false;
+    }
     result->length = name_length;
     result->found = true;
     return false;
@@ -269,12 +297,7 @@ static bfs_err_t view_comment(const bfs_fuse_ctx_t *ctx, uint32_t inode,
                               char buffer[BFS_FUSE_COMMENT_MAX], size_t *length)
 {
     if (!ctx || !buffer || !length || inode >= 0x80000000u) return BFS_ERR_INVAL;
-    struct {
-        char *buffer;
-        size_t length;
-        bool found;
-        bool corrupt;
-    } result = { buffer, 0, false, false };
+    comment_view_t result = { buffer, BFS_FUSE_COMMENT_MAX, 0, false, false };
     bfs_err_t error = bfs_dir_scan(ctx->dir_tree, inode | 0x80000000u, comment_scan, &result);
     if (error != BFS_OK) return error;
     if (result.corrupt) return BFS_ERR_CORRUPT;
@@ -633,6 +656,35 @@ static void bfs_fuse_statfs(fuse_req_t request, fuse_ino_t inode)
     fuse_reply_statfs(request, &st);
 }
 
+static size_t format_u16_decimal(char output[5], uint16_t value)
+{
+    char reversed[5];
+    size_t length = 0;
+    do {
+        reversed[length++] = (char)('0' + value % 10u);
+        value /= 10u;
+    } while (value != 0);
+    for (size_t index = 0; index < length; index++) output[index] = reversed[length - index - 1u];
+    return length;
+}
+
+static size_t format_datestamp(char output[17], uint16_t days, uint16_t minutes, uint16_t ticks)
+{
+    size_t length = format_u16_decimal(output, days);
+    output[length++] = ':';
+    length += format_u16_decimal(output + length, minutes);
+    output[length++] = ':';
+    length += format_u16_decimal(output + length, ticks);
+    return length;
+}
+
+static void format_protection(char output[8], uint32_t protection)
+{
+    static const char hex[] = "0123456789ABCDEF";
+    for (size_t index = 0; index < 8u; index++)
+        output[index] = hex[(protection >> ((7u - index) * 4u)) & 0x0fu];
+}
+
 static bfs_err_t xattr_value(const bfs_fuse_ctx_t *ctx, uint32_t inode,
                              const char *name, char value[96], size_t *length)
 {
@@ -641,25 +693,22 @@ static bfs_err_t xattr_value(const bfs_fuse_ctx_t *ctx, uint32_t inode,
     if (error != BFS_OK) return error;
     if (strcmp(name, "user.bfs.comment") == 0)
         return view_comment(ctx, inode, value, length);
-    int count;
-    if (strcmp(name, "user.bfs.protection") == 0)
-        count = snprintf(value, 96, "%08" PRIX32, bfs_be32(node.protection));
-    else if (strcmp(name, "user.bfs.uid") == 0)
-        count = snprintf(value, 96, "%" PRIu16, bfs_be16(node.uid));
-    else if (strcmp(name, "user.bfs.gid") == 0)
-        count = snprintf(value, 96, "%" PRIu16, bfs_be16(node.gid));
-    else if (strcmp(name, "user.bfs.create_datestamp") == 0)
-        count = snprintf(value, 96, "%" PRIu16 ":%" PRIu16 ":%" PRIu16,
-                         bfs_be16(node.create_days), bfs_be16(node.create_mins),
-                         bfs_be16(node.create_ticks));
-    else if (strcmp(name, "user.bfs.modify_datestamp") == 0)
-        count = snprintf(value, 96, "%" PRIu16 ":%" PRIu16 ":%" PRIu16,
-                         bfs_be16(node.modify_days), bfs_be16(node.modify_mins),
-                         bfs_be16(node.modify_ticks));
-    else
+    if (strcmp(name, "user.bfs.protection") == 0) {
+        format_protection(value, bfs_be32(node.protection));
+        *length = 8;
+    } else if (strcmp(name, "user.bfs.uid") == 0) {
+        *length = format_u16_decimal(value, bfs_be16(node.uid));
+    } else if (strcmp(name, "user.bfs.gid") == 0) {
+        *length = format_u16_decimal(value, bfs_be16(node.gid));
+    } else if (strcmp(name, "user.bfs.create_datestamp") == 0) {
+        *length = format_datestamp(value, bfs_be16(node.create_days),
+                                   bfs_be16(node.create_mins), bfs_be16(node.create_ticks));
+    } else if (strcmp(name, "user.bfs.modify_datestamp") == 0) {
+        *length = format_datestamp(value, bfs_be16(node.modify_days),
+                                   bfs_be16(node.modify_mins), bfs_be16(node.modify_ticks));
+    } else {
         return BFS_ERR_NOTFOUND;
-    if (count < 0 || count >= 96) return BFS_ERR_OVERFLOW;
-    *length = (size_t)count;
+    }
     return BFS_OK;
 }
 
@@ -728,8 +777,14 @@ static void bfs_fuse_listxattr(fuse_req_t request, fuse_ino_t inode, size_t size
         fuse_reply_err(request, ENOMEM);
         return;
     }
-    memcpy(names, fixed, fixed_length);
-    if (have_comment) memcpy(names + fixed_length, comment_name, sizeof(comment_name) - 1u);
+    size_t copied = 0;
+    if (!copy_bytes(names, total, &copied, fixed, fixed_length) ||
+        (have_comment && !copy_bytes(names, total, &copied, comment_name,
+                                     sizeof(comment_name) - 1u))) {
+        free(names);
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
     fuse_reply_buf(request, names, total);
     free(names);
 }
@@ -963,7 +1018,9 @@ int main(int argc, char **argv)
                 usage(argv[0]); return 2;
             } else if (strcmp(arg, "--snapshot") == 0) {
                 if (selector.by_id || selector.name || !*value ||
-                    strlen(value) >= BFS_SNAPSHOT_NAME_MAX) { usage(argv[0]); return 2; }
+                    strnlen(value, BFS_SNAPSHOT_NAME_MAX) >= BFS_SNAPSHOT_NAME_MAX) {
+                    usage(argv[0]); return 2;
+                }
                 selector.name = value;
             } else if (strcmp(arg, "--snapshot-id") == 0) {
                 uint64_t id;

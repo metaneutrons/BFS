@@ -42,8 +42,13 @@ static int read_exact(int descriptor, const char *expected, size_t length)
 {
     char buffer[64];
     if (length > sizeof(buffer)) return -1;
-    ssize_t got = read(descriptor, buffer, length);
-    return got == (ssize_t)length && memcmp(buffer, expected, length) == 0 ? 0 : -1;
+    size_t total = 0;
+    while (total < length) {
+        ssize_t got = read(descriptor, buffer + total, length - total);
+        if (got <= 0) return -1;
+        total += (size_t)got;
+    }
+    return memcmp(buffer, expected, length) == 0 ? 0 : -1;
 }
 
 static int test_regular_file(int root)
