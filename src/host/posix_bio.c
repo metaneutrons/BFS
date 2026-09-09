@@ -10,6 +10,18 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#ifdef BFS_POSIX_BIO_FAULT_TEST
+#include "posix_bio_faults.h"
+#define calloc bfs_posix_test_calloc
+#define fsync bfs_posix_test_fsync
+#define fstat bfs_posix_test_fstat
+#define pread bfs_posix_test_pread
+#define pwrite bfs_posix_test_pwrite
+#define POSIX_CLOSE bfs_posix_test_close
+#else
+#define POSIX_CLOSE close
+#endif
+
 #if defined(__linux__)
 #include <sys/ioctl.h>
 #include <linux/fs.h>
@@ -99,7 +111,7 @@ static void posix_close(bfs_bio_t *base)
             struct flock lock = { .l_type = F_UNLCK, .l_whence = SEEK_SET };
             (void)fcntl(bio->fd, F_SETLK, &lock);
         }
-        (void)close(bio->fd);
+        (void)POSIX_CLOSE(bio->fd);
     }
     free(bio);
 }
@@ -153,7 +165,7 @@ bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *o
     uint64_t backing_bytes;
     if (fstat(fd, &st) != 0 || !backing_size(fd, &st, &backing_bytes) ||
         options->byte_offset > backing_bytes) {
-        (void)close(fd);
+        (void)POSIX_CLOSE(fd);
         errno = EINVAL;
         return NULL;
     }
@@ -161,14 +173,14 @@ bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *o
      * advisory lock. Until that policy exists, accept write mode for explicit
      * regular images only. */
     if (options->writable && S_ISBLK(st.st_mode)) {
-        (void)close(fd);
+        (void)POSIX_CLOSE(fd);
         errno = EPERM;
         return NULL;
     }
     uint64_t available = backing_bytes - options->byte_offset;
     uint64_t selected = options->byte_length ? options->byte_length : available;
     if (selected == 0 || selected > available || selected < options->block_size) {
-        (void)close(fd);
+        (void)POSIX_CLOSE(fd);
         errno = EINVAL;
         return NULL;
     }
@@ -182,7 +194,7 @@ bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *o
             .l_len = 0,
         };
         if (fcntl(fd, F_SETLK, &lock) != 0) {
-            (void)close(fd);
+            (void)POSIX_CLOSE(fd);
             return NULL;
         }
         locked = true;
@@ -194,7 +206,7 @@ bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *o
             struct flock lock = { .l_type = F_UNLCK, .l_whence = SEEK_SET };
             (void)fcntl(fd, F_SETLK, &lock);
         }
-        (void)close(fd);
+        (void)POSIX_CLOSE(fd);
         return NULL;
     }
     uint64_t blocks = selected / options->block_size;
@@ -204,7 +216,7 @@ bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *o
             struct flock lock = { .l_type = F_UNLCK, .l_whence = SEEK_SET };
             (void)fcntl(fd, F_SETLK, &lock);
         }
-        (void)close(fd);
+        (void)POSIX_CLOSE(fd);
         errno = EOVERFLOW;
         return NULL;
     }

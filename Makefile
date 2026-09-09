@@ -133,6 +133,12 @@ $(BUILD_HOST)/test_posix_bio: tests/test_posix_bio.c $(HOST_LIB) $(HOST_POSIX_OB
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
 
+$(BUILD_HOST)/test_posix_faults: tests/test_posix_faults.c tests/posix_bio_faults.c \
+		src/host/posix_bio.c $(HOST_LIB) $(HOST_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -DBFS_POSIX_BIO_FAULT_TEST -o $@ \
+		tests/test_posix_faults.c tests/posix_bio_faults.c src/host/posix_bio.c $(HOST_LIB)
+
 $(BUILD_HOST)/test_fsck: $(BUILD_HOST)/bfsfsck
 
 amiga:

@@ -5,6 +5,7 @@
 #include "bfs_posix_bio.h"
 
 #include <fcntl.h>
+#include <sys/wait.h>
 #include <unistd.h>
 
 #define BLOCK_SIZE 4096u
@@ -95,6 +96,45 @@ static void test_rejects_invalid_range(void)
     unlink(path);
 }
 
+static void test_lock_rejects_conflicting_alias(void)
+{
+    char path[] = "/tmp/bfs-posix-bio.XXXXXX";
+    char alias[sizeof(path) + 8];
+    make_image(path);
+    TEST_ASSERT(snprintf(alias, sizeof(alias), "%s.alias", path) > 0);
+    TEST_ASSERT_EQ(symlink(path, alias), 0);
+
+    bfs_posix_bio_options_t readonly = {
+        .block_size = BLOCK_SIZE,
+        .lock = true,
+    };
+    bfs_bio_t *bio = bfs_posix_bio_open(path, &readonly);
+    TEST_ASSERT(bio != NULL);
+
+    pid_t child = fork();
+    TEST_ASSERT(child >= 0);
+    if (child == 0) {
+        bfs_posix_bio_options_t writable = {
+            .block_size = BLOCK_SIZE,
+            .writable = true,
+            .lock = true,
+        };
+        bfs_bio_t *conflict = bfs_posix_bio_open(alias, &writable);
+        if (conflict) {
+            bfs_bio_close(conflict);
+            _exit(1);
+        }
+        _exit(0);
+    }
+    int status;
+    TEST_ASSERT_EQ(waitpid(child, &status, 0), child);
+    TEST_ASSERT(WIFEXITED(status));
+    TEST_ASSERT_EQ(WEXITSTATUS(status), 0);
+    bfs_bio_close(bio);
+    unlink(alias);
+    unlink(path);
+}
+
 static void test_readonly_bfs_lifecycle_uses_no_write_or_sync(void)
 {
     char path[] = "/tmp/bfs-posix-bio.XXXXXX";
@@ -131,5 +171,6 @@ TEST_SUITE_BEGIN("POSIX Block Transport")
     TEST_RUN(test_readonly_subrange_tracks_no_write_or_sync);
     TEST_RUN(test_writable_subrange_uses_exact_offset);
     TEST_RUN(test_rejects_invalid_range);
+    TEST_RUN(test_lock_rejects_conflicting_alias);
     TEST_RUN(test_readonly_bfs_lifecycle_uses_no_write_or_sync);
 TEST_SUITE_END()
