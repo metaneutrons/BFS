@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run a selected local executable with bounded resources and no shell."""
+"""Run fixed local conformance executables with bounded resources and no shell."""
 
 from dataclasses import dataclass
 import os
@@ -9,6 +9,7 @@ import time
 
 
 MAX_OUTPUT_BYTES = 1_048_576
+ROOT = Path(__file__).resolve().parents[1]
 
 
 class CommandTimeout(Exception):
@@ -22,13 +23,22 @@ class CommandResult:
     stderr: str
 
 
-def execute_child(program, arguments, stdout_fd, stderr_fd):
+def execute_child(command, arguments, stdout_fd, stderr_fd):
     try:
+        os.chdir(ROOT)
         os.dup2(stdout_fd, 1)
         os.dup2(stderr_fd, 2)
         os.close(stdout_fd)
         os.close(stderr_fd)
-        os.execv(str(program), [str(program), *arguments])
+        if command == "core":
+            os.execv("./build/host/bfs-conformance-core",
+                     ["bfs-conformance-core", *arguments])
+        if command == "posix":
+            os.execv("./build/host/bfs-conformance-posix",
+                     ["bfs-conformance-posix", *arguments])
+        if command == "git":
+            os.execv("/usr/bin/git", ["git", *arguments])
+        os._exit(127)
     except (OSError, ValueError):
         os._exit(127)
 
@@ -49,6 +59,7 @@ def collect_output(pid, stdout_fd, stderr_fd, timeout_seconds):
         selector.register(descriptor, selectors.EVENT_READ)
     deadline = time.monotonic() + timeout_seconds
     status = None
+    output_limited = False
     try:
         while selector.get_map() or status is None:
             if time.monotonic() >= deadline:
@@ -64,11 +75,12 @@ def collect_output(pid, stdout_fd, stderr_fd, timeout_seconds):
                 outputs[key.fd].extend(data[:remaining])
                 if len(data) > remaining and status is None:
                     status = terminate(pid)
+                    output_limited = True
             if status is None:
                 completed, child_status = os.waitpid(pid, os.WNOHANG)
                 if completed:
                     status = child_status
-        return status, bytes(outputs[stdout_fd]), bytes(outputs[stderr_fd])
+        return status, bytes(outputs[stdout_fd]), bytes(outputs[stderr_fd]), output_limited
     finally:
         selector.close()
         for descriptor in outputs:
@@ -84,18 +96,24 @@ def returncode(status):
     return 128 + os.WTERMSIG(status) if os.WIFSIGNALED(status) else 127
 
 
-def run_program(program, arguments, timeout_seconds):
-    executable = Path(program).resolve()
+def result_code(status, output_limited):
+    return 137 if output_limited else returncode(status)
+
+
+def run_command(command, arguments, timeout_seconds):
+    if command not in {"core", "posix", "git"}:
+        raise ValueError("unsupported fixed command")
     stdout_fd, stdout_write = os.pipe()
     stderr_fd, stderr_write = os.pipe()
     pid = os.fork()
     if pid == 0:
         os.close(stdout_fd)
         os.close(stderr_fd)
-        execute_child(executable, arguments, stdout_write, stderr_write)
+        execute_child(command, arguments, stdout_write, stderr_write)
         os._exit(127)
     os.close(stdout_write)
     os.close(stderr_write)
-    status, output, errors = collect_output(pid, stdout_fd, stderr_fd, timeout_seconds)
-    return CommandResult(returncode(status), output.decode("utf-8", errors="replace"),
+    status, output, errors, output_limited = collect_output(pid, stdout_fd, stderr_fd, timeout_seconds)
+    code = result_code(status, output_limited)
+    return CommandResult(code, output.decode("utf-8", errors="replace"),
                          errors.decode("utf-8", errors="replace"))

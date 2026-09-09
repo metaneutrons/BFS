@@ -8,12 +8,11 @@ programs own storage or mounted-path observations and return one JSON record.
 import argparse
 import hashlib
 import json
-import os
 from pathlib import Path
 import platform
 import sys
 
-from bfs_command_runner import CommandTimeout, run_program
+from bfs_command_runner import CommandTimeout, run_command
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -99,25 +98,29 @@ def sha256_file(path):
 
 def git_identity():
     try:
-        result = run_program("/usr/bin/git", ["-C", str(ROOT), "rev-parse", "HEAD"], 5)
+        result = run_command("git", ["-C", str(ROOT), "rev-parse", "HEAD"], 5)
         return result.stdout.strip() if result.returncode == EXIT_PASS else "unavailable"
     except (OSError, CommandTimeout):
         return "unavailable"
 
 
-def invoke(program, scenario_id, seed, root):
-    program = program.resolve()
-    if not program.is_file() or not os.access(program, os.X_OK):
-        return {"id": scenario_id, "status": "error", "code": "missing-backend"}
+def invoke(backend, scenario_id, seed, root):
     arguments = ["--case", scenario_id, "--seed", str(seed)]
     if root is not None:
         arguments.extend(["--root", str(root)])
     try:
-        completed = run_program(program, arguments, 60)
+        completed = run_command(backend, arguments, 60)
+    except OSError:
+        return {"id": scenario_id, "status": "error", "code": "missing-backend"}
     except CommandTimeout:
         return {"id": scenario_id, "status": "error", "code": "timeout"}
     if completed.returncode not in (0, 1, 2, 3):
         return {"id": scenario_id, "status": "error", "code": "backend-crash"}
+    return validate_backend_result(completed, scenario_id)
+
+
+def validate_backend_result(completed, scenario_id):
+    """Accept only a result whose semantic status matches its process exit."""
     try:
         record = json.loads(completed.stdout)
     except json.JSONDecodeError:
@@ -134,6 +137,13 @@ def invoke(program, scenario_id, seed, root):
     return record
 
 
+def enforce_scenario_contract(record, allowed_statuses):
+    """Turn a well-formed but disallowed backend result into an error."""
+    if record["status"] != "error" and record["status"] not in allowed_statuses:
+        return {"id": record["id"], "status": "error", "code": "contract-mismatch"}
+    return record
+
+
 def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", choices=("core", "posix"), required=True)
@@ -142,10 +152,6 @@ def parse_arguments(argv):
     parser.add_argument("--root", type=Path)
     parser.add_argument("--seed", type=int, default=20260909)
     parser.add_argument("--output", type=Path)
-    parser.add_argument("--core-program", type=Path,
-                        default=ROOT / "build" / "host" / "bfs-conformance-core")
-    parser.add_argument("--posix-program", type=Path,
-                        default=ROOT / "build" / "host" / "bfs-conformance-posix")
     return parser.parse_args(argv)
 
 
@@ -165,7 +171,7 @@ def select_scenarios(args, catalog, known_ids):
 
 
 def run_scenarios(args, known_ids, selected):
-    program = args.core_program if args.backend == "core" else args.posix_program
+    program = ROOT / "build" / "host" / f"bfs-conformance-{args.backend}"
     capability = "direct" if args.backend == "core" else "mounted"
     records = []
     for scenario_id in selected:
@@ -173,10 +179,8 @@ def run_scenarios(args, known_ids, selected):
         if not scenario[capability]:
             record = {"id": scenario_id, "status": "skip", "code": "not-applicable"}
         else:
-            record = invoke(program, scenario_id, args.seed, args.root)
-            if record["status"] != "error" and \
-               record["status"] not in scenario["expected"][args.backend]:
-                record = {"id": scenario_id, "status": "error", "code": "contract-mismatch"}
+            record = invoke(args.backend, scenario_id, args.seed, args.root)
+            record = enforce_scenario_contract(record, scenario["expected"][args.backend])
         record["contract"] = scenario["contract"]
         records.append(record)
     return program, records

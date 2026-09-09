@@ -52,9 +52,9 @@ The status is `pass`, `fail`, `skip`, or `error`. Exit codes are respectively
 unavailable mounted fixture; it cannot satisfy a full-milestone acceptance
 claim. Malformed replay data, missing backend output, timeout, backend crash,
 invalid JSON, no selected case, and cleanup failure are `error` outcomes.
-Each backend runs through an absolute `execv` path without a shell, has a
-60-second wall-clock budget, and has at most 1 MiB of combined captured stdout
-and stderr. Exceeding either limit cannot produce a pass.
+Each backend runs through its fixed build-tree `execv` path without a shell,
+has a 60-second wall-clock budget, and has at most 1 MiB of combined captured
+stdout and stderr. Exceeding either limit cannot produce a pass.
 
 ## Replay and Result Format
 

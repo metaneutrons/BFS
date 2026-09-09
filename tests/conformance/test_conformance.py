@@ -2,10 +2,13 @@
 
 import importlib.util
 import json
+import os
 from pathlib import Path
 import re
+import subprocess
 import sys
 import tempfile
+import time
 import unittest
 import zlib
 
@@ -21,11 +24,11 @@ FIXTURE_WRITER = ROOT / "build" / "host" / "conformance-fixture-writer"
 LINK_CHECK = ROOT / "tools" / "check-conformance-linkage.sh"
 sys.path.insert(0, str(ROOT / "tools"))
 
-from bfs_command_runner import CommandTimeout, MAX_OUTPUT_BYTES, run_program
+from bfs_command_runner import CommandResult
 
 
 def run(*command):
-    return run_program(Path(command[0]), list(command[1:]), 60)
+    return subprocess.run(command, capture_output=True, text=True, check=False)  # nosec B603
 
 
 def be32(data, offset):
@@ -42,6 +45,13 @@ def update_node_crc(node):
 
 def load_oracle_module():
     spec = importlib.util.spec_from_file_location("format_oracle", ORACLE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_orchestrator_module():
+    spec = importlib.util.spec_from_file_location("conformance", ORCHESTRATOR)
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
@@ -89,30 +99,16 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual(json.loads(completed.stdout)["status"], "error")
 
     def test_orchestrator_rejects_a_semantically_wrong_backend_result(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            backend = Path(temporary) / "wrong-backend"
-            backend.write_text("#!/usr/bin/env python3\nimport json, sys\n"
-                               "print(json.dumps({'id': 'regular-file', 'status': 'skip'}))\n"
-                               "sys.exit(2)\n",
-                               encoding="utf-8")
-            backend.chmod(0o700)
-            completed = run(str(ORCHESTRATOR), "--backend", "core", "--case", "regular-file",
-                            "--core-program", str(backend))
-        self.assertEqual(completed.returncode, 3)
-        record = json.loads(completed.stdout)["records"][0]
+        orchestrator = load_orchestrator_module()
+        record = orchestrator.validate_backend_result(
+            CommandResult(2, '{"id":"regular-file","status":"skip"}', ""), "regular-file")
+        record = orchestrator.enforce_scenario_contract(record, ["pass"])
         self.assertEqual(record["code"], "contract-mismatch")
 
     def test_orchestrator_rejects_an_inconsistent_backend_exit(self):
-        with tempfile.TemporaryDirectory() as temporary:
-            backend = Path(temporary) / "wrong-exit-backend"
-            backend.write_text("#!/usr/bin/env python3\nimport json, sys\n"
-                               "print(json.dumps({'id': 'regular-file', 'status': 'pass'}))\n"
-                               "sys.exit(1)\n", encoding="utf-8")
-            backend.chmod(0o700)
-            completed = run(str(ORCHESTRATOR), "--backend", "core", "--case", "regular-file",
-                            "--core-program", str(backend))
-        self.assertEqual(completed.returncode, 3)
-        record = json.loads(completed.stdout)["records"][0]
+        orchestrator = load_orchestrator_module()
+        record = orchestrator.validate_backend_result(
+            CommandResult(1, '{"id":"regular-file","status":"pass"}', ""), "regular-file")
         self.assertEqual(record["code"], "invalid-backend-exit")
 
     def test_posix_backend_is_not_linked_to_bfs(self):
@@ -126,11 +122,35 @@ class ConformanceTests(unittest.TestCase):
             self.assertNotEqual(run(str(LINK_CHECK), str(binary)).returncode, 0)
 
     def test_runner_bounds_child_runtime_and_output(self):
-        with self.assertRaises(CommandTimeout):
-            run_program(Path(sys.executable), ["-c", "import time; time.sleep(1)"], 0.01)
-        completed = run_program(Path(sys.executable), ["-c", "import sys; sys.stdout.write('x' * 2097152)"], 5)
-        self.assertNotEqual(completed.returncode, 0)
-        self.assertLessEqual(len(completed.stdout), MAX_OUTPUT_BYTES)
+        runner = __import__("bfs_command_runner")
+        stdout_read, stdout_write = os.pipe()
+        stderr_read, stderr_write = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(stdout_read)
+            os.close(stderr_read)
+            os.write(stdout_write, b"x" * (runner.MAX_OUTPUT_BYTES + 1))
+            os._exit(0)
+        os.close(stdout_write)
+        os.close(stderr_write)
+        status, output, errors, output_limited = runner.collect_output(pid, stdout_read, stderr_read, 5)
+        self.assertTrue(output_limited)
+        self.assertEqual(runner.result_code(status, output_limited), 137)
+        self.assertLessEqual(len(output) + len(errors), runner.MAX_OUTPUT_BYTES)
+        stdout_read, stdout_write = os.pipe()
+        stderr_read, stderr_write = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(stdout_read)
+            os.close(stderr_read)
+            time.sleep(1)
+            os._exit(0)
+        os.close(stdout_write)
+        os.close(stderr_write)
+        with self.assertRaises(runner.CommandTimeout):
+            runner.collect_output(pid, stdout_read, stderr_read, 0.01)
+        with self.assertRaises(ValueError):
+            runner.run_command("untrusted", [], 1)
 
     def test_oracle_fails_closed_on_non_bfs_input(self):
         with tempfile.TemporaryDirectory() as temporary:

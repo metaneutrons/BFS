@@ -14,18 +14,23 @@
 #include <sys/stat.h>
 #include <unistd.h>
 
-static bool valid_root(const char *requested, char resolved[PATH_MAX])
+static char *valid_root(const char *requested)
 {
     char input[PATH_MAX];
     struct stat st;
-    if (!requested) return false;
+    if (!requested) return NULL;
     size_t length = strnlen(requested, sizeof(input));
-    if (length == sizeof(input))
-        return false;
-    memcpy(input, requested, length);
-    input[length] = '\0';
-    return realpath(input, resolved) && strcmp(resolved, "/") != 0 &&
-           lstat(resolved, &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid();
+    if (length >= sizeof(input)) return NULL;
+    int copied = snprintf(input, sizeof(input), "%s", requested);
+    if (copied < 0 || (size_t)copied >= sizeof(input)) return NULL;
+    char *resolved = realpath(input, NULL);
+    if (!resolved) return NULL;
+    if (strcmp(resolved, "/") == 0 || lstat(resolved, &st) != 0 ||
+        !S_ISDIR(st.st_mode) || st.st_uid != getuid()) {
+        free(resolved);
+        return NULL;
+    }
+    return resolved;
 }
 
 int main(int argc, char **argv)
@@ -38,9 +43,10 @@ int main(int argc, char **argv)
         else if (strcmp(argv[index], "--seed") == 0 && index + 1 < argc) index++;
         else return 3;
     }
-    char resolved[PATH_MAX];
-    if (!name || !valid_root(root, resolved)) return 3;
+    char *resolved = name ? valid_root(root) : NULL;
+    if (!resolved) return 3;
     DIR *directory = opendir(resolved);
+    free(resolved);
     if (!directory) return 3;
     (void)closedir(directory);
     if (strcmp(name, "empty-volume") == 0)
