@@ -230,6 +230,7 @@ class ConformanceTests(unittest.TestCase):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
         self.assertIn('make host-test conformance-test HOST_CC="$HOST_CC"', workflow)
         self.assertIn("make tools host-test conformance-test HOST_CC=gcc", workflow)
+        self.assertIn("build-essential clang python3", workflow)
 
 
 if __name__ == "__main__":
