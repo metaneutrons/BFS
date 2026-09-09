@@ -40,14 +40,22 @@ static int open_root(const char *requested)
 
 static int test_regular_file(int root)
 {
-    int file = openat(root, "oracle.txt", O_RDONLY | O_CLOEXEC);
-    if (file < 0) return -1;
+    int descriptor = openat(root, "oracle.txt", O_RDONLY | O_CLOEXEC);
+    if (descriptor < 0) return -1;
+
+    FILE *file = fdopen(descriptor, "rb");
+    if (file == NULL) {
+        (void)close(descriptor);
+        return -1;
+    }
+
     const char expected[] = "oracle contents";
     char actual[sizeof(expected) - 1u];
-    ssize_t got = read(file, actual, sizeof(actual));
-    int result = got == (ssize_t)sizeof(actual) && memcmp(actual, expected, sizeof(actual)) == 0
+    size_t got = fread(actual, 1u, sizeof(actual), file);
+    int result = got == sizeof(actual) && ferror(file) == 0
+                     && memcmp(actual, expected, sizeof(actual)) == 0
                      ? 0 : -1;
-    if (close(file) != 0) result = -1;
+    if (fclose(file) != 0) result = -1;
     return result;
 }
 
