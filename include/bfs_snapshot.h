@@ -31,10 +31,12 @@ typedef struct BFS_PACKED {
 
 _Static_assert(sizeof(bfs_snapshot_record_t) == 52, "v2 snapshot record layout is frozen");
 
-/* Create a snapshot of the current filesystem state. */
+/* Create a snapshot of the current filesystem state. Returns
+ * BFS_ERR_UNSUPPORTED on a read-only mount. */
 bfs_err_t bfs_snapshot_create(bfs_fs_t *fs, const char *name);
 
-/* Delete a snapshot by ID. Decrements refcounts and frees unreferenced blocks. */
+/* Delete a snapshot by ID. Decrements refcounts and frees unreferenced blocks.
+ * Returns BFS_ERR_UNSUPPORTED on a read-only mount. */
 bfs_err_t bfs_snapshot_delete(bfs_fs_t *fs, uint32_t snapshot_id);
 
 /* Callback for listing snapshots. Return false to stop iteration. */
@@ -62,7 +64,8 @@ bfs_err_t bfs_snapshot_open(const bfs_snapshot_record_t *rec, bfs_bio_t *bio,
                             bfs_allocator_t *alloc,
                             bfs_dir_tree_t *dir_out, bfs_btree_t *inode_out);
 
-/* Resume any interrupted snapshot deletions. */
+/* Resume any interrupted snapshot deletions. Returns BFS_ERR_UNSUPPORTED on a
+ * read-only mount. */
 bfs_err_t bfs_snapshot_resume_deletions(bfs_fs_t *fs);
 
 #endif /* BFS_SNAPSHOT_H */

@@ -31,13 +31,15 @@ bfs_err_t bfs_file_open(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr);
  * Returns bytes read (>=0), or negative bfs_err_t on error if no bytes were read. */
 int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len);
 
-/* Write 'len' bytes at current offset. Extends file if needed. Returns bytes written. */
+/* Write 'len' bytes at current offset. Extends file if needed. Returns
+ * BFS_ERR_UNSUPPORTED on a read-only mount. */
 int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len);
 
 /* Seek. mode: 0=SET, 1=CUR, 2=END. Returns new offset or <0 on error. */
 int64_t bfs_file_seek(bfs_file_t *f, int64_t offset, int mode);
 
-/* Truncate file to 'new_size' bytes. */
+/* Truncate file to 'new_size' bytes. Returns BFS_ERR_UNSUPPORTED on a
+ * read-only mount. */
 bfs_err_t bfs_file_truncate(bfs_file_t *f, uint64_t new_size);
 
 /* Cached extent root from this handle's last operation, not a cross-handle view. */

@@ -302,6 +302,7 @@ bfs_err_t bfs_fs_mount_readonly(bfs_fs_t *fs, bfs_bio_t *bio)
 uint32_t bfs_fs_alloc_ino(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted || fs->recovery_error != BFS_OK ||
+        fs->read_only ||
         fs->next_ino <= BFS_ROOT_INO ||
         fs->next_ino >= 0x80000000u)
         return 0;
@@ -314,6 +315,7 @@ uint32_t bfs_fs_alloc_ino(bfs_fs_t *fs)
 bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
 {
     if (!fs || !fs->mounted || !fs->bio) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     if (blk == BFS_BLK_NULL) return BFS_OK;
     if (blk < bfs_data_start_block(fs->bio->block_size) ||
@@ -334,6 +336,7 @@ static bfs_err_t fs_defer_free(void *ctx, bfs_blk_t blk)
         blk < bfs_data_start_block(fs->bio->block_size) ||
         blk >= fs->bio->block_count)
         return BFS_ERR_CORRUPT;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->pending_count >= bfs_fs_pending_cap(fs)) return BFS_ERR_AGAIN;
     bfs_fs_pending_items(fs)[fs->pending_count++] = blk;
     return BFS_OK;
@@ -370,6 +373,7 @@ bfs_free_sink_t bfs_fs_free_sink(bfs_fs_t *fs)
 bfs_err_t bfs_fs_reserve_pending(bfs_fs_t *fs, uint32_t slots)
 {
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     uint32_t cap = bfs_fs_pending_cap(fs);
     if (fs->pending_count > cap) return BFS_ERR_CORRUPT;
@@ -389,6 +393,8 @@ bfs_err_t bfs_fs_reserve_pending(bfs_fs_t *fs, uint32_t slots)
 
 bfs_err_t bfs_fs_ensure_free_headroom(bfs_fs_t *fs, uint32_t slots)
 {
+    if (!fs || !fs->mounted) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_err_t reserve_err = bfs_fs_reserve_pending(fs, slots);
     if (reserve_err != BFS_OK) return reserve_err;
     uint32_t cap = bfs_fs_pending_cap(fs);
@@ -427,6 +433,7 @@ bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree)
 {
     if (!fs || !tree || !fs->mounted || tree->bio != fs->bio)
         return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&fs->lock);
     if (fs->recovery_error != BFS_OK) {
         bfs_err_t err = fs->recovery_error;

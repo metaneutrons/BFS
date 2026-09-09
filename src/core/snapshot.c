@@ -258,6 +258,7 @@ static bfs_err_t snapshot_rollback_refs(bfs_fs_t *fs, block_vec_t *refs)
 bfs_err_t bfs_snapshot_create_unlocked(bfs_fs_t *fs, const char *name)
 {
     if (!fs || !fs->mounted || !name) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     size_t nlen = snapshot_name_length(name);
     if (nlen == 0 || nlen >= BFS_SNAPSHOT_NAME_MAX ||
@@ -545,6 +546,7 @@ static bfs_err_t snapshot_preflight_delete(bfs_fs_t *fs,
 bfs_err_t bfs_snapshot_delete_unlocked(bfs_fs_t *fs, uint32_t snapshot_id)
 {
     if (!fs || !fs->mounted || snapshot_id == 0) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     if (!fs->has_snapshots) return BFS_ERR_NOTFOUND;
 
@@ -789,6 +791,7 @@ uint32_t bfs_snapshot_next_id_unlocked(bfs_fs_t *fs)
 bfs_err_t bfs_snapshot_create(bfs_fs_t *fs, const char *name)
 {
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_snapshot_create_unlocked(fs, name);
     bfs_lock_unlock(&fs->lock);
@@ -798,6 +801,7 @@ bfs_err_t bfs_snapshot_create(bfs_fs_t *fs, const char *name)
 bfs_err_t bfs_snapshot_delete(bfs_fs_t *fs, uint32_t snapshot_id)
 {
     if (!fs || !fs->mounted || snapshot_id == 0) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_snapshot_delete_unlocked(fs, snapshot_id);
     bfs_lock_unlock(&fs->lock);
@@ -912,6 +916,7 @@ bfs_err_t bfs_snapshot_resume_deletions(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted)
         return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = fs->recovery_error;
     while (err == BFS_OK) {

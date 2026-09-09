@@ -100,7 +100,8 @@ bfs_err_t bfs_fs_sync(bfs_fs_t *fs);
 
 /* Defer-free a block for reclaim at the next sync. Callers must reserve queue
  * headroom at a safe operation boundary; a full queue returns BFS_ERR_AGAIN
- * and is never drained from inside a multi-step mutation. */
+ * and is never drained from inside a multi-step mutation. Returns
+ * BFS_ERR_UNSUPPORTED on a read-only mount. */
 bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk);
 
 /* The deferred-free sink for this filesystem (its pending-free queue), to attach
@@ -175,7 +176,7 @@ void      bfs_fs_unreserve(bfs_fs_t *fs, uint32_t items);
  * the root, commits to make the swap durable, then frees the now-unreferenced
  * old nodes post-commit — so the old-tree mass-free can never overflow the
  * deferred-free queue mid-COW. Takes fs->lock. The only compaction entry point
- * for an fs tree. */
+ * for an fs tree. Returns BFS_ERR_UNSUPPORTED on a read-only mount. */
 bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree);
 
 #endif /* BFS_FS_H */

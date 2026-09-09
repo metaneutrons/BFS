@@ -3,7 +3,9 @@
  */
 
 #include "test_harness.h"
+#include "bfs_file.h"
 #include "bfs_fs.h"
+#include "bfs_snapshot.h"
 #include "block_device_emu.h"
 #include <unistd.h>
 
@@ -14,11 +16,14 @@
 typedef struct {
     bfs_bio_t base;
     bfs_bio_t *inner;
+    uint32_t read_calls;
 } readonly_bio_t;
 
 static bfs_err_t readonly_bio_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
 {
-    return bfs_bio_read(((readonly_bio_t *)bio)->inner, blk, buf);
+    readonly_bio_t *readonly = (readonly_bio_t *)bio;
+    readonly->read_calls++;
+    return bfs_bio_read(readonly->inner, blk, buf);
 }
 
 static const bfs_bio_ops_t readonly_bio_ops = {
@@ -292,6 +297,13 @@ static void test_readonly_mount_does_not_commit(void)
     TEST_ASSERT(bio != NULL);
     TEST_ASSERT_EQ(bfs_fs_format(bio, "ReadOnly", 0), BFS_OK);
 
+    bfs_fs_t fs;
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "blocked", 7, &ino),
+                   BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+
     bfs_superblock_t before;
     TEST_ASSERT_EQ(bfs_sb_read(bio, &before), BFS_OK);
 
@@ -303,11 +315,45 @@ static void test_readonly_mount_does_not_commit(void)
         },
         .inner = bio,
     };
-    bfs_fs_t fs;
     TEST_ASSERT_EQ(bfs_fs_mount_readonly(&fs, &readonly.base), BFS_OK);
     TEST_ASSERT(fs.mounted);
     TEST_ASSERT(fs.read_only);
+    uint32_t reads_after_mount = readonly.read_calls;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "blocked", 7, &ino),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "dir", 3, &ino),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_delete_file(&fs, BFS_ROOT_INO, "blocked", 7),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_rmdir(&fs, BFS_ROOT_INO, "dir", 3),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_rename(&fs, BFS_ROOT_INO, "blocked", 7,
+                                 BFS_ROOT_INO, "renamed", 7),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_make_hardlink(&fs, BFS_ROOT_INO, "hard", 4, ino),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_make_softlink(&fs, BFS_ROOT_INO, "soft", 4,
+                                        "blocked", 7), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, "comment", 7),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(readonly.read_calls, reads_after_mount);
+
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    uint32_t reads_after_open = readonly.read_calls;
+    TEST_ASSERT_EQ(bfs_file_write(&file, "x", 1), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_file_truncate(&file, 0), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(readonly.read_calls, reads_after_open);
+
+    TEST_ASSERT_EQ(bfs_snapshot_create(&fs, "snapshot"), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_snapshot_delete(&fs, 1), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_snapshot_resume_deletions(&fs), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_queue_pending_free(&fs,
+                   bfs_data_start_block(fs.bio->block_size)), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_compact_tree(&fs, &fs.inode_tree), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_alloc_ino(&fs), 0);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(readonly.read_calls, reads_after_open);
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
 
     bfs_superblock_t after;
