@@ -141,6 +141,13 @@ def validate_key(kind, key):
             raise OracleError("directory key hash mismatch")
 
 
+def key_sort_key(kind, key):
+    if kind != "directory":
+        return key
+    name_length = key[8]
+    return (be32(key, 0), be32(key, 4), fold_name(key[9:9 + name_length]), name_length)
+
+
 def walk_tree(image, superblock, root, kind):
     if root == 0:
         return []
@@ -169,10 +176,11 @@ def walk_tree(image, superblock, root, kind):
         if count > capacity or sibling and (not leaf or sibling >= superblock["block_count"]):
             raise OracleError(f"{kind} tree node capacity is invalid")
         keys = [node[28 + index * key_size:28 + (index + 1) * key_size] for index in range(count)]
-        if any(keys[index] >= keys[index + 1] for index in range(len(keys) - 1)):
-            raise OracleError(f"{kind} tree keys are unordered")
         for key in keys:
             validate_key(kind, key)
+        if any(key_sort_key(kind, keys[index]) >= key_sort_key(kind, keys[index + 1])
+               for index in range(len(keys) - 1)):
+            raise OracleError(f"{kind} tree keys are unordered")
         if leaf:
             values_start = 28 + capacity * key_size
             leaves.extend((key, node[values_start + index * value_size:

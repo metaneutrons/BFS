@@ -1,7 +1,9 @@
 """Contract tests for the independently built conformance infrastructure."""
 
+import importlib.util
 import json
 from pathlib import Path
+import re
 import subprocess
 import tempfile
 import unittest
@@ -35,6 +37,13 @@ def update_node_crc(node):
     put_be32(node, 4, zlib.crc32(node[:4] + b"\0\0\0\0" + node[8:]) & 0xffffffff)
 
 
+def load_oracle_module():
+    spec = importlib.util.spec_from_file_location("format_oracle", ORACLE)
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
 class ConformanceTests(unittest.TestCase):
     def test_catalog_and_direct_replay(self):
         completed = run(str(ORCHESTRATOR), "--backend", "core", "--replay",
@@ -44,12 +53,28 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual(result["status"], "pass")
         self.assertEqual(len(result["records"]), 6)
         self.assertTrue(all(record["status"] == "pass" for record in result["records"]))
+        self.assertEqual(result["contract_version"], 1)
+        self.assertTrue(all(record["contract"].startswith("BFS-CONF-")
+                            for record in result["records"]))
+        self.assertEqual(len(result["identity"]["catalog_sha256"]), 64)
+        self.assertEqual(len(result["identity"]["replay_sha256"]), 64)
 
     def test_full_direct_replay(self):
         completed = run(str(ORCHESTRATOR), "--backend", "core", "--replay",
                         str(ROOT / "tests/conformance/replays/core-full-v1.jsonl"))
         self.assertEqual(completed.returncode, 0, completed.stderr)
         self.assertEqual(json.loads(completed.stdout)["status"], "pass")
+
+    def test_catalog_preserves_matching_amiga_test_ids(self):
+        catalog = json.loads((ROOT / "tests/conformance/scenarios.json").read_text(encoding="utf-8"))
+        test_ids = set(re.findall(r"BFS_TEST\(([^,]+),", (ROOT / "tools/bfs-test-cases.def").read_text(
+            encoding="utf-8")))
+        self.assertEqual(len(test_ids), 46)
+        mapped = {test_id for scenario in catalog["scenarios"]
+                  for test_id in scenario.get("amiga_test_ids", [])}
+        self.assertIn("fill_08", mapped)
+        self.assertIn("diskfull_23", mapped)
+        self.assertTrue(mapped <= test_ids)
 
     def test_replay_requires_completion_and_nonempty_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -63,8 +88,9 @@ class ConformanceTests(unittest.TestCase):
     def test_orchestrator_rejects_a_semantically_wrong_backend_result(self):
         with tempfile.TemporaryDirectory() as temporary:
             backend = Path(temporary) / "wrong-backend"
-            backend.write_text("#!/usr/bin/env python3\nimport json\n"
-                               "print(json.dumps({'id': 'regular-file', 'status': 'skip'}))\n",
+            backend.write_text("#!/usr/bin/env python3\nimport json, sys\n"
+                               "print(json.dumps({'id': 'regular-file', 'status': 'skip'}))\n"
+                               "sys.exit(2)\n",
                                encoding="utf-8")
             backend.chmod(0o700)
             completed = run(str(ORCHESTRATOR), "--backend", "core", "--case", "regular-file",
@@ -72,6 +98,19 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 3)
         record = json.loads(completed.stdout)["records"][0]
         self.assertEqual(record["code"], "contract-mismatch")
+
+    def test_orchestrator_rejects_an_inconsistent_backend_exit(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            backend = Path(temporary) / "wrong-exit-backend"
+            backend.write_text("#!/usr/bin/env python3\nimport json, sys\n"
+                               "print(json.dumps({'id': 'regular-file', 'status': 'pass'}))\n"
+                               "sys.exit(1)\n", encoding="utf-8")
+            backend.chmod(0o700)
+            completed = run(str(ORCHESTRATOR), "--backend", "core", "--case", "regular-file",
+                            "--core-program", str(backend))
+        self.assertEqual(completed.returncode, 3)
+        record = json.loads(completed.stdout)["records"][0]
+        self.assertEqual(record["code"], "invalid-backend-exit")
 
     def test_posix_backend_is_not_linked_to_bfs(self):
         self.assertEqual(run(str(LINK_CHECK), str(POSIX)).returncode, 0)
@@ -156,6 +195,19 @@ class ConformanceTests(unittest.TestCase):
         self.assertNotIn("bfs_", ORACLE.read_text(encoding="utf-8"))
         symbols = run("nm", "-g", str(CORE)).stdout
         self.assertIn("bfs_fs_format", symbols)
+
+    def test_oracle_uses_documented_directory_key_order_for_hash_collisions(self):
+        oracle = load_oracle_module()
+        first = bytearray(264)
+        second = bytearray(264)
+        put_be32(first, 0, 1)
+        put_be32(second, 0, 1)
+        put_be32(first, 4, 42)
+        put_be32(second, 4, 42)
+        first[8:10] = b"\x01a"
+        second[8:10] = b"\x01B"
+        self.assertLess(oracle.key_sort_key("directory", first),
+                        oracle.key_sort_key("directory", second))
 
     def test_persistence_model_separates_acknowledgement_from_media_state(self):
         with tempfile.TemporaryDirectory() as temporary:

@@ -33,11 +33,11 @@ tools/bfs-conformance.py --backend core \
   --replay tests/conformance/replays/smoke-v1.jsonl
 ```
 
-`tests/conformance/replays/core-full-v1.jsonl` adds directory scale, links,
-Latin-1 case-folded names, comments, sparse ranges, remount, and a negative
-name case. `disk-full` remains catalogued but is explicitly `skip` in the
-small Direct image profile; the existing bounded core exhaustion test remains
-the current evidence until the fault-matrix profile makes that case available.
+`tests/conformance/replays/core-full-v1.jsonl` adds disk exhaustion and
+reclaim, directory scale, links, Latin-1 case-folded names, comments, sparse
+ranges, remount, and a negative name case. The bounded `disk-full` case writes
+until the production core reports exhaustion, verifies committed data, reclaims
+half of the file, and proves that allocation succeeds again.
 
 Mounted mode is meaningful only once a separately qualified mount exists. It
 does not treat a missing mount fixture as a pass:
@@ -66,11 +66,17 @@ converts a syntactically valid but contract-incompatible backend result into an
 `error`; expected outcomes are therefore independent data rather than a value
 derived from a production structure or operation result.
 
+Where a scenario has an established native counterpart, `amiga_test_ids` names
+the immutable identifier from `tools/bfs-test-cases.def`. The 46-test Amiga
+FULL46 inventory remains its own executable suite; the conformance catalog is
+a cross-platform mapping, not a replacement or a second native inventory.
+
 The result is a single JSON object with format and catalog versions, selected
 backend, seed, per-case records, overall status, and identities for the Git
-revision, backend executable bytes, platform, and Python runtime. A backend
-record must identify the requested case and carry one of the four statuses.
-The orchestrator rejects anything else rather than guessing intent.
+revision, backend executable bytes, catalog and replay input bytes, platform,
+and Python runtime. A backend record must identify the requested case and carry
+one of the four statuses. The orchestrator rejects anything else rather than
+guessing intent.
 
 ## Oracle
 

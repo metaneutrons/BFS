@@ -32,7 +32,8 @@ static bool supported_case(const char *name)
     return strcmp(name, "empty-volume") == 0 || strcmp(name, "regular-file") == 0 ||
            strcmp(name, "multi-block-file") == 0 || strcmp(name, "large-file") == 0 ||
            strcmp(name, "read-only-refusal") == 0 || strcmp(name, "snapshot") == 0 ||
-           strcmp(name, "remount") == 0 || strcmp(name, "directory-scale") == 0 ||
+           strcmp(name, "disk-full") == 0 || strcmp(name, "remount") == 0 ||
+           strcmp(name, "directory-scale") == 0 ||
            strcmp(name, "hard-link") == 0 || strcmp(name, "soft-link") == 0 ||
            strcmp(name, "comment-metadata") == 0 || strcmp(name, "name-encoding") == 0 ||
            strcmp(name, "sparse-range") == 0 || strcmp(name, "invalid-name") == 0;
@@ -43,13 +44,23 @@ static bool create_owned_image(char *directory, size_t directory_size,
 {
     if (directory_size < sizeof("/tmp/bfs-conformance.XXXXXX")) return false;
     snprintf(directory, directory_size, "/tmp/bfs-conformance.XXXXXX");
-    if (!mkdtemp(directory) || snprintf(image, image_size, "%s/image.bfs", directory) >=
-        (int)image_size)
+    if (!mkdtemp(directory))
         return false;
+    if (snprintf(image, image_size, "%s/image.bfs", directory) >= (int)image_size) {
+        (void)rmdir(directory);
+        return false;
+    }
     int fd = open(image, O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
-    if (fd < 0) return false;
+    if (fd < 0) {
+        (void)rmdir(directory);
+        return false;
+    }
     bool ok = ftruncate(fd, (off_t)BLOCK_SIZE * BLOCK_COUNT) == 0 && close(fd) == 0;
-    if (!ok) (void)close(fd);
+    if (!ok) {
+        (void)close(fd);
+        (void)unlink(image);
+        (void)rmdir(directory);
+    }
     return ok;
 }
 
@@ -79,9 +90,39 @@ static bfs_err_t create_and_write(bfs_fs_t *fs, const uint8_t *contents, uint32_
     return bfs_file_write(&file, contents, length) == (int32_t)length ? BFS_OK : BFS_ERR_IO;
 }
 
+static bfs_err_t exercise_disk_full(bfs_fs_t *fs)
+{
+    uint8_t pattern[BLOCK_SIZE], readback[BLOCK_SIZE];
+    bfs_file_t file;
+    uint32_t inode, written = 0;
+    int32_t result;
+    memset(pattern, 0xa5, sizeof(pattern));
+    if (bfs_fs_create_file(fs, BFS_ROOT_INO, "fill.bin", 8, &inode) != BFS_OK ||
+        bfs_file_open(&file, fs, inode) != BFS_OK)
+        return BFS_ERR_IO;
+    while (written < BLOCK_COUNT &&
+           (result = bfs_file_write(&file, pattern, sizeof(pattern))) == (int32_t)sizeof(pattern))
+        written++;
+    if (written == 0 || written == BLOCK_COUNT || result != BFS_ERR_NOSPC ||
+        bfs_fs_sync(fs) != BFS_OK)
+        return BFS_ERR_IO;
+    if (bfs_file_seek(&file, 0, BFS_SEEK_SET) < 0 ||
+        bfs_file_read(&file, readback, sizeof(readback)) != (int32_t)sizeof(readback) ||
+        memcmp(pattern, readback, sizeof(pattern)) != 0)
+        return BFS_ERR_IO;
+    uint64_t half = (uint64_t)(written / 2) * BLOCK_SIZE;
+    if (half == 0 || bfs_file_truncate(&file, half) != BFS_OK || bfs_fs_sync(fs) != BFS_OK ||
+        bfs_file_seek(&file, (int64_t)half, BFS_SEEK_SET) < 0 ||
+        bfs_file_write(&file, pattern, sizeof(pattern)) != (int32_t)sizeof(pattern))
+        return BFS_ERR_IO;
+    return BFS_OK;
+}
+
 static bfs_err_t exercise_extra_case(bfs_fs_t *fs, const char *name, uint32_t inode)
 {
-    if (strcmp(name, "directory-scale") == 0) {
+    if (strcmp(name, "disk-full") == 0) {
+        return exercise_disk_full(fs);
+    } else if (strcmp(name, "directory-scale") == 0) {
         for (unsigned index = 0; index < 48; index++) {
             char entry[16];
             int length = snprintf(entry, sizeof(entry), "entry-%02u", index);
@@ -193,7 +234,8 @@ static result_t run_case(const char *name)
     bfs_fs_t fs;
     bool mounted = false;
     if (!create_owned_image(directory, sizeof(directory), image, sizeof(image))) return RESULT_ERROR;
-    bool has_file = strcmp(name, "empty-volume") != 0 && strcmp(name, "invalid-name") != 0;
+    bool has_file = strcmp(name, "empty-volume") != 0 && strcmp(name, "invalid-name") != 0 &&
+                    strcmp(name, "disk-full") != 0;
     uint32_t length = case_length(name, has_file);
     if (length) {
         contents = malloc(length);

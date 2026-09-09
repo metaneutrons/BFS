@@ -26,7 +26,7 @@ class ConformanceError(Exception):
 
 def load_catalog():
     catalog = json.loads(CATALOG_PATH.read_text(encoding="utf-8"))
-    if catalog.get("catalog_version") != 1:
+    if catalog.get("catalog_version") != 1 or catalog.get("contract_version") != 1:
         raise ConformanceError("unsupported catalog version")
     scenarios = catalog.get("scenarios")
     if not isinstance(scenarios, list) or not scenarios:
@@ -38,6 +38,11 @@ def load_catalog():
             raise ConformanceError("catalog has an invalid or duplicate scenario id")
         if not isinstance(scenario.get("contract"), str):
             raise ConformanceError("catalog scenario has no contract id")
+        amiga_test_ids = scenario.get("amiga_test_ids", [])
+        if not isinstance(amiga_test_ids, list) or any(
+            not isinstance(test_id, str) or not test_id for test_id in amiga_test_ids
+        ) or len(set(amiga_test_ids)) != len(amiga_test_ids):
+            raise ConformanceError("catalog scenario has invalid Amiga test ids")
         expected = scenario.get("expected")
         if not isinstance(expected, dict) or any(
             not isinstance(expected.get(backend), list) or
@@ -50,7 +55,7 @@ def load_catalog():
     return catalog, by_id
 
 
-def load_replay(path, known_ids):
+def load_replay(path, known_ids, catalog_version):
     records = []
     try:
         lines = path.read_text(encoding="utf-8").splitlines()
@@ -65,7 +70,8 @@ def load_replay(path, known_ids):
             raise ConformanceError(f"invalid replay JSON at line {line_number}") from error
     header = records[0]
     if header.get("type") != "bfs-conformance-replay" or \
-       header.get("format_version") != REPLAY_FORMAT_VERSION:
+       header.get("format_version") != REPLAY_FORMAT_VERSION or \
+       header.get("catalog_version") != catalog_version:
         raise ConformanceError("unsupported replay header")
     selected = []
     for record in records[1:-1]:
@@ -119,6 +125,9 @@ def invoke(program, scenario_id, seed, root):
         "pass", "fail", "skip", "error"
     }:
         return {"id": scenario_id, "status": "error", "code": "invalid-backend-record"}
+    expected_exit = {"pass": 0, "fail": 1, "skip": 2, "error": 3}[record["status"]]
+    if completed.returncode != expected_exit:
+        return {"id": scenario_id, "status": "error", "code": "invalid-backend-exit"}
     return record
 
 
@@ -139,7 +148,7 @@ def main(argv):
         catalog, known_ids = load_catalog()
         replay_header = None
         if args.replay:
-            replay_header, selected = load_replay(args.replay, known_ids)
+            replay_header, selected = load_replay(args.replay, known_ids, catalog["catalog_version"])
         else:
             selected = args.cases or []
         if not selected:
@@ -154,18 +163,21 @@ def main(argv):
             scenario = known_ids[scenario_id]
             capability = "direct" if args.backend == "core" else "mounted"
             if not scenario[capability]:
-                records.append({"id": scenario_id, "status": "skip", "code": "not-applicable"})
+                record = {"id": scenario_id, "status": "skip", "code": "not-applicable"}
             else:
                 record = invoke(program, scenario_id, args.seed, args.root)
-                if record["status"] not in scenario["expected"][args.backend]:
+                if record["status"] != "error" and \
+                   record["status"] not in scenario["expected"][args.backend]:
                     record = {"id": scenario_id, "status": "error", "code": "contract-mismatch"}
-                records.append(record)
+            record["contract"] = scenario["contract"]
+            records.append(record)
         statuses = [record["status"] for record in records]
         status = "pass" if all(item == "pass" for item in statuses) else \
             "fail" if "fail" in statuses else "error" if "error" in statuses else "skip"
         result = {
             "format_version": 1,
             "catalog_version": catalog["catalog_version"],
+            "contract_version": catalog["contract_version"],
             "replay": replay_header,
             "backend": args.backend,
             "seed": args.seed,
@@ -174,6 +186,8 @@ def main(argv):
             "identity": {
                 "git": git_identity(),
                 "program_sha256": sha256_file(program) if program.is_file() else "missing",
+                "catalog_sha256": sha256_file(CATALOG_PATH),
+                "replay_sha256": sha256_file(args.replay) if args.replay else "none",
                 "platform": platform.platform(),
                 "python": platform.python_version(),
             },

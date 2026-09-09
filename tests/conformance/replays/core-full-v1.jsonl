@@ -5,6 +5,7 @@
 {"type":"case","id":"large-file"}
 {"type":"case","id":"read-only-refusal"}
 {"type":"case","id":"snapshot"}
+{"type":"case","id":"disk-full"}
 {"type":"case","id":"directory-scale"}
 {"type":"case","id":"hard-link"}
 {"type":"case","id":"soft-link"}
