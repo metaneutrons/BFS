@@ -14,6 +14,7 @@ PERSISTENCE_MODEL = ROOT / "tools" / "bfs-persistence-model.py"
 CORE = ROOT / "build" / "host" / "bfs-conformance-core"
 POSIX = ROOT / "build" / "host" / "bfs-conformance-posix"
 MKBFS = ROOT / "build" / "host" / "mkbfs"
+FIXTURE_WRITER = ROOT / "build" / "host" / "conformance-fixture-writer"
 LINK_CHECK = ROOT / "tools" / "check-conformance-linkage.sh"
 
 
@@ -89,6 +90,20 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual(result["status"], "ok")
         self.assertEqual(result["namespace"], [{"inode": 1, "links": 1, "path": "/",
                                                 "size": 0, "type": 1}])
+
+    def test_oracle_exports_namespace_content_and_snapshot_manifest(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "oracle.bfs"
+            self.assertEqual(run(str(FIXTURE_WRITER), str(image)).returncode, 0)
+            completed = run(str(ORACLE), str(image))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["namespace"], [
+            {"inode": 1, "links": 1, "path": "/", "size": 0, "type": 1},
+            {"inode": 2, "links": 1, "path": "/oracle.txt", "size": 15, "type": 0,
+             "sha256": "1f13f9bcc6269144c0c5d7e8103d596585333c9a376a75d5a48951907280e3a7"},
+        ])
+        self.assertEqual(result["snapshots"][0]["name"], "oracle-snapshot")
 
     def test_oracle_and_conformance_programs_are_independent(self):
         self.assertNotIn("bfs_", ORACLE.read_text(encoding="utf-8"))

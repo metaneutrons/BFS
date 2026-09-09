@@ -113,10 +113,11 @@ tools: $(BUILD_HOST)/bfsfsck $(BUILD_HOST)/mkbfs
 
 CONFORMANCE_CORE = $(BUILD_HOST)/bfs-conformance-core
 CONFORMANCE_POSIX = $(BUILD_HOST)/bfs-conformance-posix
+CONFORMANCE_FIXTURE = $(BUILD_HOST)/conformance-fixture-writer
 
 conformance: $(CONFORMANCE_CORE) $(CONFORMANCE_POSIX)
 
-conformance-test: conformance tools
+conformance-test: conformance tools $(CONFORMANCE_FIXTURE)
 
 	@python3 -m unittest discover -s tests/conformance -p 'test_*.py' -v
 
@@ -127,6 +128,10 @@ $(CONFORMANCE_CORE): tools/bfs-conformance-core.c $(HOST_LIB) $(HOST_POSIX_OBJ) 
 $(CONFORMANCE_POSIX): tools/bfs-conformance-posix.c
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $<
+
+$(CONFORMANCE_FIXTURE): tests/conformance/fixture_writer.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
 
 $(BUILD_HOST)/obj/core/%.o: src/core/%.c $(CORE_HEADERS)
 	@mkdir -p $(dir $@)
