@@ -57,12 +57,8 @@ static int test_regular_file(int root)
 
 static int test_readonly_refusal(int root)
 {
-    int file = openat(root, "oracle.txt", O_WRONLY | O_CLOEXEC);
-    if (file >= 0) {
-        (void)close(file);
-        return -1;
-    }
-    return errno == EROFS ? 0 : -1;
+    errno = 0;
+    return mkdirat(root, "mutation-attempt", 0700) == -1 && errno == EROFS ? 0 : -1;
 }
 
 static int test_soft_link(int root)
@@ -85,7 +81,7 @@ static int test_directory_scale(int root)
     struct dirent *entry;
     while ((entry = readdir(root_stream)) != NULL)
         entries += strncmp(entry->d_name, "entry-", 6) == 0;
-    if (closedir(root_stream) != 0 || entries < 16) return -1;
+    if (closedir(root_stream) != 0 || entries != 16) return -1;
     int directory = openat(root, "folder", O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (directory < 0) return -1;
     DIR *stream = fdopendir(directory);
