@@ -38,6 +38,14 @@ def load_catalog():
             raise ConformanceError("catalog has an invalid or duplicate scenario id")
         if not isinstance(scenario.get("contract"), str):
             raise ConformanceError("catalog scenario has no contract id")
+        expected = scenario.get("expected")
+        if not isinstance(expected, dict) or any(
+            not isinstance(expected.get(backend), list) or
+            not expected[backend] or any(status not in {"pass", "fail", "skip", "error"}
+                                         for status in expected[backend])
+            for backend in ("core", "posix")
+        ):
+            raise ConformanceError("catalog scenario has invalid expected outcomes")
         by_id[scenario_id] = scenario
     return catalog, by_id
 
@@ -148,7 +156,10 @@ def main(argv):
             if not scenario[capability]:
                 records.append({"id": scenario_id, "status": "skip", "code": "not-applicable"})
             else:
-                records.append(invoke(program, scenario_id, args.seed, args.root))
+                record = invoke(program, scenario_id, args.seed, args.root)
+                if record["status"] not in scenario["expected"][args.backend]:
+                    record = {"id": scenario_id, "status": "error", "code": "contract-mismatch"}
+                records.append(record)
         statuses = [record["status"] for record in records]
         status = "pass" if all(item == "pass" for item in statuses) else \
             "fail" if "fail" in statuses else "error" if "error" in statuses else "skip"

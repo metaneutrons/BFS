@@ -1,13 +1,13 @@
 {
   "catalog_version": 1,
   "scenarios": [
-    {"id": "empty-volume", "direct": true, "mounted": true, "contract": "BFS-CONF-001"},
-    {"id": "regular-file", "direct": true, "mounted": true, "contract": "BFS-CONF-002"},
-    {"id": "multi-block-file", "direct": true, "mounted": true, "contract": "BFS-CONF-003"},
-    {"id": "large-file", "direct": true, "mounted": true, "contract": "BFS-CONF-004"},
-    {"id": "read-only-refusal", "direct": true, "mounted": true, "contract": "BFS-CONF-005"},
-    {"id": "snapshot", "direct": true, "mounted": true, "contract": "BFS-CONF-006"},
-    {"id": "disk-full", "direct": false, "mounted": true, "contract": "BFS-CONF-007"},
-    {"id": "posix-special-metadata", "direct": false, "mounted": true, "contract": "BFS-CONF-008"}
+    {"id": "empty-volume", "direct": true, "mounted": true, "contract": "BFS-CONF-001", "expected": {"core": ["pass"], "posix": ["pass"]}},
+    {"id": "regular-file", "direct": true, "mounted": true, "contract": "BFS-CONF-002", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "multi-block-file", "direct": true, "mounted": true, "contract": "BFS-CONF-003", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "large-file", "direct": true, "mounted": true, "contract": "BFS-CONF-004", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "read-only-refusal", "direct": true, "mounted": true, "contract": "BFS-CONF-005", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "snapshot", "direct": true, "mounted": true, "contract": "BFS-CONF-006", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "disk-full", "direct": false, "mounted": true, "contract": "BFS-CONF-007", "expected": {"core": ["skip"], "posix": ["skip"]}},
+    {"id": "posix-special-metadata", "direct": false, "mounted": true, "contract": "BFS-CONF-008", "expected": {"core": ["skip"], "posix": ["skip"]}}
   ]
 }

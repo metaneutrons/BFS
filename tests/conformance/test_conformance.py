@@ -39,6 +39,19 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 3)
         self.assertEqual(json.loads(completed.stdout)["status"], "error")
 
+    def test_orchestrator_rejects_a_semantically_wrong_backend_result(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            backend = Path(temporary) / "wrong-backend"
+            backend.write_text("#!/usr/bin/env python3\nimport json\n"
+                               "print(json.dumps({'id': 'regular-file', 'status': 'skip'}))\n",
+                               encoding="utf-8")
+            backend.chmod(0o700)
+            completed = run(str(ORCHESTRATOR), "--backend", "core", "--case", "regular-file",
+                            "--core-program", str(backend))
+        self.assertEqual(completed.returncode, 3)
+        record = json.loads(completed.stdout)["records"][0]
+        self.assertEqual(record["code"], "contract-mismatch")
+
     def test_posix_backend_is_not_linked_to_bfs(self):
         self.assertEqual(run(str(LINK_CHECK), str(POSIX)).returncode, 0)
         with tempfile.TemporaryDirectory() as temporary:

@@ -54,7 +54,11 @@ A replay is JSON Lines. Its first record has type `bfs-conformance-replay`,
 one or more unique `{ "type": "case", "id": "..." }` records followed by
 exactly `{ "type": "complete" }`. The catalog is versioned in
 `tests/conformance/scenarios.json`; its stable contract IDs let target-specific
-implementations report equivalent cases without sharing code.
+implementations report equivalent cases without sharing code. Each scenario
+also declares the currently allowed outcome for each backend. The orchestrator
+converts a syntactically valid but contract-incompatible backend result into an
+`error`; expected outcomes are therefore independent data rather than a value
+derived from a production structure or operation result.
 
 The result is a single JSON object with format and catalog versions, selected
 backend, seed, per-case records, overall status, and identities for the Git
