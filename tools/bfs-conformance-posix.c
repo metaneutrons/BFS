@@ -17,6 +17,24 @@
 #include <sys/xattr.h>
 #include <unistd.h>
 
+#if defined(__linux__)
+#include <sys/vfs.h>
+
+#define FUSE_SUPER_MAGIC 0x65735546L
+#endif
+
+static bool has_virtual_file_ownership(int descriptor)
+{
+#if defined(__linux__)
+    struct statfs filesystem;
+    return fstatfs(descriptor, &filesystem) == 0 &&
+           filesystem.f_type == FUSE_SUPER_MAGIC;
+#else
+    (void)descriptor;
+    return false;
+#endif
+}
+
 static int open_root(const char *requested)
 {
     struct stat path_st;
@@ -29,7 +47,8 @@ static int open_root(const char *requested)
     int descriptor = open(requested, O_RDONLY | O_DIRECTORY | O_CLOEXEC);
     if (descriptor < 0) return -1;
     if (fstat(descriptor, &st) != 0 || stat("/", &filesystem_root) != 0 ||
-        !S_ISDIR(st.st_mode) || st.st_uid != getuid() ||
+        !S_ISDIR(st.st_mode) ||
+        (st.st_uid != getuid() && !has_virtual_file_ownership(descriptor)) ||
         st.st_dev != path_st.st_dev || st.st_ino != path_st.st_ino ||
         (st.st_dev == filesystem_root.st_dev && st.st_ino == filesystem_root.st_ino)) {
         (void)close(descriptor);
@@ -134,7 +153,11 @@ int main(int argc, char **argv)
         else return 3;
     }
     int root_descriptor = name ? open_root(root) : -1;
-    if (root_descriptor < 0) return 3;
+    if (root_descriptor < 0) {
+        printf("{\"id\":\"%s\",\"status\":\"error\",\"code\":\"invalid-root\"}\n",
+               name ? name : "");
+        return 3;
+    }
     int result = -1;
     if (strcmp(name, "empty-volume") == 0) {
         DIR *directory = fdopendir(root_descriptor);
