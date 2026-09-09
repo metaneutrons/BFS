@@ -255,7 +255,20 @@ static void test_interrupted_deletion_resume(void) {
     free(fs->scratch);
     fs->mounted = false;
 
-    /* Mount again. This should automatically resume the snapshot deletion and clean it up! */
+    /* A read-only mount must leave the committed deletion record untouched. */
+    bfs_superblock_t before_readonly;
+    TEST_ASSERT_EQ(bfs_sb_read(bio, &before_readonly), BFS_OK);
+    bfs_fs_t readonly_fs;
+    TEST_ASSERT_EQ(bfs_fs_mount_readonly(&readonly_fs, bio), BFS_OK);
+    int readonly_cnt = 0;
+    TEST_ASSERT_EQ(bfs_snapshot_list(&readonly_fs, snap_count_cb, &readonly_cnt), BFS_OK);
+    TEST_ASSERT_EQ(readonly_cnt, 0);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&readonly_fs), BFS_OK);
+    bfs_superblock_t after_readonly;
+    TEST_ASSERT_EQ(bfs_sb_read(bio, &after_readonly), BFS_OK);
+    TEST_ASSERT_EQ(bfs_be64(after_readonly.txn_id), bfs_be64(before_readonly.txn_id));
+
+    /* A mutable mount resumes the pending snapshot deletion. */
     bfs_fs_t new_fs;
     TEST_ASSERT_EQ(bfs_fs_mount(&new_fs, bio), BFS_OK);
 
