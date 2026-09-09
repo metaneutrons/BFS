@@ -79,9 +79,16 @@ link `libbfs`, or call a production codec/tree routine.
 The oracle fails closed on incompatible versions/options, CRC failure, invalid
 geometry, out-of-range child/extent pointers, cycles, excessive node count,
 malformed directory keys, and invalid inode references. It intentionally does
-not repair media or infer uncommitted state. A future fault adapter may model
+not repair media or infer uncommitted state. The fault adapter models
 acknowledged versus persisted writes, reordering, and tears through generated
 images; terminating a daemon alone is not evidence of simulated power loss.
+
+`tools/bfs-persistence-model.py` already supplies the protocol-level half of
+that adapter. Its versioned JSON plan records each block's acknowledgement and
+persistence outcome independently; full, absent, and torn persistence are
+distinct, and `persist_order` makes reordering explicit. The resulting media
+model must be converted into a disposable image before it is supplied to the
+oracle. It never writes a target device itself.
 
 ## Native DOS Adapter Design
 

@@ -10,6 +10,7 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 ORCHESTRATOR = ROOT / "tools" / "bfs-conformance.py"
 ORACLE = ROOT / "tools" / "bfs-format-oracle.py"
+PERSISTENCE_MODEL = ROOT / "tools" / "bfs-persistence-model.py"
 CORE = ROOT / "build" / "host" / "bfs-conformance-core"
 POSIX = ROOT / "build" / "host" / "bfs-conformance-posix"
 MKBFS = ROOT / "build" / "host" / "mkbfs"
@@ -87,6 +88,23 @@ class ConformanceTests(unittest.TestCase):
         self.assertNotIn("bfs_", ORACLE.read_text(encoding="utf-8"))
         symbols = run("nm", "-g", str(CORE)).stdout
         self.assertIn("bfs_fs_format", symbols)
+
+    def test_persistence_model_separates_acknowledgement_from_media_state(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            plan = Path(temporary) / "persistence.json"
+            plan.write_text(json.dumps({"format_version": 1, "writes": [
+                {"block": 3, "data": "metadata", "ack": "ok", "persist": "none"},
+                {"block": 2, "data": "contents", "ack": "error", "persist": "full",
+                 "persist_order": 1},
+                {"block": 4, "data": "superblock", "ack": "ok", "persist": "torn"},
+            ]}), encoding="utf-8")
+            completed = run(str(PERSISTENCE_MODEL), str(plan))
+        self.assertEqual(completed.returncode, 0)
+        result = json.loads(completed.stdout)
+        self.assertEqual(result["acknowledged_blocks"], [3, 4])
+        self.assertEqual(result["persisted_blocks"], [
+            {"block": 2, "data": "contents"}, {"block": 4, "data": "super"},
+        ])
 
     def test_conformance_is_a_required_host_and_debian_check(self):
         workflow = (ROOT / ".github/workflows/ci.yml").read_text(encoding="utf-8")
