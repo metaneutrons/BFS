@@ -1,6 +1,10 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Mounted-path conformance backend. This file must never link libbfs. */
 
+#if !defined(_XOPEN_SOURCE)
+#define _XOPEN_SOURCE 700
+#endif
+
 #include <dirent.h>
 #include <limits.h>
 #include <stdbool.h>
