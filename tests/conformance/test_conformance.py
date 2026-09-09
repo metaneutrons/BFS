@@ -4,7 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
-import subprocess
+import subprocess  # nosec B404 - controlled local test executables without a shell
 import tempfile
 import unittest
 import zlib
@@ -22,7 +22,8 @@ LINK_CHECK = ROOT / "tools" / "check-conformance-linkage.sh"
 
 
 def run(*command):
-    return subprocess.run(command, capture_output=True, text=True, check=False)
+    return subprocess.run(command, capture_output=True, text=True,
+                          check=False)  # nosec B603 - controlled test command vector
 
 
 def be32(data, offset):

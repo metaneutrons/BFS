@@ -11,13 +11,14 @@ import json
 import os
 from pathlib import Path
 import platform
-import subprocess
+import subprocess  # nosec B404 - invokes only the selected conformance backend without a shell
 import sys
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "tests" / "conformance" / "scenarios.json"
 REPLAY_FORMAT_VERSION = 1
+EXIT_PASS, EXIT_FAIL, EXIT_SKIP, EXIT_ERROR = range(4)
 
 
 class ConformanceError(Exception):
@@ -98,13 +99,14 @@ def sha256_file(path):
 def git_identity():
     try:
         return subprocess.check_output(
-            ["git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True
+            ["/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True
         ).strip()
     except (OSError, subprocess.CalledProcessError):
         return "unavailable"
 
 
 def invoke(program, scenario_id, seed, root):
+    program = program.resolve()
     if not program.is_file() or not os.access(program, os.X_OK):
         return {"id": scenario_id, "status": "error", "code": "missing-backend"}
     command = [str(program), "--case", scenario_id, "--seed", str(seed)]
@@ -112,7 +114,7 @@ def invoke(program, scenario_id, seed, root):
         command.extend(["--root", str(root)])
     try:
         completed = subprocess.run(command, capture_output=True, text=True, timeout=60,
-                                   check=False)
+                                   check=False)  # nosec B603 - explicit executable, no shell
     except subprocess.TimeoutExpired:
         return {"id": scenario_id, "status": "error", "code": "timeout"}
     if completed.returncode not in (0, 1, 2, 3):
@@ -125,13 +127,15 @@ def invoke(program, scenario_id, seed, root):
         "pass", "fail", "skip", "error"
     }:
         return {"id": scenario_id, "status": "error", "code": "invalid-backend-record"}
-    expected_exit = {"pass": 0, "fail": 1, "skip": 2, "error": 3}[record["status"]]
+    expected_exit = {
+        "pass": EXIT_PASS, "fail": EXIT_FAIL, "skip": EXIT_SKIP, "error": EXIT_ERROR,
+    }[record["status"]]
     if completed.returncode != expected_exit:
         return {"id": scenario_id, "status": "error", "code": "invalid-backend-exit"}
     return record
 
 
-def main(argv):
+def parse_arguments(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("--backend", choices=("core", "posix"), required=True)
     parser.add_argument("--case", action="append", dest="cases")
@@ -143,62 +147,85 @@ def main(argv):
                         default=ROOT / "build" / "host" / "bfs-conformance-core")
     parser.add_argument("--posix-program", type=Path,
                         default=ROOT / "build" / "host" / "bfs-conformance-posix")
-    args = parser.parse_args(argv)
+    return parser.parse_args(argv)
+
+
+def select_scenarios(args, catalog, known_ids):
+    replay_header = None
+    if args.replay:
+        replay_header, selected = load_replay(args.replay, known_ids, catalog["catalog_version"])
+    else:
+        selected = args.cases or []
+    if not selected:
+        raise ConformanceError("no scenario selected")
+    if len(set(selected)) != len(selected) or any(case not in known_ids for case in selected):
+        raise ConformanceError("invalid scenario selection")
+    if args.backend == "posix" and args.root is None:
+        raise ConformanceError("mounted POSIX mode requires --root")
+    return replay_header, selected
+
+
+def run_scenarios(args, known_ids, selected):
+    program = args.core_program if args.backend == "core" else args.posix_program
+    capability = "direct" if args.backend == "core" else "mounted"
+    records = []
+    for scenario_id in selected:
+        scenario = known_ids[scenario_id]
+        if not scenario[capability]:
+            record = {"id": scenario_id, "status": "skip", "code": "not-applicable"}
+        else:
+            record = invoke(program, scenario_id, args.seed, args.root)
+            if record["status"] != "error" and \
+               record["status"] not in scenario["expected"][args.backend]:
+                record = {"id": scenario_id, "status": "error", "code": "contract-mismatch"}
+        record["contract"] = scenario["contract"]
+        records.append(record)
+    return program, records
+
+
+def result_status(records):
+    statuses = [record["status"] for record in records]
+    return "pass" if all(item == "pass" for item in statuses) else \
+        "fail" if "fail" in statuses else "error" if "error" in statuses else "skip"
+
+
+def build_result(args, catalog, replay_header, program, records):
+    return {
+        "format_version": 1,
+        "catalog_version": catalog["catalog_version"],
+        "contract_version": catalog["contract_version"],
+        "replay": replay_header,
+        "backend": args.backend,
+        "seed": args.seed,
+        "status": result_status(records),
+        "records": records,
+        "identity": {
+            "git": git_identity(),
+            "program_sha256": sha256_file(program) if program.is_file() else "missing",
+            "catalog_sha256": sha256_file(CATALOG_PATH),
+            "replay_sha256": sha256_file(args.replay) if args.replay else "none",
+            "platform": platform.platform(),
+            "python": platform.python_version(),
+        },
+    }
+
+
+def main(argv):
+    args = parse_arguments(argv)
     try:
         catalog, known_ids = load_catalog()
-        replay_header = None
-        if args.replay:
-            replay_header, selected = load_replay(args.replay, known_ids, catalog["catalog_version"])
-        else:
-            selected = args.cases or []
-        if not selected:
-            raise ConformanceError("no scenario selected")
-        if len(set(selected)) != len(selected) or any(case not in known_ids for case in selected):
-            raise ConformanceError("invalid scenario selection")
-        if args.backend == "posix" and args.root is None:
-            raise ConformanceError("mounted POSIX mode requires --root")
-        program = args.core_program if args.backend == "core" else args.posix_program
-        records = []
-        for scenario_id in selected:
-            scenario = known_ids[scenario_id]
-            capability = "direct" if args.backend == "core" else "mounted"
-            if not scenario[capability]:
-                record = {"id": scenario_id, "status": "skip", "code": "not-applicable"}
-            else:
-                record = invoke(program, scenario_id, args.seed, args.root)
-                if record["status"] != "error" and \
-                   record["status"] not in scenario["expected"][args.backend]:
-                    record = {"id": scenario_id, "status": "error", "code": "contract-mismatch"}
-            record["contract"] = scenario["contract"]
-            records.append(record)
-        statuses = [record["status"] for record in records]
-        status = "pass" if all(item == "pass" for item in statuses) else \
-            "fail" if "fail" in statuses else "error" if "error" in statuses else "skip"
-        result = {
-            "format_version": 1,
-            "catalog_version": catalog["catalog_version"],
-            "contract_version": catalog["contract_version"],
-            "replay": replay_header,
-            "backend": args.backend,
-            "seed": args.seed,
-            "status": status,
-            "records": records,
-            "identity": {
-                "git": git_identity(),
-                "program_sha256": sha256_file(program) if program.is_file() else "missing",
-                "catalog_sha256": sha256_file(CATALOG_PATH),
-                "replay_sha256": sha256_file(args.replay) if args.replay else "none",
-                "platform": platform.platform(),
-                "python": platform.python_version(),
-            },
-        }
+        replay_header, selected = select_scenarios(args, catalog, known_ids)
+        program, records = run_scenarios(args, known_ids, selected)
+        result = build_result(args, catalog, replay_header, program, records)
     except ConformanceError as error:
         result = {"format_version": 1, "status": "error", "code": str(error)}
     output = json.dumps(result, sort_keys=True, separators=(",", ":"))
     print(output)
     if args.output:
         args.output.write_text(output + "\n", encoding="utf-8")
-    return {"pass": 0, "fail": 1, "skip": 2}.get(result["status"], 3)
+    return {"pass": EXIT_PASS, "fail": EXIT_FAIL, "skip": EXIT_SKIP}.get(
+        result["status"], EXIT_ERROR
+    )
 
 
 if __name__ == "__main__":
