@@ -173,7 +173,10 @@ jobs:
       - name: Compare an Amiga-written image through an actual FUSE mount
         run: |
           set -euo pipefail
-          runs=(build/emulator/run.*)
+          runs=()
+          for candidate in build/emulator/run.*; do
+            test -f "$candidate/test.hdf" && runs+=("$candidate")
+          done
           test "${#runs[@]}" -eq 1
           test -f "${runs[0]}/test.hdf"
           make fuse HOST_CC=gcc
