@@ -81,6 +81,20 @@ jobs:
         shell: bash
         run: make tools host-test conformance-test HOST_CC=gcc
 
+  fuse-conformance:
+    name: Linux FUSE Conformance
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install libfuse3 development files
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends clang fuse3 libfuse3-dev
+          test -c /dev/fuse
+      - name: Build and qualify the mounted read-only adapter
+        run: make fuse-analyze fuse-test HOST_CC=gcc
+
   sanitizers:
     name: Address and Undefined Behavior Sanitizers
     runs-on: ubuntu-24.04
@@ -133,7 +147,7 @@ jobs:
         run: |
           set -euo pipefail
           sudo apt-get update -qq
-          sudo apt-get install -y -qq --no-install-recommends fs-uae xvfb libarchive-tools musl
+          sudo apt-get install -y -qq --no-install-recommends fs-uae xvfb libarchive-tools musl fuse3 libfuse3-dev
           tools/install-lha.sh "$RUNNER_TEMP/bin"
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
 
@@ -156,6 +170,18 @@ jobs:
       - name: Verify incompatible-media refusal and version diagnostics
         run: make compatibility-test AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}"
 
+      - name: Compare an Amiga-written image through an actual FUSE mount
+        run: |
+          set -euo pipefail
+          runs=()
+          for candidate in build/emulator/run.*; do
+            test -f "$candidate/test.hdf" && runs+=("$candidate")
+          done
+          test "${#runs[@]}" -eq 1
+          test -f "${runs[0]}/test.hdf"
+          make fuse conformance build/host/conformance-fixture-writer HOST_CC=gcc
+          python3 tests/fuse/test_fuse_mount.py --amiga-image "${runs[0]}/test.hdf"
+
       - name: Preserve emulator evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
@@ -168,7 +194,7 @@ jobs:
     name: CI Success
     if: always()
     needs:
-      [commit-hygiene, quality, host-tests, linux-build, sanitizers, static-analysis, coverage, integration-test]
+      [commit-hygiene, quality, host-tests, linux-build, fuse-conformance, sanitizers, static-analysis, coverage, integration-test]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

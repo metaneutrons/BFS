@@ -16,6 +16,18 @@
       ]
     },
     {
+      "path": "src/fuse",
+      "capabilities": [
+        "BFS-CAP-FUSE-LOOKUP",
+        "BFS-CAP-FUSE-DIRECTORY",
+        "BFS-CAP-FUSE-READ",
+        "BFS-CAP-FUSE-SYMLINK",
+        "BFS-CAP-FUSE-XATTR-RO",
+        "BFS-CAP-FUSE-STATFS",
+        "BFS-CAP-FUSE-SNAPSHOT"
+      ]
+    },
+    {
       "path": "src/amiga",
       "capabilities": [
         "BFS-CAP-CORE-RW-MOUNT"

@@ -139,6 +139,22 @@ class ConformanceTests(unittest.TestCase):
         if pid == 0:
             os.close(stdout_read)
             os.close(stderr_read)
+            os.write(stdout_write, b"ok")
+            os._exit(0)
+        os.close(stdout_write)
+        os.close(stderr_write)
+        status, output, errors, output_limited = runner.collect_output(
+            pid, stdout_read, stderr_read, 1)
+        self.assertEqual(runner.result_code(status, output_limited), 0)
+        self.assertEqual(output, b"ok")
+        self.assertEqual(errors, b"")
+        self.assertFalse(output_limited)
+        stdout_read, stdout_write = os.pipe()
+        stderr_read, stderr_write = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(stdout_read)
+            os.close(stderr_read)
             os.write(stdout_write, b"x" * (runner.MAX_OUTPUT_BYTES + 1))
             os._exit(0)
         os.close(stdout_write)
@@ -192,8 +208,15 @@ class ConformanceTests(unittest.TestCase):
         result = json.loads(completed.stdout)
         self.assertEqual(result["namespace"], [
             {"inode": 1, "links": 1, "path": "/", "size": 0, "type": 1},
-            {"inode": 2, "links": 1, "path": "/oracle.txt", "size": 15, "type": 0,
-             "sha256": "1f13f9bcc6269144c0c5d7e8103d596585333c9a376a75d5a48951907280e3a7"},
+            {"inode": 6, "links": 1, "path": "/@bfs-hex-literal", "size": 0, "type": 0,
+             "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+            {"inode": 3, "links": 1, "path": "/folder", "size": 0, "type": 1},
+            {"inode": 4, "links": 1, "path": "/folder/nested.txt", "size": 0, "type": 0,
+             "sha256": "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"},
+            {"inode": 5, "links": 1, "path": "/oracle-link", "size": 10, "type": 2,
+             "sha256": "686c69f8298e445d01eb1a57b873b59d3d230693d7e67187660b3e2da2057469"},
+            {"inode": 2, "links": 1, "path": "/oracle.txt", "size": 13, "type": 0,
+             "sha256": "965876c34808b89ff803cf8e6ad48eda33f01fe2b7291b270f2956f8fe25f594"},
         ])
         self.assertEqual(result["snapshots"][0]["name"], "oracle-snapshot")
 

@@ -40,6 +40,12 @@ BUILD_AMIGA = build/amiga
 HOST_CORE_OBJS = $(patsubst src/core/%.c,$(BUILD_HOST)/obj/core/%.o,$(CORE_SRC))
 HOST_POSIX_OBJ = $(BUILD_HOST)/obj/host/posix_bio.o
 HOST_LIB = $(BUILD_HOST)/libbfs.a
+FUSE_CFLAGS = $(shell pkg-config --cflags fuse3 2>/dev/null)
+FUSE_LIBS = $(shell pkg-config --libs fuse3 2>/dev/null)
+FUSE_BIN = $(BUILD_HOST)/bfs-fuse
+CONFORMANCE_CORE = $(BUILD_HOST)/bfs-conformance-core
+CONFORMANCE_POSIX = $(BUILD_HOST)/bfs-conformance-posix
+CONFORMANCE_FIXTURE = $(BUILD_HOST)/conformance-fixture-writer
 
 # ── Test binaries ───────────────────────────────────────────
 TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
@@ -48,6 +54,26 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
 	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release \
 	conformance conformance-test
+
+.PHONY: fuse
+
+fuse: $(FUSE_BIN)
+
+.PHONY: fuse-test
+
+fuse-test: fuse conformance $(CONFORMANCE_FIXTURE)
+	@test -c /dev/fuse || { echo "/dev/fuse is required for FUSE qualification" >&2; exit 1; }
+	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
+	@python3 tests/fuse/test_fuse_mount.py
+
+.PHONY: fuse-analyze
+
+fuse-analyze:
+	@pkg-config --exists fuse3 || { echo "libfuse3 development files are required" >&2; exit 1; }
+	@clang --analyze -Xanalyzer -analyzer-output=text \
+		-std=c99 -Wall -Wextra -Werror -pthread $(INCLUDES) \
+		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L $(FUSE_CFLAGS) \
+		$(CORE_SRC) $(HOST_SRC) src/fuse/bfs_fuse.c
 
 setup:
 	@command -v lefthook >/dev/null 2>&1 || { \
@@ -111,10 +137,6 @@ sanitize:
 
 tools: $(BUILD_HOST)/bfsfsck $(BUILD_HOST)/mkbfs
 
-CONFORMANCE_CORE = $(BUILD_HOST)/bfs-conformance-core
-CONFORMANCE_POSIX = $(BUILD_HOST)/bfs-conformance-posix
-CONFORMANCE_FIXTURE = $(BUILD_HOST)/conformance-fixture-writer
-
 conformance: $(CONFORMANCE_CORE) $(CONFORMANCE_POSIX)
 
 conformance-test: conformance tools $(CONFORMANCE_FIXTURE)
@@ -132,6 +154,11 @@ $(CONFORMANCE_POSIX): tools/bfs-conformance-posix.c
 $(CONFORMANCE_FIXTURE): tests/conformance/fixture_writer.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
+
+$(FUSE_BIN): src/fuse/bfs_fuse.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
+	@pkg-config --exists fuse3 || { echo "libfuse3 development files are required" >&2; exit 1; }
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) $(FUSE_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB) $(FUSE_LIBS)
 
 $(BUILD_HOST)/obj/core/%.o: src/core/%.c $(CORE_HEADERS)
 	@mkdir -p $(dir $@)

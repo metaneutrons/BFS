@@ -15,6 +15,9 @@
 
 typedef struct {
     bfs_fs_t          *fs;
+    /* Defaults to fs->inode_tree. A read-only snapshot can supply its
+     * immutable inode tree without cloning filesystem state. */
+    bfs_btree_t       *inode_tree;
     bfs_extent_tree_t  extents;
     uint32_t            inode_nr;
     uint64_t            size;       /* file size in bytes */
@@ -26,6 +29,12 @@ typedef struct {
 
 /* Open a file by inode number. Reads inode from inode tree for extent_root/size. */
 bfs_err_t bfs_file_open(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr);
+
+/* Open a file from an explicitly selected immutable inode tree. This is for
+ * read-only namespace views such as snapshots; mutation APIs reject it. */
+bfs_err_t bfs_file_open_readonly_view(bfs_file_t *f, bfs_fs_t *fs,
+                                      bfs_btree_t *inode_tree,
+                                      uint32_t inode_nr);
 
 /* Read up to 'len' bytes at current offset.
  * Returns bytes read (>=0), or negative bfs_err_t on error if no bytes were read. */
