@@ -31,7 +31,11 @@ static bool supported_case(const char *name)
 {
     return strcmp(name, "empty-volume") == 0 || strcmp(name, "regular-file") == 0 ||
            strcmp(name, "multi-block-file") == 0 || strcmp(name, "large-file") == 0 ||
-           strcmp(name, "read-only-refusal") == 0 || strcmp(name, "snapshot") == 0;
+           strcmp(name, "read-only-refusal") == 0 || strcmp(name, "snapshot") == 0 ||
+           strcmp(name, "remount") == 0 || strcmp(name, "directory-scale") == 0 ||
+           strcmp(name, "hard-link") == 0 || strcmp(name, "soft-link") == 0 ||
+           strcmp(name, "comment-metadata") == 0 || strcmp(name, "name-encoding") == 0 ||
+           strcmp(name, "sparse-range") == 0 || strcmp(name, "invalid-name") == 0;
 }
 
 static bool create_owned_image(char *directory, size_t directory_size,
@@ -75,6 +79,47 @@ static bfs_err_t create_and_write(bfs_fs_t *fs, const uint8_t *contents, uint32_
     return bfs_file_write(&file, contents, length) == (int32_t)length ? BFS_OK : BFS_ERR_IO;
 }
 
+static bfs_err_t exercise_extra_case(bfs_fs_t *fs, const char *name, uint32_t inode)
+{
+    if (strcmp(name, "directory-scale") == 0) {
+        for (unsigned index = 0; index < 48; index++) {
+            char entry[16];
+            int length = snprintf(entry, sizeof(entry), "entry-%02u", index);
+            if (length < 0 || bfs_fs_create_file(fs, BFS_ROOT_INO, entry,
+                                                 (uint8_t)length, &inode) != BFS_OK)
+                return BFS_ERR_IO;
+        }
+    } else if (strcmp(name, "hard-link") == 0) {
+        if (bfs_fs_make_hardlink(fs, BFS_ROOT_INO, "case-link", 9, inode) != BFS_OK)
+            return BFS_ERR_IO;
+    } else if (strcmp(name, "soft-link") == 0) {
+        if (bfs_fs_make_softlink(fs, BFS_ROOT_INO, "case-soft", 9, "case.bin", 8) != BFS_OK)
+            return BFS_ERR_IO;
+    } else if (strcmp(name, "comment-metadata") == 0) {
+        char comment[16] = {0};
+        if (bfs_fs_set_comment(fs, inode, "comment", 7) != BFS_OK ||
+            bfs_fs_get_comment(fs, inode, comment, sizeof(comment)) != BFS_OK ||
+            memcmp(comment, "comment", 7) != 0)
+            return BFS_ERR_IO;
+    } else if (strcmp(name, "name-encoding") == 0) {
+        const char original[] = { 'G', 'r', (char)0xe4 };
+        const char alias[] = { 'G', 'R', (char)0xc4 };
+        if (bfs_fs_create_file(fs, BFS_ROOT_INO, original, sizeof(original), &inode) != BFS_OK ||
+            bfs_fs_create_file(fs, BFS_ROOT_INO, alias, sizeof(alias), &inode) != BFS_ERR_EXISTS)
+            return BFS_ERR_IO;
+    } else if (strcmp(name, "sparse-range") == 0) {
+        bfs_file_t file;
+        if (bfs_file_open(&file, fs, inode) != BFS_OK ||
+            bfs_file_seek(&file, 8 * BLOCK_SIZE, BFS_SEEK_SET) < 0 ||
+            bfs_file_write(&file, "end", 3) != 3)
+            return BFS_ERR_IO;
+    } else if (strcmp(name, "invalid-name") == 0) {
+        if (bfs_fs_create_file(fs, BFS_ROOT_INO, "bad/name", 8, &inode) != BFS_ERR_INVAL)
+            return BFS_ERR_IO;
+    }
+    return BFS_OK;
+}
+
 static bfs_err_t verify_readonly(const char *path, const uint8_t *contents, uint32_t length,
                                  bool reject_mutation)
 {
@@ -113,6 +158,31 @@ static bool snapshot_seen(uint32_t id, const bfs_snapshot_record_t *record, void
     return false;
 }
 
+static uint32_t case_length(const char *name, bool has_file)
+{
+    if (!has_file) return 0;
+    if (strcmp(name, "regular-file") == 0 || strcmp(name, "remount") == 0 ||
+        strcmp(name, "directory-scale") == 0 || strcmp(name, "hard-link") == 0 ||
+        strcmp(name, "soft-link") == 0 || strcmp(name, "comment-metadata") == 0 ||
+        strcmp(name, "name-encoding") == 0 || strcmp(name, "sparse-range") == 0)
+        return 19;
+    return strcmp(name, "multi-block-file") == 0 ? 2 * BLOCK_SIZE + 17 :
+        64 * BLOCK_SIZE + 31;
+}
+
+static bfs_err_t mutate_case(bfs_fs_t *fs, const char *name, const uint8_t *contents,
+                             uint32_t length, bool has_file)
+{
+    uint32_t inode = 0;
+    if (has_file && create_and_write(fs, contents, length, &inode) != BFS_OK)
+        return BFS_ERR_IO;
+    if (exercise_extra_case(fs, name, inode) != BFS_OK) return BFS_ERR_IO;
+    if (strcmp(name, "snapshot") != 0) return BFS_OK;
+    bool seen = false;
+    return bfs_snapshot_create(fs, "check") == BFS_OK &&
+           bfs_snapshot_list(fs, snapshot_seen, &seen) == BFS_OK && seen ? BFS_OK : BFS_ERR_IO;
+}
+
 static result_t run_case(const char *name)
 {
     if (!supported_case(name)) return RESULT_SKIP;
@@ -123,10 +193,8 @@ static result_t run_case(const char *name)
     bfs_fs_t fs;
     bool mounted = false;
     if (!create_owned_image(directory, sizeof(directory), image, sizeof(image))) return RESULT_ERROR;
-    uint32_t length = strcmp(name, "empty-volume") == 0 ? 0 :
-        strcmp(name, "regular-file") == 0 ? 19 :
-        strcmp(name, "multi-block-file") == 0 ? 2 * BLOCK_SIZE + 17 :
-        64 * BLOCK_SIZE + 31;
+    bool has_file = strcmp(name, "empty-volume") != 0 && strcmp(name, "invalid-name") != 0;
+    uint32_t length = case_length(name, has_file);
     if (length) {
         contents = malloc(length);
         if (!contents) goto done;
@@ -136,21 +204,13 @@ static result_t run_case(const char *name)
     if (!bio || bfs_fs_format(bio, "Conformance", 0) != BFS_OK || bfs_fs_mount(&fs, bio) != BFS_OK)
         goto done;
     mounted = true;
-    if (strcmp(name, "empty-volume") != 0) {
-        uint32_t inode;
-        if (create_and_write(&fs, contents, length, &inode) != BFS_OK) goto done;
-    }
-    if (strcmp(name, "snapshot") == 0) {
-        bool seen = false;
-        if (bfs_snapshot_create(&fs, "check") != BFS_OK ||
-            bfs_snapshot_list(&fs, snapshot_seen, &seen) != BFS_OK || !seen)
-            goto done;
-    }
+    if (mutate_case(&fs, name, contents, length, has_file) != BFS_OK) goto done;
     if (bfs_fs_unmount(&fs) != BFS_OK) goto done;
     mounted = false;
     bfs_bio_close(bio);
     bio = NULL;
-    if (verify_readonly(image, contents, length, strcmp(name, "read-only-refusal") == 0) != BFS_OK)
+    if (verify_readonly(image, has_file ? contents : NULL, length,
+                        strcmp(name, "read-only-refusal") == 0) != BFS_OK)
         goto done;
     result = RESULT_PASS;
 done:

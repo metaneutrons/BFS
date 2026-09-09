@@ -8,6 +8,14 @@
     {"id": "read-only-refusal", "direct": true, "mounted": true, "contract": "BFS-CONF-005", "expected": {"core": ["pass"], "posix": ["skip"]}},
     {"id": "snapshot", "direct": true, "mounted": true, "contract": "BFS-CONF-006", "expected": {"core": ["pass"], "posix": ["skip"]}},
     {"id": "disk-full", "direct": false, "mounted": true, "contract": "BFS-CONF-007", "expected": {"core": ["skip"], "posix": ["skip"]}},
-    {"id": "posix-special-metadata", "direct": false, "mounted": true, "contract": "BFS-CONF-008", "expected": {"core": ["skip"], "posix": ["skip"]}}
+    {"id": "directory-scale", "direct": true, "mounted": true, "contract": "BFS-CONF-008", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "hard-link", "direct": true, "mounted": true, "contract": "BFS-CONF-009", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "soft-link", "direct": true, "mounted": true, "contract": "BFS-CONF-010", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "name-encoding", "direct": true, "mounted": true, "contract": "BFS-CONF-011", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "comment-metadata", "direct": true, "mounted": true, "contract": "BFS-CONF-012", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "sparse-range", "direct": true, "mounted": true, "contract": "BFS-CONF-013", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "remount", "direct": true, "mounted": true, "contract": "BFS-CONF-014", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "invalid-name", "direct": true, "mounted": true, "contract": "BFS-CONF-015", "expected": {"core": ["pass"], "posix": ["skip"]}},
+    {"id": "posix-special-metadata", "direct": false, "mounted": true, "contract": "BFS-CONF-016", "expected": {"core": ["skip"], "posix": ["skip"]}}
   ]
 }

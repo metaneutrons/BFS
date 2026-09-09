@@ -33,6 +33,12 @@ tools/bfs-conformance.py --backend core \
   --replay tests/conformance/replays/smoke-v1.jsonl
 ```
 
+`tests/conformance/replays/core-full-v1.jsonl` adds directory scale, links,
+Latin-1 case-folded names, comments, sparse ranges, remount, and a negative
+name case. `disk-full` remains catalogued but is explicitly `skip` in the
+small Direct image profile; the existing bounded core exhaustion test remains
+the current evidence until the fault-matrix profile makes that case available.
+
 Mounted mode is meaningful only once a separately qualified mount exists. It
 does not treat a missing mount fixture as a pass:
 

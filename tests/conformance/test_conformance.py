@@ -31,6 +31,12 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual(len(result["records"]), 6)
         self.assertTrue(all(record["status"] == "pass" for record in result["records"]))
 
+    def test_full_direct_replay(self):
+        completed = run(str(ORCHESTRATOR), "--backend", "core", "--replay",
+                        str(ROOT / "tests/conformance/replays/core-full-v1.jsonl"))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertEqual(json.loads(completed.stdout)["status"], "pass")
+
     def test_replay_requires_completion_and_nonempty_selection(self):
         with tempfile.TemporaryDirectory() as temporary:
             replay = Path(temporary) / "bad.jsonl"
