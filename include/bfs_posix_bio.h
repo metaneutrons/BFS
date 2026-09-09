@@ -7,16 +7,24 @@
 #include "bfs_bio.h"
 
 typedef struct {
+    // cppcheck-suppress unusedStructMember
     uint64_t byte_offset; /* Beginning of the selected image or partition range. */
+    // cppcheck-suppress unusedStructMember
     uint64_t byte_length; /* Zero selects the complete remaining backing store. */
+    // cppcheck-suppress unusedStructMember
     uint32_t block_size;  /* Valid BFS block size used for the initial probe. */
+    // cppcheck-suppress unusedStructMember
     bool writable;
+    // cppcheck-suppress unusedStructMember
     bool lock;            /* Must request a non-blocking advisory range lock. */
 } bfs_posix_bio_options_t;
 
 typedef struct {
+    // cppcheck-suppress unusedStructMember
     uint64_t read_calls;
+    // cppcheck-suppress unusedStructMember
     uint64_t write_calls;
+    // cppcheck-suppress unusedStructMember
     uint64_t sync_calls;
 } bfs_posix_bio_stats_t;
 

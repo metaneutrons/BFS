@@ -148,79 +148,70 @@ static bool backing_size(int fd, const struct stat *st, uint64_t *size_out)
     return false;
 }
 
-bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *options)
+static bool source_range(int fd, const bfs_posix_bio_options_t *options,
+                         uint64_t *selected_out)
 {
-    if (!path || !options || !options->lock ||
-        !bfs_block_size_valid(options->block_size)) {
-        errno = EINVAL;
-        return NULL;
-    }
-    int flags = (options->writable ? O_RDWR : O_RDONLY) | O_CLOEXEC;
-    int fd;
-    do {
-        fd = open(path, flags);
-    } while (fd < 0 && errno == EINTR);
-    if (fd < 0) return NULL;
-
     struct stat st;
     uint64_t backing_bytes;
     if (fstat(fd, &st) != 0 || !backing_size(fd, &st, &backing_bytes) ||
         options->byte_offset > backing_bytes) {
-        (void)POSIX_CLOSE(fd);
         errno = EINVAL;
-        return NULL;
+        return false;
     }
     /* Raw-device writes need a platform mount-table check in addition to an
      * advisory lock. Until that policy exists, accept write mode for explicit
      * regular images only. */
     if (options->writable && S_ISBLK(st.st_mode)) {
-        (void)POSIX_CLOSE(fd);
         errno = EPERM;
-        return NULL;
+        return false;
     }
     uint64_t available = backing_bytes - options->byte_offset;
     uint64_t selected = options->byte_length ? options->byte_length : available;
     if (selected == 0 || selected > available || selected < options->block_size) {
-        (void)POSIX_CLOSE(fd);
         errno = EINVAL;
-        return NULL;
+        return false;
     }
+    *selected_out = selected;
+    return true;
+}
 
-    bool locked = false;
-    if (options->lock) {
-        struct flock lock = {
-            .l_type = options->writable ? F_WRLCK : F_RDLCK,
-            .l_whence = SEEK_SET,
-            .l_start = 0,
-            .l_len = 0,
-        };
-        if (fcntl(fd, F_SETLK, &lock) != 0) {
-            (void)POSIX_CLOSE(fd);
-            return NULL;
-        }
-        locked = true;
-    }
+static int open_path(const char *path, bool writable)
+{
+    int flags = (writable ? O_RDWR : O_RDONLY) | O_CLOEXEC;
+    int fd;
+    do {
+        fd = open(path, flags);
+    } while (fd < 0 && errno == EINTR);
+    return fd;
+}
 
-    posix_bio_t *bio = calloc(1, sizeof(*bio));
-    if (!bio) {
-        if (locked) {
-            struct flock lock = { .l_type = F_UNLCK, .l_whence = SEEK_SET };
-            (void)fcntl(fd, F_SETLK, &lock);
-        }
-        (void)POSIX_CLOSE(fd);
-        return NULL;
-    }
+static bool lock_fd(int fd, bool writable)
+{
+    struct flock lock = {
+        .l_type = writable ? F_WRLCK : F_RDLCK,
+        .l_whence = SEEK_SET,
+        .l_start = 0,
+        .l_len = 0,
+    };
+    return fcntl(fd, F_SETLK, &lock) == 0;
+}
+
+static void unlock_fd(int fd)
+{
+    struct flock lock = { .l_type = F_UNLCK, .l_whence = SEEK_SET };
+    (void)fcntl(fd, F_SETLK, &lock);
+}
+
+static bfs_bio_t *new_bio(int fd, const bfs_posix_bio_options_t *options,
+                          uint64_t selected)
+{
     uint64_t blocks = selected / options->block_size;
     if (blocks > UINT32_MAX) {
-        free(bio);
-        if (locked) {
-            struct flock lock = { .l_type = F_UNLCK, .l_whence = SEEK_SET };
-            (void)fcntl(fd, F_SETLK, &lock);
-        }
-        (void)POSIX_CLOSE(fd);
         errno = EOVERFLOW;
         return NULL;
     }
+    posix_bio_t *bio = calloc(1, sizeof(*bio));
+    if (!bio) return NULL;
     bio->base.ops = options->writable ? &posix_writable_ops : &posix_readonly_ops;
     bio->base.block_size = options->block_size;
     bio->base.block_count = (bfs_blk_t)blocks;
@@ -228,8 +219,30 @@ bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *o
     bio->byte_offset = options->byte_offset;
     bio->byte_length = selected;
     bio->writable = options->writable;
-    bio->locked = locked;
+    bio->locked = true;
     return &bio->base;
+}
+
+bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *options)
+{
+    if (!path || !options || !options->lock ||
+        !bfs_block_size_valid(options->block_size)) {
+        errno = EINVAL;
+        return NULL;
+    }
+    int fd = open_path(path, options->writable);
+    if (fd < 0) return NULL;
+    uint64_t selected;
+    if (!source_range(fd, options, &selected) || !lock_fd(fd, options->writable)) {
+        (void)POSIX_CLOSE(fd);
+        return NULL;
+    }
+    bfs_bio_t *bio = new_bio(fd, options, selected);
+    if (!bio) {
+        unlock_fd(fd);
+        (void)POSIX_CLOSE(fd);
+    }
+    return bio;
 }
 
 bfs_err_t bfs_posix_bio_get_stats(const bfs_bio_t *base, bfs_posix_bio_stats_t *stats)

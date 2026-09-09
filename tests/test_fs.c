@@ -290,6 +290,21 @@ static void test_format_both_copies_mountable(void)
     }
 }
 
+static void assert_readonly_mutations_rejected(bfs_fs_t *fs, uint32_t ino)
+{
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "blocked", 7, &ino),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "dir", 3, &ino), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_delete_file(fs, BFS_ROOT_INO, "blocked", 7), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_rmdir(fs, BFS_ROOT_INO, "dir", 3), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_rename(fs, BFS_ROOT_INO, "blocked", 7,
+                                 BFS_ROOT_INO, "renamed", 7), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_make_hardlink(fs, BFS_ROOT_INO, "hard", 4, ino), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_make_softlink(fs, BFS_ROOT_INO, "soft", 4,
+                                        "blocked", 7), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, "comment", 7), BFS_ERR_UNSUPPORTED);
+}
+
 static void test_readonly_mount_does_not_commit(void)
 {
     unlink(TEST_IMG);
@@ -319,23 +334,7 @@ static void test_readonly_mount_does_not_commit(void)
     TEST_ASSERT(fs.mounted);
     TEST_ASSERT(fs.read_only);
     uint32_t reads_after_mount = readonly.read_calls;
-    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "blocked", 7, &ino),
-                   BFS_ERR_UNSUPPORTED);
-    TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "dir", 3, &ino),
-                   BFS_ERR_UNSUPPORTED);
-    TEST_ASSERT_EQ(bfs_fs_delete_file(&fs, BFS_ROOT_INO, "blocked", 7),
-                   BFS_ERR_UNSUPPORTED);
-    TEST_ASSERT_EQ(bfs_fs_rmdir(&fs, BFS_ROOT_INO, "dir", 3),
-                   BFS_ERR_UNSUPPORTED);
-    TEST_ASSERT_EQ(bfs_fs_rename(&fs, BFS_ROOT_INO, "blocked", 7,
-                                 BFS_ROOT_INO, "renamed", 7),
-                   BFS_ERR_UNSUPPORTED);
-    TEST_ASSERT_EQ(bfs_fs_make_hardlink(&fs, BFS_ROOT_INO, "hard", 4, ino),
-                   BFS_ERR_UNSUPPORTED);
-    TEST_ASSERT_EQ(bfs_fs_make_softlink(&fs, BFS_ROOT_INO, "soft", 4,
-                                        "blocked", 7), BFS_ERR_UNSUPPORTED);
-    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, "comment", 7),
-                   BFS_ERR_UNSUPPORTED);
+    assert_readonly_mutations_rejected(&fs, ino);
     TEST_ASSERT_EQ(readonly.read_calls, reads_after_mount);
 
     bfs_file_t file;

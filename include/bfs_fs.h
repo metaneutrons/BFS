@@ -51,6 +51,7 @@ typedef struct bfs_fs {
     uint32_t           next_ino;   /* next inode number to allocate */
     uint32_t           options;    /* BFS_OPT_* flags */
     bool               mounted;
+    // cppcheck-suppress unusedStructMember
     bool               read_only;  /* lifecycle forbids recovery and commits */
     bfs_err_t          recovery_error; /* nonzero: abandon/remount required */
     /* Shared between fs.c recovery and file.c handle validation. */
