@@ -79,7 +79,8 @@ secrets-scan:
 analyze:
 	@clang --analyze -Xanalyzer -analyzer-output=text \
 		-std=c99 -Wall -Wextra -Werror -pthread $(INCLUDES) \
-		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L $(CORE_SRC) $(EMU_SRC)
+		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L $(CORE_SRC) $(HOST_SRC) \
+		tools/bfs-conformance-core.c tools/bfs-conformance-posix.c $(EMU_SRC)
 
 host-test: $(TEST_BINS)
 	@echo "=== Running tests ==="

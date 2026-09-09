@@ -58,7 +58,7 @@ jobs:
       - name: Build and run host tests
         env:
           HOST_CC: ${{ matrix.compiler }}
-        run: make host-test HOST_CC="$HOST_CC"
+        run: make host-test conformance-test HOST_CC="$HOST_CC"
       - name: Compile host tools
         env:
           HOST_CC: ${{ matrix.compiler }}
@@ -79,7 +79,7 @@ jobs:
           apt-get install -y -qq --no-install-recommends build-essential clang
       - name: Build host core, tools, and tests
         shell: bash
-        run: make tools host-test HOST_CC=gcc
+        run: make tools host-test conformance-test HOST_CC=gcc
 
   sanitizers:
     name: Address and Undefined Behavior Sanitizers
