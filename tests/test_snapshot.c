@@ -69,10 +69,25 @@ static void test_snapshot_preserves_data(void) {
     uint8_t buf[100]; bfs_file_read(&f3, buf, 100);
     TEST_ASSERT_MEM_EQ(buf, modified, 100);
 
-    /* The snapshot's tree roots still point to the old data.
-     * We can't easily read from the snapshot without a mount-snapshot API,
-     * but we can verify the refcount tree has entries. */
+    /* The snapshot's tree roots still point to the old data. */
     TEST_ASSERT(bfs_refcount_get(&fs->refcount, bfs_be32(fs->txn.sb.dir_tree_root)) >= 1);
+
+    bfs_snapshot_record_t record;
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, "before", NULL, &record), BFS_OK);
+    bfs_bio_t *bio = fs->bio;
+    TEST_ASSERT_EQ(bfs_fs_unmount(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mount_readonly(fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, "before", NULL, &record), BFS_OK);
+    bfs_dir_tree_t snapshot_dir;
+    bfs_btree_t snapshot_inode;
+    TEST_ASSERT_EQ(bfs_snapshot_open(&record, bio, bfs_freespace_allocator(&fs->freespace),
+                                     &snapshot_dir, &snapshot_inode), BFS_OK);
+    bfs_file_t snapshot_file;
+    TEST_ASSERT_EQ(bfs_file_open_readonly_view(&snapshot_file, fs, &snapshot_inode, ino), BFS_OK);
+    memset(buf, 0, sizeof(buf));
+    TEST_ASSERT_EQ(bfs_file_read(&snapshot_file, buf, sizeof(buf)), 100);
+    TEST_ASSERT_MEM_EQ(buf, orig, sizeof(orig));
+    TEST_ASSERT_EQ(bfs_file_write(&snapshot_file, modified, sizeof(modified)), BFS_ERR_UNSUPPORTED);
 
     teardown(fs);
 }

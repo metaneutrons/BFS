@@ -33,13 +33,16 @@ static bfs_err_t file_block_for_offset(bfs_fs_t *fs, uint64_t offset, uint32_t *
     return BFS_OK;
 }
 
-bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
+static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
+                                              bfs_btree_t *inode_tree,
+                                              uint32_t inode_nr)
 {
-    if (!f || !fs || !fs->mounted || inode_nr == 0)
+    if (!f || !fs || !fs->mounted || !inode_tree || inode_nr == 0)
         return BFS_ERR_INVAL;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     memset(f, 0, sizeof(*f));
     f->fs = fs;
+    f->inode_tree = inode_tree;
     f->inode_nr = inode_nr;
     f->offset = 0;
     f->recovery_generation = fs->recovery_generation;
@@ -48,7 +51,7 @@ bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
     bfs_blk_t extent_root = BFS_BLK_NULL;
     uint64_t size = 0;
     bfs_inode_t inode;
-    bfs_err_t err = bfs_inode_read(&fs->inode_tree, inode_nr, &inode);
+    bfs_err_t err = bfs_inode_read(inode_tree, inode_nr, &inode);
     if (err != BFS_OK) return err;
     uint32_t type = bfs_be32(inode.type);
     if (type != BFS_INODE_FILE && type != BFS_INODE_SOFTLINK && type != BFS_INODE_HARDLINK)
@@ -66,16 +69,21 @@ bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
     return BFS_OK;
 }
 
+bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
+{
+    return file_open_from_tree_unlocked(f, fs, &fs->inode_tree, inode_nr);
+}
+
 static bfs_err_t file_update_inode(bfs_file_t *f)
 {
     bfs_inode_t inode;
-    bfs_err_t err = bfs_inode_read(&f->fs->inode_tree, f->inode_nr, &inode);
+    bfs_err_t err = bfs_inode_read(f->inode_tree, f->inode_nr, &inode);
     if (err != BFS_OK) return err;
     inode.inode_nr = bfs_be32(f->inode_nr);
     inode.size_hi = bfs_be32((uint32_t)(f->size >> 32));
     inode.size_lo = bfs_be32((uint32_t)(f->size & 0xFFFFFFFF));
     inode.extent_root = bfs_be32(f->extents.tree.root);
-    return bfs_inode_write(&f->fs->inode_tree, f->inode_nr, &inode);
+    return bfs_inode_write(f->inode_tree, f->inode_nr, &inode);
 }
 
 /* Reached a transaction commit point in the middle of a write or truncate: the
@@ -458,14 +466,14 @@ static bfs_err_t file_refresh_unlocked(bfs_file_t *f)
         return f->fs->recovery_error;
     }
     bfs_inode_t inode;
-    err = bfs_inode_read(&f->fs->inode_tree, f->inode_nr, &inode);
+    err = bfs_inode_read(f->inode_tree, f->inode_nr, &inode);
     if (err != BFS_OK) return err;
     uint64_t size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
     if (bfs_be32(inode.extent_root) == f->extents.tree.root && size == f->size)
         return BFS_OK;
     /* Another handle published a new inode. Keep this handle's independent offset. */
     bfs_file_t current;
-    err = bfs_file_open_unlocked(&current, f->fs, f->inode_nr);
+    err = file_open_from_tree_unlocked(&current, f->fs, f->inode_tree, f->inode_nr);
     if (err != BFS_OK) return err;
     current.offset = f->offset;
     *f = current;
@@ -477,6 +485,20 @@ bfs_err_t bfs_file_open(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
     if (!f || !fs || !fs->mounted || inode_nr == 0) return BFS_ERR_INVAL;
     bfs_lock_read(&fs->lock);
     bfs_err_t err = bfs_file_open_unlocked(f, fs, inode_nr);
+    bfs_lock_unlock(&fs->lock);
+    return err;
+}
+
+bfs_err_t bfs_file_open_readonly_view(bfs_file_t *f, bfs_fs_t *fs,
+                                      bfs_btree_t *inode_tree,
+                                      uint32_t inode_nr)
+{
+    if (!f || !fs || !fs->mounted || !inode_tree || inode_nr == 0)
+        return BFS_ERR_INVAL;
+    if (!fs->read_only)
+        return BFS_ERR_UNSUPPORTED;
+    bfs_lock_read(&fs->lock);
+    bfs_err_t err = file_open_from_tree_unlocked(f, fs, inode_tree, inode_nr);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
