@@ -390,7 +390,8 @@ static bool readdir_scan(const char *name, uint8_t name_length, uint32_t inode,
         ctx->error = error;
         return false;
     }
-    if (ctx->index++ < ctx->offset) return true;
+    uint64_t entry_offset = ctx->index++;
+    if (entry_offset < ctx->offset) return true;
     bfs_inode_t node;
     struct stat st;
     error = read_inode(ctx->ctx, inode, &node);
@@ -400,7 +401,7 @@ static bool readdir_scan(const char *name, uint8_t name_length, uint32_t inode,
         return false;
     }
     size_t needed = fuse_add_direntry(request->request, NULL, 0, encoded, &st,
-                                      (off_t)(ctx->index + 1u));
+                                      (off_t)ctx->index);
     if (needed > ctx->capacity - ctx->used) {
         ctx->full = true;
         return false;
@@ -435,7 +436,8 @@ static void bfs_fuse_readdir(fuse_req_t request, fuse_ino_t inode, size_t size,
     }
     readdir_request_t scan = {
         .request = request,
-        .state = { ctx, inode, buffer, size, 0, 0, (uint64_t)offset, BFS_OK, false },
+        /* Offsets 0 and 1 belong to . and ..; scanned entries begin at 2. */
+        .state = { ctx, inode, buffer, size, 0, 2, (uint64_t)offset, BFS_OK, false },
     };
     uint32_t parent = BFS_ROOT_INO;
     if (inode != BFS_ROOT_INO) {

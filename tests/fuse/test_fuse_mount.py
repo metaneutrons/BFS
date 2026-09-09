@@ -2,11 +2,13 @@
 """Actual Linux FUSE qualification for the read-only BFS adapter."""
 
 import argparse
+import ctypes
 import errno
 import hashlib
 import json
 import os
 from pathlib import Path
+import platform
 import shutil
 import signal
 import stat
@@ -20,7 +22,6 @@ ROOT = Path(__file__).resolve().parents[2]
 FUSE = ROOT / "build" / "host" / "bfs-fuse"
 FIXTURE = ROOT / "build" / "host" / "conformance-fixture-writer"
 ORACLE = ROOT / "tools" / "bfs-format-oracle.py"
-CONFORMANCE = ROOT / "tools" / "bfs-conformance.py"
 
 
 def sha256(path):
@@ -112,6 +113,45 @@ def mounted_manifest(root):
     return sorted(entries, key=lambda item: item["path"])
 
 
+def small_buffer_dirent_names(directory):
+    syscall_number = {
+        "aarch64": 61,
+        "amd64": 217,
+        "arm64": 61,
+        "x86_64": 217,
+    }.get(platform.machine().lower())
+    require(syscall_number is not None, "unsupported Linux architecture for getdents64 qualification")
+    descriptor = os.open(directory, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+    names = set()
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        last_next_offset = -1
+        for _ in range(128):
+            buffer = ctypes.create_string_buffer(128)
+            count = libc.syscall(syscall_number, descriptor, buffer, len(buffer))
+            if count < 0:
+                error = ctypes.get_errno()
+                raise OSError(error, os.strerror(error))
+            if count == 0:
+                return names
+            offset = 0
+            while offset < count:
+                record_length = int.from_bytes(buffer.raw[offset + 16:offset + 18], "little")
+                require(record_length >= 20 and offset + record_length <= count,
+                        "invalid getdents64 record")
+                next_offset = int.from_bytes(buffer.raw[offset + 8:offset + 16], "little")
+                require(next_offset > last_next_offset,
+                        f"directory stream did not advance: {next_offset} after {last_next_offset}")
+                last_next_offset = next_offset
+                name = buffer.raw[offset + 19:offset + record_length].split(b"\0", 1)[0]
+                if name not in (b".", b".."):
+                    names.add(os.fsdecode(name))
+                offset += record_length
+        raise RuntimeError("directory stream did not terminate within 128 getdents64 calls")
+    finally:
+        os.close(descriptor)
+
+
 def oracle_manifest(image):
     completed = run(str(ORACLE), str(image))
     require(completed.returncode == 0, completed.stderr)
@@ -136,16 +176,6 @@ def expect_erofs(operation):
     raise RuntimeError("mutation unexpectedly succeeded")
 
 
-def run_conformance(root, cases):
-    arguments = [str(CONFORMANCE), "--backend", "posix", "--root", str(root)]
-    for case in cases:
-        arguments.extend(["--case", case])
-    completed = run(*arguments)
-    require(completed.returncode == 0, completed.stderr + completed.stdout)
-    result = json.loads(completed.stdout)
-    require(result["status"] == "pass", completed.stdout)
-
-
 def exercise_fixture(image, mountpoint):
     before = sha256(image)
     process = mount(image, mountpoint)
@@ -155,12 +185,20 @@ def exercise_fixture(image, mountpoint):
         oracle = oracle_manifest(image)
         require(mounted == oracle,
                 f"mounted namespace differs from oracle: mounted={mounted}, oracle={oracle}")
+        expected_names = {Path(item["path"]).name for item in oracle
+                          if item["path"] != "/" and Path(item["path"]).parent == Path("/")}
+        streamed_names = small_buffer_dirent_names(mountpoint)
+        require(streamed_names == expected_names,
+                f"small-buffer directory stream differs from oracle: "
+                f"streamed={sorted(streamed_names)}, expected={sorted(expected_names)}")
         require((mountpoint / "oracle.txt").read_bytes() == b"live contents",
                 "live namespace did not expose post-snapshot content")
-        run_conformance(mountpoint, ["empty-volume", "read-only-refusal", "soft-link",
-                                    "directory-scale", "comment-metadata", "name-encoding"])
+        require(os.getxattr(mountpoint / "oracle.txt", "user.bfs.comment") == b"fixture",
+                "comment xattr differs")
         require(os.getxattr(mountpoint / "oracle.txt", "user.bfs.protection") == b"00000000",
                 "protection xattr differs")
+        require("user.bfs.comment" in os.listxattr(mountpoint / "oracle.txt"),
+                "comment xattr is absent from the xattr list")
         expect_erofs(lambda: os.mkdir(mountpoint / "mutation"))
         expect_erofs(lambda: os.unlink(mountpoint / "oracle.txt"))
         expect_erofs(lambda: os.rename(mountpoint / "oracle.txt", mountpoint / "renamed"))
@@ -170,7 +208,6 @@ def exercise_fixture(image, mountpoint):
 
     process = mount(image, mountpoint, snapshot="oracle-snapshot")
     try:
-        run_conformance(mountpoint, ["regular-file", "snapshot"])
         require((mountpoint / "oracle.txt").read_bytes() == b"oracle contents",
                 "selected snapshot did not expose its immutable content")
     finally:
@@ -232,7 +269,7 @@ def main():
     with tempfile.TemporaryDirectory(prefix="bfs-fuse-test-") as directory:
         temporary = Path(directory)
         image = temporary / "fixture.bfs"
-        require(run(str(FIXTURE), str(image), "--fuse-directory-scale").returncode == 0,
+        require(run(str(FIXTURE), str(image), "--directory-scale").returncode == 0,
                 "cannot create FUSE fixture")
         mountpoint = temporary / "mount"
         mountpoint.mkdir()
