@@ -121,6 +121,16 @@ class ConformanceTests(unittest.TestCase):
             self.assertEqual(run("/usr/bin/cc", "-o", str(binary), str(source)).returncode, 0)
             self.assertNotEqual(run(str(LINK_CHECK), str(binary)).returncode, 0)
 
+    def test_posix_backend_requires_an_owned_nonsymlink_root(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            root = Path(temporary) / "root"
+            root.mkdir()
+            symlink = Path(temporary) / "alias"
+            symlink.symlink_to(root, target_is_directory=True)
+            self.assertEqual(run(str(POSIX), "--case", "empty-volume", "--root", str(root)).returncode, 0)
+            self.assertEqual(run(str(POSIX), "--case", "empty-volume", "--root", "/").returncode, 3)
+            self.assertEqual(run(str(POSIX), "--case", "empty-volume", "--root", str(symlink)).returncode, 3)
+
     def test_runner_bounds_child_runtime_and_output(self):
         runner = __import__("bfs_command_runner")
         stdout_read, stdout_write = os.pipe()
