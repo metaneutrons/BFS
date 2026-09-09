@@ -65,6 +65,14 @@ def collect_output(pid, stdout_fd, stderr_fd, timeout_seconds):
             if time.monotonic() >= deadline:
                 terminate(pid)
                 raise CommandTimeout()
+            if status is None:
+                completed, child_status = os.waitpid(pid, os.WNOHANG)
+                if completed:
+                    status = child_status
+            if not selector.get_map():
+                if status is None:
+                    time.sleep(0.01)
+                continue
             for key, _ in selector.select(max(0, deadline - time.monotonic())):
                 data = os.read(key.fd, 65536)
                 if not data:
@@ -76,10 +84,6 @@ def collect_output(pid, stdout_fd, stderr_fd, timeout_seconds):
                 if len(data) > remaining and status is None:
                     status = terminate(pid)
                     output_limited = True
-            if status is None:
-                completed, child_status = os.waitpid(pid, os.WNOHANG)
-                if completed:
-                    status = child_status
         return status, bytes(outputs[stdout_fd]), bytes(outputs[stderr_fd]), output_limited
     finally:
         selector.close()

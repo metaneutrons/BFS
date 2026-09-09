@@ -139,6 +139,22 @@ class ConformanceTests(unittest.TestCase):
         if pid == 0:
             os.close(stdout_read)
             os.close(stderr_read)
+            os.write(stdout_write, b"ok")
+            os._exit(0)
+        os.close(stdout_write)
+        os.close(stderr_write)
+        status, output, errors, output_limited = runner.collect_output(
+            pid, stdout_read, stderr_read, 1)
+        self.assertEqual(runner.result_code(status, output_limited), 0)
+        self.assertEqual(output, b"ok")
+        self.assertEqual(errors, b"")
+        self.assertFalse(output_limited)
+        stdout_read, stdout_write = os.pipe()
+        stderr_read, stderr_write = os.pipe()
+        pid = os.fork()
+        if pid == 0:
+            os.close(stdout_read)
+            os.close(stderr_read)
             os.write(stdout_write, b"x" * (runner.MAX_OUTPUT_BYTES + 1))
             os._exit(0)
         os.close(stdout_write)
