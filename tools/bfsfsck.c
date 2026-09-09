@@ -15,7 +15,7 @@
 #include "bfs_inode.h"
 #include "bfs_extent.h"
 #include "bfs_snapshot.h"
-#include "block_device_emu.h"
+#include "bfs_posix_bio.h"
 
 static uint8_t *block_map;
 static uint8_t *reference_map;
@@ -186,52 +186,33 @@ static bool snapshot_mark_cb(uint32_t id, const bfs_snapshot_record_t *rec, void
     return true;
 }
 
-static bfs_bio_t *open_detected_bio(const char *path, bfs_err_t *error,
+static bfs_bio_t *open_detected_bio(const char *path, bool writable, bfs_err_t *error,
                                    char message[BFS_FORMAT_ERROR_MAX])
 {
-    *error = BFS_ERR_CORRUPT;
-    for (uint32_t size = BFS_MIN_BLOCK_SIZE; size <= BFS_MAX_BLOCK_SIZE; size *= 2) {
-        bfs_bio_t *probe = bio_emu_open(path, size);
-        if (!probe) continue;
-        bfs_superblock_t sb;
-        bfs_err_t err = bfs_sb_read(probe, &sb);
-        if (err == BFS_OK) { *error = BFS_OK; return probe; }
-        bfs_bio_close(probe);
-        if (err == BFS_ERR_UNSUPPORTED) {
+    *error = BFS_ERR_IO;
+    bfs_posix_bio_options_t options = {
+        .block_size = BFS_MIN_BLOCK_SIZE,
+        .writable = writable,
+        .lock = true,
+    };
+    bfs_bio_t *bio = bfs_posix_bio_open(path, &options);
+    if (!bio) return NULL;
+
+    uint64_t byte_offset, byte_length;
+    bfs_superblock_t sb = {0};
+    bfs_err_t err = bfs_posix_bio_get_range(bio, &byte_offset, &byte_length);
+    if (err == BFS_OK && byte_offset == 0)
+        err = bfs_sb_probe(bio, byte_length, &sb);
+    if (err != BFS_OK) {
+        if (err == BFS_ERR_UNSUPPORTED)
             bfs_sb_describe_unsupported(&sb, message);
-            *error = err;
-            return NULL;
-        }
-        if (err == BFS_ERR_IO || err == BFS_ERR_NOMEM) *error = err;
+        bfs_bio_close(bio);
+        *error = err;
+        return NULL;
     }
-    return NULL;
+    *error = BFS_OK;
+    return bio;
 }
-
-typedef struct {
-    bfs_bio_t base;
-    bfs_bio_t *inner;
-} inspect_bio_t;
-
-static bfs_err_t inspect_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
-{
-    return bfs_bio_read(((inspect_bio_t *)bio)->inner, blk, buf);
-}
-
-static bfs_err_t inspect_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
-{
-    (void)bio; (void)blk; (void)buf;
-    return BFS_ERR_IO;
-}
-
-static bfs_err_t inspect_sync(bfs_bio_t *bio)
-{
-    (void)bio;
-    return BFS_OK;
-}
-
-static const bfs_bio_ops_t inspect_ops = {
-    .read_block = inspect_read, .write_block = inspect_write, .sync = inspect_sync,
-};
 
 static bool refcount_check_cb(const void *key, const void *val, void *ctx)
 {
@@ -268,7 +249,7 @@ int main(int argc, char **argv)
 
     bfs_err_t open_error;
     char format_error[BFS_FORMAT_ERROR_MAX] = {0};
-    bfs_bio_t *bio = open_detected_bio(argv[1], &open_error, format_error);
+    bfs_bio_t *bio = open_detected_bio(argv[1], fix, &open_error, format_error);
     if (!bio) {
         if (open_error == BFS_ERR_UNSUPPORTED)
             fprintf(stderr, "%s\n", format_error);
@@ -279,12 +260,9 @@ int main(int argc, char **argv)
 
     printf("=== BFS Filesystem Check ===\n");
 
-    inspect_bio_t inspect = { .base = *bio, .inner = bio };
-    inspect.base.ops = &inspect_ops;
-    /* A read-only check must not commit or resume interrupted deletions. The
-     * write guard makes such a mount fail, leaving explicit repair to --fix. */
     bfs_fs_t fs;
-    bfs_err_t mount_error = bfs_fs_mount(&fs, fix ? bio : &inspect.base);
+    bfs_err_t mount_error = fix ? bfs_fs_mount(&fs, bio) :
+                                 bfs_fs_mount_readonly(&fs, bio);
     if (mount_error != BFS_OK) {
         fprintf(stderr, "Mount failed (error %d)\n", mount_error);
         bfs_bio_close(bio);
@@ -414,6 +392,9 @@ int main(int argc, char **argv)
     if (fix && errors == 0) {
         if (bfs_fs_unmount(&fs) != BFS_OK)
             ERR("cannot unmount the filesystem cleanly");
+    } else if (!fix) {
+        if (bfs_fs_unmount(&fs) != BFS_OK)
+            ERR("cannot close the filesystem cleanly");
     } else {
         bfs_fs_abandon(&fs);
     }

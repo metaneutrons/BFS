@@ -157,6 +157,14 @@ bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *o
         errno = EINVAL;
         return NULL;
     }
+    /* Raw-device writes need a platform mount-table check in addition to an
+     * advisory lock. Until that policy exists, accept write mode for explicit
+     * regular images only. */
+    if (options->writable && S_ISBLK(st.st_mode)) {
+        (void)close(fd);
+        errno = EPERM;
+        return NULL;
+    }
     uint64_t available = backing_bytes - options->byte_offset;
     uint64_t selected = options->byte_length ? options->byte_length : available;
     if (selected == 0 || selected > available || selected < options->block_size) {
@@ -217,5 +225,17 @@ bfs_err_t bfs_posix_bio_get_stats(const bfs_bio_t *base, bfs_posix_bio_stats_t *
                            base->ops != &posix_writable_ops))
         return BFS_ERR_INVAL;
     *stats = ((const posix_bio_t *)base)->stats;
+    return BFS_OK;
+}
+
+bfs_err_t bfs_posix_bio_get_range(const bfs_bio_t *base, uint64_t *byte_offset,
+                                   uint64_t *byte_length)
+{
+    if (!base || !byte_offset || !byte_length ||
+        (base->ops != &posix_readonly_ops && base->ops != &posix_writable_ops))
+        return BFS_ERR_INVAL;
+    const posix_bio_t *bio = (const posix_bio_t *)base;
+    *byte_offset = bio->byte_offset;
+    *byte_length = bio->byte_length;
     return BFS_OK;
 }

@@ -21,11 +21,18 @@ typedef struct {
 } bfs_posix_bio_stats_t;
 
 /* Open an existing regular image or supported block device range. The function
- * never creates, truncates, formats, or discovers partitions by pathname. */
+ * never creates, truncates, formats, or discovers partitions by pathname.
+ * Writable mode is restricted to regular images until raw-device ownership
+ * checks are available. */
 bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *options);
 
 /* Read transport counters. They are primarily evidence for the read-only
  * lifecycle tests and remain valid until bfs_bio_close(). */
 bfs_err_t bfs_posix_bio_get_stats(const bfs_bio_t *bio, bfs_posix_bio_stats_t *stats);
+
+/* Return the selected backing-store range after opening. This lets a caller
+ * probe the BFS geometry without exposing the transport implementation. */
+bfs_err_t bfs_posix_bio_get_range(const bfs_bio_t *bio, uint64_t *byte_offset,
+                                  uint64_t *byte_length);
 
 #endif /* BFS_POSIX_BIO_H */
