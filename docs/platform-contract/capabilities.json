@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "surfaces": [
+    {
+      "path": "src/core",
+      "capabilities": [
+        "BFS-CAP-CORE-RO-MOUNT",
+        "BFS-CAP-CORE-RW-MOUNT"
+      ]
+    },
+    {
+      "path": "src/host",
+      "capabilities": [
+        "BFS-CAP-POSIX-RANGE-IO",
+        "BFS-CAP-POSIX-RO-GUARD"
+      ]
+    },
+    {
+      "path": "src/amiga",
+      "capabilities": [
+        "BFS-CAP-CORE-RW-MOUNT"
+      ]
+    }
+  ]
+}

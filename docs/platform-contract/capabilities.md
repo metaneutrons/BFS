@@ -3,7 +3,8 @@
 Every platform-facing implementation and test report uses these identifiers.
 An adapter must declare an unavailable capability explicitly. M3 adds a
 machine-readable manifest and a test that fails when an implemented surface has
-no ledger entry.
+no ledger entry. The current implementation declarations are in
+[`capabilities.json`](capabilities.json).
 
 | Identifier | Meaning | Owner/source surface | M5 status | Required evidence |
 | --- | --- | --- | --- | --- |

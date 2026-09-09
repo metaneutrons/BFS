@@ -40,6 +40,19 @@ bfs_err_t bfs_txn_begin(bfs_txn_t *txn, bfs_bio_t *bio)
     return BFS_OK;
 }
 
+bfs_err_t bfs_txn_begin_readonly(bfs_txn_t *txn, bfs_bio_t *bio)
+{
+    if (!txn || !bio || !bio->ops || !bio->ops->read_block)
+        return BFS_ERR_INVAL;
+    memset(txn, 0, sizeof(*txn));
+    txn->bio = bio;
+    bfs_err_t err = bfs_sb_read(bio, &txn->sb);
+    if (err != BFS_OK) return err;
+    txn->sb_new = txn->sb;
+    txn->active = true;
+    return BFS_OK;
+}
+
 void bfs_txn_set_dir_root(bfs_txn_t *txn, bfs_blk_t root)
 {
     if (!txn) return;

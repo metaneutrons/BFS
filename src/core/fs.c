@@ -23,10 +23,11 @@
 #define BFS_GRESERVE_CAP          512   /* absolute maximum */
 #define BFS_GRESERVE_TINY_DIV     4     /* fallback if reserve would exceed the volume */
 
-static bool fs_bio_valid(const bfs_bio_t *bio)
+static bool fs_bio_valid(const bfs_bio_t *bio, bool read_only)
 {
-    return bio && bio->ops && bio->ops->read_block && bio->ops->write_block &&
-           bio->ops->sync && bfs_block_size_valid(bio->block_size) &&
+    return bio && bio->ops && bio->ops->read_block &&
+           (read_only || (bio->ops->write_block && bio->ops->sync)) &&
+           bfs_block_size_valid(bio->block_size) &&
            bio->block_count >= BFS_MIN_VOLUME_BLOCKS;
 }
 
@@ -42,7 +43,7 @@ static bool fs_string_contains(const char *text, char needle)
 
 bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
 {
-    if (!fs_bio_valid(bio) || !volname) return BFS_ERR_INVAL;
+    if (!fs_bio_valid(bio, false) || !volname) return BFS_ERR_INVAL;
     size_t nlen = strlen(volname);
     if (nlen == 0 || nlen >= BFS_VOLNAME_MAX ||
         fs_string_contains(volname, ':') || fs_string_contains(volname, '/') ||
@@ -245,29 +246,33 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
     return fs_validate_root(fs);
 }
 
-bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
+static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
 {
-    if (!fs || !fs_bio_valid(bio)) return BFS_ERR_INVAL;
+    if (!fs || !fs_bio_valid(bio, read_only)) return BFS_ERR_INVAL;
     memset(fs, 0, sizeof(*fs));
     fs->pending_frees_cap = BFS_PENDING_FREES_MAX;
     bfs_lock_init(&fs->lock);
     fs->bio = bio;
-    bfs_err_t err = bfs_txn_begin(&fs->txn, bio);
+    bfs_err_t err = read_only ? bfs_txn_begin_readonly(&fs->txn, bio)
+                              : bfs_txn_begin(&fs->txn, bio);
     if (err != BFS_OK) goto fail;
 
     err = fs_load_working_state(fs);
     if (err != BFS_OK) goto fail;
     fs->mounted = true;
+    fs->read_only = read_only;
 
     fs->scratch = malloc(bio->block_size);
     if (!fs->scratch) { err = BFS_ERR_NOMEM; goto fail; }
 
-    /* Resume any interrupted snapshot deletions */
-    err = bfs_snapshot_resume_deletions(fs);
-    if (err != BFS_OK) {
-        free(fs->scratch);
-        fs->scratch = NULL;
-        goto fail;
+    if (!read_only) {
+        /* Resume any interrupted snapshot deletions. */
+        err = bfs_snapshot_resume_deletions(fs);
+        if (err != BFS_OK) {
+            free(fs->scratch);
+            fs->scratch = NULL;
+            goto fail;
+        }
     }
 
     return BFS_OK;
@@ -282,11 +287,22 @@ fail:
     return err;
 }
 
+bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio)
+{
+    return fs_mount(fs, bio, false);
+}
+
+bfs_err_t bfs_fs_mount_readonly(bfs_fs_t *fs, bfs_bio_t *bio)
+{
+    return fs_mount(fs, bio, true);
+}
+
 /* ── Inode allocation ──────────────────────────────────────── */
 
 uint32_t bfs_fs_alloc_ino(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted || fs->recovery_error != BFS_OK ||
+        fs->read_only ||
         fs->next_ino <= BFS_ROOT_INO ||
         fs->next_ino >= 0x80000000u)
         return 0;
@@ -299,6 +315,7 @@ uint32_t bfs_fs_alloc_ino(bfs_fs_t *fs)
 bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
 {
     if (!fs || !fs->mounted || !fs->bio) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     if (blk == BFS_BLK_NULL) return BFS_OK;
     if (blk < bfs_data_start_block(fs->bio->block_size) ||
@@ -319,6 +336,7 @@ static bfs_err_t fs_defer_free(void *ctx, bfs_blk_t blk)
         blk < bfs_data_start_block(fs->bio->block_size) ||
         blk >= fs->bio->block_count)
         return BFS_ERR_CORRUPT;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->pending_count >= bfs_fs_pending_cap(fs)) return BFS_ERR_AGAIN;
     bfs_fs_pending_items(fs)[fs->pending_count++] = blk;
     return BFS_OK;
@@ -355,6 +373,7 @@ bfs_free_sink_t bfs_fs_free_sink(bfs_fs_t *fs)
 bfs_err_t bfs_fs_reserve_pending(bfs_fs_t *fs, uint32_t slots)
 {
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
     uint32_t cap = bfs_fs_pending_cap(fs);
     if (fs->pending_count > cap) return BFS_ERR_CORRUPT;
@@ -374,6 +393,8 @@ bfs_err_t bfs_fs_reserve_pending(bfs_fs_t *fs, uint32_t slots)
 
 bfs_err_t bfs_fs_ensure_free_headroom(bfs_fs_t *fs, uint32_t slots)
 {
+    if (!fs || !fs->mounted) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_err_t reserve_err = bfs_fs_reserve_pending(fs, slots);
     if (reserve_err != BFS_OK) return reserve_err;
     uint32_t cap = bfs_fs_pending_cap(fs);
@@ -412,6 +433,7 @@ bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree)
 {
     if (!fs || !tree || !fs->mounted || tree->bio != fs->bio)
         return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&fs->lock);
     if (fs->recovery_error != BFS_OK) {
         bfs_err_t err = fs->recovery_error;
@@ -458,6 +480,7 @@ bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree)
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = fs->recovery_error != BFS_OK
                         ? fs->recovery_error : bfs_txn_commit(fs);
@@ -469,6 +492,16 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
+    if (fs->read_only) {
+        free(fs->scratch);
+        fs->scratch = NULL;
+        free(fs->pending_frees_dynamic);
+        fs->pending_frees_dynamic = NULL;
+        fs->mounted = false;
+        bfs_lock_unlock(&fs->lock);
+        bfs_lock_destroy(&fs->lock);
+        return BFS_OK;
+    }
     if (fs->recovery_error != BFS_OK) {
         bfs_err_t recovery_error = fs->recovery_error;
         free(fs->scratch);

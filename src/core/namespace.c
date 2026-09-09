@@ -669,7 +669,9 @@ static bfs_err_t fs_get_comment_unlocked(bfs_fs_t *fs, uint32_t ino, char *buf, 
 }
 bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {
-    if (!fs_handle_valid(fs) || parent_ino == 0 || !fs_name_valid(name, name_len))
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (parent_ino == 0 || !fs_name_valid(name, name_len))
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
@@ -682,7 +684,9 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
 
 bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {
-    if (!fs_handle_valid(fs) || parent_ino == 0 || !fs_name_valid(name, name_len))
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (parent_ino == 0 || !fs_name_valid(name, name_len))
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
@@ -695,7 +699,9 @@ bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
 
 bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
 {
-    if (!fs_handle_valid(fs) || parent_ino == 0 || !fs_name_valid(name, name_len))
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (parent_ino == 0 || !fs_name_valid(name, name_len))
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
@@ -708,7 +714,9 @@ bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
 
 bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
 {
-    if (!fs_handle_valid(fs) || parent_ino == 0 || !fs_name_valid(name, name_len))
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (parent_ino == 0 || !fs_name_valid(name, name_len))
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
@@ -721,7 +729,9 @@ bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
 
 bfs_err_t bfs_fs_rename(bfs_fs_t *fs, uint32_t old_parent, const char *old_name, uint8_t old_len, uint32_t new_parent, const char *new_name, uint8_t new_len)
 {
-    if (!fs_handle_valid(fs) || old_parent == 0 || new_parent == 0 ||
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (old_parent == 0 || new_parent == 0 ||
         !fs_name_valid(old_name, old_len) || !fs_name_valid(new_name, new_len))
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
@@ -735,7 +745,9 @@ bfs_err_t bfs_fs_rename(bfs_fs_t *fs, uint32_t old_parent, const char *old_name,
 
 bfs_err_t bfs_fs_make_hardlink(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t target_ino)
 {
-    if (!fs_handle_valid(fs) || parent_ino == 0 || target_ino == 0 ||
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (parent_ino == 0 || target_ino == 0 ||
         !fs_name_valid(name, name_len))
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
@@ -749,7 +761,9 @@ bfs_err_t bfs_fs_make_hardlink(bfs_fs_t *fs, uint32_t parent_ino, const char *na
 
 bfs_err_t bfs_fs_make_softlink(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, const char *target_path, uint16_t path_len)
 {
-    if (!fs_handle_valid(fs) || parent_ino == 0 ||
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (parent_ino == 0 ||
         !fs_name_valid(name, name_len) || !target_path || path_len == 0)
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
@@ -763,7 +777,9 @@ bfs_err_t bfs_fs_make_softlink(bfs_fs_t *fs, uint32_t parent_ino, const char *na
 
 bfs_err_t bfs_fs_set_comment(bfs_fs_t *fs, uint32_t ino, const char *comment, uint8_t len)
 {
-    if (!fs_handle_valid(fs) || ino == 0 ||
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (ino == 0 ||
         (len != 0 && !comment) || len > 79)
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);

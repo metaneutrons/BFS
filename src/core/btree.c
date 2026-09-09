@@ -196,7 +196,7 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
                      bfs_blk_t root, uint64_t txn_id)
 {
     if (!tree || !bio || !bio->ops || !bio->ops->read_block ||
-        !bio->ops->write_block || !alloc || !alloc->alloc || !alloc->dealloc ||
+        !alloc || !alloc->alloc || !alloc->dealloc ||
         !ops || !ops->key_compare || ops->key_size == 0 ||
         ops->key_size > BFS_MAX_KEY_SIZE || ops->val_size == 0 ||
         !bfs_block_size_valid(bio->block_size) || bio->block_count == 0 ||

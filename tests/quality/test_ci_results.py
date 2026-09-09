@@ -8,7 +8,7 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[2]
 JOBS = ("commit-hygiene", "coverage", "host-tests", "integration-test",
-        "quality", "sanitizers", "static-analysis")
+        "linux-build", "quality", "sanitizers", "static-analysis")
 
 
 class AggregateGateTests(unittest.TestCase):

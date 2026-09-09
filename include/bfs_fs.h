@@ -51,6 +51,8 @@ typedef struct bfs_fs {
     uint32_t           next_ino;   /* next inode number to allocate */
     uint32_t           options;    /* BFS_OPT_* flags */
     bool               mounted;
+    // cppcheck-suppress unusedStructMember
+    bool               read_only;  /* lifecycle forbids recovery and commits */
     bfs_err_t          recovery_error; /* nonzero: abandon/remount required */
     /* Shared between fs.c recovery and file.c handle validation. */
     // cppcheck-suppress unusedStructMember
@@ -88,13 +90,19 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options);
 /* Mount an existing BFS filesystem. */
 bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio);
 
+/* Mount an existing committed BFS state without any write-side recovery or
+ * commit. Close it with bfs_fs_unmount(), which only releases resources for a
+ * read-only filesystem. */
+bfs_err_t bfs_fs_mount_readonly(bfs_fs_t *fs, bfs_bio_t *bio);
+
 /* Sync: commit all pending changes to disk (the full transaction commit lives in
  * txn.c as bfs_txn_commit(fs); this is just the public, lock-taking wrapper). */
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs);
 
 /* Defer-free a block for reclaim at the next sync. Callers must reserve queue
  * headroom at a safe operation boundary; a full queue returns BFS_ERR_AGAIN
- * and is never drained from inside a multi-step mutation. */
+ * and is never drained from inside a multi-step mutation. Returns
+ * BFS_ERR_UNSUPPORTED on a read-only mount. */
 bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk);
 
 /* The deferred-free sink for this filesystem (its pending-free queue), to attach
@@ -169,7 +177,7 @@ void      bfs_fs_unreserve(bfs_fs_t *fs, uint32_t items);
  * the root, commits to make the swap durable, then frees the now-unreferenced
  * old nodes post-commit — so the old-tree mass-free can never overflow the
  * deferred-free queue mid-COW. Takes fs->lock. The only compaction entry point
- * for an fs tree. */
+ * for an fs tree. Returns BFS_ERR_UNSUPPORTED on a read-only mount. */
 bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree);
 
 #endif /* BFS_FS_H */

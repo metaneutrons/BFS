@@ -32,6 +32,10 @@ typedef struct {
 /* Begin a transaction: snapshot current superblock state */
 bfs_err_t bfs_txn_begin(bfs_txn_t *txn, bfs_bio_t *bio);
 
+/* Open the currently committed transaction state for inspection only. This
+ * path requires no write or sync callback and never prepares a new commit. */
+bfs_err_t bfs_txn_begin_readonly(bfs_txn_t *txn, bfs_bio_t *bio);
+
 /* Update tree roots in the working superblock copy */
 void bfs_txn_set_dir_root(bfs_txn_t *txn, bfs_blk_t root);
 void bfs_txn_set_free_root(bfs_txn_t *txn, bfs_blk_t root);

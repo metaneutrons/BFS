@@ -7,6 +7,7 @@
 
 # ── Toolchains ──────────────────────────────────────────────
 HOST_CC  = cc
+HOST_AR  = ar
 AMIGA_CC = m68k-amigaos-gcc
 GCOVR    = gcovr
 GCOV     = gcov
@@ -26,7 +27,9 @@ AMIGA_CFLAGS = -std=c99 $(AMIGA_WARNINGS) -O2 -m68020 -noixemul -fomit-frame-poi
 
 # ── Sources ─────────────────────────────────────────────────
 CORE_SRC = $(wildcard src/core/*.c)
-HOST_HEADERS = $(wildcard include/*.h tests/*.h)
+HOST_SRC = $(wildcard src/host/*.c)
+CORE_HEADERS = $(wildcard include/*.h)
+HOST_HEADERS = $(CORE_HEADERS) $(wildcard tests/*.h)
 CORE_SRC_AMIGA = $(filter-out src/core/crc32.c,$(CORE_SRC))
 TEST_SRC = $(wildcard tests/test_*.c)
 EMU_SRC  = tests/block_device_emu.c
@@ -34,6 +37,9 @@ EMU_SRC  = tests/block_device_emu.c
 # ── Build dirs ──────────────────────────────────────────────
 BUILD_HOST  = build/host
 BUILD_AMIGA = build/amiga
+HOST_CORE_OBJS = $(patsubst src/core/%.c,$(BUILD_HOST)/obj/core/%.o,$(CORE_SRC))
+HOST_POSIX_OBJ = $(BUILD_HOST)/obj/host/posix_bio.o
+HOST_LIB = $(BUILD_HOST)/libbfs.a
 
 # ── Test binaries ───────────────────────────────────────────
 TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
@@ -101,15 +107,37 @@ sanitize:
 		-fno-omit-frame-pointer -fsanitize=address,undefined $(INCLUDES) \
 		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L'
 
-tools: $(BUILD_HOST)/bfsfsck
+tools: $(BUILD_HOST)/bfsfsck $(BUILD_HOST)/mkbfs
 
-$(BUILD_HOST)/bfsfsck: tools/bfsfsck.c $(CORE_SRC) $(EMU_SRC) $(HOST_HEADERS)
+$(BUILD_HOST)/obj/core/%.o: src/core/%.c $(CORE_HEADERS)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
+
+$(HOST_POSIX_OBJ): src/host/posix_bio.c $(CORE_HEADERS)
+	@mkdir -p $(dir $@)
+	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
+
+$(HOST_LIB): $(HOST_CORE_OBJS)
+	@mkdir -p $(dir $@)
+	$(HOST_AR) rcs $@ $^
+
+$(BUILD_HOST)/bfsfsck: tools/bfsfsck.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
 	@mkdir -p $(BUILD_HOST)
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
 
 $(BUILD_HOST)/test_%: tests/test_%.c $(CORE_SRC) $(EMU_SRC) $(HOST_HEADERS)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
+
+$(BUILD_HOST)/test_posix_bio: tests/test_posix_bio.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(HOST_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
+
+$(BUILD_HOST)/test_posix_faults: tests/test_posix_faults.c tests/posix_bio_faults.c \
+		src/host/posix_bio.c $(HOST_LIB) $(HOST_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -DBFS_POSIX_BIO_FAULT_TEST -o $@ \
+		tests/test_posix_faults.c tests/posix_bio_faults.c src/host/posix_bio.c $(HOST_LIB)
 
 $(BUILD_HOST)/test_fsck: $(BUILD_HOST)/bfsfsck
 
@@ -182,9 +210,9 @@ release:
 	@ls -la build/release/
 
 # ── Host tools ──────────────────────────────────────────────
-$(BUILD_HOST)/mkbfs: tools/mkbfs.c $(CORE_SRC) $(EMU_SRC)
+$(BUILD_HOST)/mkbfs: tools/mkbfs.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
 	@mkdir -p $(BUILD_HOST)
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $^
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
 
 # ── Amiga test binary ───────────────────────────────────────
 amiga-test: amiga

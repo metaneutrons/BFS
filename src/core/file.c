@@ -195,6 +195,7 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
 {
     bfs_err_t handle_err = file_handle_error(f);
     if (handle_err != BFS_OK) return handle_err;
+    if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
     if ((len != 0 && !buf) || len > INT32_MAX) return BFS_ERR_INVAL;
     const uint32_t bs = f->fs->bio->block_size;
     const uint8_t *in = (const uint8_t *)buf;
@@ -408,6 +409,7 @@ bfs_err_t bfs_file_truncate_unlocked(bfs_file_t *f, uint64_t new_size)
 {
     bfs_err_t handle_err = file_handle_error(f);
     if (handle_err != BFS_OK) return handle_err;
+    if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
     uint32_t bs = f->fs->bio->block_size;
     if (new_size > max_file_size_for_block_size(bs))
         return BFS_ERR_INVAL;
@@ -511,6 +513,7 @@ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
 {
     if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf))
         return BFS_ERR_INVAL;
+    if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&f->fs->lock);
     int32_t err = file_refresh_unlocked(f);
     if (err == BFS_OK) err = bfs_file_write_unlocked(f, buf, len);
@@ -521,6 +524,7 @@ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
 bfs_err_t bfs_file_truncate(bfs_file_t *f, uint64_t new_size)
 {
     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;
+    if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&f->fs->lock);
     bfs_err_t err = file_refresh_unlocked(f);
     if (err == BFS_OK) err = bfs_file_truncate_unlocked(f, new_size);

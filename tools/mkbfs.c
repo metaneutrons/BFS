@@ -2,8 +2,7 @@
 /* mkbfs — Format a raw HDF image with BFS filesystem */
 
 #include "bfs_fs.h"
-#include "bfs_bio.h"
-#include "block_device_emu.h"
+#include "bfs_posix_bio.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
@@ -30,9 +29,14 @@ int main(int argc, char **argv)
     }
     if (argc >= 4) volname = argv[3];
 
-    bfs_bio_t *bio = bio_emu_open(argv[1], block_size);
+    bfs_posix_bio_options_t options = {
+        .block_size = block_size,
+        .writable = true,
+        .lock = true,
+    };
+    bfs_bio_t *bio = bfs_posix_bio_open(argv[1], &options);
     if (!bio) {
-        fprintf(stderr, "Cannot open %s\n", argv[1]);
+        fprintf(stderr, "Cannot open writable regular image %s\n", argv[1]);
         return 1;
     }
 
