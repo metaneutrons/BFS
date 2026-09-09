@@ -22,8 +22,7 @@ LINK_CHECK = ROOT / "tools" / "check-conformance-linkage.sh"
 
 
 def run(*command):
-    return subprocess.run(command, capture_output=True, text=True,
-                          check=False)  # nosec B603 - controlled test command vector
+    return subprocess.run([*command], capture_output=True, text=True, check=False)  # nosec B603
 
 
 def be32(data, offset):

@@ -98,9 +98,8 @@ def sha256_file(path):
 
 def git_identity():
     try:
-        return subprocess.check_output(
-            ["/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD"], text=True
-        ).strip()
+        return subprocess.check_output(["/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD"],
+                                       text=True).strip()  # nosec B603 - fixed local Git binary
     except (OSError, subprocess.CalledProcessError):
         return "unavailable"
 
@@ -109,12 +108,12 @@ def invoke(program, scenario_id, seed, root):
     program = program.resolve()
     if not program.is_file() or not os.access(program, os.X_OK):
         return {"id": scenario_id, "status": "error", "code": "missing-backend"}
-    command = [str(program), "--case", scenario_id, "--seed", str(seed)]
+    arguments = ["--case", scenario_id, "--seed", str(seed)]
     if root is not None:
-        command.extend(["--root", str(root)])
+        arguments.extend(["--root", str(root)])
     try:
-        completed = subprocess.run(command, capture_output=True, text=True, timeout=60,
-                                   check=False)  # nosec B603 - explicit executable, no shell
+        completed = subprocess.run([str(program), *arguments], capture_output=True, text=True,
+                                   timeout=60, check=False)  # nosec B603 - explicit executable, no shell
     except subprocess.TimeoutExpired:
         return {"id": scenario_id, "status": "error", "code": "timeout"}
     if completed.returncode not in (0, 1, 2, 3):

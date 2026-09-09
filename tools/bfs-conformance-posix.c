@@ -17,8 +17,9 @@
 static bool valid_root(const char *requested, char resolved[PATH_MAX])
 {
     struct stat st;
-    return requested && strnlen(requested, PATH_MAX) < PATH_MAX &&
-           realpath(requested, resolved) && strcmp(resolved, "/") != 0 &&
+    if (!requested || strnlen(requested, PATH_MAX) >= PATH_MAX || strlen(requested) >= PATH_MAX)
+        return false;
+    return realpath(requested, resolved) && strcmp(resolved, "/") != 0 &&
            lstat(resolved, &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid();
 }
 
