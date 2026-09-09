@@ -4,7 +4,7 @@ import importlib.util
 import json
 from pathlib import Path
 import re
-import subprocess  # nosec B404 - controlled local test executables without a shell
+import sys
 import tempfile
 import unittest
 import zlib
@@ -19,10 +19,13 @@ POSIX = ROOT / "build" / "host" / "bfs-conformance-posix"
 MKBFS = ROOT / "build" / "host" / "mkbfs"
 FIXTURE_WRITER = ROOT / "build" / "host" / "conformance-fixture-writer"
 LINK_CHECK = ROOT / "tools" / "check-conformance-linkage.sh"
+sys.path.insert(0, str(ROOT / "tools"))
+
+from bfs_command_runner import CommandTimeout, MAX_OUTPUT_BYTES, run_program
 
 
 def run(*command):
-    return subprocess.run([*command], capture_output=True, text=True, check=False)  # nosec B603
+    return run_program(Path(command[0]), list(command[1:]), 60)
 
 
 def be32(data, offset):
@@ -119,8 +122,15 @@ class ConformanceTests(unittest.TestCase):
             binary = Path(temporary) / "counterprobe"
             source.write_text("void bfs_counterprobe(void) {}\nint main(void) { return 0; }\n",
                               encoding="utf-8")
-            self.assertEqual(run("cc", "-o", str(binary), str(source)).returncode, 0)
+            self.assertEqual(run("/usr/bin/cc", "-o", str(binary), str(source)).returncode, 0)
             self.assertNotEqual(run(str(LINK_CHECK), str(binary)).returncode, 0)
+
+    def test_runner_bounds_child_runtime_and_output(self):
+        with self.assertRaises(CommandTimeout):
+            run_program(Path(sys.executable), ["-c", "import time; time.sleep(1)"], 0.01)
+        completed = run_program(Path(sys.executable), ["-c", "import sys; sys.stdout.write('x' * 2097152)"], 5)
+        self.assertNotEqual(completed.returncode, 0)
+        self.assertLessEqual(len(completed.stdout), MAX_OUTPUT_BYTES)
 
     def test_oracle_fails_closed_on_non_bfs_input(self):
         with tempfile.TemporaryDirectory() as temporary:
@@ -193,7 +203,7 @@ class ConformanceTests(unittest.TestCase):
 
     def test_oracle_and_conformance_programs_are_independent(self):
         self.assertNotIn("bfs_", ORACLE.read_text(encoding="utf-8"))
-        symbols = run("nm", "-g", str(CORE)).stdout
+        symbols = run("/usr/bin/nm", "-g", str(CORE)).stdout
         self.assertIn("bfs_fs_format", symbols)
 
     def test_oracle_uses_documented_directory_key_order_for_hash_collisions(self):

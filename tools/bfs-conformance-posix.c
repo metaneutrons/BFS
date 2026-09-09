@@ -16,10 +16,15 @@
 
 static bool valid_root(const char *requested, char resolved[PATH_MAX])
 {
+    char input[PATH_MAX];
     struct stat st;
-    if (!requested || strnlen(requested, PATH_MAX) >= PATH_MAX || strlen(requested) >= PATH_MAX)
+    if (!requested) return false;
+    size_t length = strnlen(requested, sizeof(input));
+    if (length == sizeof(input))
         return false;
-    return realpath(requested, resolved) && strcmp(resolved, "/") != 0 &&
+    memcpy(input, requested, length);
+    input[length] = '\0';
+    return realpath(input, resolved) && strcmp(resolved, "/") != 0 &&
            lstat(resolved, &st) == 0 && S_ISDIR(st.st_mode) && st.st_uid == getuid();
 }
 

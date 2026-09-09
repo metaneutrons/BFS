@@ -11,8 +11,9 @@ import json
 import os
 from pathlib import Path
 import platform
-import subprocess  # nosec B404 - invokes only the selected conformance backend without a shell
 import sys
+
+from bfs_command_runner import CommandTimeout, run_program
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -98,9 +99,9 @@ def sha256_file(path):
 
 def git_identity():
     try:
-        return subprocess.check_output(["/usr/bin/git", "-C", str(ROOT), "rev-parse", "HEAD"],
-                                       text=True).strip()  # nosec B603 - fixed local Git binary
-    except (OSError, subprocess.CalledProcessError):
+        result = run_program("/usr/bin/git", ["-C", str(ROOT), "rev-parse", "HEAD"], 5)
+        return result.stdout.strip() if result.returncode == EXIT_PASS else "unavailable"
+    except (OSError, CommandTimeout):
         return "unavailable"
 
 
@@ -112,9 +113,8 @@ def invoke(program, scenario_id, seed, root):
     if root is not None:
         arguments.extend(["--root", str(root)])
     try:
-        completed = subprocess.run([str(program), *arguments], capture_output=True, text=True,
-                                   timeout=60, check=False)  # nosec B603 - explicit executable, no shell
-    except subprocess.TimeoutExpired:
+        completed = run_program(program, arguments, 60)
+    except CommandTimeout:
         return {"id": scenario_id, "status": "error", "code": "timeout"}
     if completed.returncode not in (0, 1, 2, 3):
         return {"id": scenario_id, "status": "error", "code": "backend-crash"}
