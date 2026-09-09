@@ -64,6 +64,21 @@ jobs:
           HOST_CC: ${{ matrix.compiler }}
         run: make tools build/host/mkbfs HOST_CC="$HOST_CC"
 
+  linux-build:
+    name: Debian 12 Host Build
+    runs-on: ubuntu-24.04
+    container:
+      image: debian@sha256:6ebd97fa83deb272194a2cf015b3d26a4d538e9ad3a7a79d544c8af5b0a01443
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Install pinned-container build dependencies
+        run: |
+          set -euo pipefail
+          apt-get update -qq
+          apt-get install -y -qq --no-install-recommends build-essential clang
+      - name: Build host core, tools, and tests
+        run: make tools host-test HOST_CC=gcc
+
   sanitizers:
     name: Address and Undefined Behavior Sanitizers
     runs-on: ubuntu-24.04
@@ -151,7 +166,7 @@ jobs:
     name: CI Success
     if: always()
     needs:
-      [commit-hygiene, quality, host-tests, sanitizers, static-analysis, coverage, integration-test]
+      [commit-hygiene, quality, host-tests, linux-build, sanitizers, static-analysis, coverage, integration-test]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

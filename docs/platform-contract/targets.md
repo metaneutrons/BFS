@@ -7,7 +7,7 @@ only to build an artifact is not evidence that the artifact can run there.
 | --- | --- | --- | --- |
 | Host core tests | macOS arm64, current Xcode toolchain | Build and run native host tests | Available on the development host |
 | Linux FUSE reference | Debian 12 amd64, Linux 6.1, fuse3/libfuse3 3.14.0-4 | Compile with `FUSE_USE_VERSION 30`; require the matching `fuse3` and `libfuse3-dev` packages plus a real `/dev/fuse` mount environment | M5 target |
-| Linux build container | Debian 12 amd64 | Pin the Debian 12 image digest in CI before M3; use it for reproducible build-only checks | M3 action |
+| Linux build container | Debian 12 amd64 | CI pins the Debian 12 image digest and builds the host core, tools and test suite inside it | M3 implemented |
 | Linux FUSE runtime | Dedicated Linux VM or runner with `/dev/fuse` and `CAP_SYS_ADMIN` | Docker Desktop on macOS is not FUSE-mount evidence | External CI/runtime prerequisite |
 | Amiga driver | 68080-capable hardware plus the existing 68k build path | Keep current integration suite; hardware evidence remains a separate issue | Existing scope |
 | AROS first target | non-SMP `pc-x86_64`, `x86_64-unknown-aros` | Use the checked AROS-NG toolchain manifest and SDK produced by that tree | Available locally |
