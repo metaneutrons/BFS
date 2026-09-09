@@ -5,6 +5,7 @@ from pathlib import Path
 import subprocess
 import tempfile
 import unittest
+import zlib
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -20,6 +21,18 @@ LINK_CHECK = ROOT / "tools" / "check-conformance-linkage.sh"
 
 def run(*command):
     return subprocess.run(command, capture_output=True, text=True, check=False)
+
+
+def be32(data, offset):
+    return int.from_bytes(data[offset:offset + 4], "big")
+
+
+def put_be32(data, offset, value):
+    data[offset:offset + 4] = value.to_bytes(4, "big")
+
+
+def update_node_crc(node):
+    put_be32(node, 4, zlib.crc32(node[:4] + b"\0\0\0\0" + node[8:]) & 0xffffffff)
 
 
 class ConformanceTests(unittest.TestCase):
@@ -104,6 +117,40 @@ class ConformanceTests(unittest.TestCase):
              "sha256": "1f13f9bcc6269144c0c5d7e8103d596585333c9a376a75d5a48951907280e3a7"},
         ])
         self.assertEqual(result["snapshots"][0]["name"], "oracle-snapshot")
+
+    def test_oracle_rejects_crc_and_unsupported_version(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "oracle.bfs"
+            self.assertEqual(run(str(FIXTURE_WRITER), str(image)).returncode, 0)
+            corrupted = bytearray(image.read_bytes())
+            corrupted[be32(corrupted, 24) * be32(corrupted, 8)] ^= 1
+            image.write_bytes(corrupted)
+            self.assertEqual(run(str(ORACLE), str(image)).returncode, 3)
+            self.assertEqual(run(str(FIXTURE_WRITER), str(Path(temporary) / "future.bfs")).returncode, 0)
+            future = Path(temporary) / "future.bfs"
+            incompatible = bytearray(future.read_bytes())
+            put_be32(incompatible, 4, 3)
+            put_be32(incompatible, 236, zlib.crc32(incompatible[:236]) & 0xffffffff)
+            future.write_bytes(incompatible)
+            self.assertEqual(run(str(ORACLE), str(future)).returncode, 3)
+
+    def test_oracle_rejects_a_cycle_with_a_valid_node_crc(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "cycle.bfs"
+            self.assertEqual(run(str(FIXTURE_WRITER), str(image), "--directory-scale").returncode, 0)
+            data = bytearray(image.read_bytes())
+            block_size, root = be32(data, 8), be32(data, 24)
+            node_start = root * block_size
+            node = data[node_start:node_start + block_size]
+            self.assertGreater(int.from_bytes(node[20:22], "big"), 0)
+            capacity = (block_size - 32) // (264 + 4)
+            put_be32(node, 28 + capacity * 264, root)
+            update_node_crc(node)
+            data[node_start:node_start + block_size] = node
+            image.write_bytes(data)
+            completed = run(str(ORACLE), str(image))
+        self.assertEqual(completed.returncode, 3)
+        self.assertEqual(json.loads(completed.stdout)["status"], "error")
 
     def test_oracle_and_conformance_programs_are_independent(self):
         self.assertNotIn("bfs_", ORACLE.read_text(encoding="utf-8"))
