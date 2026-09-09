@@ -32,12 +32,12 @@ def execute_child(command, arguments, stdout_fd, stderr_fd):
         os.close(stderr_fd)
         if command == "core":
             os.execv("./build/host/bfs-conformance-core",
-                     ["bfs-conformance-core", *arguments])
+                     ["bfs-conformance-core", *arguments])  # nosec B606 - fixed executable
         if command == "posix":
             os.execv("./build/host/bfs-conformance-posix",
-                     ["bfs-conformance-posix", *arguments])
+                     ["bfs-conformance-posix", *arguments])  # nosec B606 - fixed executable
         if command == "git":
-            os.execv("/usr/bin/git", ["git", *arguments])
+            os.execv("/usr/bin/git", ["git", *arguments])  # nosec B606 - fixed executable
         os._exit(127)
     except (OSError, ValueError):
         os._exit(127)

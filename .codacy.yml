@@ -1,5 +1,0 @@
----
-engines:
-  opengrep:
-    exclude_paths:
-      - "tests/**"
