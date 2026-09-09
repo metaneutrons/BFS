@@ -1,7 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Linux libfuse3 read-only adapter for the shared BFS core. */
 
-#define FUSE_USE_VERSION 31
+#define FUSE_USE_VERSION 30
 
 #include <fuse_lowlevel.h>
 

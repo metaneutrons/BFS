@@ -22,6 +22,7 @@ ROOT = Path(__file__).resolve().parents[2]
 FUSE = ROOT / "build" / "host" / "bfs-fuse"
 FIXTURE = ROOT / "build" / "host" / "conformance-fixture-writer"
 ORACLE = ROOT / "tools" / "bfs-format-oracle.py"
+CONFORMANCE = ROOT / "tools" / "bfs-conformance.py"
 
 
 def sha256(path):
@@ -152,11 +153,16 @@ def small_buffer_dirent_names(directory):
         os.close(descriptor)
 
 
-def oracle_manifest(image):
+def oracle_result(image):
     completed = run(str(ORACLE), str(image))
     require(completed.returncode == 0, completed.stderr)
     result = json.loads(completed.stdout)
     require(result["status"] == "ok", completed.stdout)
+    return result
+
+
+def oracle_manifest(image):
+    result = oracle_result(image)
     expected = []
     for item in result["namespace"]:
         clone = dict(item)
@@ -165,6 +171,16 @@ def oracle_manifest(image):
                                                 for component in clone["path"].split("/")[1:])
         expected.append(clone)
     return sorted(expected, key=lambda item: item["path"])
+
+
+def require_statfs(root, superblock):
+    result = os.statvfs(root)
+    require(result.f_bsize == superblock["block_size"], "statfs block size differs")
+    require(result.f_frsize == superblock["block_size"], "statfs fragment size differs")
+    require(result.f_blocks == superblock["block_count"], "statfs block count differs")
+    require(result.f_bfree == superblock["free_blocks"], "statfs free block count differs")
+    require(result.f_bavail == superblock["free_blocks"], "statfs available block count differs")
+    require(result.f_namemax == 255, "statfs name limit differs")
 
 
 def expect_erofs(operation):
@@ -176,15 +192,27 @@ def expect_erofs(operation):
     raise RuntimeError("mutation unexpectedly succeeded")
 
 
+def run_conformance(root, cases):
+    arguments = [str(CONFORMANCE), "--backend", "posix", "--root", str(root)]
+    for case in cases:
+        arguments.extend(["--case", case])
+    completed = run(*arguments)
+    require(completed.returncode == 0, completed.stderr + completed.stdout)
+    result = json.loads(completed.stdout)
+    require(result["status"] == "pass", completed.stdout)
+
+
 def exercise_fixture(image, mountpoint):
     before = sha256(image)
     process = mount(image, mountpoint)
     try:
         require((mountpoint / "oracle.txt").is_file(), "direct lookup failed for oracle.txt")
         mounted = mounted_manifest(mountpoint)
+        oracle_result_value = oracle_result(image)
         oracle = oracle_manifest(image)
         require(mounted == oracle,
                 f"mounted namespace differs from oracle: mounted={mounted}, oracle={oracle}")
+        require_statfs(mountpoint, oracle_result_value["superblock"])
         expected_names = {Path(item["path"]).name for item in oracle
                           if item["path"] != "/" and Path(item["path"]).parent == Path("/")}
         streamed_names = small_buffer_dirent_names(mountpoint)
@@ -193,12 +221,25 @@ def exercise_fixture(image, mountpoint):
                 f"streamed={sorted(streamed_names)}, expected={sorted(expected_names)}")
         require((mountpoint / "oracle.txt").read_bytes() == b"live contents",
                 "live namespace did not expose post-snapshot content")
-        require(os.getxattr(mountpoint / "oracle.txt", "user.bfs.comment") == b"fixture",
+        run_conformance(mountpoint, ["empty-volume", "read-only-refusal", "soft-link",
+                                    "directory-scale", "comment-metadata", "name-encoding"])
+        metadata = mountpoint / "oracle.txt"
+        require(os.getxattr(metadata, "user.bfs.comment") == b"fixture",
                 "comment xattr differs")
-        require(os.getxattr(mountpoint / "oracle.txt", "user.bfs.protection") == b"00000000",
+        require(os.getxattr(metadata, "user.bfs.protection") == b"00000000",
                 "protection xattr differs")
-        require("user.bfs.comment" in os.listxattr(mountpoint / "oracle.txt"),
-                "comment xattr is absent from the xattr list")
+        names = set(os.listxattr(metadata))
+        expected_xattrs = {
+            "user.bfs.comment", "user.bfs.protection", "user.bfs.uid", "user.bfs.gid",
+            "user.bfs.create_datestamp", "user.bfs.modify_datestamp",
+        }
+        require(names == expected_xattrs, f"xattr list differs: {sorted(names)}")
+        require(os.getxattr(metadata, "user.bfs.uid").isdigit(), "uid xattr is not decimal")
+        require(os.getxattr(metadata, "user.bfs.gid").isdigit(), "gid xattr is not decimal")
+        for name in ("user.bfs.create_datestamp", "user.bfs.modify_datestamp"):
+            fields = os.getxattr(metadata, name).split(b":")
+            require(len(fields) == 3 and all(field.isdigit() for field in fields),
+                    f"{name} is not a BFS datestamp")
         expect_erofs(lambda: os.mkdir(mountpoint / "mutation"))
         expect_erofs(lambda: os.unlink(mountpoint / "oracle.txt"))
         expect_erofs(lambda: os.rename(mountpoint / "oracle.txt", mountpoint / "renamed"))
@@ -208,6 +249,7 @@ def exercise_fixture(image, mountpoint):
 
     process = mount(image, mountpoint, snapshot="oracle-snapshot")
     try:
+        run_conformance(mountpoint, ["regular-file", "snapshot"])
         require((mountpoint / "oracle.txt").read_bytes() == b"oracle contents",
                 "selected snapshot did not expose its immutable content")
     finally:
@@ -249,9 +291,11 @@ def exercise_amiga_image(image, mountpoint):
     process = mount(image, mountpoint)
     try:
         mounted = mounted_manifest(mountpoint)
+        oracle_result_value = oracle_result(image)
         oracle = oracle_manifest(image)
         require(mounted == oracle,
                 f"Amiga-written image differs between mount and oracle: mounted={mounted}, oracle={oracle}")
+        require_statfs(mountpoint, oracle_result_value["superblock"])
     finally:
         unmount(process, mountpoint)
     require(sha256(image) == before, "read-only FUSE mount changed the Amiga image")
