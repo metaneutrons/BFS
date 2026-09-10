@@ -52,8 +52,14 @@ def load_matrix(path):
     return matrix
 
 
+def git_executable():
+    executable = shutil.which("git")
+    require(executable is not None and os.path.isabs(executable), "git is required")
+    return executable
+
+
 def git_commit():
-    completed = subprocess.run(["git", "rev-parse", "HEAD"], cwd=ROOT, check=True,
+    completed = subprocess.run([git_executable(), "rev-parse", "HEAD"], cwd=ROOT, check=True,
                                capture_output=True, text=True)  # nosec B603
     return completed.stdout.strip()
 
