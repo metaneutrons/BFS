@@ -53,7 +53,7 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 # ── Phony targets ───────────────────────────────────────────
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
 	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release \
-	conformance conformance-test
+	conformance conformance-test linux-qualification-fast linux-qualification-soak qualification-tests
 
 .PHONY: fuse
 
@@ -65,6 +65,23 @@ fuse-test: fuse conformance $(CONFORMANCE_FIXTURE)
 	@test -c /dev/fuse || { echo "/dev/fuse is required for FUSE qualification" >&2; exit 1; }
 	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
 	@python3 tests/fuse/test_fuse_mount.py
+
+qualification-tests:
+	@python3 -m unittest discover -s tests/qualification -p 'test_*.py' -v
+
+linux-qualification-fast: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests
+	@test -c /dev/fuse || { echo "/dev/fuse is required for M7 qualification" >&2; exit 1; }
+	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
+	@python3 tests/qualification/linux_qualification.py \
+		--output build/linux-qualification/fast.json
+
+linux-qualification-soak: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests
+	@test -n "$(APPROVAL_REFERENCE)" || { echo "APPROVAL_REFERENCE is required" >&2; exit 2; }
+	@test -n "$(OUTPUT)" || { echo "OUTPUT is required" >&2; exit 2; }
+	@test -c /dev/fuse || { echo "/dev/fuse is required for M7 soak" >&2; exit 1; }
+	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
+	@python3 tests/qualification/fuse_soak.py --output "$(OUTPUT)" \
+		--approval-reference "$(APPROVAL_REFERENCE)" $(SOAK_ARGS)
 
 .PHONY: fuse-analyze
 
