@@ -42,6 +42,9 @@ class LinuxQualificationTests(unittest.TestCase):
         matrix = linux_qualification.load_matrix(linux_qualification.DEFAULT_MATRIX)
         self.assertEqual(fuse_soak.select_duration(matrix["soak"], 60, True), 60)
 
+    def test_evidence_output_is_bounded(self):
+        self.assertEqual(len(linux_qualification.output_tail("x" * 9000)), 8192)
+
 
 if __name__ == "__main__":
     unittest.main()

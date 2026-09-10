@@ -12,7 +12,8 @@ Its `fast` profile runs on every pull request through
 `make linux-qualification-fast` and records `build/linux-qualification/fast.json`.
 The record identifies the source commit, matrix digest, Linux/Python runtime,
 dispatcher, concurrency profile, every command, elapsed time, exit status, and
-hashes of captured output.
+hashes plus bounded tails of captured output. The tails retain a failure reason
+without allowing an unbounded test log to become CI evidence.
 
 The fast profile runs direct-core and conformance tests, then mounts each of the
 seven legal BFS block sizes (1, 2, 4, 8, 16, 32, and 64 KiB). Every mounted

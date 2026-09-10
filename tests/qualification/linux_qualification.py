@@ -16,6 +16,7 @@ import time
 ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MATRIX = Path(__file__).with_name("linux-m7-matrix.json")
 LEGAL_BLOCK_SIZES = (1024, 2048, 4096, 8192, 16384, 32768, 65536)
+OUTPUT_TAIL_LIMIT = 8192
 
 
 def require(condition, message):
@@ -76,6 +77,10 @@ def make_executable():
     return executable
 
 
+def output_tail(text):
+    return text[-OUTPUT_TAIL_LIMIT:]
+
+
 def make_record(name, command, timeout):
     started = time.monotonic()
     completed = subprocess.run(command, cwd=ROOT, check=False, capture_output=True, text=True,
@@ -87,6 +92,8 @@ def make_record(name, command, timeout):
         "returncode": completed.returncode,
         "stdout_sha256": hashlib.sha256(completed.stdout.encode()).hexdigest(),
         "stderr_sha256": hashlib.sha256(completed.stderr.encode()).hexdigest(),
+        "stdout_tail": output_tail(completed.stdout),
+        "stderr_tail": output_tail(completed.stderr),
     }
 
 
