@@ -16,7 +16,13 @@
 
 int main(int argc, char **argv)
 {
-    if (argc != 2 && (argc != 3 || strcmp(argv[2], "--directory-scale") != 0)) return 2;
+    bool directory_scale = false;
+    bool hard_link = false;
+    for (int index = 2; index < argc; index++) {
+        if (strcmp(argv[index], "--directory-scale") == 0) directory_scale = true;
+        else if (strcmp(argv[index], "--hard-link") == 0) hard_link = true;
+        else return 2;
+    }
     int fd = open(argv[1], O_RDWR | O_CREAT | O_EXCL | O_CLOEXEC, 0600);
     if (fd < 0 || ftruncate(fd, (off_t)FIXTURE_BLOCK_SIZE * FIXTURE_BLOCK_COUNT) != 0 ||
         close(fd) != 0)
@@ -50,9 +56,11 @@ int main(int argc, char **argv)
     if (error == BFS_OK)
         error = bfs_fs_make_softlink(&fs, BFS_ROOT_INO, "oracle-link", 11,
                                      "oracle.txt", 10);
+    if (error == BFS_OK && hard_link)
+        error = bfs_fs_make_hardlink(&fs, BFS_ROOT_INO, "oracle-hardlink", 15, oracle_inode);
     if (error == BFS_OK)
         error = bfs_fs_create_file(&fs, BFS_ROOT_INO, "@bfs-hex-literal", 16, &inode);
-    if (error == BFS_OK && argc == 3) {
+    if (error == BFS_OK && directory_scale) {
         for (unsigned index = 0; index < 16 && error == BFS_OK; index++) {
             char name[16];
             int length = snprintf(name, sizeof(name), "entry-%02u", index);

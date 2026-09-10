@@ -220,6 +220,17 @@ class ConformanceTests(unittest.TestCase):
         ])
         self.assertEqual(result["snapshots"][0]["name"], "oracle-snapshot")
 
+    def test_oracle_reports_hard_links_as_distinct_namespace_entries(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "hard-link.bfs"
+            self.assertEqual(run(str(FIXTURE_WRITER), str(image), "--hard-link").returncode, 0)
+            completed = run(str(ORACLE), str(image))
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        items = {item["path"]: item for item in json.loads(completed.stdout)["namespace"]}
+        self.assertEqual(items["/oracle.txt"]["inode"], items["/oracle-hardlink"]["inode"])
+        self.assertEqual(items["/oracle.txt"]["links"], 2)
+        self.assertEqual(items["/oracle-hardlink"]["links"], 2)
+
     def test_oracle_rejects_crc_and_unsupported_version(self):
         with tempfile.TemporaryDirectory() as temporary:
             image = Path(temporary) / "oracle.bfs"
