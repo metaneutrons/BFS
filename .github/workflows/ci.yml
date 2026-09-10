@@ -93,13 +93,13 @@ jobs:
           sudo apt-get install -y -qq --no-install-recommends clang fuse3 libfuse3-dev
           test -c /dev/fuse
       - name: Qualify the deterministic M7 mounted matrix
-        run: make fuse-analyze linux-qualification-fast HOST_CC=gcc
+        run: make fuse-analyze linux-qualification-fast linux-qualification-soak-preflight HOST_CC=gcc
       - name: Preserve M7 Linux qualification evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: linux-qualification-evidence
-          path: build/linux-qualification/fast.json
+          path: build/linux-qualification/
           if-no-files-found: warn
 
   sanitizers:

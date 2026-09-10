@@ -44,14 +44,25 @@ soak. Before starting it, record in issue #29:
 2. The source commit, matrix digest, planned start/end timestamps, operator,
    and a link to the explicit approval comment.
 3. Limits from the matrix: four client processes, 60-second cycles, a
-   10-second operation deadline, 256 MiB daemon RSS, and 128 open descriptors.
+   10-second operation deadline, 16 simultaneously open files per client,
+   256 MiB daemon RSS, 128 open descriptors, an 8 MiB soak volume, and at
+   least 512 MiB available backing-store capacity.
 
-The soak runner records each cycle's operation totals, deadline status, daemon
-RSS and descriptor count, clean unmount, oracle comparison, checker result, and
-recovery/remount result. Any stall, crash, integrity mismatch, resource-limit
-breach, or missed cleanup is a failure requiring a retained reproduction and
-investigation. Only a record whose completed duration is at least 259200 seconds
-can satisfy M7-A4; shorter runs are preflight evidence only.
+Each cycle keeps 64 client file handles open across four processes while it
+writes, fsyncs, reads, renames, hard-links and removes files. It also creates
+and verifies fragmented files, fills the volume until `ENOSPC`, verifies space
+recovery after deletion, unmounts, runs the independent oracle and `bfsfsck`,
+then remounts the committed `oracle-snapshot` read-only and confirms that a
+write is refused. This exercises FUSE snapshot reading; Linux snapshot creation
+and deletion remain out of scope.
+
+The runner records each cycle's operation and pressure-write totals, elapsed
+time, daemon RSS and descriptor count, plus the host, kernel, CPU/memory,
+libfuse and backing-storage identities captured before execution. Any stall,
+crash, integrity mismatch, resource-limit breach, or missed cleanup is a
+failure requiring a retained reproduction and investigation. Only a
+non-preflight record whose completed duration is at least 259200 seconds can
+satisfy M7-A4; shorter runs are preflight evidence only.
 
 On the approved host, build the current commit and run:
 
@@ -61,9 +72,14 @@ make linux-qualification-soak \
   OUTPUT=/var/tmp/bfs-m7-soak-<commit>
 ```
 
-For a non-qualifying installation preflight, add
+Pull requests run a short FUSE preflight automatically. It exercises one full
+pressure/snapshot/recovery cycle and preserves its evidence, but is not a
+substitute for the target soak. For a manual non-qualifying installation
+preflight, add
 `SOAK_ARGS='--preflight --duration-seconds 300'`. The runner refuses that
-duration without `--preflight`, and marks its result as not qualified.
+duration without `--preflight` and marks its result as not qualified. A
+target-duration preflight is rejected. The target soak, unlike a preflight,
+requires an issue #29 approval-comment URL.
 
 ## Gate Integrity
 

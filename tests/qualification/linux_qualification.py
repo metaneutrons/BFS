@@ -46,10 +46,17 @@ def load_matrix(path):
     soak = matrix.get("soak", {})
     require(soak.get("target_duration_seconds") == 72 * 60 * 60,
             "M7 soak target must remain 72 hours")
-    for field in ("cycle_seconds", "client_processes", "operation_deadline_seconds",
-                  "maximum_rss_kib", "maximum_open_descriptors"):
+    for field in ("cycle_seconds", "client_processes", "client_open_files",
+                  "operation_deadline_seconds", "maximum_rss_kib",
+                  "maximum_open_descriptors", "block_size", "block_count",
+                  "minimum_available_bytes"):
         require(isinstance(soak.get(field), int) and soak[field] > 0,
                 f"invalid soak limit: {field}")
+    require(soak["block_size"] in LEGAL_BLOCK_SIZES, "soak block size is unsupported")
+    require(soak["block_count"] >= 64, "soak volume is too small")
+    require(soak["minimum_available_bytes"] >=
+            soak["block_size"] * soak["block_count"],
+            "soak capacity reserve is too small")
     return matrix
 
 
