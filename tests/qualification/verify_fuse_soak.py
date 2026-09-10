@@ -75,11 +75,7 @@ def verify_event(event, cycle, limits):
             f"cycle {cycle} exceeded descriptor limit")
 
 
-def verify(output):
-    output = Path(output)
-    result_path = output / "result.json"
-    events_path = output / "events.jsonl"
-    result = load_json(result_path)
+def verify_result(result):
     require(result.get("status") == "passed", "soak result did not pass")
     limits = result.get("limits")
     require(isinstance(limits, dict), "soak limits are missing")
@@ -106,7 +102,10 @@ def verify(output):
                 "target request duration is inconsistent")
     require(result["completed_duration_seconds"] >= result["requested_duration_seconds"],
             "completed duration is shorter than requested")
-    events = load_events(events_path)
+    return limits, preflight
+
+
+def verify_events(events, result, limits):
     previous_elapsed = -1
     for cycle, event in enumerate(events):
         verify_event(event, cycle, limits)
@@ -117,6 +116,9 @@ def verify(output):
     minimum_cycles = ((result["requested_duration_seconds"] + limits["cycle_seconds"] - 1) //
                       limits["cycle_seconds"])
     require(len(events) >= minimum_cycles, "soak has too few completed cycles")
+
+
+def verify_evidence_summary(result, events_path, events):
     evidence = result.get("evidence")
     require(isinstance(evidence, dict), "evidence summary is missing")
     expected = {
@@ -128,6 +130,16 @@ def verify(output):
         "peak_open_descriptors": max(event["resources"]["open_descriptors"] for event in events),
     }
     require(evidence == expected, "evidence summary differs from event log")
+
+
+def verify(output):
+    output = Path(output)
+    result = load_json(output / "result.json")
+    limits, preflight = verify_result(result)
+    events_path = output / "events.jsonl"
+    events = load_events(events_path)
+    verify_events(events, result, limits)
+    verify_evidence_summary(result, events_path, events)
     qualified = not preflight and result["completed_duration_seconds"] >= limits["target_duration_seconds"]
     require(result.get("qualified") is qualified, "qualification marker is inconsistent")
     return {"qualified": qualified, "events": len(events), "status": "passed"}
