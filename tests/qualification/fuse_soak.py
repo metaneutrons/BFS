@@ -116,13 +116,17 @@ def validate_approval_reference(reference, preflight):
                 "approval reference must be an issue #29 approval comment URL")
 
 
-def host_identity(storage_path, limits):
+def storage_identity(storage_path, limits):
     require(shutil.which("findmnt") is not None, "findmnt is required for storage evidence")
     mount = run("findmnt", "--noheadings", "--output", "SOURCE,FSTYPE", "--target", str(storage_path))
     require(mount.returncode == 0 and mount.stdout.strip(), "cannot identify soak backing storage")
     storage = os.statvfs(storage_path)
     available_bytes = storage.f_frsize * storage.f_bavail
     require(available_bytes >= limits["minimum_available_bytes"], "insufficient available soak storage")
+    return {"backing_storage": mount.stdout.split(), "available_bytes": available_bytes}
+
+
+def host_identity():
     meminfo = Path("/proc/meminfo").read_text(encoding="ascii")
     memory_line = next(line for line in meminfo.splitlines() if line.startswith("MemTotal:"))
     fuse = run("fusermount3", "--version")
@@ -134,8 +138,6 @@ def host_identity(storage_path, limits):
         "cpu_count": os.cpu_count(),
         "memory_total_kib": int(memory_line.split()[1]),
         "fuse_version": (fuse.stdout + fuse.stderr).strip(),
-        "backing_storage": mount.stdout.split(),
-        "available_bytes": available_bytes,
     }
 
 
@@ -231,8 +233,31 @@ def write_json_durable(path, value):
         os.close(descriptor)
 
 
-def prepare_image(output, limits):
-    image = output / "soak.bfs"
+def fsync_file(path):
+    with path.open("rb") as stream:
+        os.fsync(stream.fileno())
+
+
+def persist_image(image, output):
+    target = output / "soak.bfs"
+    if image != target:
+        require(not target.exists(), "refusing to overwrite preserved soak image")
+        with image.open("rb") as source, target.open("xb") as destination:
+            shutil.copyfileobj(source, destination)
+            destination.flush()
+            os.fsync(destination.fileno())
+    else:
+        fsync_file(image)
+    descriptor = os.open(output, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    return hashlib.sha256(target.read_bytes()).hexdigest()
+
+
+def prepare_image(image_directory, limits):
+    image = image_directory / "soak.bfs"
     completed = run(str(FIXTURE), str(image), "--directory-scale", "--hard-link",
                     "--block-size", str(limits["block_size"]),
                     "--block-count", str(limits["block_count"]))
@@ -387,6 +412,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--matrix", type=Path, default=linux_qualification.DEFAULT_MATRIX)
     parser.add_argument("--output", type=Path, required=True)
+    parser.add_argument("--image-directory", type=Path)
     parser.add_argument("--approval-reference")
     parser.add_argument("--duration-seconds", type=int)
     parser.add_argument("--preflight", action="store_true")
@@ -396,30 +422,41 @@ def main():
     limits = matrix["soak"]
     duration = select_duration(limits, arguments.duration_seconds, arguments.preflight)
     validate_approval_reference(arguments.approval_reference, arguments.preflight)
-    require(not arguments.output.exists(), "refusing to overwrite soak evidence")
+    output = arguments.output.resolve()
+    image_directory = arguments.image_directory.resolve() if arguments.image_directory else output
+    require(not output.exists(), "refusing to overwrite soak evidence")
+    if arguments.image_directory:
+        require(image_directory != output, "image directory must differ from evidence output")
+        require(not image_directory.exists(), "refusing to overwrite soak image directory")
     require(Path("/dev/fuse").is_char_device(), "/dev/fuse is required for the soak")
     require(Path("/proc/meminfo").is_file(), "/proc resource metrics are required for the soak")
     require(FUSE.is_file() and FIXTURE.is_file() and CHECKER.is_file(), "build soak prerequisites first")
-    arguments.output.mkdir(parents=True)
+    output.mkdir(parents=True)
+    if image_directory != output:
+        image_directory.mkdir(parents=True)
     evidence = {"approval_reference": arguments.approval_reference,
                 "environment": linux_qualification.environment(matrix_path),
                 "limits": limits, "requested_duration_seconds": duration, "preflight": arguments.preflight,
                 "started_at_utc": utc_timestamp()}
     try:
         linux_qualification.verify_dispatcher()
-        evidence["host"] = host_identity(arguments.output.parent, limits)
-        result = run_soak(prepare_image(arguments.output, limits), arguments.output, limits, duration)
+        evidence["host"] = host_identity()
+        evidence["evidence_storage"] = storage_identity(output.parent, limits)
+        evidence["workload_storage"] = storage_identity(image_directory, limits)
+        image = prepare_image(image_directory, limits)
+        result = run_soak(image, output, limits, duration)
         evidence.update(result)
+        evidence["evidence"]["soak_image_sha256"] = persist_image(image, output)
         evidence["qualified"] = (not arguments.preflight and
                                   result["completed_duration_seconds"] >= limits["target_duration_seconds"])
         evidence["status"] = "passed"
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         evidence.update({"status": "failed", "error": str(error), "qualified": False})
         evidence["completed_at_utc"] = utc_timestamp()
-        write_json_durable(arguments.output / "result.json", evidence)
+        write_json_durable(output / "result.json", evidence)
         raise SystemExit(str(error)) from error
     evidence["completed_at_utc"] = utc_timestamp()
-    write_json_durable(arguments.output / "result.json", evidence)
+    write_json_durable(output / "result.json", evidence)
 
 
 if __name__ == "__main__":

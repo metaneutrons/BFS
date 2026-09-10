@@ -58,9 +58,10 @@ and deletion remain out of scope.
 
 The runner records each cycle's explicit scenario checks, operation and
 pressure-write totals, elapsed time, daemon RSS and descriptor count, plus the
-host, kernel, CPU/memory, libfuse and backing-storage identities captured
-before execution. It fsyncs each event and the final result, then records a
-SHA-256 digest of the event log and aggregate operation/resource metrics.
+host, kernel, CPU/memory, libfuse and both workload/evidence-storage identities
+captured before execution. It fsyncs each event and the final result, then
+records SHA-256 digests of the event log and preserved final BFS image together
+with aggregate operation/resource metrics.
 `make linux-qualification-soak` automatically invokes the independent event
 verifier. It rejects missing cycles, failed or incomplete checks, resource
 limit breaches, altered event logs, inconsistent totals, malformed approval
@@ -71,12 +72,21 @@ reproduction and investigation. Only a non-preflight record whose completed
 duration is at least 259200 seconds can satisfy M7-A4; shorter runs are
 preflight evidence only.
 
+On Cachy, keep `OUTPUT` on durable Btrfs and set `IMAGE_DIRECTORY` to a new
+directory in `/dev/shm`. This executes the repeated disk-full workload against
+tmpfs, avoiding unnecessary NVMe writes while retaining the fsynced evidence
+record on durable storage. At successful completion the runner copies the
+verified 8 MiB final image to `OUTPUT/soak.bfs` and records its digest. A
+complete evidence directory in tmpfs is not acceptable for the target run:
+host loss would also lose the failure record.
+
 On the approved host, build the current commit and run:
 
 ```sh
 make linux-qualification-soak \
   APPROVAL_REFERENCE='https://github.com/metaneutrons/BFS/issues/29#issuecomment-...' \
-  OUTPUT=/var/tmp/bfs-m7-soak-<commit>
+  OUTPUT=/var/tmp/bfs-m7-evidence-<commit> \
+  IMAGE_DIRECTORY=/dev/shm/bfs-m7-image-<commit>
 ```
 
 Pull requests run a short FUSE preflight automatically. It exercises one full

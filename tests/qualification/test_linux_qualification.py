@@ -15,6 +15,8 @@ import verify_fuse_soak
 class LinuxQualificationTests(unittest.TestCase):
     def make_soak_evidence(self, directory, *, preflight=True):
         root = Path(directory)
+        image = root / "soak.bfs"
+        image.write_bytes(b"M7 preserved soak image\n")
         event = {
             "cycle": 0,
             "elapsed_seconds": 3.125,
@@ -29,6 +31,7 @@ class LinuxQualificationTests(unittest.TestCase):
         events.write_text(json.dumps(event, sort_keys=True) + "\n", encoding="ascii")
         evidence = {
             "events_sha256": hashlib.sha256(events.read_bytes()).hexdigest(),
+            "soak_image_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
             "event_count": 1,
             "total_operations": event["operations"],
             "total_pressure_writes": event["pressure_writes"],
@@ -38,6 +41,10 @@ class LinuxQualificationTests(unittest.TestCase):
         result = {
             "approval_reference": None if preflight else
             "https://github.com/metaneutrons/BFS/issues/29#issuecomment-123",
+            "evidence_storage": {"backing_storage": ["/dev/test", "btrfs"],
+                                 "available_bytes": 1024 * 1024},
+            "workload_storage": {"backing_storage": ["tmpfs", "tmpfs"],
+                                 "available_bytes": 1024 * 1024},
             "limits": {"target_duration_seconds": 72 * 60 * 60, "cycle_seconds": 60,
                        "maximum_rss_kib": 262144, "maximum_open_descriptors": 128},
             "requested_duration_seconds": 30 if preflight else 72 * 60 * 60,
@@ -117,6 +124,18 @@ class LinuxQualificationTests(unittest.TestCase):
         self.assertEqual(fuse_soak.next_cycle_wait(60, 30, 3, 3), 27)
         self.assertEqual(fuse_soak.next_cycle_wait(60, 30, 31, 3), 0)
 
+    def test_persists_external_soak_image_durably(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            output = root / "evidence"
+            output.mkdir()
+            image = root / "ram-workload" / "soak.bfs"
+            image.parent.mkdir()
+            image.write_bytes(b"BFS test image\n")
+            digest = fuse_soak.persist_image(image, output)
+            self.assertEqual((output / "soak.bfs").read_bytes(), image.read_bytes())
+            self.assertEqual(digest, hashlib.sha256(image.read_bytes()).hexdigest())
+
     def test_verifies_complete_preflight_evidence(self):
         with tempfile.TemporaryDirectory() as directory:
             self.make_soak_evidence(directory)
@@ -138,6 +157,13 @@ class LinuxQualificationTests(unittest.TestCase):
             del event["checks"]["disk_full"]
             events.write_text(json.dumps(event) + "\n", encoding="ascii")
             with self.assertRaisesRegex(RuntimeError, "checks are incomplete"):
+                verify_fuse_soak.verify(directory)
+
+    def test_rejects_tampered_preserved_image(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.make_soak_evidence(directory)
+            (Path(directory) / "soak.bfs").write_bytes(b"tampered")
+            with self.assertRaisesRegex(RuntimeError, "evidence summary"):
                 verify_fuse_soak.verify(directory)
 
     def test_rejects_target_evidence_with_missing_cycles(self):
