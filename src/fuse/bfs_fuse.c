@@ -57,6 +57,7 @@ typedef struct {
 } snapshot_selector_t;
 
 static bool has_open_inode(const bfs_fuse_ctx_t *ctx, uint32_t inode);
+static bfs_fuse_file_handle_t *find_open_inode(const bfs_fuse_ctx_t *ctx, uint32_t inode);
 static bfs_err_t detach_file_handle(bfs_fuse_ctx_t *ctx, bfs_fuse_file_handle_t *handle);
 
 static int fuse_error(bfs_err_t error)
@@ -420,8 +421,8 @@ static void bfs_fuse_getattr(fuse_req_t request, fuse_ino_t inode, struct fuse_f
     bfs_inode_t node;
     bfs_fuse_file_handle_t *handle = info && info->fh
         ? (bfs_fuse_file_handle_t *)(uintptr_t)info->fh : NULL;
-    bool unlinked = handle && handle->inode == inode && handle->file.unlinked &&
-        has_open_inode(ctx, handle->inode);
+    if (!handle || handle->inode != inode) handle = find_open_inode(ctx, (uint32_t)inode);
+    bool unlinked = handle && handle->file.unlinked;
     bfs_err_t error = unlinked
         ? bfs_inode_read_unlinked(ctx->inode_tree, (uint32_t)inode, &node)
         : read_inode(ctx, inode, &node);
@@ -869,11 +870,16 @@ static void bfs_fuse_readonly(fuse_req_t request)
     fuse_reply_err(request, EROFS);
 }
 
+static bfs_fuse_file_handle_t *find_open_inode(const bfs_fuse_ctx_t *ctx, uint32_t inode)
+{
+    for (bfs_fuse_file_handle_t *handle = ctx->handles; handle; handle = handle->next)
+        if (handle->inode == inode) return handle;
+    return NULL;
+}
+
 static bool has_open_inode(const bfs_fuse_ctx_t *ctx, uint32_t inode)
 {
-    for (const bfs_fuse_file_handle_t *handle = ctx->handles; handle; handle = handle->next)
-        if (handle->inode == inode) return true;
-    return false;
+    return find_open_inode(ctx, inode) != NULL;
 }
 
 static bfs_err_t mark_open_inode_unlinked(bfs_fuse_ctx_t *ctx, uint32_t inode)
