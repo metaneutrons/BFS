@@ -4,6 +4,7 @@
 import argparse
 import datetime
 import errno
+import hashlib
 import json
 import multiprocessing
 import os
@@ -26,6 +27,15 @@ CHECKER = ROOT / "build" / "host" / "bfsfsck"
 ORACLE = ROOT / "tools" / "bfs-format-oracle.py"
 APPROVAL_REFERENCE = re.compile(
     r"https://github\.com/metaneutrons/BFS/issues/29#issuecomment-[1-9][0-9]*\Z"
+)
+CYCLE_CHECKS = (
+    "client_file_lifecycle",
+    "fragmentation",
+    "disk_full",
+    "space_recovery",
+    "clean_unmount",
+    "integrity",
+    "snapshot_read_only",
 )
 
 
@@ -209,6 +219,18 @@ def append_event(path, event):
         os.fsync(stream.fileno())
 
 
+def write_json_durable(path, value):
+    with path.open("w", encoding="ascii") as stream:
+        stream.write(json.dumps(value, indent=2, sort_keys=True) + "\n")
+        stream.flush()
+        os.fsync(stream.fileno())
+    descriptor = os.open(path.parent, os.O_RDONLY | os.O_DIRECTORY)
+    try:
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
 def prepare_image(output, limits):
     image = output / "soak.bfs"
     completed = run(str(FIXTURE), str(image), "--directory-scale", "--hard-link",
@@ -295,7 +317,8 @@ def run_cycle(image, mountpoint, cycle, limits):
     verify_snapshot(image, mountpoint)
     verify_image(image)
     return {"operations": client_operations + pressure["operations"],
-            "pressure_writes": pressure["pressure_writes"], "resources": resources}
+            "pressure_writes": pressure["pressure_writes"], "resources": resources,
+            "checks": {check: "passed" for check in CYCLE_CHECKS}}
 
 
 def next_cycle_wait(cycle_seconds, duration, elapsed, cycle_elapsed):
@@ -308,21 +331,44 @@ def run_soak(image, output, limits, duration):
     mountpoint.mkdir()
     started = time.monotonic()
     cycle = 0
+    total_operations = 0
+    total_pressure_writes = 0
+    peak_rss_kib = 0
+    peak_open_descriptors = 0
     while time.monotonic() - started < duration:
         cycle_started = time.monotonic()
         result = run_cycle(image, mountpoint, cycle, limits)
-        append_event(events, {"cycle": cycle, "elapsed_seconds": round(time.monotonic() - started, 3),
-                              "cycle_seconds": round(time.monotonic() - cycle_started, 3),
+        cycle_elapsed = time.monotonic() - cycle_started
+        require(cycle_elapsed <= limits["cycle_seconds"], "soak cycle exceeded its time limit")
+        elapsed = time.monotonic() - started
+        append_event(events, {"cycle": cycle, "elapsed_seconds": round(elapsed, 3),
+                              "cycle_seconds": round(cycle_elapsed, 3),
                               "operations": result["operations"],
                               "pressure_writes": result["pressure_writes"],
-                              "resources": result["resources"], "status": "passed"})
+                              "resources": result["resources"], "checks": result["checks"],
+                              "status": "passed"})
+        total_operations += result["operations"]
+        total_pressure_writes += result["pressure_writes"]
+        peak_rss_kib = max(peak_rss_kib, result["resources"]["rss_kib"])
+        peak_open_descriptors = max(peak_open_descriptors,
+                                    result["resources"]["open_descriptors"])
         cycle += 1
-        elapsed = time.monotonic() - started
         remaining = next_cycle_wait(limits["cycle_seconds"], duration, elapsed,
-                                    time.monotonic() - cycle_started)
+                                    cycle_elapsed)
         if remaining > 0:
             time.sleep(remaining)
-    return {"completed_cycles": cycle, "completed_duration_seconds": round(time.monotonic() - started, 3)}
+    return {
+        "completed_cycles": cycle,
+        "completed_duration_seconds": round(time.monotonic() - started, 3),
+        "evidence": {
+            "events_sha256": hashlib.sha256(events.read_bytes()).hexdigest(),
+            "event_count": cycle,
+            "total_operations": total_operations,
+            "total_pressure_writes": total_pressure_writes,
+            "peak_rss_kib": peak_rss_kib,
+            "peak_open_descriptors": peak_open_descriptors,
+        },
+    }
 
 
 def select_duration(limits, requested, preflight):
@@ -370,10 +416,10 @@ def main():
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
         evidence.update({"status": "failed", "error": str(error), "qualified": False})
         evidence["completed_at_utc"] = utc_timestamp()
-        arguments.output.joinpath("result.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="ascii")
+        write_json_durable(arguments.output / "result.json", evidence)
         raise SystemExit(str(error)) from error
     evidence["completed_at_utc"] = utc_timestamp()
-    arguments.output.joinpath("result.json").write_text(json.dumps(evidence, indent=2, sort_keys=True) + "\n", encoding="ascii")
+    write_json_durable(arguments.output / "result.json", evidence)
 
 
 if __name__ == "__main__":

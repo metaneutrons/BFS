@@ -54,7 +54,7 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
 	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release \
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
-	linux-qualification-soak-preflight qualification-tests
+	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests
 
 .PHONY: fuse
 
@@ -83,12 +83,18 @@ linux-qualification-soak: fuse conformance tools $(CONFORMANCE_FIXTURE) qualific
 	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
 	@python3 tests/qualification/fuse_soak.py --output "$(OUTPUT)" \
 		--approval-reference "$(APPROVAL_REFERENCE)" $(SOAK_ARGS)
+	@$(MAKE) linux-qualification-soak-verify OUTPUT="$(OUTPUT)"
 
 linux-qualification-soak-preflight: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests
 	@rm -rf build/linux-qualification/soak-preflight
 	@python3 tests/qualification/fuse_soak.py \
 		--output build/linux-qualification/soak-preflight \
 		--preflight --duration-seconds 30
+	@$(MAKE) linux-qualification-soak-verify OUTPUT=build/linux-qualification/soak-preflight
+
+linux-qualification-soak-verify:
+	@test -n "$(OUTPUT)" || { echo "OUTPUT is required" >&2; exit 2; }
+	@python3 tests/qualification/verify_fuse_soak.py --output "$(OUTPUT)"
 
 .PHONY: fuse-analyze
 

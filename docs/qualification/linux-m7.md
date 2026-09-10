@@ -56,13 +56,20 @@ then remounts the committed `oracle-snapshot` read-only and confirms that a
 write is refused. This exercises FUSE snapshot reading; Linux snapshot creation
 and deletion remain out of scope.
 
-The runner records each cycle's operation and pressure-write totals, elapsed
-time, daemon RSS and descriptor count, plus the host, kernel, CPU/memory,
-libfuse and backing-storage identities captured before execution. Any stall,
-crash, integrity mismatch, resource-limit breach, or missed cleanup is a
-failure requiring a retained reproduction and investigation. Only a
-non-preflight record whose completed duration is at least 259200 seconds can
-satisfy M7-A4; shorter runs are preflight evidence only.
+The runner records each cycle's explicit scenario checks, operation and
+pressure-write totals, elapsed time, daemon RSS and descriptor count, plus the
+host, kernel, CPU/memory, libfuse and backing-storage identities captured
+before execution. It fsyncs each event and the final result, then records a
+SHA-256 digest of the event log and aggregate operation/resource metrics.
+`make linux-qualification-soak` automatically invokes the independent event
+verifier. It rejects missing cycles, failed or incomplete checks, resource
+limit breaches, altered event logs, inconsistent totals, malformed approval
+references, and an inconsistent qualification marker. Preserve the complete
+`OUTPUT` directory after the run. Any stall, crash, integrity mismatch,
+resource-limit breach, or missed cleanup is a failure requiring a retained
+reproduction and investigation. Only a non-preflight record whose completed
+duration is at least 259200 seconds can satisfy M7-A4; shorter runs are
+preflight evidence only.
 
 On the approved host, build the current commit and run:
 
