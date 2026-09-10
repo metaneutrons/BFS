@@ -161,6 +161,11 @@ bfs_err_t bfs_fs_rename(bfs_fs_t *fs,
                           uint32_t old_parent, const char *old_name, uint8_t old_len,
                           uint32_t new_parent, const char *new_name, uint8_t new_len);
 
+typedef struct {
+    bool preserve_replaced;
+    uint32_t *orphan_ino_out;
+} bfs_rename_options_t;
+
 /* POSIX-style replacement rename. When `preserve_replaced` is true, a
  * final-link non-directory destination becomes an unlinked inode and is
  * returned through `orphan_ino_out`; callers retain it only while an open
@@ -168,7 +173,7 @@ bfs_err_t bfs_fs_rename(bfs_fs_t *fs,
 bfs_err_t bfs_fs_rename_replace(bfs_fs_t *fs,
                                 uint32_t old_parent, const char *old_name, uint8_t old_len,
                                 uint32_t new_parent, const char *new_name, uint8_t new_len,
-                                bool preserve_replaced, uint32_t *orphan_ino_out);
+                                const bfs_rename_options_t *options);
 
 /* Create a hard link to an existing inode. */
 bfs_err_t bfs_fs_make_hardlink(bfs_fs_t *fs, uint32_t parent_ino,

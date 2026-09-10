@@ -584,93 +584,136 @@ static bfs_err_t fs_dispose_replaced_dir_unlocked(bfs_fs_t *fs, uint32_t ino)
     return err;
 }
 
-static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, uint32_t old_parent,
-                                    const char *old_name, uint8_t old_len,
-                                    uint32_t new_parent, const char *new_name,
-                                    uint8_t new_len, bool preserve_replaced,
-                                    uint32_t *orphan_ino_out)
+typedef struct {
+    uint32_t old_parent;
+    const char *old_name;
+    uint8_t old_len;
+    uint32_t new_parent;
+    const char *new_name;
+    uint8_t new_len;
+    bool preserve_replaced;
+    uint32_t *orphan_ino_out;
+} fs_rename_request_t;
+
+typedef struct {
+    uint32_t ino;
+    uint32_t type;
+    uint32_t old_dotdot;
+    uint32_t replaced_ino;
+    uint32_t replaced_type;
+    bool replacing;
+} fs_rename_state_t;
+
+static bfs_err_t fs_rename_lookup_source(bfs_fs_t *fs,
+                                         const fs_rename_request_t *request,
+                                         fs_rename_state_t *state)
 {
-    bfs_err_t err = fs_require_dir(fs, old_parent);
+    bfs_err_t err = fs_require_dir(fs, request->old_parent);
     if (err != BFS_OK) return err;
-    err = fs_require_dir(fs, new_parent);
+    err = fs_require_dir(fs, request->new_parent);
     if (err != BFS_OK) return err;
+    return bfs_dir_lookup(&fs->dir_tree, request->old_parent, request->old_name,
+                          request->old_len, &state->ino, &state->type);
+}
 
-    uint32_t ino, type;
-    err = bfs_dir_lookup(&fs->dir_tree, old_parent, old_name, old_len, &ino, &type);
+static bfs_err_t fs_rename_check_directory_move(bfs_fs_t *fs,
+                                                const fs_rename_request_t *request,
+                                                fs_rename_state_t *state)
+{
+    if (state->type != BFS_INODE_DIR) return BFS_OK;
+    bool descendant = false;
+    bfs_err_t err = fs_dir_is_descendant(fs, request->new_parent, state->ino, &descendant);
     if (err != BFS_OK) return err;
+    if (descendant) return BFS_ERR_INVAL;
+    err = bfs_dir_lookup(&fs->dir_tree, state->ino, "..", 2, &state->old_dotdot, NULL);
+    if (err != BFS_OK) return err;
+    return state->old_dotdot == request->old_parent ? BFS_OK : BFS_ERR_CORRUPT;
+}
 
-    if (orphan_ino_out) *orphan_ino_out = 0;
-    if (old_parent == new_parent && same_name_folded(old_name, old_len, new_name, new_len)) {
-        if (same_name_bytes(old_name, old_len, new_name, new_len)) return BFS_OK;
-        return bfs_dir_rekey_case(&fs->dir_tree, old_parent, old_name, old_len,
-                                  new_name, new_len);
-    }
-
-    uint32_t old_dotdot = 0;
-    if (type == BFS_INODE_DIR) {
-        bool descendant = false;
-        err = fs_dir_is_descendant(fs, new_parent, ino, &descendant);
+static bfs_err_t fs_rename_install_destination(bfs_fs_t *fs,
+                                               const fs_rename_request_t *request,
+                                               fs_rename_state_t *state)
+{
+    bfs_err_t err = bfs_dir_lookup(&fs->dir_tree, request->new_parent,
+                                   request->new_name, request->new_len,
+                                   &state->replaced_ino, &state->replaced_type);
+    if (err == BFS_ERR_NOTFOUND)
+        return bfs_dir_insert(&fs->dir_tree, request->new_parent, request->new_name,
+                              request->new_len, state->ino, state->type);
+    if (err != BFS_OK) return err;
+    state->replacing = true;
+    if ((state->type == BFS_INODE_DIR) != (state->replaced_type == BFS_INODE_DIR))
+        return BFS_ERR_INVAL;
+    if (state->replaced_type == BFS_INODE_DIR) {
+        empty_check_t empty = {0};
+        err = bfs_dir_scan(&fs->dir_tree, state->replaced_ino, empty_check_cb, &empty);
         if (err != BFS_OK) return err;
-        if (descendant) return BFS_ERR_INVAL;
-        err = bfs_dir_lookup(&fs->dir_tree, ino, "..", 2, &old_dotdot, NULL);
-        if (err != BFS_OK) return err;
-        if (old_dotdot != old_parent) return BFS_ERR_CORRUPT;
+        if (empty.count != 0) return BFS_ERR_NOTEMPTY;
     }
+    return bfs_dir_replace(&fs->dir_tree, request->new_parent, request->new_name,
+                           request->new_len, state->ino, state->type, NULL, NULL);
+}
 
-    uint32_t replaced_ino = 0, replaced_type = 0;
-    bool replacing = false;
-    err = bfs_dir_lookup(&fs->dir_tree, new_parent, new_name, new_len,
-                         &replaced_ino, &replaced_type);
-    if (err == BFS_OK) {
-        replacing = true;
-        if ((type == BFS_INODE_DIR) != (replaced_type == BFS_INODE_DIR))
-            return BFS_ERR_INVAL;
-        if (replaced_type == BFS_INODE_DIR) {
-            empty_check_t empty = {0};
-            err = bfs_dir_scan(&fs->dir_tree, replaced_ino, empty_check_cb, &empty);
-            if (err != BFS_OK) return err;
-            if (empty.count != 0) return BFS_ERR_NOTEMPTY;
-        }
-        err = bfs_dir_replace(&fs->dir_tree, new_parent, new_name, new_len,
-                             ino, type, NULL, NULL);
-    } else if (err == BFS_ERR_NOTFOUND) {
-        err = bfs_dir_insert(&fs->dir_tree, new_parent, new_name, new_len, ino, type);
-    }
+static bfs_err_t fs_rename_restore_destination(bfs_fs_t *fs,
+                                               const fs_rename_request_t *request,
+                                               const fs_rename_state_t *state)
+{
+    if (state->replacing)
+        return bfs_dir_replace(&fs->dir_tree, request->new_parent, request->new_name,
+                               request->new_len, state->replaced_ino,
+                               state->replaced_type, NULL, NULL);
+    return bfs_dir_remove(&fs->dir_tree, request->new_parent, request->new_name,
+                          request->new_len);
+}
+
+static bfs_err_t fs_rename_update_dotdot(bfs_fs_t *fs,
+                                         const fs_rename_request_t *request,
+                                         const fs_rename_state_t *state,
+                                         uint32_t parent)
+{
+    if (state->type != BFS_INODE_DIR || request->old_parent == request->new_parent)
+        return BFS_OK;
+    return bfs_dir_replace(&fs->dir_tree, state->ino, "..", 2, parent,
+                           BFS_INODE_DIR, NULL, NULL);
+}
+
+static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, const fs_rename_request_t *request)
+{
+    fs_rename_state_t state = {0};
+    if (request->orphan_ino_out) *request->orphan_ino_out = 0;
+    bfs_err_t err = fs_rename_lookup_source(fs, request, &state);
     if (err != BFS_OK) return err;
-
-    if (type == BFS_INODE_DIR && old_parent != new_parent) {
-        err = bfs_dir_replace(&fs->dir_tree, ino, "..", 2, new_parent,
-                             BFS_INODE_DIR, NULL, NULL);
-        if (err != BFS_OK) {
-            bfs_err_t rollback_err = replacing
-                ? bfs_dir_replace(&fs->dir_tree, new_parent, new_name, new_len,
-                                  replaced_ino, replaced_type, NULL, NULL)
-                : bfs_dir_remove(&fs->dir_tree, new_parent, new_name, new_len);
-            return fs_cleanup_result(fs, err, rollback_err);
-        }
+    if (request->old_parent == request->new_parent && same_name_folded(
+            request->old_name, request->old_len, request->new_name, request->new_len)) {
+        if (same_name_bytes(request->old_name, request->old_len,
+                            request->new_name, request->new_len)) return BFS_OK;
+        return bfs_dir_rekey_case(&fs->dir_tree, request->old_parent, request->old_name,
+                                  request->old_len, request->new_name, request->new_len);
     }
+    err = fs_rename_check_directory_move(fs, request, &state);
+    if (err != BFS_OK) return err;
+    err = fs_rename_install_destination(fs, request, &state);
+    if (err != BFS_OK) return err;
+    err = fs_rename_update_dotdot(fs, request, &state, request->new_parent);
+    if (err != BFS_OK) return fs_cleanup_result(fs, err,
+                                                fs_rename_restore_destination(fs, request, &state));
 
-    err = bfs_dir_remove(&fs->dir_tree, old_parent, old_name, old_len);
+    err = bfs_dir_remove(&fs->dir_tree, request->old_parent, request->old_name,
+                         request->old_len);
     if (err != BFS_OK) {
-        bfs_err_t rollback_err = BFS_OK;
-        if (type == BFS_INODE_DIR && old_parent != new_parent) {
-            rollback_err = bfs_dir_replace(&fs->dir_tree, ino, "..", 2, old_dotdot,
-                                            BFS_INODE_DIR, NULL, NULL);
-        }
-        bfs_err_t destination_err = replacing
-            ? bfs_dir_replace(&fs->dir_tree, new_parent, new_name, new_len,
-                              replaced_ino, replaced_type, NULL, NULL)
-            : bfs_dir_remove(&fs->dir_tree, new_parent, new_name, new_len);
+        bfs_err_t rollback_err = fs_rename_update_dotdot(fs, request, &state, state.old_dotdot);
+        bfs_err_t destination_err = fs_rename_restore_destination(fs, request, &state);
         if (rollback_err == BFS_OK) rollback_err = destination_err;
         return fs_cleanup_result(fs, err, rollback_err);
     }
 
-    if (!replacing) return BFS_OK;
-    if (replaced_type == BFS_INODE_DIR)
-        err = fs_dispose_replaced_dir_unlocked(fs, replaced_ino);
+    if (!state.replacing) return BFS_OK;
+    if (state.replaced_type == BFS_INODE_DIR)
+        err = fs_dispose_replaced_dir_unlocked(fs, state.replaced_ino);
     else
-        err = fs_dispose_replaced_file_unlocked(fs, replaced_ino,
-                                                preserve_replaced, orphan_ino_out);
+        err = fs_dispose_replaced_file_unlocked(fs, state.replaced_ino,
+                                                request->preserve_replaced,
+                                                request->orphan_ino_out);
     if (err != BFS_OK) fs->recovery_error = err;
     return err;
 }
@@ -943,14 +986,15 @@ bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
 bfs_err_t bfs_fs_rename(bfs_fs_t *fs, uint32_t old_parent, const char *old_name, uint8_t old_len, uint32_t new_parent, const char *new_name, uint8_t new_len)
 {
     return bfs_fs_rename_replace(fs, old_parent, old_name, old_len,
-                                 new_parent, new_name, new_len, false, NULL);
+                                 new_parent, new_name, new_len, NULL);
 }
 
 bfs_err_t bfs_fs_rename_replace(bfs_fs_t *fs,
                                 uint32_t old_parent, const char *old_name, uint8_t old_len,
                                 uint32_t new_parent, const char *new_name, uint8_t new_len,
-                                bool preserve_replaced, uint32_t *orphan_ino_out)
+                                const bfs_rename_options_t *options)
 {
+    uint32_t *orphan_ino_out = options ? options->orphan_ino_out : NULL;
     if (orphan_ino_out) *orphan_ino_out = 0;
     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
@@ -959,10 +1003,15 @@ bfs_err_t bfs_fs_rename_replace(bfs_fs_t *fs,
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
     uint32_t orphan = 0;
+    fs_rename_request_t request = {
+        .old_parent = old_parent, .old_name = old_name, .old_len = old_len,
+        .new_parent = new_parent, .new_name = new_name, .new_len = new_len,
+        .preserve_replaced = options && options->preserve_replaced,
+        .orphan_ino_out = &orphan,
+    };
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
-        err = fs_rename_unlocked(fs, old_parent, old_name, old_len, new_parent, new_name,
-                                 new_len, preserve_replaced, &orphan);
+        err = fs_rename_unlocked(fs, &request);
     err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     if (err == BFS_OK && orphan_ino_out) *orphan_ino_out = orphan;

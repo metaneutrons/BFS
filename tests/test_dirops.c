@@ -186,8 +186,12 @@ static void test_rename_replaces_file_and_preserves_open_target(void)
     TEST_ASSERT_EQ(bfs_file_open(&target_handle, fs, target), BFS_OK);
     TEST_ASSERT_EQ(bfs_file_write(&target_handle, "old", 3), 3);
 
+    bfs_rename_options_t options = {
+        .preserve_replaced = true,
+        .orphan_ino_out = &orphan,
+    };
     TEST_ASSERT_EQ(bfs_fs_rename_replace(fs, BFS_ROOT_INO, "source", 6,
-                                         BFS_ROOT_INO, "target", 6, true, &orphan), BFS_OK);
+                                         BFS_ROOT_INO, "target", 6, &options), BFS_OK);
     TEST_ASSERT_EQ(orphan, target);
     uint32_t found, type;
     TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, "target", 6,

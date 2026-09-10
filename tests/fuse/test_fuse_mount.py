@@ -291,136 +291,140 @@ def exercise_fixture(image, mountpoint):
     require(sha256(image) == before, "read-only snapshot mount changed the fixture image")
 
 
+def exercise_writable_metadata(work):
+    durable = work / "durable"
+    descriptor = os.open(durable, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+    try:
+        require(os.write(descriptor, b"base") == 4, "initial write was short")
+        os.fsync(descriptor)
+        os.ftruncate(descriptor, 9)
+        os.lseek(descriptor, 4, os.SEEK_SET)
+        require(os.read(descriptor, 5) == b"\0" * 5, "truncate extension is not zero-filled")
+    finally:
+        os.close(descriptor)
+    os.setxattr(durable, "user.bfs.comment", b"M6 writable mount")
+    require(os.getxattr(durable, "user.bfs.comment") == b"M6 writable mount",
+            "writable comment xattr differs")
+    expect_errno(errno.EOPNOTSUPP, lambda: os.setxattr(durable, "user.bfs.uid", b"1"))
+    expect_errnos((errno.EPERM, errno.EOPNOTSUPP), lambda: os.chmod(durable, 0o600))
+    removable = work / "removable-comment"
+    removable.write_bytes(b"comment")
+    os.setxattr(removable, "user.bfs.comment", b"remove me")
+    os.removexattr(removable, "user.bfs.comment")
+    expect_errno(errno.ENODATA, lambda: os.getxattr(removable, "user.bfs.comment"))
+    node = work / "mknod-file"
+    os.mknod(node, stat.S_IFREG | 0o600)
+    require(node.is_file(), "regular mknod did not create a file")
+    return durable
+
+
+def exercise_writable_links(work, durable):
+    positions = work / "positions"
+    positions.write_bytes(b"abcdef")
+    first = os.open(positions, os.O_RDONLY | os.O_CLOEXEC)
+    second = os.open(positions, os.O_RDONLY | os.O_CLOEXEC)
+    try:
+        require(os.read(first, 2) == b"ab", "first handle initial read differs")
+        require(os.read(second, 3) == b"abc", "second handle offset is not independent")
+        require(os.read(first, 2) == b"cd", "first handle offset changed unexpectedly")
+    finally:
+        os.close(first)
+        os.close(second)
+    linked = work / "durable-link"
+    os.link(durable, linked)
+    require(linked.read_bytes() == durable.read_bytes(), "hard-link data differs")
+    symbolic = work / "durable-symlink"
+    os.symlink("durable", symbolic)
+    require(os.readlink(symbolic) == "durable", "symlink target differs")
+
+
+def exercise_replacement_semantics(work):
+    open_target = work / "open-target"
+    replacement = work / "replacement"
+    open_target.write_bytes(b"old")
+    replacement.write_bytes(b"new")
+    descriptor = os.open(open_target, os.O_RDWR | os.O_CLOEXEC)
+    try:
+        os.rename(replacement, open_target)
+        require(os.fstat(descriptor).st_nlink == 0, "replaced open target does not report zero links")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        require(os.read(descriptor, 3) == b"old", "replacement lost open target data")
+        require(os.write(descriptor, b"+") == 1, "write through replaced handle was short")
+    finally:
+        os.close(descriptor)
+    require(open_target.read_bytes() == b"new", "replacement name did not expose new file")
+    source_directory = work / "source-directory"
+    target_directory = work / "target-directory"
+    source_directory.mkdir()
+    target_directory.mkdir()
+    os.rename(source_directory, target_directory)
+    require(target_directory.is_dir() and not source_directory.exists(), "empty directory replacement differs")
+    os.rmdir(target_directory)
+    require(not target_directory.exists(), "rmdir did not remove empty directory")
+
+
+def exercise_writable_type_errors(work):
+    type_file = work / "type-file"
+    type_file.write_bytes(b"file")
+    type_directory = work / "type-directory"
+    type_directory.mkdir()
+    expect_errno(errno.ENOTDIR, lambda: os.rmdir(type_file))
+    expect_errno(errno.EISDIR, lambda: os.unlink(type_directory))
+    file_source = work / "file-source"
+    file_source.write_bytes(b"file")
+    directory_target = work / "directory-target"
+    directory_target.mkdir()
+    expect_errno(errno.EISDIR, lambda: os.rename(file_source, directory_target))
+    directory_source = work / "directory-source"
+    directory_source.mkdir()
+    file_target = work / "file-target"
+    file_target.write_bytes(b"file")
+    expect_errno(errno.ENOTDIR, lambda: os.rename(directory_source, file_target))
+
+
+def exercise_open_unlink_and_append(work):
+    unlinked = work / "unlinked"
+    unlinked.write_bytes(b"before")
+    descriptor = os.open(unlinked, os.O_RDWR | os.O_CLOEXEC)
+    try:
+        os.unlink(unlinked)
+        require(os.fstat(descriptor).st_nlink == 0, "unlinked open file does not report zero links")
+        os.lseek(descriptor, 0, os.SEEK_SET)
+        require(os.read(descriptor, 6) == b"before", "unlinked handle lost data")
+        os.lseek(descriptor, 0, os.SEEK_END)
+        require(os.write(descriptor, b"-after") == 6, "write through unlinked handle was short")
+    finally:
+        os.close(descriptor)
+    require(not unlinked.exists(), "unlinked name is still visible")
+    append_path = work / "append"
+    append_path.write_bytes(b"")
+    workers = 6
+    repetitions = 24
+    payloads = [f"worker-{worker:02d}\n".encode("ascii") for worker in range(workers)]
+    context = multiprocessing.get_context("fork")
+    processes = [context.Process(target=append_client, args=(append_path, payload, repetitions))
+                 for payload in payloads]
+    for child in processes:
+        child.start()
+    for child in processes:
+        child.join(timeout=20)
+        require(child.exitcode == 0, f"append client exited with {child.exitcode}")
+    records = append_path.read_bytes().splitlines(keepends=True)
+    require(len(records) == workers * repetitions, "atomic append lost or merged records")
+    for payload in payloads:
+        require(records.count(payload) == repetitions, f"atomic append record count differs for {payload!r}")
+
+
 def exercise_writable_fixture(image, mountpoint):
     process = mount(image, mountpoint, read_write=True)
     try:
         work = mountpoint / "rw"
         work.mkdir()
-        durable = work / "durable"
-        descriptor = os.open(durable, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
-        try:
-            require(os.write(descriptor, b"base") == 4, "initial write was short")
-            os.fsync(descriptor)
-            os.ftruncate(descriptor, 9)
-            os.lseek(descriptor, 4, os.SEEK_SET)
-            require(os.read(descriptor, 5) == b"\0" * 5, "truncate extension is not zero-filled")
-        finally:
-            os.close(descriptor)
-        os.setxattr(durable, "user.bfs.comment", b"M6 writable mount")
-        require(os.getxattr(durable, "user.bfs.comment") == b"M6 writable mount",
-                "writable comment xattr differs")
-        expect_errno(errno.EOPNOTSUPP, lambda: os.setxattr(durable, "user.bfs.uid", b"1"))
-        # default_permissions may reject a non-owner before FUSE sees chmod.
-        expect_errnos((errno.EPERM, errno.EOPNOTSUPP), lambda: os.chmod(durable, 0o600))
-
-        removable = work / "removable-comment"
-        removable.write_bytes(b"comment")
-        os.setxattr(removable, "user.bfs.comment", b"remove me")
-        os.removexattr(removable, "user.bfs.comment")
-        expect_errno(errno.ENODATA, lambda: os.getxattr(removable, "user.bfs.comment"))
-
-        node = work / "mknod-file"
-        os.mknod(node, stat.S_IFREG | 0o600)
-        require(node.is_file(), "regular mknod did not create a file")
-
-        positions = work / "positions"
-        positions.write_bytes(b"abcdef")
-        first = os.open(positions, os.O_RDONLY | os.O_CLOEXEC)
-        second = os.open(positions, os.O_RDONLY | os.O_CLOEXEC)
-        try:
-            require(os.read(first, 2) == b"ab", "first handle initial read differs")
-            require(os.read(second, 3) == b"abc", "second handle offset is not independent")
-            require(os.read(first, 2) == b"cd", "first handle offset changed unexpectedly")
-        finally:
-            os.close(first)
-            os.close(second)
-
-        linked = work / "durable-link"
-        os.link(durable, linked)
-        require(linked.read_bytes() == durable.read_bytes(), "hard-link data differs")
-        symbolic = work / "durable-symlink"
-        os.symlink("durable", symbolic)
-        require(os.readlink(symbolic) == "durable", "symlink target differs")
-
-        open_target = work / "open-target"
-        replacement = work / "replacement"
-        open_target.write_bytes(b"old")
-        replacement.write_bytes(b"new")
-        descriptor = os.open(open_target, os.O_RDWR | os.O_CLOEXEC)
-        try:
-            os.rename(replacement, open_target)
-            require(os.fstat(descriptor).st_nlink == 0,
-                    "replaced open target does not report zero links")
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            require(os.read(descriptor, 3) == b"old", "replacement lost open target data")
-            require(os.write(descriptor, b"+") == 1, "write through replaced handle was short")
-        finally:
-            os.close(descriptor)
-        require(open_target.read_bytes() == b"new", "replacement name did not expose new file")
-
-        source_directory = work / "source-directory"
-        target_directory = work / "target-directory"
-        source_directory.mkdir()
-        target_directory.mkdir()
-        os.rename(source_directory, target_directory)
-        require(target_directory.is_dir() and not source_directory.exists(),
-                "empty directory replacement differs")
-        os.rmdir(target_directory)
-        require(not target_directory.exists(), "rmdir did not remove empty directory")
-
-        type_file = work / "type-file"
-        type_file.write_bytes(b"file")
-        type_directory = work / "type-directory"
-        type_directory.mkdir()
-        expect_errno(errno.ENOTDIR, lambda: os.rmdir(type_file))
-        expect_errno(errno.EISDIR, lambda: os.unlink(type_directory))
-
-        file_source = work / "file-source"
-        file_source.write_bytes(b"file")
-        directory_target = work / "directory-target"
-        directory_target.mkdir()
-        expect_errno(errno.EISDIR, lambda: os.rename(file_source, directory_target))
-        directory_source = work / "directory-source"
-        directory_source.mkdir()
-        file_target = work / "file-target"
-        file_target.write_bytes(b"file")
-        expect_errno(errno.ENOTDIR, lambda: os.rename(directory_source, file_target))
-
-        unlinked = work / "unlinked"
-        unlinked.write_bytes(b"before")
-        descriptor = os.open(unlinked, os.O_RDWR | os.O_CLOEXEC)
-        try:
-            os.unlink(unlinked)
-            require(os.fstat(descriptor).st_nlink == 0,
-                    "unlinked open file does not report zero links")
-            os.lseek(descriptor, 0, os.SEEK_SET)
-            require(os.read(descriptor, 6) == b"before", "unlinked handle lost data")
-            os.lseek(descriptor, 0, os.SEEK_END)
-            require(os.write(descriptor, b"-after") == 6, "write through unlinked handle was short")
-        finally:
-            os.close(descriptor)
-        require(not unlinked.exists(), "unlinked name is still visible")
-
-        append_path = work / "append"
-        append_path.write_bytes(b"")
-        workers = 6
-        repetitions = 24
-        payloads = [f"worker-{worker:02d}\n".encode("ascii") for worker in range(workers)]
-        context = multiprocessing.get_context("fork")
-        processes = [context.Process(target=append_client,
-                                     args=(append_path, payload, repetitions))
-                     for payload in payloads]
-        for child in processes:
-            child.start()
-        for child in processes:
-            child.join(timeout=20)
-            require(child.exitcode == 0, f"append client exited with {child.exitcode}")
-        records = append_path.read_bytes().splitlines(keepends=True)
-        require(len(records) == workers * repetitions, "atomic append lost or merged records")
-        for payload in payloads:
-            require(records.count(payload) == repetitions,
-                    f"atomic append record count differs for {payload!r}")
-
+        durable = exercise_writable_metadata(work)
+        exercise_writable_links(work, durable)
+        exercise_replacement_semantics(work)
+        exercise_writable_type_errors(work)
+        exercise_open_unlink_and_append(work)
         case_name = work / "case-name"
         case_name.write_bytes(b"case")
         os.rename(case_name, work / "CASE-NAME")

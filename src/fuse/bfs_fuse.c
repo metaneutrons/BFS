@@ -1272,10 +1272,14 @@ static void bfs_fuse_rename(fuse_req_t request, fuse_ino_t parent, const char *n
     }
     bool preserve = error == BFS_OK && replaced != 0 &&
         replaced_type != BFS_INODE_DIR && has_open_inode(ctx, replaced);
+    bfs_rename_options_t options = {
+        .preserve_replaced = preserve,
+        .orphan_ino_out = &orphan,
+    };
     if (error == BFS_OK)
         error = bfs_fs_rename_replace(&ctx->fs, (uint32_t)parent, old_raw, old_length,
                                       (uint32_t)new_parent, new_raw, new_length,
-                                      preserve, &orphan);
+                                      &options);
     if (error == BFS_OK && orphan != 0) error = mark_open_inode_unlinked(ctx, orphan);
     fuse_reply_err(request, fuse_error(error));
 }

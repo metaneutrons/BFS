@@ -800,6 +800,49 @@ update_cleanup:
     return cerr;
 }
 
+static bfs_err_t rekey_descend_to_leaf(const bfs_btree_t *tree, const void *key,
+                                       uint8_t *node_bufs, path_entry_t *path,
+                                       int *depth_out)
+{
+    const uint32_t block_size = tree->bio->block_size;
+    bfs_blk_t block = tree->root;
+    for (int depth = 0;; depth++) {
+        if (depth >= MAX_TREE_DEPTH || (uint32_t)depth >= tree->height)
+            return BFS_ERR_CORRUPT;
+        uint8_t *buffer = node_bufs + (size_t)depth * block_size;
+        bfs_err_t err = node_read_at_level(
+            tree, block, buffer, (uint16_t)(tree->height - 1 - depth));
+        if (err != BFS_OK) return err;
+        path[depth].blk = block;
+        if (is_leaf(buffer)) {
+            *depth_out = depth;
+            return BFS_OK;
+        }
+        bool found;
+        uint32_t index = node_search(tree, buffer, key, &found);
+        path[depth].child_idx = found ? index + 1 : index;
+        block = get_child(tree, buffer, path[depth].child_idx);
+    }
+}
+
+static bfs_err_t rekey_commit_path(bfs_btree_t *tree, btree_mutation_t *mutation,
+                                   path_entry_t *path, uint8_t *node_bufs, int depth)
+{
+    const uint32_t block_size = tree->bio->block_size;
+    bfs_blk_t replacement;
+    uint8_t *leaf = node_bufs + (size_t)depth * block_size;
+    bfs_err_t err = cow_node(tree, mutation, path[depth].blk, leaf, &replacement);
+    if (err != BFS_OK) return err;
+    for (int level = depth - 1; level >= 0; level--) {
+        uint8_t *parent = node_bufs + (size_t)level * block_size;
+        set_child(tree, parent, path[level].child_idx, replacement);
+        err = cow_node(tree, mutation, path[level].blk, parent, &replacement);
+        if (err != BFS_OK) return err;
+    }
+    tree->root = replacement;
+    return BFS_OK;
+}
+
 bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
                                 const void *new_key)
 {
@@ -816,56 +859,28 @@ bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
     const uint32_t block_size = tree->bio->block_size;
     uint8_t *node_bufs = malloc((size_t)tree->height * block_size);
     if (!node_bufs) return BFS_ERR_NOMEM;
-    #define RBUF(depth) (node_bufs + (depth) * block_size)
 
     path_entry_t path[MAX_TREE_DEPTH];
     int depth = 0;
-    bfs_blk_t block = tree->root;
-    while (1) {
-        if (depth >= MAX_TREE_DEPTH || (uint32_t)depth >= tree->height) {
-            free(node_bufs);
-            return BFS_ERR_CORRUPT;
-        }
-        bfs_err_t err = node_read_at_level(
-            tree, block, RBUF(depth), (uint16_t)(tree->height - 1 - depth));
-        if (err != BFS_OK) {
-            free(node_bufs);
-            return err;
-        }
-        path[depth].blk = block;
-        if (is_leaf(RBUF(depth))) break;
-        bool found;
-        uint32_t index = node_search(tree, RBUF(depth), old_key, &found);
-        path[depth].child_idx = found ? index + 1 : index;
-        block = get_child(tree, RBUF(depth), path[depth].child_idx);
-        depth++;
-    }
+    bfs_err_t err = rekey_descend_to_leaf(tree, old_key, node_bufs, path, &depth);
+    if (err != BFS_OK) goto rekey_cleanup;
 
     bool found;
-    uint32_t index = node_search(tree, RBUF(depth), old_key, &found);
+    uint8_t *leaf = node_bufs + (size_t)depth * block_size;
+    uint32_t index = node_search(tree, leaf, old_key, &found);
     if (!found) {
-        free(node_bufs);
-        return BFS_ERR_NOTFOUND;
+        err = BFS_ERR_NOTFOUND;
+        goto rekey_cleanup;
     }
     if (tree->ops->key_size > BFS_MAX_KEY_SIZE) {
-        free(node_bufs);
-        return BFS_ERR_CORRUPT;
+        err = BFS_ERR_CORRUPT;
+        goto rekey_cleanup;
     }
-    copy_key(node_key(tree, RBUF(depth), index), new_key, tree->ops->key_size);
-
-    bfs_blk_t replacement;
-    bfs_err_t err = cow_node(tree, &mutation, path[depth].blk, RBUF(depth), &replacement);
-    if (err != BFS_OK) goto rekey_cleanup;
-    for (int level = depth - 1; level >= 0; level--) {
-        set_child(tree, RBUF(level), path[level].child_idx, replacement);
-        err = cow_node(tree, &mutation, path[level].blk, RBUF(level), &replacement);
-        if (err != BFS_OK) goto rekey_cleanup;
-    }
-    tree->root = replacement;
+    copy_key(node_key(tree, leaf, index), new_key, tree->ops->key_size);
+    err = rekey_commit_path(tree, &mutation, path, node_bufs, depth);
 
 rekey_cleanup:
     free(node_bufs);
-    #undef RBUF
     if (err == BFS_OK) mutation_commit(tree, &mutation);
     else mutation_abort(tree, &mutation);
     if (err == BFS_OK && tree->free_sink_err != BFS_OK) err = tree->free_sink_err;
