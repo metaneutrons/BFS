@@ -399,7 +399,8 @@ static bool fs_collect_unlinked_inode(const void *key, const void *value, void *
     }
     if (scan->count == scan->capacity) {
         size_t capacity = scan->capacity ? scan->capacity * 2u : 16u;
-        if (capacity < scan->capacity || capacity > SIZE_MAX / sizeof(*scan->items)) {
+        if (capacity < scan->capacity || capacity > SIZE_MAX / sizeof(*scan->items) ||
+            scan->count > capacity) {
             scan->error = BFS_ERR_NOMEM;
             return false;
         }
@@ -409,7 +410,8 @@ static bool fs_collect_unlinked_inode(const void *key, const void *value, void *
             return false;
         }
         if (scan->items) {
-            memcpy(items, scan->items, scan->count * sizeof(*items));
+            size_t copied_bytes = scan->count * sizeof(*items);
+            memcpy(items, scan->items, copied_bytes);
             free(scan->items);
         }
         scan->items = items;

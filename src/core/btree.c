@@ -842,6 +842,10 @@ bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
         free(node_bufs);
         return BFS_ERR_NOTFOUND;
     }
+    if (tree->ops->key_size > BFS_MAX_KEY_SIZE) {
+        free(node_bufs);
+        return BFS_ERR_CORRUPT;
+    }
     memcpy(node_key(tree, RBUF(depth), index), new_key, tree->ops->key_size);
 
     bfs_blk_t replacement;
