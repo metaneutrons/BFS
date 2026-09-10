@@ -115,6 +115,13 @@ static int fuse_directory_error(bfs_err_t error)
     return error == BFS_ERR_INVAL ? ENOTDIR : fuse_error(error);
 }
 
+/* FUSE names are NUL-terminated and BFS permits at most 255 name bytes. */
+static int fuse_name_error(const char *name)
+{
+    if (!name) return EINVAL;
+    return strnlen(name, BFS_NAME_MAX + 1u) > BFS_NAME_MAX ? ENAMETOOLONG : 0;
+}
+
 static bool ascii_hex(uint8_t c, uint8_t *value)
 {
     if (c >= '0' && c <= '9') {
@@ -375,6 +382,11 @@ static void bfs_fuse_lookup(fuse_req_t request, fuse_ino_t parent, const char *n
     bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
     if (!inode_number_valid(parent)) {
         fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    int name_error = fuse_name_error(name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
         return;
     }
     bfs_err_t error = require_directory(ctx, parent);
@@ -1071,6 +1083,11 @@ static void bfs_fuse_create(fuse_req_t request, fuse_ino_t parent, const char *n
         fuse_reply_err(request, EINVAL);
         return;
     }
+    int name_error = fuse_name_error(name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
+        return;
+    }
     bfs_err_t error = require_directory(ctx, parent);
     if (error != BFS_OK) {
         fuse_reply_err(request, fuse_directory_error(error));
@@ -1110,6 +1127,11 @@ static void bfs_fuse_mkdir(fuse_req_t request, fuse_ino_t parent, const char *na
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    int name_error = fuse_name_error(name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
+        return;
+    }
     bfs_err_t error = require_directory(ctx, parent);
     if (error != BFS_OK) {
         fuse_reply_err(request, fuse_directory_error(error));
@@ -1145,6 +1167,11 @@ static void bfs_fuse_mknod(fuse_req_t request, fuse_ino_t parent, const char *na
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    int name_error = fuse_name_error(name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
+        return;
+    }
     bfs_err_t error = require_directory(ctx, parent);
     if (error != BFS_OK) {
         fuse_reply_err(request, fuse_directory_error(error));
@@ -1172,6 +1199,11 @@ static void bfs_fuse_unlink(fuse_req_t request, fuse_ino_t parent, const char *n
     }
     if (!inode_number_valid(parent)) {
         fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    int name_error = fuse_name_error(name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
         return;
     }
     bfs_err_t error = require_directory(ctx, parent);
@@ -1210,6 +1242,11 @@ static void bfs_fuse_rmdir(fuse_req_t request, fuse_ino_t parent, const char *na
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    int name_error = fuse_name_error(name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
+        return;
+    }
     bfs_err_t error = require_directory(ctx, parent);
     if (error != BFS_OK) {
         fuse_reply_err(request, fuse_directory_error(error));
@@ -1244,6 +1281,12 @@ static void bfs_fuse_rename(fuse_req_t request, fuse_ino_t parent, const char *n
     }
     if (flags != 0) {
         fuse_reply_err(request, EOPNOTSUPP);
+        return;
+    }
+    int name_error = fuse_name_error(name);
+    if (name_error == 0) name_error = fuse_name_error(new_name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
         return;
     }
     bfs_err_t error = require_directory(ctx, parent);
@@ -1296,6 +1339,11 @@ static void bfs_fuse_link(fuse_req_t request, fuse_ino_t inode, fuse_ino_t new_p
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    int name_error = fuse_name_error(new_name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
+        return;
+    }
     bfs_err_t error = require_directory(ctx, new_parent);
     if (error != BFS_OK) {
         fuse_reply_err(request, fuse_directory_error(error));
@@ -1324,6 +1372,11 @@ static void bfs_fuse_symlink(fuse_req_t request, const char *link, fuse_ino_t pa
     }
     if (!inode_number_valid(parent) || !link) {
         fuse_reply_err(request, EINVAL);
+        return;
+    }
+    int name_error = fuse_name_error(name);
+    if (name_error != 0) {
+        fuse_reply_err(request, name_error);
         return;
     }
     bfs_err_t error = require_directory(ctx, parent);
