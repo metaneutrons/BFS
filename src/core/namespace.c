@@ -410,8 +410,8 @@ static bool fs_collect_unlinked_inode(const void *key, const void *value, void *
             return false;
         }
         if (scan->items) {
-            size_t copied_bytes = scan->count * sizeof(*items);
-            memcpy(items, scan->items, copied_bytes);
+            for (size_t index = 0; index < scan->count; index++)
+                items[index] = scan->items[index];
             free(scan->items);
         }
         scan->items = items;

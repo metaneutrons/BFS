@@ -30,6 +30,11 @@
 
 static uint8_t *alloc_buf(const bfs_btree_t *tree) { return malloc(tree->bio->block_size); }
 
+static void copy_key(uint8_t *destination, const uint8_t *source, uint32_t length)
+{
+    for (uint32_t index = 0; index < length; index++) destination[index] = source[index];
+}
+
 static bool tree_shape_valid(const bfs_btree_t *tree)
 {
     if (!tree || !tree->bio) return false;
@@ -846,7 +851,7 @@ bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
         free(node_bufs);
         return BFS_ERR_CORRUPT;
     }
-    memcpy(node_key(tree, RBUF(depth), index), new_key, tree->ops->key_size);
+    copy_key(node_key(tree, RBUF(depth), index), new_key, tree->ops->key_size);
 
     bfs_blk_t replacement;
     bfs_err_t err = cow_node(tree, &mutation, path[depth].blk, RBUF(depth), &replacement);

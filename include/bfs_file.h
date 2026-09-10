@@ -25,6 +25,7 @@ typedef struct {
     /* Compared with fs->recovery_generation by file.c handle validation. */
     // cppcheck-suppress unusedStructMember
     uint64_t            recovery_generation;
+    // cppcheck-suppress unusedStructMember
     bool                unlinked;  /* retained POSIX orphan; see mark_unlinked */
 } bfs_file_t;
 
