@@ -334,10 +334,15 @@ Dependencies: M2, M5.
   Amiga handler, then read again under FUSE. Test normal and interrupted states
   from M2 with the independent oracle and checker. A same-core round trip alone
   does not prove backward compatibility.
-- M6-A5: Add regression tests for core changes to existing GCC/Clang,
-  ASan/UBSan, analyzer and Amiga suites. Race tests cover supported threading;
-  serialize shared state by policy until a separate concurrency change is
-  qualified. Unsupported syscalls/options fail deliberately, never silently.
+- M6-A5: Declare and enforce the FUSE concurrency profile. The initial
+  read/write adapter uses libfuse's single-threaded dispatcher; multiple client
+  processes may queue requests, but callbacks execute serially. This is not a
+  preemptive-concurrency claim. Do not enable a multithreaded dispatcher or
+  advertise concurrent FUSE requests before #54 is accepted.
+- M6-A6: Add regression tests for core changes to existing GCC/Clang,
+  ASan/UBSan, analyzer and Amiga suites. Exercise queued concurrent clients
+  within the declared serialized profile and verify its dispatcher selection.
+  Unsupported syscalls/options fail deliberately, never silently.
 
 ### M7: Linux qualification and CI integration
 
@@ -348,6 +353,8 @@ Dependencies: M6.
   mounted read/write and oracle comparisons. Gate fast deterministic cases on
   PRs; run bounded fault matrices at qualification. Missing `/dev/fuse`, mount
   permissions or prerequisites is a missing qualification, not a green skip.
+  Record and verify the selected FUSE dispatcher and concurrency profile; a
+  serialized result must never be described as preemptive-concurrency support.
 - M7-A2: Exercise all supported block sizes and legal feature combinations,
   small/disk-full and fragmented volumes, names/metadata boundaries, files and
   offsets across 2/4 GiB where representable, both superblock failure directions,
@@ -361,7 +368,9 @@ Dependencies: M6.
   operation/deadline, memory/descriptor, integrity and recovery observations.
   Approve resource bounds and schedule before running. Compare regressions on
   identified hosts, not arbitrary universal throughput thresholds. No unexplained
-  stall, crash, mismatch or missing cleanup permits acceptance.
+  stall, crash, mismatch or missing cleanup permits acceptance. The workload
+  includes concurrent client processes within the declared profile; genuine
+  parallel callback dispatch requires the separate #54 qualification.
 - M7-A5: Test every new CI gate with good and deliberately bad inputs, retain
   durable criterion-to-result records, and integrate into the existing required
   aggregate without weakening protection. Do not close #27/#28/#29 merely
@@ -380,6 +389,9 @@ Dependencies: M7 and M2's confirmed AROS target/runtime.
   startup/calling conventions, allocator/lock behavior, DOS packets, device
   geometry/64-bit I/O and flush/media-change semantics on the selected target.
   No m68k-only binding or big-endian assumption leaks into little-endian AROS.
+  Verify handler packet serialization before relying on the core's no-op native
+  locks; direct or background core calls require a separately qualified
+  concurrency profile.
 - M8-A3: Run the native DOS conformance adapter and storage/remount scenarios
   under the pinned AROS runtime; read FUSE/Amiga images and return AROS-written
   images to the Linux oracle and baseline Amiga reader. Unsupported-format
@@ -400,6 +412,9 @@ Dependencies: M7 and M2's confirmed MorphOS SDK/runtime access.
 - M9-A2: Verify PowerPC ABI/startup, pointers/BPTRs, structure alignment,
   allocator/locks, DOS/device interfaces, 64-bit I/O, flush, media-change and
   cache/DMA ownership against the SDK and actual runtime.
+  Verify handler packet serialization before relying on the core's no-op native
+  locks; direct or background core calls require a separately qualified
+  concurrency profile.
 - M9-A3: Run the native DOS conformance adapter on a named supported MorphOS
   hardware configuration; preserve binary, OS, firmware and storage identities.
   Include remount/reboot, disk-full, fault/error and snapshot scenarios plus
