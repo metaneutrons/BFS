@@ -298,6 +298,10 @@ def run_cycle(image, mountpoint, cycle, limits):
             "pressure_writes": pressure["pressure_writes"], "resources": resources}
 
 
+def next_cycle_wait(cycle_seconds, duration, elapsed, cycle_elapsed):
+    return max(0, min(cycle_seconds - cycle_elapsed, duration - elapsed))
+
+
 def run_soak(image, output, limits, duration):
     events = output / "events.jsonl"
     mountpoint = output / "mount"
@@ -313,8 +317,10 @@ def run_soak(image, output, limits, duration):
                               "pressure_writes": result["pressure_writes"],
                               "resources": result["resources"], "status": "passed"})
         cycle += 1
-        remaining = limits["cycle_seconds"] - (time.monotonic() - cycle_started)
-        if remaining > 0 and time.monotonic() - started < duration:
+        elapsed = time.monotonic() - started
+        remaining = next_cycle_wait(limits["cycle_seconds"], duration, elapsed,
+                                    time.monotonic() - cycle_started)
+        if remaining > 0:
             time.sleep(remaining)
     return {"completed_cycles": cycle, "completed_duration_seconds": round(time.monotonic() - started, 3)}
 

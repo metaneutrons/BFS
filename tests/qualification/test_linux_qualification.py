@@ -73,6 +73,10 @@ class LinuxQualificationTests(unittest.TestCase):
             operations = fuse_soak.run_clients(Path(directory) / "soak", 0, limits)
         self.assertEqual(operations, 32)
 
+    def test_cycle_wait_does_not_exceed_requested_duration(self):
+        self.assertEqual(fuse_soak.next_cycle_wait(60, 30, 3, 3), 27)
+        self.assertEqual(fuse_soak.next_cycle_wait(60, 30, 31, 3), 0)
+
 
 if __name__ == "__main__":
     unittest.main()
