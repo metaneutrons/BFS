@@ -111,6 +111,12 @@ rename flags return `EOPNOTSUPP` on the writable mount. It returns `ENOSYS`
 only for FUSE protocol operations that libfuse can safely suppress; unsupported
 visible filesystem operations use a specific errno.
 
+Directory cookies are stable and strictly increasing while the directory is
+unchanged. A namespace mutation of that directory invalidates previously
+returned cookies; callers must restart enumeration at offset zero. This is the
+defined readdir contract for the serialized M6 dispatcher and avoids claiming
+a snapshot that the on-disk directory index does not provide.
+
 Core-to-POSIX error mapping is fixed: not found is `ENOENT`, duplicate is
 `EEXIST`, invalid input is `EINVAL`, not a directory is `ENOTDIR`, a directory
 where a file is required is `EISDIR`, no space is `ENOSPC`, size overflow is

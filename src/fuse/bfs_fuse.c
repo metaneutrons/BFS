@@ -100,6 +100,20 @@ static bfs_err_t read_inode(const bfs_fuse_ctx_t *ctx, fuse_ino_t inode,
     return bfs_inode_read(ctx->inode_tree, (uint32_t)inode, out);
 }
 
+/* Namespace mutations must never use a regular inode as a directory-tree key. */
+static bfs_err_t require_directory(const bfs_fuse_ctx_t *ctx, fuse_ino_t inode)
+{
+    bfs_inode_t node;
+    bfs_err_t error = read_inode(ctx, inode, &node);
+    if (error == BFS_OK && bfs_be32(node.type) != BFS_INODE_DIR) return BFS_ERR_INVAL;
+    return error;
+}
+
+static int fuse_directory_error(bfs_err_t error)
+{
+    return error == BFS_ERR_INVAL ? ENOTDIR : fuse_error(error);
+}
+
 static bool ascii_hex(uint8_t c, uint8_t *value)
 {
     if (c >= '0' && c <= '9') {
@@ -278,10 +292,8 @@ static bfs_err_t inode_stat(const bfs_fuse_ctx_t *ctx, fuse_ino_t inode_number,
 static bfs_err_t lookup_child(const bfs_fuse_ctx_t *ctx, fuse_ino_t parent,
                               const char *name, uint32_t *child_out)
 {
-    bfs_inode_t parent_inode;
-    bfs_err_t error = read_inode(ctx, parent, &parent_inode);
+    bfs_err_t error = require_directory(ctx, parent);
     if (error != BFS_OK) return error;
-    if (bfs_be32(parent_inode.type) != BFS_INODE_DIR) return BFS_ERR_INVAL;
     char raw[BFS_NAME_MAX];
     uint8_t length;
     error = decode_name(name, raw, &length);
@@ -364,6 +376,11 @@ static void bfs_fuse_lookup(fuse_req_t request, fuse_ino_t parent, const char *n
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    bfs_err_t error = require_directory(ctx, parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     if (strcmp(name, ".") == 0) {
         reply_entry(request, ctx, (uint32_t)parent);
         return;
@@ -371,8 +388,8 @@ static void bfs_fuse_lookup(fuse_req_t request, fuse_ino_t parent, const char *n
     if (strcmp(name, "..") == 0) {
         uint32_t parent_inode = BFS_ROOT_INO;
         if (parent != BFS_ROOT_INO) {
-            bfs_err_t error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, "..", 2,
-                                             &parent_inode, NULL);
+            error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, "..", 2,
+                                   &parent_inode, NULL);
             if (error != BFS_OK) {
                 fuse_reply_err(request, fuse_error(error));
                 return;
@@ -382,9 +399,9 @@ static void bfs_fuse_lookup(fuse_req_t request, fuse_ino_t parent, const char *n
         return;
     }
     uint32_t child;
-    bfs_err_t error = lookup_child(ctx, parent, name, &child);
+    error = lookup_child(ctx, parent, name, &child);
     if (error != BFS_OK) {
-        fuse_reply_err(request, fuse_error(error));
+        fuse_reply_err(request, fuse_directory_error(error));
         return;
     }
     reply_entry(request, ctx, child);
@@ -1048,9 +1065,14 @@ static void bfs_fuse_create(fuse_req_t request, fuse_ino_t parent, const char *n
         fuse_reply_err(request, EINVAL);
         return;
     }
+    bfs_err_t error = require_directory(ctx, parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     char raw[BFS_NAME_MAX];
     uint8_t length;
-    bfs_err_t error = decode_name(name, raw, &length);
+    error = decode_name(name, raw, &length);
     uint32_t inode;
     if (error == BFS_OK)
         error = bfs_fs_create_file(&ctx->fs, (uint32_t)parent, raw, length, &inode);
@@ -1082,9 +1104,14 @@ static void bfs_fuse_mkdir(fuse_req_t request, fuse_ino_t parent, const char *na
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    bfs_err_t error = require_directory(ctx, parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     char raw[BFS_NAME_MAX];
     uint8_t length;
-    bfs_err_t error = decode_name(name, raw, &length);
+    error = decode_name(name, raw, &length);
     uint32_t inode;
     if (error == BFS_OK)
         error = bfs_fs_mkdir(&ctx->fs, (uint32_t)parent, raw, length, &inode);
@@ -1112,9 +1139,14 @@ static void bfs_fuse_mknod(fuse_req_t request, fuse_ino_t parent, const char *na
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    bfs_err_t error = require_directory(ctx, parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     char raw[BFS_NAME_MAX];
     uint8_t length;
-    bfs_err_t error = decode_name(name, raw, &length);
+    error = decode_name(name, raw, &length);
     uint32_t inode;
     if (error == BFS_OK)
         error = bfs_fs_create_file(&ctx->fs, (uint32_t)parent, raw, length, &inode);
@@ -1136,9 +1168,14 @@ static void bfs_fuse_unlink(fuse_req_t request, fuse_ino_t parent, const char *n
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    bfs_err_t error = require_directory(ctx, parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     char raw[BFS_NAME_MAX];
     uint8_t length;
-    bfs_err_t error = decode_name(name, raw, &length);
+    error = decode_name(name, raw, &length);
     uint32_t inode = 0, type = 0, orphan = 0;
     if (error == BFS_OK)
         error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, raw, length, &inode, &type);
@@ -1167,9 +1204,21 @@ static void bfs_fuse_rmdir(fuse_req_t request, fuse_ino_t parent, const char *na
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    bfs_err_t error = require_directory(ctx, parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     char raw[BFS_NAME_MAX];
     uint8_t length;
-    bfs_err_t error = decode_name(name, raw, &length);
+    error = decode_name(name, raw, &length);
+    uint32_t type = 0;
+    if (error == BFS_OK)
+        error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, raw, length, NULL, &type);
+    if (error == BFS_OK && type != BFS_INODE_DIR) {
+        fuse_reply_err(request, ENOTDIR);
+        return;
+    }
     if (error == BFS_OK)
         error = bfs_fs_rmdir(&ctx->fs, (uint32_t)parent, raw, length);
     fuse_reply_err(request, fuse_error(error));
@@ -1191,15 +1240,29 @@ static void bfs_fuse_rename(fuse_req_t request, fuse_ino_t parent, const char *n
         fuse_reply_err(request, EOPNOTSUPP);
         return;
     }
+    bfs_err_t error = require_directory(ctx, parent);
+    if (error == BFS_OK) error = require_directory(ctx, new_parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     char old_raw[BFS_NAME_MAX], new_raw[BFS_NAME_MAX];
     uint8_t old_length, new_length;
-    bfs_err_t error = decode_name(name, old_raw, &old_length);
+    error = decode_name(name, old_raw, &old_length);
     if (error == BFS_OK) error = decode_name(new_name, new_raw, &new_length);
-    uint32_t replaced = 0, replaced_type = 0, orphan = 0;
+    uint32_t source_type = 0, replaced = 0, replaced_type = 0, orphan = 0;
+    if (error == BFS_OK)
+        error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent,
+                               old_raw, old_length, NULL, &source_type);
     if (error == BFS_OK) {
         bfs_err_t lookup = bfs_dir_lookup(ctx->dir_tree, (uint32_t)new_parent,
                                           new_raw, new_length, &replaced, &replaced_type);
         if (lookup != BFS_OK && lookup != BFS_ERR_NOTFOUND) error = lookup;
+    }
+    if (error == BFS_OK && replaced != 0 &&
+        (source_type == BFS_INODE_DIR) != (replaced_type == BFS_INODE_DIR)) {
+        fuse_reply_err(request, source_type == BFS_INODE_DIR ? ENOTDIR : EISDIR);
+        return;
     }
     bool preserve = error == BFS_OK && replaced != 0 &&
         replaced_type != BFS_INODE_DIR && has_open_inode(ctx, replaced);
@@ -1223,9 +1286,14 @@ static void bfs_fuse_link(fuse_req_t request, fuse_ino_t inode, fuse_ino_t new_p
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    bfs_err_t error = require_directory(ctx, new_parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     char raw[BFS_NAME_MAX];
     uint8_t length;
-    bfs_err_t error = decode_name(new_name, raw, &length);
+    error = decode_name(new_name, raw, &length);
     if (error == BFS_OK)
         error = bfs_fs_make_hardlink(&ctx->fs, (uint32_t)new_parent, raw, length,
                                      (uint32_t)inode);
@@ -1248,9 +1316,14 @@ static void bfs_fuse_symlink(fuse_req_t request, const char *link, fuse_ino_t pa
         fuse_reply_err(request, EINVAL);
         return;
     }
+    bfs_err_t error = require_directory(ctx, parent);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_directory_error(error));
+        return;
+    }
     char raw[BFS_NAME_MAX];
     uint8_t name_length;
-    bfs_err_t error = decode_name(name, raw, &name_length);
+    error = decode_name(name, raw, &name_length);
     size_t path_length = strnlen(link, UINT16_MAX + 1u);
     if (error == BFS_OK && (path_length == 0 || path_length > UINT16_MAX)) error = BFS_ERR_OVERFLOW;
     if (error == BFS_OK)

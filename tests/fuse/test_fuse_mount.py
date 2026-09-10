@@ -358,6 +358,24 @@ def exercise_writable_fixture(image, mountpoint):
         os.rmdir(target_directory)
         require(not target_directory.exists(), "rmdir did not remove empty directory")
 
+        type_file = work / "type-file"
+        type_file.write_bytes(b"file")
+        type_directory = work / "type-directory"
+        type_directory.mkdir()
+        expect_errno(errno.ENOTDIR, lambda: os.rmdir(type_file))
+        expect_errno(errno.EISDIR, lambda: os.unlink(type_directory))
+
+        file_source = work / "file-source"
+        file_source.write_bytes(b"file")
+        directory_target = work / "directory-target"
+        directory_target.mkdir()
+        expect_errno(errno.EISDIR, lambda: os.rename(file_source, directory_target))
+        directory_source = work / "directory-source"
+        directory_source.mkdir()
+        file_target = work / "file-target"
+        file_target.write_bytes(b"file")
+        expect_errno(errno.ENOTDIR, lambda: os.rename(directory_source, file_target))
+
         unlinked = work / "unlinked"
         unlinked.write_bytes(b"before")
         descriptor = os.open(unlinked, os.O_RDWR | os.O_CLOEXEC)
