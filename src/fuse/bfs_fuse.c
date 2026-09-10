@@ -258,7 +258,7 @@ static bfs_err_t inode_stat(const bfs_fuse_ctx_t *ctx, fuse_ino_t inode_number,
         st->st_nlink != (nlink_t)links || st->st_blocks < 0)
         return BFS_ERR_OVERFLOW;
 
-    mode_t permissions = 0444;
+    mode_t permissions = type == BFS_INODE_DIR ? 0555 : 0444;
     if (ctx_is_writable(ctx)) {
         permissions = 0;
         if (inode_allows(inode, 8u)) permissions |= 0444;
