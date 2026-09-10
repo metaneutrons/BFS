@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import shutil
 import subprocess  # nosec B404 - repository build products are invoked without a shell
 import sys
 import time
@@ -63,6 +64,12 @@ def verify_dispatcher():
     require("fuse_session_loop_mt" not in source, "multithreaded FUSE dispatcher is enabled")
 
 
+def make_executable():
+    executable = shutil.which("make")
+    require(executable is not None and os.path.isabs(executable), "make is required")
+    return executable
+
+
 def make_record(name, command, timeout):
     started = time.monotonic()
     completed = subprocess.run(command, cwd=ROOT, check=False, capture_output=True, text=True,
@@ -86,7 +93,7 @@ def run_record(records, name, command, timeout):
 def run_fast_matrix(matrix, records):
     timeout = matrix["fast"]["operation_timeout_seconds"]
     run_record(records, "direct-core-and-conformance",
-               ["make", "host-test", "conformance-test", "HOST_CC=gcc"], timeout)
+               [make_executable(), "host-test", "conformance-test", "HOST_CC=gcc"], timeout)
     for block_size in matrix["fast"]["block_sizes"]:
         command = [sys.executable, "tests/fuse/test_fuse_mount.py", "--block-size",
                    str(block_size), "--block-count", str(matrix["fast"]["block_count"]),

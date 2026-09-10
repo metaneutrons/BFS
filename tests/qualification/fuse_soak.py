@@ -7,10 +7,8 @@ import multiprocessing
 import os
 from pathlib import Path
 import queue
-import shutil
 import signal
 import subprocess  # nosec B404 - repository build products are invoked without a shell
-import sys
 import time
 
 import linux_qualification
