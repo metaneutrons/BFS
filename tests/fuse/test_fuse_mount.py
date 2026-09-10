@@ -453,6 +453,10 @@ def create_interrupted_open_unlink_image(image, mountpoint, output):
         deadline = time.monotonic() + 10
         while mountpoint.is_mount() and time.monotonic() < deadline:
             time.sleep(0.05)
+        # A killed daemon can leave a disconnected FUSE endpoint behind even
+        # after Path.is_mount() becomes false. Detach it before remounting.
+        detached = run("fusermount3", "-u", "-z", str(mountpoint))
+        require(detached.returncode == 0 or not mountpoint.is_mount(), detached.stderr)
         require(not mountpoint.is_mount(), "FUSE mount survived interrupted daemon")
     finally:
         if descriptor is not None:
