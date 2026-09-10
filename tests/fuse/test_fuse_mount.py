@@ -415,6 +415,67 @@ def exercise_open_unlink_and_append(work):
         require(records.count(payload) == repetitions, f"atomic append record count differs for {payload!r}")
 
 
+def exercise_large_offsets(work):
+    sparse = work / "sparse-offsets"
+    descriptor = os.open(sparse, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+    try:
+        for offset, payload in ((2 * 1024**3, b"two-gib"), (4 * 1024**3, b"four-gib")):
+            require(os.pwrite(descriptor, payload, offset) == len(payload),
+                    f"short sparse write at {offset}")
+            require(os.pread(descriptor, len(payload), offset) == payload,
+                    f"sparse read differs at {offset}")
+        require(os.fstat(descriptor).st_size == 4 * 1024**3 + len(b"four-gib"),
+                "sparse file size differs")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+
+
+def exercise_disk_pressure(work, block_size):
+    fragments = []
+    for index in range(16):
+        path = work / f"fragment-{index:02d}"
+        path.write_bytes(bytes([index]) * block_size)
+        fragments.append(path)
+    for path in fragments[::2]:
+        path.unlink()
+    for path in fragments[1::2]:
+        require(path.read_bytes() == bytes([int(path.name[-2:])]) * block_size,
+                f"fragment data differs for {path.name}")
+
+    pressure = work / "pressure"
+    descriptor = os.open(pressure, os.O_WRONLY | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+    try:
+        payload = b"P" * block_size
+        exhausted = False
+        for _ in range(2048):
+            try:
+                require(os.write(descriptor, payload) == len(payload), "short disk-pressure write")
+            except OSError as error:
+                require(error.errno == errno.ENOSPC, f"expected ENOSPC, got {error}")
+                exhausted = True
+                break
+        require(exhausted, "disk-pressure workload did not exhaust the volume")
+        os.fsync(descriptor)
+    finally:
+        os.close(descriptor)
+    pressure.unlink()
+    recovered = work / "recovered-space"
+    recovered.write_bytes(b"recovered")
+    require(recovered.read_bytes() == b"recovered", "space did not recover after unlink")
+
+
+def exercise_name_and_metadata_boundaries(work):
+    maximum_name = "n" * 255
+    boundary = work / maximum_name
+    boundary.write_bytes(b"boundary")
+    require(boundary.read_bytes() == b"boundary", "255-byte name differs")
+    os.setxattr(boundary, "user.bfs.comment", b"c" * 79)
+    require(os.getxattr(boundary, "user.bfs.comment") == b"c" * 79,
+            "maximum comment differs")
+    expect_errno(errno.ENAMETOOLONG, lambda: (work / ("x" * 256)).write_bytes(b"invalid"))
+
+
 def exercise_writable_fixture(image, mountpoint):
     process = mount(image, mountpoint, read_write=True)
     try:
@@ -425,6 +486,8 @@ def exercise_writable_fixture(image, mountpoint):
         exercise_replacement_semantics(work)
         exercise_writable_type_errors(work)
         exercise_open_unlink_and_append(work)
+        exercise_large_offsets(work)
+        exercise_name_and_metadata_boundaries(work)
         case_name = work / "case-name"
         case_name.write_bytes(b"case")
         os.rename(case_name, work / "CASE-NAME")
@@ -495,7 +558,7 @@ def update_superblock_crc(data, offset):
 
 
 def exercise_rejections(image, temporary):
-    backup_offset = len(image.read_bytes()) // 2
+    backup_offset = oracle_result(image)["superblock"]["backup_offset"]
 
     def corrupt(data):
         data[0] ^= 1
@@ -545,7 +608,14 @@ def main():
     parser.add_argument("--amiga-image", type=Path)
     parser.add_argument("--writable-image-output", type=Path)
     parser.add_argument("--interrupted-image-output", type=Path)
+    parser.add_argument("--block-size", type=int, default=4096)
+    parser.add_argument("--block-count", type=int, default=512)
+    parser.add_argument("--hard-link", action="store_true")
+    parser.add_argument("--disk-pressure", action="store_true")
     args = parser.parse_args()
+    legal_block_sizes = {1024, 2048, 4096, 8192, 16384, 32768, 65536}
+    require(args.block_size in legal_block_sizes, "unsupported BFS block size")
+    require(args.block_count >= 64, "fixture block count is too small")
     require(os.name == "posix" and Path("/dev/fuse").exists(),
             "/dev/fuse is required; this is a failed qualification, not a skip")
     require(FUSE.is_file() and os.access(FUSE, os.X_OK), "bfs-fuse is not built")
@@ -554,12 +624,22 @@ def main():
     with tempfile.TemporaryDirectory(prefix="bfs-fuse-test-") as directory:
         temporary = Path(directory)
         image = temporary / "fixture.bfs"
-        require(run(str(FIXTURE), str(image), "--directory-scale").returncode == 0,
+        fixture_arguments = [str(FIXTURE), str(image), "--directory-scale", "--block-size",
+                             str(args.block_size), "--block-count", str(args.block_count)]
+        if args.hard_link:
+            fixture_arguments.append("--hard-link")
+        require(run(*fixture_arguments).returncode == 0,
                 "cannot create FUSE fixture")
         mountpoint = temporary / "mount"
         mountpoint.mkdir()
         exercise_fixture(image, mountpoint)
         exercise_writable_fixture(image, mountpoint)
+        if args.disk_pressure:
+            process = mount(image, mountpoint, read_write=True)
+            try:
+                exercise_disk_pressure(mountpoint / "rw", args.block_size)
+            finally:
+                unmount(process, mountpoint)
         exercise_rejections(image, temporary)
         if args.amiga_image:
             require(args.amiga_image.is_file(), "Amiga image is missing")
