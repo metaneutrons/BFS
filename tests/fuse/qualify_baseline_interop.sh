@@ -36,7 +36,11 @@ command -v mountpoint >/dev/null 2>&1 || {
 
 mkdir -p "$output_directory"
 shopt -s nullglob
-git -C "$project_directory" fetch --depth=1 origin "$baseline_commit"
+git -C "$project_directory" fetch --depth=1 origin refs/tags/v0.1.3:refs/tags/v0.1.3
+[[ $(git -C "$project_directory" rev-parse v0.1.3^{}) == "$baseline_commit" ]] || {
+    printf 'ERROR: v0.1.3 does not resolve to the pinned baseline commit.\n' >&2
+    exit 1
+}
 git -C "$project_directory" worktree add --detach "$baseline_directory" "$baseline_commit"
 cleanup() {
     git -C "$project_directory" worktree remove --force "$baseline_directory" >/dev/null 2>&1 || true
