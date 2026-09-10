@@ -1,5 +1,14 @@
 # Changelog
 
+## [0.1.4](https://github.com/metaneutrons/BFS/compare/v0.1.3...v0.1.4) (2026-09-10)
+
+
+### Features
+
+* add read-only Linux FUSE mount ([#53](https://github.com/metaneutrons/BFS/issues/53)) ([9e541e3](https://github.com/metaneutrons/BFS/commit/9e541e369d5cf5a68bc387ada9a32595b414b55b))
+* **conformance:** add independent host conformance suite ([#52](https://github.com/metaneutrons/BFS/issues/52)) ([33eea1d](https://github.com/metaneutrons/BFS/commit/33eea1d0b3809fffc807986849f2c672da41549f))
+* **host:** add safe portable core lifecycle ([#50](https://github.com/metaneutrons/BFS/issues/50)) ([d2343a6](https://github.com/metaneutrons/BFS/commit/d2343a6c05c80ad155753583e2d16633d45586fa)), closes [#38](https://github.com/metaneutrons/BFS/issues/38)
+
 ## [0.1.3](https://github.com/metaneutrons/BFS/compare/v0.1.2...v0.1.3) (2026-09-08)
 
 
