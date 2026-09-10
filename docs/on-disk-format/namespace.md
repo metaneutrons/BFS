@@ -38,9 +38,9 @@ an explicit escaping policy; they must not truncate a name at it while reading
 raw metadata.
 
 The format has no UTF-8 marker or Unicode normalization. The documented
-international folding operates on single bytes. A case-only rename is a no-op
-in the current core because the old and new names compare equal; it preserves
-the existing original spelling.
+international folding operates on single bytes. A case-only rename preserves
+the inode and updates the stored original spelling atomically; it does not
+create a second case alias.
 
 ## Files, links, and comments
 
@@ -52,6 +52,15 @@ Hard links use more than one normal directory entry for a type-0 file inode and
 increment its `link_count`. Inode type 3 is recognized by the core but is not
 created by the current hard-link implementation. A writer should not introduce
 type 3 without a separately specified compatibility rule.
+
+`link_count == 0` is reserved for a non-directory inode whose final namespace
+name was removed while a POSIX adapter retained an open handle. It is not a
+directory entry, not a new inode type, and not a separate orphan-list record.
+Only the handle-aware core path can read or update it. The last close reclaims
+the inode and its extents; writable mount recovery reclaims any such inode
+left by a crashed adapter. Readers must neither expose it nor treat it as an
+ordinary positive-link inode, but checkers must include its extent tree in
+ownership accounting until recovery runs.
 
 Each inode can have at most one current Amiga file comment. A comment is stored
 as a hidden directory-tree entry:
@@ -71,7 +80,9 @@ metadata rather than bytes in the inode value.
 
 `protection` is the raw Amiga protection bitmap. `uid` and `gid` are raw
 16-bit Amiga owner fields. BFS v2 does not persist POSIX mode bits, ACLs,
-nanosecond timestamps, xattrs, device numbers, or a Unix orphan list.
+nanosecond timestamps, generic xattrs, or device numbers. It has no separate
+Unix orphan-list structure; the constrained zero-link state above is its
+complete retained-open-file representation.
 
 Creation and modification timestamps consist of the three 16-bit fields used
 by Amiga `DateStamp`: days, minutes, and ticks. The core preserves these

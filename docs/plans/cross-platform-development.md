@@ -85,13 +85,13 @@ in this initiative. Historical valid v2 images remain readable; newly written
 volumes must remain interoperable with the recorded v0.1.3 baseline under its
 documented supported operations. Older releases are not newly qualified.
 
-M2 must resolve how Linux open-unlink and replacing-rename semantics work
-without leaving persistent states that the existing Amiga driver cannot read
-or safely recover. In-memory orphan handling alone is not a crash-recovery
-design. Do not invent hidden persistent objects that older readers misinterpret.
-If required semantics cannot be achieved under the v2 contract, stop acceptance
-of the writable milestone and obtain an explicit revised decision. Do not
-silently weaken semantics or retrofit a new format under version 2.
+M2 resolves Linux open-unlink and replacement-rename under unchanged v2 with
+the documented zero-link retained-open-file state. It does not create a hidden
+record, consume padding, or add an option bit: a zero-link non-directory inode
+is unreachable through normal lookup and writable mount recovery reclaims it.
+The pinned baseline handler must still read and modify normal and interrupted
+images before M6 is accepted. Do not silently weaken semantics or retrofit a
+new format under version 2.
 
 The Linux contract is a filesystem with documented Amiga naming and metadata
 limits, not a claim of complete POSIX conformance. M2 defines each operation,

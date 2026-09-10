@@ -29,10 +29,13 @@ then waits for the request count and handle count to reach zero.
 ## Concurrency, cache, and FUSE policy
 
 The current core has one filesystem scratch block and several read paths take a
-write lock. M5 therefore uses libfuse's single-threaded loop. This is an
-explicit correctness boundary, not a performance promise. M6 may introduce
-concurrency only after per-request scratch ownership, lock ordering, and a
-threaded stress test are implemented.
+write lock. M5 and M6 therefore use libfuse's single-threaded loop. This is an
+explicit correctness boundary, not a performance promise. Multiple client
+processes may queue requests, but no two callbacks execute concurrently. M6
+uses the core's lock-held append operation for atomic end-of-file placement in
+that serialized profile. A multithreaded dispatcher requires the separate
+per-request scratch ownership, lock ordering, and threaded-stress qualification
+defined by Issue #54.
 
 M5 uses foreground mode by default, `default_permissions`, `nodev`, `nosuid`,
 zero entry and attribute cache timeouts, and no writeback cache. `allow_other`,

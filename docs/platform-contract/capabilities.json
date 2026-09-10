@@ -24,7 +24,10 @@
         "BFS-CAP-FUSE-SYMLINK",
         "BFS-CAP-FUSE-XATTR-RO",
         "BFS-CAP-FUSE-STATFS",
-        "BFS-CAP-FUSE-SNAPSHOT"
+        "BFS-CAP-FUSE-SNAPSHOT",
+        "BFS-CAP-FUSE-MUTATION",
+        "BFS-CAP-POSIX-OPEN-UNLINK",
+        "BFS-CAP-POSIX-RENAME-REPLACE"
       ]
     },
     {

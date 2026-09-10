@@ -182,12 +182,33 @@ jobs:
           make fuse conformance build/host/conformance-fixture-writer HOST_CC=gcc
           python3 tests/fuse/test_fuse_mount.py --amiga-image "${runs[0]}/test.hdf"
 
+      - name: Qualify pinned baseline handler against Linux-written images
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/fuse-baseline-interop"
+          mkdir -p "$output"
+          make fuse conformance build/host/conformance-fixture-writer tools HOST_CC=gcc
+          python3 tests/fuse/test_fuse_mount.py \
+            --writable-image-output "$output/linux-normal.bfs" \
+            --interrupted-image-output "$output/linux-interrupted.bfs"
+          AMIGA_PREFIX="${{ steps.toolchain.outputs.prefix }}" \
+            bash tests/fuse/qualify_baseline_interop.sh \
+              "$output/linux-normal.bfs" "$output/linux-interrupted.bfs" "$output"
+
       - name: Preserve emulator evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
         with:
           name: amiga-integration-evidence
           path: build/emulator/run.*
+          if-no-files-found: error
+
+      - name: Preserve baseline interoperability evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fuse-baseline-interop-evidence
+          path: ${{ runner.temp }}/fuse-baseline-interop
           if-no-files-found: error
 
   ci-success:
