@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Contract tests for the versioned M7 qualification matrix."""
 
+import hashlib
 import json
 from pathlib import Path
 import tempfile
@@ -8,9 +9,48 @@ import unittest
 
 import linux_qualification
 import fuse_soak
+import verify_fuse_soak
 
 
 class LinuxQualificationTests(unittest.TestCase):
+    def make_soak_evidence(self, directory, *, preflight=True):
+        root = Path(directory)
+        event = {
+            "cycle": 0,
+            "elapsed_seconds": 3.125,
+            "cycle_seconds": 3.125,
+            "operations": 2255,
+            "pressure_writes": 1707,
+            "resources": {"rss_kib": 2688, "open_descriptors": 5},
+            "checks": {check: "passed" for check in fuse_soak.CYCLE_CHECKS},
+            "status": "passed",
+        }
+        events = root / "events.jsonl"
+        events.write_text(json.dumps(event, sort_keys=True) + "\n", encoding="ascii")
+        evidence = {
+            "events_sha256": hashlib.sha256(events.read_bytes()).hexdigest(),
+            "event_count": 1,
+            "total_operations": event["operations"],
+            "total_pressure_writes": event["pressure_writes"],
+            "peak_rss_kib": event["resources"]["rss_kib"],
+            "peak_open_descriptors": event["resources"]["open_descriptors"],
+        }
+        result = {
+            "approval_reference": None if preflight else
+            "https://github.com/metaneutrons/BFS/issues/29#issuecomment-123",
+            "limits": {"target_duration_seconds": 72 * 60 * 60, "cycle_seconds": 60,
+                       "maximum_rss_kib": 262144, "maximum_open_descriptors": 128},
+            "requested_duration_seconds": 30 if preflight else 72 * 60 * 60,
+            "completed_duration_seconds": 30 if preflight else 72 * 60 * 60,
+            "completed_cycles": 1,
+            "preflight": preflight,
+            "qualified": not preflight,
+            "status": "passed",
+            "evidence": evidence,
+        }
+        (root / "result.json").write_text(json.dumps(result), encoding="ascii")
+        return events, result
+
     def test_current_matrix_is_valid(self):
         matrix = linux_qualification.load_matrix(linux_qualification.DEFAULT_MATRIX)
         self.assertEqual(matrix["soak"]["target_duration_seconds"], 72 * 60 * 60)
@@ -76,6 +116,35 @@ class LinuxQualificationTests(unittest.TestCase):
     def test_cycle_wait_does_not_exceed_requested_duration(self):
         self.assertEqual(fuse_soak.next_cycle_wait(60, 30, 3, 3), 27)
         self.assertEqual(fuse_soak.next_cycle_wait(60, 30, 31, 3), 0)
+
+    def test_verifies_complete_preflight_evidence(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.make_soak_evidence(directory)
+            self.assertEqual(verify_fuse_soak.verify(directory),
+                             {"qualified": False, "events": 1, "status": "passed"})
+
+    def test_rejects_event_log_tampering(self):
+        with tempfile.TemporaryDirectory() as directory:
+            events, _ = self.make_soak_evidence(directory)
+            events.write_text(events.read_text(encoding="ascii").replace("2255", "2256"),
+                              encoding="ascii")
+            with self.assertRaisesRegex(RuntimeError, "evidence summary"):
+                verify_fuse_soak.verify(directory)
+
+    def test_rejects_incomplete_cycle_checks(self):
+        with tempfile.TemporaryDirectory() as directory:
+            events, _ = self.make_soak_evidence(directory)
+            event = json.loads(events.read_text(encoding="ascii"))
+            del event["checks"]["disk_full"]
+            events.write_text(json.dumps(event) + "\n", encoding="ascii")
+            with self.assertRaisesRegex(RuntimeError, "checks are incomplete"):
+                verify_fuse_soak.verify(directory)
+
+    def test_rejects_target_evidence_with_missing_cycles(self):
+        with tempfile.TemporaryDirectory() as directory:
+            self.make_soak_evidence(directory, preflight=False)
+            with self.assertRaisesRegex(RuntimeError, "too few completed cycles"):
+                verify_fuse_soak.verify(directory)
 
 
 if __name__ == "__main__":
