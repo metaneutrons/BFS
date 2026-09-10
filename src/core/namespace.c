@@ -262,7 +262,10 @@ static bfs_err_t fs_mkdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
     return BFS_OK;
 }
 
-static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
+static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino,
+                                         const char *name, uint8_t name_len,
+                                         bool preserve_final_link,
+                                         uint32_t *orphan_ino_out)
 {
     uint32_t ino, type;
     bfs_err_t err = bfs_dir_lookup(&fs->dir_tree, parent_ino, name, name_len, &ino, &type);
@@ -275,6 +278,7 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
 
     uint32_t lc = bfs_be32(inode.link_count);
     if (lc == 0) return BFS_ERR_CORRUPT;
+    if (orphan_ino_out) *orphan_ino_out = 0;
     if (lc > 1) {
         inode.link_count = bfs_be32(lc - 1);
         err = bfs_inode_write(&fs->inode_tree, ino, &inode);
@@ -285,6 +289,20 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
             bfs_err_t rollback_err = bfs_inode_write(&fs->inode_tree, ino, &inode);
             return fs_cleanup_result(fs, err, rollback_err);
         }
+        return BFS_OK;
+    }
+
+    if (preserve_final_link) {
+        inode.link_count = bfs_be32(0);
+        err = bfs_inode_write_unlinked(&fs->inode_tree, ino, &inode);
+        if (err != BFS_OK) return err;
+        err = bfs_dir_remove(&fs->dir_tree, parent_ino, name, name_len);
+        if (err != BFS_OK) {
+            inode.link_count = bfs_be32(1);
+            bfs_err_t rollback_err = bfs_inode_write(&fs->inode_tree, ino, &inode);
+            return fs_cleanup_result(fs, err, rollback_err);
+        }
+        if (orphan_ino_out) *orphan_ino_out = ino;
         return BFS_OK;
     }
 
@@ -322,6 +340,90 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
 
 delete_out:
     fs_delete_blocks_destroy(&blocks);
+    return err;
+}
+
+static bfs_err_t fs_reap_unlinked_file_unlocked(bfs_fs_t *fs, uint32_t ino)
+{
+    bfs_inode_t inode;
+    bfs_err_t err = bfs_inode_read_unlinked(&fs->inode_tree, ino, &inode);
+    if (err != BFS_OK) return err;
+    if (bfs_be32(inode.type) == BFS_INODE_DIR) return BFS_ERR_INVAL;
+
+    fs_delete_blocks_t blocks = {0};
+    err = fs_collect_extent_tree_for_delete(fs, bfs_be32(inode.extent_root), &blocks);
+    if (err != BFS_OK) {
+        fs_delete_blocks_destroy(&blocks);
+        return err;
+    }
+
+    comment_key_ctx_t comment;
+    err = fs_find_comment_unlocked(fs, ino, &comment);
+    if (err == BFS_OK && comment.found)
+        err = bfs_dir_remove(&fs->dir_tree, ino | 0x80000000u, comment.name, comment.len);
+    if (err == BFS_OK)
+        err = bfs_inode_delete(&fs->inode_tree, ino);
+    if (err == BFS_OK)
+        err = fs_queue_extent_tree_for_delete(fs, &blocks);
+    if (err != BFS_OK) fs->recovery_error = err;
+    fs_delete_blocks_destroy(&blocks);
+    return err;
+}
+
+typedef struct {
+    const bfs_fs_t *fs;
+    uint32_t *items;
+    size_t count;
+    size_t capacity;
+    bfs_err_t error;
+} fs_unlinked_scan_t;
+
+static bool fs_collect_unlinked_inode(const void *key, const void *value, void *opaque)
+{
+    fs_unlinked_scan_t *scan = opaque;
+    uint32_t ino = bfs_load_be32(key);
+    const bfs_inode_t *inode = value;
+    uint32_t type = bfs_be32(inode->type);
+    uint32_t links = bfs_be32(inode->link_count);
+    if (ino == 0 || ino >= 0x80000000u || bfs_be32(inode->inode_nr) != ino ||
+        type > BFS_INODE_HARDLINK ||
+        (bfs_be32(inode->extent_root) != BFS_BLK_NULL &&
+         bfs_be32(inode->extent_root) >= scan->fs->bio->block_count)) {
+        scan->error = BFS_ERR_CORRUPT;
+        return false;
+    }
+    if (links != 0) return true;
+    if (type == BFS_INODE_DIR) {
+        scan->error = BFS_ERR_CORRUPT;
+        return false;
+    }
+    if (scan->count == scan->capacity) {
+        size_t capacity = scan->capacity ? scan->capacity * 2u : 16u;
+        if (capacity < scan->capacity || capacity > SIZE_MAX / sizeof(*scan->items)) {
+            scan->error = BFS_ERR_NOMEM;
+            return false;
+        }
+        uint32_t *items = realloc(scan->items, capacity * sizeof(*items));
+        if (!items) {
+            scan->error = BFS_ERR_NOMEM;
+            return false;
+        }
+        scan->items = items;
+        scan->capacity = capacity;
+    }
+    scan->items[scan->count++] = ino;
+    return true;
+}
+
+bfs_err_t bfs_fs_reap_unlinked_on_mount_unlocked(bfs_fs_t *fs)
+{
+    if (!fs || !fs->mounted || fs->read_only) return BFS_ERR_INVAL;
+    fs_unlinked_scan_t scan = { .fs = fs };
+    bfs_err_t err = bfs_btree_scan(&fs->inode_tree, NULL, fs_collect_unlinked_inode, &scan);
+    if (err == BFS_OK) err = scan.error;
+    for (size_t index = 0; err == BFS_OK && index < scan.count; index++)
+        err = fs_reap_unlinked_file_unlocked(fs, scan.items[index]);
+    free(scan.items);
     return err;
 }
 
@@ -430,18 +532,73 @@ static bool same_name_folded(const char *a, uint8_t alen, const char *b, uint8_t
     return true;
 }
 
-static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, uint32_t old_parent, const char *old_name, uint8_t old_len, uint32_t new_parent, const char *new_name, uint8_t new_len)
+static bool same_name_bytes(const char *a, uint8_t alen, const char *b, uint8_t blen)
+{
+    return alen == blen && memcmp(a, b, alen) == 0;
+}
+
+static bfs_err_t fs_dispose_replaced_file_unlocked(bfs_fs_t *fs, uint32_t ino,
+                                                    bool preserve_final_link,
+                                                    uint32_t *orphan_ino_out)
+{
+    bfs_inode_t inode;
+    bfs_err_t err = bfs_inode_read(&fs->inode_tree, ino, &inode);
+    if (err != BFS_OK) return err;
+    if (bfs_be32(inode.type) == BFS_INODE_DIR) return BFS_ERR_INVAL;
+    uint32_t links = bfs_be32(inode.link_count);
+    if (links == 0) return BFS_ERR_CORRUPT;
+    if (orphan_ino_out) *orphan_ino_out = 0;
+    if (links > 1) {
+        inode.link_count = bfs_be32(links - 1);
+        return bfs_inode_write(&fs->inode_tree, ino, &inode);
+    }
+    inode.link_count = bfs_be32(0);
+    err = bfs_inode_write_unlinked(&fs->inode_tree, ino, &inode);
+    if (err != BFS_OK) return err;
+    if (preserve_final_link) {
+        if (orphan_ino_out) *orphan_ino_out = ino;
+        return BFS_OK;
+    }
+    return fs_reap_unlinked_file_unlocked(fs, ino);
+}
+
+static bfs_err_t fs_dispose_replaced_dir_unlocked(bfs_fs_t *fs, uint32_t ino)
+{
+    empty_check_t empty = {0};
+    bfs_err_t err = bfs_dir_scan(&fs->dir_tree, ino, empty_check_cb, &empty);
+    if (err != BFS_OK) return err;
+    if (empty.count != 0) return BFS_ERR_NOTEMPTY;
+    comment_key_ctx_t comment;
+    err = fs_find_comment_unlocked(fs, ino, &comment);
+    if (err == BFS_OK && comment.found)
+        err = bfs_dir_remove(&fs->dir_tree, ino | 0x80000000u, comment.name, comment.len);
+    if (err == BFS_OK) err = bfs_dir_remove(&fs->dir_tree, ino, "..", 2);
+    if (err == BFS_OK) err = bfs_inode_delete(&fs->inode_tree, ino);
+    if (err != BFS_OK) fs->recovery_error = err;
+    return err;
+}
+
+static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, uint32_t old_parent,
+                                    const char *old_name, uint8_t old_len,
+                                    uint32_t new_parent, const char *new_name,
+                                    uint8_t new_len, bool preserve_replaced,
+                                    uint32_t *orphan_ino_out)
 {
     bfs_err_t err = fs_require_dir(fs, old_parent);
     if (err != BFS_OK) return err;
     err = fs_require_dir(fs, new_parent);
     if (err != BFS_OK) return err;
-    if (old_parent == new_parent && same_name_folded(old_name, old_len, new_name, new_len))
-        return BFS_OK;
 
     uint32_t ino, type;
     err = bfs_dir_lookup(&fs->dir_tree, old_parent, old_name, old_len, &ino, &type);
     if (err != BFS_OK) return err;
+
+    if (orphan_ino_out) *orphan_ino_out = 0;
+    if (old_parent == new_parent && same_name_folded(old_name, old_len, new_name, new_len)) {
+        if (same_name_bytes(old_name, old_len, new_name, new_len)) return BFS_OK;
+        return bfs_dir_rekey_case(&fs->dir_tree, old_parent, old_name, old_len,
+                                  new_name, new_len);
+    }
 
     uint32_t old_dotdot = 0;
     if (type == BFS_INODE_DIR) {
@@ -454,24 +611,35 @@ static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, uint32_t old_parent, const cha
         if (old_dotdot != old_parent) return BFS_ERR_CORRUPT;
     }
 
-    err = bfs_dir_insert(&fs->dir_tree, new_parent, new_name, new_len, ino, type);
+    uint32_t replaced_ino = 0, replaced_type = 0;
+    bool replacing = false;
+    err = bfs_dir_lookup(&fs->dir_tree, new_parent, new_name, new_len,
+                         &replaced_ino, &replaced_type);
+    if (err == BFS_OK) {
+        replacing = true;
+        if ((type == BFS_INODE_DIR) != (replaced_type == BFS_INODE_DIR))
+            return BFS_ERR_INVAL;
+        if (replaced_type == BFS_INODE_DIR) {
+            empty_check_t empty = {0};
+            err = bfs_dir_scan(&fs->dir_tree, replaced_ino, empty_check_cb, &empty);
+            if (err != BFS_OK) return err;
+            if (empty.count != 0) return BFS_ERR_NOTEMPTY;
+        }
+        err = bfs_dir_replace(&fs->dir_tree, new_parent, new_name, new_len,
+                             ino, type, NULL, NULL);
+    } else if (err == BFS_ERR_NOTFOUND) {
+        err = bfs_dir_insert(&fs->dir_tree, new_parent, new_name, new_len, ino, type);
+    }
     if (err != BFS_OK) return err;
 
     if (type == BFS_INODE_DIR && old_parent != new_parent) {
-        bool removed_dotdot = false;
-        err = bfs_dir_remove(&fs->dir_tree, ino, "..", 2);
-        if (err == BFS_OK) {
-            removed_dotdot = true;
-            err = bfs_dir_insert(&fs->dir_tree, ino, "..", 2, new_parent, BFS_INODE_DIR);
-        }
+        err = bfs_dir_replace(&fs->dir_tree, ino, "..", 2, new_parent,
+                             BFS_INODE_DIR, NULL, NULL);
         if (err != BFS_OK) {
-            bfs_err_t rollback_err = BFS_OK;
-            if (removed_dotdot)
-                rollback_err = bfs_dir_insert(&fs->dir_tree, ino, "..", 2,
-                                              old_dotdot, BFS_INODE_DIR);
-            bfs_err_t remove_err = bfs_dir_remove(&fs->dir_tree, new_parent,
-                                                  new_name, new_len);
-            if (rollback_err == BFS_OK) rollback_err = remove_err;
+            bfs_err_t rollback_err = replacing
+                ? bfs_dir_replace(&fs->dir_tree, new_parent, new_name, new_len,
+                                  replaced_ino, replaced_type, NULL, NULL)
+                : bfs_dir_remove(&fs->dir_tree, new_parent, new_name, new_len);
             return fs_cleanup_result(fs, err, rollback_err);
         }
     }
@@ -480,17 +648,25 @@ static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, uint32_t old_parent, const cha
     if (err != BFS_OK) {
         bfs_err_t rollback_err = BFS_OK;
         if (type == BFS_INODE_DIR && old_parent != new_parent) {
-            rollback_err = bfs_dir_remove(&fs->dir_tree, ino, "..", 2);
-            if (rollback_err == BFS_OK)
-                rollback_err = bfs_dir_insert(&fs->dir_tree, ino, "..", 2,
-                                              old_dotdot, BFS_INODE_DIR);
+            rollback_err = bfs_dir_replace(&fs->dir_tree, ino, "..", 2, old_dotdot,
+                                            BFS_INODE_DIR, NULL, NULL);
         }
-        bfs_err_t remove_err = bfs_dir_remove(&fs->dir_tree, new_parent,
-                                              new_name, new_len);
-        if (rollback_err == BFS_OK) rollback_err = remove_err;
+        bfs_err_t destination_err = replacing
+            ? bfs_dir_replace(&fs->dir_tree, new_parent, new_name, new_len,
+                              replaced_ino, replaced_type, NULL, NULL)
+            : bfs_dir_remove(&fs->dir_tree, new_parent, new_name, new_len);
+        if (rollback_err == BFS_OK) rollback_err = destination_err;
         return fs_cleanup_result(fs, err, rollback_err);
     }
-    return BFS_OK;
+
+    if (!replacing) return BFS_OK;
+    if (replaced_type == BFS_INODE_DIR)
+        err = fs_dispose_replaced_dir_unlocked(fs, replaced_ino);
+    else
+        err = fs_dispose_replaced_file_unlocked(fs, replaced_ino,
+                                                preserve_replaced, orphan_ino_out);
+    if (err != BFS_OK) fs->recovery_error = err;
+    return err;
 }
 
 static bfs_err_t fs_make_hardlink_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t target_ino)
@@ -706,7 +882,38 @@ bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
-        err = fs_delete_file_unlocked(fs, parent_ino, name, name_len);
+        err = fs_delete_file_unlocked(fs, parent_ino, name, name_len, false, NULL);
+    err = fs_namespace_result(fs, err);
+    bfs_lock_unlock(&fs->lock);
+    return err;
+}
+
+bfs_err_t bfs_fs_unlink_open_file(bfs_fs_t *fs, uint32_t parent_ino,
+                                  const char *name, uint8_t name_len,
+                                  uint32_t *orphan_ino_out)
+{
+    if (orphan_ino_out) *orphan_ino_out = 0;
+    if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (parent_ino == 0 || !fs_name_valid(name, name_len)) return BFS_ERR_INVAL;
+    bfs_lock_write(&fs->lock);
+    uint32_t orphan = 0;
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK)
+        err = fs_delete_file_unlocked(fs, parent_ino, name, name_len, true, &orphan);
+    err = fs_namespace_result(fs, err);
+    bfs_lock_unlock(&fs->lock);
+    if (err == BFS_OK && orphan_ino_out) *orphan_ino_out = orphan;
+    return err;
+}
+
+bfs_err_t bfs_fs_reap_unlinked_file(bfs_fs_t *fs, uint32_t ino)
+{
+    if (!fs_handle_valid(fs) || ino == 0 || ino >= 0x80000000u) return BFS_ERR_INVAL;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    bfs_lock_write(&fs->lock);
+    bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
+    if (err == BFS_OK) err = fs_reap_unlinked_file_unlocked(fs, ino);
     err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
@@ -729,17 +936,30 @@ bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
 
 bfs_err_t bfs_fs_rename(bfs_fs_t *fs, uint32_t old_parent, const char *old_name, uint8_t old_len, uint32_t new_parent, const char *new_name, uint8_t new_len)
 {
+    return bfs_fs_rename_replace(fs, old_parent, old_name, old_len,
+                                 new_parent, new_name, new_len, false, NULL);
+}
+
+bfs_err_t bfs_fs_rename_replace(bfs_fs_t *fs,
+                                uint32_t old_parent, const char *old_name, uint8_t old_len,
+                                uint32_t new_parent, const char *new_name, uint8_t new_len,
+                                bool preserve_replaced, uint32_t *orphan_ino_out)
+{
+    if (orphan_ino_out) *orphan_ino_out = 0;
     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (old_parent == 0 || new_parent == 0 ||
         !fs_name_valid(old_name, old_len) || !fs_name_valid(new_name, new_len))
         return BFS_ERR_INVAL;
     bfs_lock_write(&fs->lock);
+    uint32_t orphan = 0;
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
-        err = fs_rename_unlocked(fs, old_parent, old_name, old_len, new_parent, new_name, new_len);
+        err = fs_rename_unlocked(fs, old_parent, old_name, old_len, new_parent, new_name,
+                                 new_len, preserve_replaced, &orphan);
     err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
+    if (err == BFS_OK && orphan_ino_out) *orphan_ino_out = orphan;
     return err;
 }
 

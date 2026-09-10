@@ -50,6 +50,18 @@ bfs_err_t bfs_dir_insert(bfs_dir_tree_t *dt, uint32_t parent_id,
                            const char *name, uint8_t name_len,
                            uint32_t inode_nr, uint32_t entry_type);
 
+/* Replace the value of an existing entry. The key and its stored name spelling
+ * remain unchanged; optional outputs receive the displaced value. */
+bfs_err_t bfs_dir_replace(bfs_dir_tree_t *dt, uint32_t parent_id,
+                          const char *name, uint8_t name_len,
+                          uint32_t inode_nr, uint32_t entry_type,
+                          uint32_t *old_inode_out, uint32_t *old_type_out);
+
+/* Change only the stored spelling of a case-equivalent entry. */
+bfs_err_t bfs_dir_rekey_case(bfs_dir_tree_t *dt, uint32_t parent_id,
+                             const char *old_name, uint8_t old_len,
+                             const char *new_name, uint8_t new_len);
+
 /* Remove a directory entry. */
 bfs_err_t bfs_dir_remove(bfs_dir_tree_t *dt, uint32_t parent_id,
                            const char *name, uint8_t name_len);

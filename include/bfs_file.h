@@ -25,6 +25,7 @@ typedef struct {
     /* Compared with fs->recovery_generation by file.c handle validation. */
     // cppcheck-suppress unusedStructMember
     uint64_t            recovery_generation;
+    bool                unlinked;  /* retained POSIX orphan; see mark_unlinked */
 } bfs_file_t;
 
 /* Open a file by inode number. Reads inode from inode tree for extent_root/size. */
@@ -50,6 +51,10 @@ int64_t bfs_file_seek(bfs_file_t *f, int64_t offset, int mode);
 /* Truncate file to 'new_size' bytes. Returns BFS_ERR_UNSUPPORTED on a
  * read-only mount. */
 bfs_err_t bfs_file_truncate(bfs_file_t *f, uint64_t new_size);
+
+/* Bind an already-open handle to an inode that was unlinked with
+ * bfs_fs_unlink_open_file(). */
+bfs_err_t bfs_file_mark_unlinked(bfs_file_t *f);
 
 /* Cached extent root from this handle's last operation, not a cross-handle view. */
 static inline bfs_blk_t bfs_file_extent_root(const bfs_file_t *f) {

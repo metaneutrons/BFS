@@ -795,6 +795,74 @@ update_cleanup:
     return cerr;
 }
 
+bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
+                                const void *new_key)
+{
+    if (!tree || !tree->bio || !tree->alloc || !old_key || !new_key ||
+        !tree->ops || tree->ops->key_compare(old_key, new_key) != 0)
+        return BFS_ERR_INVAL;
+    tree->free_sink_err = BFS_OK;
+    btree_mutation_t mutation = {0};
+    if (tree->root == BFS_BLK_NULL) return BFS_ERR_NOTFOUND;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+    bfs_err_t preflight = mutation_headroom(tree, tree->height);
+    if (preflight != BFS_OK) return preflight;
+
+    const uint32_t block_size = tree->bio->block_size;
+    uint8_t *node_bufs = malloc((size_t)tree->height * block_size);
+    if (!node_bufs) return BFS_ERR_NOMEM;
+    #define RBUF(depth) (node_bufs + (depth) * block_size)
+
+    path_entry_t path[MAX_TREE_DEPTH];
+    int depth = 0;
+    bfs_blk_t block = tree->root;
+    while (1) {
+        if (depth >= MAX_TREE_DEPTH || (uint32_t)depth >= tree->height) {
+            free(node_bufs);
+            return BFS_ERR_CORRUPT;
+        }
+        bfs_err_t err = node_read_at_level(
+            tree, block, RBUF(depth), (uint16_t)(tree->height - 1 - depth));
+        if (err != BFS_OK) {
+            free(node_bufs);
+            return err;
+        }
+        path[depth].blk = block;
+        if (is_leaf(RBUF(depth))) break;
+        bool found;
+        uint32_t index = node_search(tree, RBUF(depth), old_key, &found);
+        path[depth].child_idx = found ? index + 1 : index;
+        block = get_child(tree, RBUF(depth), path[depth].child_idx);
+        depth++;
+    }
+
+    bool found;
+    uint32_t index = node_search(tree, RBUF(depth), old_key, &found);
+    if (!found) {
+        free(node_bufs);
+        return BFS_ERR_NOTFOUND;
+    }
+    memcpy(node_key(tree, RBUF(depth), index), new_key, tree->ops->key_size);
+
+    bfs_blk_t replacement;
+    bfs_err_t err = cow_node(tree, &mutation, path[depth].blk, RBUF(depth), &replacement);
+    if (err != BFS_OK) goto rekey_cleanup;
+    for (int level = depth - 1; level >= 0; level--) {
+        set_child(tree, RBUF(level), path[level].child_idx, replacement);
+        err = cow_node(tree, &mutation, path[level].blk, RBUF(level), &replacement);
+        if (err != BFS_OK) goto rekey_cleanup;
+    }
+    tree->root = replacement;
+
+rekey_cleanup:
+    free(node_bufs);
+    #undef RBUF
+    if (err == BFS_OK) mutation_commit(tree, &mutation);
+    else mutation_abort(tree, &mutation);
+    if (err == BFS_OK && tree->free_sink_err != BFS_OK) err = tree->free_sink_err;
+    return err;
+}
+
 /* ── Scan ──────────────────────────────────────────────────── */
 
 bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,

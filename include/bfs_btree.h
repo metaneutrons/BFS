@@ -140,6 +140,12 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key);
  * Returns BFS_OK or BFS_ERR_NOTFOUND. */
 bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val);
 
+/* Replace a stored key with a byte-distinct key that compares equal. This is
+ * used for case-only directory renames: ordering is unchanged, but the stored
+ * display spelling changes. */
+bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
+                                const void *new_key);
+
 /* Scan keys >= start_key. Calls cb for each key/value pair. Traversal follows
  * parent/child links, not the on-disk right_sibling legacy leaf hint. If
  * start_key is NULL, scanning starts from the beginning. */

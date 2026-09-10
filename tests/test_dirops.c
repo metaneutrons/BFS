@@ -4,7 +4,10 @@
 
 #include "test_harness.h"
 #include "bfs_fs.h"
+#include "bfs_file.h"
+#include "bfs_inode.h"
 #include "block_device_emu.h"
+#include <string.h>
 #include <unistd.h>
 
 #define TEST_IMG "test_dirops.img"
@@ -157,6 +160,77 @@ static void test_rename_cross_dir(void)
     teardown(fs);
 }
 
+typedef struct {
+    const char *name;
+    uint8_t length;
+    bool found;
+} name_scan_t;
+
+static bool find_name(const char *name, uint8_t length, uint32_t inode,
+                      uint32_t type, void *opaque)
+{
+    (void)inode;
+    (void)type;
+    name_scan_t *scan = opaque;
+    scan->found = length == scan->length && memcmp(name, scan->name, length) == 0;
+    return !scan->found;
+}
+
+static void test_rename_replaces_file_and_preserves_open_target(void)
+{
+    bfs_fs_t *fs = setup();
+    uint32_t source, target, orphan;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "source", 6, &source), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "target", 6, &target), BFS_OK);
+    bfs_file_t target_handle;
+    TEST_ASSERT_EQ(bfs_file_open(&target_handle, fs, target), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&target_handle, "old", 3), 3);
+
+    TEST_ASSERT_EQ(bfs_fs_rename_replace(fs, BFS_ROOT_INO, "source", 6,
+                                         BFS_ROOT_INO, "target", 6, true, &orphan), BFS_OK);
+    TEST_ASSERT_EQ(orphan, target);
+    uint32_t found, type;
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, "target", 6,
+                                  &found, &type), BFS_OK);
+    TEST_ASSERT_EQ(found, source);
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, "source", 6,
+                                  NULL, NULL), BFS_ERR_NOTFOUND);
+    TEST_ASSERT_EQ(bfs_file_mark_unlinked(&target_handle), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&target_handle, 0, BFS_SEEK_SET), 0);
+    char data[4] = {0};
+    TEST_ASSERT_EQ(bfs_file_read(&target_handle, data, sizeof(data)), 3);
+    TEST_ASSERT_MEM_EQ(data, "old", 3);
+    TEST_ASSERT_EQ(bfs_fs_reap_unlinked_file(fs, orphan), BFS_OK);
+    bfs_inode_t inode;
+    TEST_ASSERT_EQ(bfs_inode_read(&fs->inode_tree, target, &inode), BFS_ERR_NOTFOUND);
+    teardown(fs);
+}
+
+static void test_rename_replaces_empty_directory_and_rekeys_case(void)
+{
+    bfs_fs_t *fs = setup();
+    uint32_t source, target;
+    TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "source", 6, &source), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "target", 6, &target), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_rename(fs, BFS_ROOT_INO, "source", 6,
+                                 BFS_ROOT_INO, "target", 6), BFS_OK);
+    uint32_t found, type;
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, "target", 6,
+                                  &found, &type), BFS_OK);
+    TEST_ASSERT_EQ(found, source);
+    bfs_inode_t inode;
+    TEST_ASSERT_EQ(bfs_inode_read(&fs->inode_tree, target, &inode), BFS_ERR_NOTFOUND);
+
+    uint32_t file;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "mixed", 5, &file), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_rename(fs, BFS_ROOT_INO, "mixed", 5,
+                                 BFS_ROOT_INO, "MIXED", 5), BFS_OK);
+    name_scan_t scan = { .name = "MIXED", .length = 5, .found = false };
+    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, BFS_ROOT_INO, find_name, &scan), BFS_OK);
+    TEST_ASSERT(scan.found);
+    teardown(fs);
+}
+
 TEST_SUITE_BEGIN("Directory Operations")
     TEST_RUN(test_create_file);
     TEST_RUN(test_mkdir);
@@ -164,4 +238,6 @@ TEST_SUITE_BEGIN("Directory Operations")
     TEST_RUN(test_delete_file);
     TEST_RUN(test_rename_same_dir);
     TEST_RUN(test_rename_cross_dir);
+    TEST_RUN(test_rename_replaces_file_and_preserves_open_target);
+    TEST_RUN(test_rename_replaces_empty_directory_and_rekeys_case);
 TEST_SUITE_END()

@@ -35,4 +35,7 @@ uint32_t  bfs_snapshot_next_id_unlocked(bfs_fs_t *fs);
  * the newest valid on-disk superblock after a multi-step operation fails. */
 bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs);
 
+/* namespace.c — caller holds fs->lock or owns the freshly mounted filesystem. */
+bfs_err_t bfs_fs_reap_unlinked_on_mount_unlocked(bfs_fs_t *fs);
+
 #endif /* BFS_INTERNAL_H */

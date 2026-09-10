@@ -266,6 +266,14 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
     if (!fs->scratch) { err = BFS_ERR_NOMEM; goto fail; }
 
     if (!read_only) {
+        /* Open handles cannot survive a process crash. Reclaim their
+         * zero-link inodes before exposing the writable namespace. */
+        err = bfs_fs_reap_unlinked_on_mount_unlocked(fs);
+        if (err != BFS_OK) {
+            free(fs->scratch);
+            fs->scratch = NULL;
+            goto fail;
+        }
         /* Resume any interrupted snapshot deletions. */
         err = bfs_snapshot_resume_deletions(fs);
         if (err != BFS_OK) {

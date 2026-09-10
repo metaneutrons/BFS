@@ -232,6 +232,44 @@ static void test_shared_handles_refresh_inode_state(void)
     teardown(fs);
 }
 
+static void test_unlinked_open_file_lifetime_and_mount_recovery(void)
+{
+    bfs_fs_t *fs = setup();
+    uint32_t ino, orphan;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "unlinked", 8, &ino), BFS_OK);
+    bfs_file_t first, second;
+    TEST_ASSERT_EQ(bfs_file_open(&first, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&second, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&first, "before", 6), 6);
+
+    TEST_ASSERT_EQ(bfs_fs_unlink_open_file(fs, BFS_ROOT_INO, "unlinked", 8, &orphan),
+                   BFS_OK);
+    TEST_ASSERT_EQ(orphan, ino);
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, "unlinked", 8,
+                                  NULL, NULL), BFS_ERR_NOTFOUND);
+    TEST_ASSERT_EQ(bfs_file_mark_unlinked(&first), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_mark_unlinked(&second), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&second, 0, BFS_SEEK_SET), 0);
+    char data[16] = {0};
+    TEST_ASSERT_EQ(bfs_file_read(&second, data, sizeof(data)), 6);
+    TEST_ASSERT_MEM_EQ(data, "before", 6);
+    TEST_ASSERT_EQ(bfs_file_seek(&first, 0, BFS_SEEK_END), 6);
+    TEST_ASSERT_EQ(bfs_file_write(&first, "-after", 6), 6);
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&second, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_read(&second, data, sizeof(data)), 12);
+    TEST_ASSERT_MEM_EQ(data, "before-after", 12);
+
+    /* A process crash loses the handles, so the next writable mount reclaims
+     * the committed zero-link inode rather than leaking its extents. */
+    bfs_bio_t *bio = fs->bio;
+    bfs_fs_abandon(fs);
+    TEST_ASSERT_EQ(bfs_fs_mount(fs, bio), BFS_OK);
+    bfs_inode_t inode;
+    TEST_ASSERT_EQ(bfs_inode_read(&fs->inode_tree, ino, &inode), BFS_ERR_NOTFOUND);
+    teardown(fs);
+}
+
 TEST_SUITE_BEGIN("File I/O")
     TEST_RUN(test_write_read);
     TEST_RUN(test_cross_block_write);
@@ -240,4 +278,5 @@ TEST_SUITE_BEGIN("File I/O")
     TEST_RUN(test_large_file);
     TEST_RUN(test_truncate_regrow_zeroes_tail);
     TEST_RUN(test_shared_handles_refresh_inode_state);
+    TEST_RUN(test_unlinked_open_file_lifetime_and_mount_recovery);
 TEST_SUITE_END()
