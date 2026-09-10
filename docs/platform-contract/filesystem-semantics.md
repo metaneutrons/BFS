@@ -111,6 +111,11 @@ rename flags return `EOPNOTSUPP` on the writable mount. It returns `ENOSYS`
 only for FUSE protocol operations that libfuse can safely suppress; unsupported
 visible filesystem operations use a specific errno.
 
+The writable mount uses libfuse `default_permissions`. Linux may therefore
+reject an ownership-sensitive operation with `EPERM` or `EACCES` before the
+adapter receives it; requests that reach the adapter receive `EOPNOTSUPP` for
+the unsupported metadata operations above.
+
 Directory cookies are stable and strictly increasing while the directory is
 unchanged. A namespace mutation of that directory invalidates previously
 returned cookies; callers must restart enumeration at offset zero. This is the

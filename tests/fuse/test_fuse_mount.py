@@ -204,6 +204,15 @@ def expect_errno(expected, operation):
     raise RuntimeError(f"operation unexpectedly succeeded; expected errno {expected}")
 
 
+def expect_errnos(expected, operation):
+    try:
+        operation()
+    except OSError as error:
+        require(error.errno in expected, f"expected one of {expected}, got {error}")
+        return
+    raise RuntimeError(f"operation unexpectedly succeeded; expected one of {expected}")
+
+
 def append_client(path, payload, repetitions):
     descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CLOEXEC)
     try:
@@ -301,7 +310,8 @@ def exercise_writable_fixture(image, mountpoint):
         require(os.getxattr(durable, "user.bfs.comment") == b"M6 writable mount",
                 "writable comment xattr differs")
         expect_errno(errno.EOPNOTSUPP, lambda: os.setxattr(durable, "user.bfs.uid", b"1"))
-        expect_errno(errno.EOPNOTSUPP, lambda: os.chmod(durable, 0o600))
+        # default_permissions may reject a non-owner before FUSE sees chmod.
+        expect_errnos((errno.EPERM, errno.EOPNOTSUPP), lambda: os.chmod(durable, 0o600))
 
         removable = work / "removable-comment"
         removable.write_bytes(b"comment")
