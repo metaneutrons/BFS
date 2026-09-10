@@ -30,6 +30,11 @@
 
 static uint8_t *alloc_buf(const bfs_btree_t *tree) { return malloc(tree->bio->block_size); }
 
+static void copy_key(uint8_t *destination, const uint8_t *source, uint32_t length)
+{
+    for (uint32_t index = 0; index < length; index++) destination[index] = source[index];
+}
+
 static bool tree_shape_valid(const bfs_btree_t *tree)
 {
     if (!tree || !tree->bio) return false;
@@ -793,6 +798,93 @@ update_cleanup:
     if (cerr == BFS_OK && tree->free_sink_err != BFS_OK)
         cerr = tree->free_sink_err;
     return cerr;
+}
+
+static bfs_err_t rekey_descend_to_leaf(const bfs_btree_t *tree, const void *key,
+                                       uint8_t *node_bufs, path_entry_t *path,
+                                       int *depth_out)
+{
+    const uint32_t block_size = tree->bio->block_size;
+    bfs_blk_t block = tree->root;
+    for (int depth = 0;; depth++) {
+        if (depth >= MAX_TREE_DEPTH || (uint32_t)depth >= tree->height)
+            return BFS_ERR_CORRUPT;
+        uint8_t *buffer = node_bufs + (size_t)depth * block_size;
+        bfs_err_t err = node_read_at_level(
+            tree, block, buffer, (uint16_t)(tree->height - 1 - depth));
+        if (err != BFS_OK) return err;
+        path[depth].blk = block;
+        if (is_leaf(buffer)) {
+            *depth_out = depth;
+            return BFS_OK;
+        }
+        bool found;
+        uint32_t index = node_search(tree, buffer, key, &found);
+        path[depth].child_idx = found ? index + 1 : index;
+        block = get_child(tree, buffer, path[depth].child_idx);
+    }
+}
+
+static bfs_err_t rekey_commit_path(bfs_btree_t *tree, btree_mutation_t *mutation,
+                                   path_entry_t *path, uint8_t *node_bufs, int depth)
+{
+    const uint32_t block_size = tree->bio->block_size;
+    bfs_blk_t replacement;
+    uint8_t *leaf = node_bufs + (size_t)depth * block_size;
+    bfs_err_t err = cow_node(tree, mutation, path[depth].blk, leaf, &replacement);
+    if (err != BFS_OK) return err;
+    for (int level = depth - 1; level >= 0; level--) {
+        uint8_t *parent = node_bufs + (size_t)level * block_size;
+        set_child(tree, parent, path[level].child_idx, replacement);
+        err = cow_node(tree, mutation, path[level].blk, parent, &replacement);
+        if (err != BFS_OK) return err;
+    }
+    tree->root = replacement;
+    return BFS_OK;
+}
+
+bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
+                                const void *new_key)
+{
+    if (!tree || !tree->bio || !tree->alloc || !old_key || !new_key ||
+        !tree->ops || tree->ops->key_compare(old_key, new_key) != 0)
+        return BFS_ERR_INVAL;
+    tree->free_sink_err = BFS_OK;
+    btree_mutation_t mutation = {0};
+    if (tree->root == BFS_BLK_NULL) return BFS_ERR_NOTFOUND;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+    bfs_err_t preflight = mutation_headroom(tree, tree->height);
+    if (preflight != BFS_OK) return preflight;
+
+    const uint32_t block_size = tree->bio->block_size;
+    uint8_t *node_bufs = malloc((size_t)tree->height * block_size);
+    if (!node_bufs) return BFS_ERR_NOMEM;
+
+    path_entry_t path[MAX_TREE_DEPTH];
+    int depth = 0;
+    bfs_err_t err = rekey_descend_to_leaf(tree, old_key, node_bufs, path, &depth);
+    if (err != BFS_OK) goto rekey_cleanup;
+
+    bool found;
+    uint8_t *leaf = node_bufs + (size_t)depth * block_size;
+    uint32_t index = node_search(tree, leaf, old_key, &found);
+    if (!found) {
+        err = BFS_ERR_NOTFOUND;
+        goto rekey_cleanup;
+    }
+    if (tree->ops->key_size > BFS_MAX_KEY_SIZE) {
+        err = BFS_ERR_CORRUPT;
+        goto rekey_cleanup;
+    }
+    copy_key(node_key(tree, leaf, index), new_key, tree->ops->key_size);
+    err = rekey_commit_path(tree, &mutation, path, node_bufs, depth);
+
+rekey_cleanup:
+    free(node_bufs);
+    if (err == BFS_OK) mutation_commit(tree, &mutation);
+    else mutation_abort(tree, &mutation);
+    if (err == BFS_OK && tree->free_sink_err != BFS_OK) err = tree->free_sink_err;
+    return err;
 }
 
 /* ── Scan ──────────────────────────────────────────────────── */

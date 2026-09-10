@@ -113,7 +113,38 @@ static void test_unsupported_format_never_repaired(void)
     }
 }
 
+static void test_retained_open_inode_is_checker_visible_until_recovery(void)
+{
+    unlink(IMAGE);
+    bfs_bio_t *bio = bio_emu_create(IMAGE, 4096, 1024);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "FsckOrphan", 0), BFS_OK);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    uint32_t ino, orphan;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "open", 4, &ino), BFS_OK);
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&file, "retained", 8), 8);
+    TEST_ASSERT_EQ(bfs_fs_unlink_open_file(&fs, BFS_ROOT_INO, "open", 4, &orphan), BFS_OK);
+    TEST_ASSERT_EQ(orphan, ino);
+    TEST_ASSERT_EQ(bfs_file_mark_unlinked(&file), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+
+    /* A read-only check must keep ownership of the retained inode's extents. */
+    bfs_fs_abandon(&fs);
+    TEST_ASSERT_EQ(run_fsck(false), 0);
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    bfs_inode_t inode;
+    TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_ERR_NOTFOUND);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_bio_close(bio);
+    unlink(IMAGE);
+    unlink("test_fsck.log");
+}
+
 TEST_SUITE_BEGIN("Filesystem Checker")
     TEST_RUN(test_clean_snapshot_and_readonly_check);
     TEST_RUN(test_unsupported_format_never_repaired);
+    TEST_RUN(test_retained_open_inode_is_checker_visible_until_recovery);
 TEST_SUITE_END()

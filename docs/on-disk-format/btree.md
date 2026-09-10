@@ -115,7 +115,7 @@ inode 1. The 44-byte leaf value is:
 | 8 | 4 | `size_hi` | High half of logical byte size |
 | 12 | 4 | `size_lo` | Low half of logical byte size |
 | 16 | 4 | `extent_root` | Per-file extent-tree root, or zero for no extents |
-| 20 | 4 | `link_count` | Nonzero link count |
+| 20 | 4 | `link_count` | Positive namespace link count; zero is a recoverable retained-open-file marker |
 | 24 | 4 | `protection` | Amiga protection bitmap, carried as an opaque `u32` by the core |
 | 28 | 2 | `uid` | Amiga owner UID |
 | 30 | 2 | `gid` | Amiga owner GID |
@@ -126,10 +126,14 @@ inode 1. The 44-byte leaf value is:
 | 40 | 2 | `modify_mins` | Amiga DateStamp minutes field |
 | 42 | 2 | `modify_ticks` | Amiga DateStamp ticks field |
 
-The core checks the type, link count, inode identity, and extent-root range. It
-does not validate a DateStamp's calendar range or interpret protection and
-owner values. A hard link made by the current writer is another directory entry
-for a type-0 file and increments `link_count`; it does not emit type 3.
+The core checks the type, link count, inode identity, and extent-root range. A
+normal namespace reader requires a positive link count. A zero link count is
+valid only for a non-directory inode retained after final-link POSIX unlink or
+replacement rename; it has no directory entry and is reclaimed on the next
+writable mount if its retaining process did not close it cleanly. It does not
+validate a DateStamp's calendar range or interpret protection and owner values.
+A hard link made by the current writer is another directory entry for a type-0
+file and increments `link_count`; it does not emit type 3.
 
 ## Per-file extent trees
 

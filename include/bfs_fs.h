@@ -142,6 +142,16 @@ bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino,
 bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino,
                                const char *name, uint8_t name_len);
 
+/* Remove a file name while retaining its final-link inode for open POSIX
+ * handles. `orphan_ino_out` is nonzero only when the final link became an
+ * orphan; otherwise a remaining hard link keeps the inode reachable. */
+bfs_err_t bfs_fs_unlink_open_file(bfs_fs_t *fs, uint32_t parent_ino,
+                                  const char *name, uint8_t name_len,
+                                  uint32_t *orphan_ino_out);
+
+/* Reclaim an unlinked inode after its final open handle closes. */
+bfs_err_t bfs_fs_reap_unlinked_file(bfs_fs_t *fs, uint32_t ino);
+
 /* Remove an empty directory. */
 bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino,
                          const char *name, uint8_t name_len);
@@ -150,6 +160,22 @@ bfs_err_t bfs_fs_rmdir(bfs_fs_t *fs, uint32_t parent_ino,
 bfs_err_t bfs_fs_rename(bfs_fs_t *fs,
                           uint32_t old_parent, const char *old_name, uint8_t old_len,
                           uint32_t new_parent, const char *new_name, uint8_t new_len);
+
+typedef struct {
+    // cppcheck-suppress unusedStructMember
+    bool preserve_replaced;
+    // cppcheck-suppress unusedStructMember
+    uint32_t *orphan_ino_out;
+} bfs_rename_options_t;
+
+/* POSIX-style replacement rename. When `preserve_replaced` is true, a
+ * final-link non-directory destination becomes an unlinked inode and is
+ * returned through `orphan_ino_out`; callers retain it only while an open
+ * handle exists. */
+bfs_err_t bfs_fs_rename_replace(bfs_fs_t *fs,
+                                uint32_t old_parent, const char *old_name, uint8_t old_len,
+                                uint32_t new_parent, const char *new_name, uint8_t new_len,
+                                const bfs_rename_options_t *options);
 
 /* Create a hard link to an existing inode. */
 bfs_err_t bfs_fs_make_hardlink(bfs_fs_t *fs, uint32_t parent_ino,

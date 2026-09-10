@@ -240,12 +240,9 @@ def build_manifest(image, superblock):
     if 1 not in inode_values:
         raise OracleError("root inode missing")
     manifest = []
-    visited = set()
+    directory_ancestors = set()
 
     def visit(inode_number, path):
-        if inode_number in visited:
-            raise OracleError("namespace directory cycle")
-        visited.add(inode_number)
         inode = inode_values.get(inode_number)
         if inode is None or be32(inode, 0) != inode_number:
             raise OracleError("directory entry points to invalid inode")
@@ -255,11 +252,15 @@ def build_manifest(image, superblock):
             item["sha256"] = digest_file(image, superblock, inode)
         manifest.append(item)
         if item["type"] == 1:
+            if inode_number in directory_ancestors:
+                raise OracleError("namespace directory cycle")
+            directory_ancestors.add(inode_number)
             for name, child, entry_type in sorted(entries.get(inode_number, [])):
                 if entry_type not in (0, 1, 2, 3):
                     raise OracleError("invalid directory entry type")
                 component = name.decode("latin-1")
                 visit(child, path.rstrip("/") + "/" + component)
+            directory_ancestors.remove(inode_number)
 
     visit(1, "/")
     snapshots = []

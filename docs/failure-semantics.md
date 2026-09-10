@@ -14,8 +14,21 @@ data use copy-on-write.
 Public file operations refresh inode size and extent roots under the filesystem
 lock, so multiple handles observe each other's completed writes/truncations
 while retaining independent positions. Direct struct fields are cached values.
-After namespace deletion, old handles reject operations with `BFS_ERR_NOTFOUND`;
-BFS does not provide POSIX-style access to unlinked files.
+The ordinary `bfs_fs_delete_file()` operation reclaims the final-link inode and
+invalidates old handles. A POSIX adapter that has an open final-link handle uses
+`bfs_fs_unlink_open_file()` instead: it removes the namespace entry and commits
+the inode with `link_count == 0`. Only handles explicitly marked through
+`bfs_file_mark_unlinked()` may then read, write, truncate, sync, or report the
+inode with zero links. The adapter reclaims that inode after the last retained
+handle closes. No new lookup or normal file open can reach it.
+
+A zero-link inode is an intentional, recoverable v2 state, not a public
+namespace object. A writable mount reclaims every such non-directory inode
+before exposing the live namespace; a read-only mount preserves it and must
+not expose it. Thus a crash after an unlink or replacement rename may discard
+the unnamed file's later handle writes, but cannot make it reachable again or
+reuse its blocks while it remains recorded. Offline readers and checkers must
+retain its extent ownership until a writable recovery pass reclaims it.
 
 Partial writes and truncation validate checksummed old data before retaining any
 bytes. A mismatched CRC rejects the operation without generating a new checksum

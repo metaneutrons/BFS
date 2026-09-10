@@ -142,6 +142,46 @@ bfs_err_t bfs_dir_insert(bfs_dir_tree_t *dt, uint32_t parent_id,
     return bfs_btree_insert(&dt->tree, key, &val);
 }
 
+bfs_err_t bfs_dir_replace(bfs_dir_tree_t *dt, uint32_t parent_id,
+                          const char *name, uint8_t name_len,
+                          uint32_t inode_nr, uint32_t entry_type,
+                          uint32_t *old_inode_out, uint32_t *old_type_out)
+{
+    if (!dt || !name || name_len == 0 || inode_nr == 0 ||
+        inode_nr >= 0x80000000u || entry_type > BFS_INODE_HARDLINK)
+        return BFS_ERR_INVAL;
+    uint8_t key[DIR_KEY_SIZE];
+    make_dir_key(key, parent_id, name, name_len);
+    bfs_dir_val_t old_value;
+    bfs_err_t err = bfs_btree_search(&dt->tree, key, &old_value);
+    if (err != BFS_OK) return err;
+    uint32_t old_inode = bfs_be32(old_value.inode_nr);
+    uint32_t old_type = bfs_be32(old_value.entry_type);
+    if (old_inode == 0 || old_inode >= 0x80000000u || old_type > BFS_INODE_HARDLINK)
+        return BFS_ERR_CORRUPT;
+    bfs_dir_val_t new_value = {
+        .inode_nr = bfs_be32(inode_nr),
+        .entry_type = bfs_be32(entry_type),
+    };
+    err = bfs_btree_update(&dt->tree, key, &new_value);
+    if (err != BFS_OK) return err;
+    if (old_inode_out) *old_inode_out = old_inode;
+    if (old_type_out) *old_type_out = old_type;
+    return BFS_OK;
+}
+
+bfs_err_t bfs_dir_rekey_case(bfs_dir_tree_t *dt, uint32_t parent_id,
+                             const char *old_name, uint8_t old_len,
+                             const char *new_name, uint8_t new_len)
+{
+    if (!dt || !old_name || !new_name || old_len == 0 || new_len == 0)
+        return BFS_ERR_INVAL;
+    uint8_t old_key[DIR_KEY_SIZE], new_key[DIR_KEY_SIZE];
+    make_dir_key(old_key, parent_id, old_name, old_len);
+    make_dir_key(new_key, parent_id, new_name, new_len);
+    return bfs_btree_rekey_equal(&dt->tree, old_key, new_key);
+}
+
 /* ── Remove ────────────────────────────────────────────────── */
 
 bfs_err_t bfs_dir_remove(bfs_dir_tree_t *dt, uint32_t parent_id,

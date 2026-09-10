@@ -25,7 +25,8 @@ library or executable-local module in `src/host`.
 The remaining documents are normative:
 
 * [Filesystem semantics](platform-contract/filesystem-semantics.md) defines
-  names, metadata, operation results, snapshots, and the v2 write gate.
+  names, metadata, operation results, snapshots, and the v2 write and recovery
+  contract.
 * [Lifecycle and storage](platform-contract/lifecycle-and-storage.md) defines
   public-core ownership, mount safety, I/O, locking, and cache policy.
 * [Capabilities](platform-contract/capabilities.md) assigns stable capability
@@ -35,9 +36,10 @@ The remaining documents are normative:
 
 ## Acceptance rule
 
-M3, M4, and M5 may proceed with the read-only contract. M6 is explicitly
-blocked until a separately accepted on-disk-format decision supplies durable
-orphan and replacement-rename semantics that are safe for both updated and
-legacy BFS drivers. A portability adapter must fail closed when a required
-capability is absent; it must not silently emulate a different durability
-model.
+M3 through M6 use the documented v2 zero-link recovery contract for final-link
+open-unlink and replacement rename. It adds no field, option, or format
+version: a non-directory inode with `link_count == 0` is retained only for an
+open POSIX handle and reclaimed on writable mount recovery. M6 acceptance still
+requires pinned-baseline Amiga interoperability and interrupted-state evidence.
+A portability adapter must fail closed when a required capability is absent; it
+must not silently emulate a different durability model.

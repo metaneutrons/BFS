@@ -17,7 +17,15 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
 
 bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out);
 
+/* Read/write a zero-link inode retained solely for an open POSIX handle. Such
+ * inodes are never reachable through the namespace and are reclaimed on the
+ * next writable mount if their last handle was lost in a crash. */
+bfs_err_t bfs_inode_read_unlinked(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out);
+
 bfs_err_t bfs_inode_write(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *inode);
+
+bfs_err_t bfs_inode_write_unlinked(bfs_btree_t *tree, uint32_t ino,
+                                   const bfs_inode_t *inode);
 
 bfs_err_t bfs_inode_delete(bfs_btree_t *tree, uint32_t ino);
 
