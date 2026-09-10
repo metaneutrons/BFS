@@ -162,7 +162,9 @@ bfs_err_t bfs_fs_rename(bfs_fs_t *fs,
                           uint32_t new_parent, const char *new_name, uint8_t new_len);
 
 typedef struct {
+    // cppcheck-suppress unusedStructMember
     bool preserve_replaced;
+    // cppcheck-suppress unusedStructMember
     uint32_t *orphan_ino_out;
 } bfs_rename_options_t;
 
