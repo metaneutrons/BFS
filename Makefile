@@ -53,7 +53,8 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 # ── Phony targets ───────────────────────────────────────────
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
 	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release \
-	conformance conformance-test linux-qualification-fast linux-qualification-soak qualification-tests
+	conformance conformance-test linux-qualification-fast linux-qualification-soak \
+	linux-qualification-soak-preflight qualification-tests
 
 .PHONY: fuse
 
@@ -82,6 +83,12 @@ linux-qualification-soak: fuse conformance tools $(CONFORMANCE_FIXTURE) qualific
 	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
 	@python3 tests/qualification/fuse_soak.py --output "$(OUTPUT)" \
 		--approval-reference "$(APPROVAL_REFERENCE)" $(SOAK_ARGS)
+
+linux-qualification-soak-preflight: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests
+	@rm -rf build/linux-qualification/soak-preflight
+	@python3 tests/qualification/fuse_soak.py \
+		--output build/linux-qualification/soak-preflight \
+		--preflight --duration-seconds 30
 
 .PHONY: fuse-analyze
 

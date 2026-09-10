@@ -42,8 +42,40 @@ class LinuxQualificationTests(unittest.TestCase):
         matrix = linux_qualification.load_matrix(linux_qualification.DEFAULT_MATRIX)
         self.assertEqual(fuse_soak.select_duration(matrix["soak"], 60, True), 60)
 
+    def test_rejects_target_duration_preflight(self):
+        matrix = linux_qualification.load_matrix(linux_qualification.DEFAULT_MATRIX)
+        with self.assertRaisesRegex(RuntimeError, "shorter"):
+            fuse_soak.select_duration(matrix["soak"], matrix["soak"]["target_duration_seconds"], True)
+
+    def test_requires_issue_29_approval_reference(self):
+        self.assertTrue(fuse_soak.approval_reference_valid(
+            "https://github.com/metaneutrons/BFS/issues/29#issuecomment-123"))
+        self.assertFalse(fuse_soak.approval_reference_valid(
+            "https://github.com/metaneutrons/BFS/issues/42#issuecomment-123"))
+        fuse_soak.validate_approval_reference(None, True)
+        with self.assertRaisesRegex(RuntimeError, "approval reference"):
+            fuse_soak.validate_approval_reference(None, False)
+
     def test_evidence_output_is_bounded(self):
         self.assertEqual(len(linux_qualification.output_tail("x" * 9000)), 8192)
+
+    def test_soak_profile_has_capacity_and_handle_pressure(self):
+        matrix = linux_qualification.load_matrix(linux_qualification.DEFAULT_MATRIX)
+        soak = matrix["soak"]
+        self.assertGreaterEqual(soak["client_open_files"], 1)
+        self.assertGreaterEqual(soak["minimum_available_bytes"],
+                                soak["block_size"] * soak["block_count"])
+
+    def test_client_handle_pressure_is_bounded_and_cleaned_up(self):
+        limits = {"client_processes": 2, "client_open_files": 2,
+                  "operation_deadline_seconds": 10}
+        with tempfile.TemporaryDirectory() as directory:
+            operations = fuse_soak.run_clients(Path(directory) / "soak", 0, limits)
+        self.assertEqual(operations, 32)
+
+    def test_cycle_wait_does_not_exceed_requested_duration(self):
+        self.assertEqual(fuse_soak.next_cycle_wait(60, 30, 3, 3), 27)
+        self.assertEqual(fuse_soak.next_cycle_wait(60, 30, 31, 3), 0)
 
 
 if __name__ == "__main__":
