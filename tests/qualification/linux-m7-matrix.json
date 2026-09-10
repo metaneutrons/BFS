@@ -1,0 +1,21 @@
+{
+  "format_version": 1,
+  "dispatcher": {
+    "function": "fuse_session_loop",
+    "profile": "serialized callbacks; concurrent client processes may queue requests"
+  },
+  "seed_corpus": [1, 2, 3, 4, 5, 20260910],
+  "fast": {
+    "block_sizes": [1024, 2048, 4096, 8192, 16384, 32768, 65536],
+    "block_count": 512,
+    "operation_timeout_seconds": 300
+  },
+  "soak": {
+    "target_duration_seconds": 259200,
+    "cycle_seconds": 60,
+    "client_processes": 4,
+    "operation_deadline_seconds": 10,
+    "maximum_rss_kib": 262144,
+    "maximum_open_descriptors": 128
+  }
+}
