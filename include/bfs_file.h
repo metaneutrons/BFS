@@ -45,6 +45,10 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len);
  * BFS_ERR_UNSUPPORTED on a read-only mount. */
 int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len);
 
+/* Append under one filesystem write lock. This is the only core entry point
+ * that guarantees an end-of-file placement is atomic against other writers. */
+int32_t bfs_file_append(bfs_file_t *f, const void *buf, uint32_t len);
+
 /* Seek. mode: 0=SET, 1=CUR, 2=END. Returns new offset or <0 on error. */
 int64_t bfs_file_seek(bfs_file_t *f, int64_t offset, int mode);
 

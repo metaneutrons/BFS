@@ -551,6 +551,22 @@ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
     return err;
 }
 
+int32_t bfs_file_append(bfs_file_t *f, const void *buf, uint32_t len)
+{
+    if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf))
+        return BFS_ERR_INVAL;
+    if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
+    bfs_lock_write(&f->fs->lock);
+    bfs_err_t err = file_refresh_unlocked(f);
+    if (err == BFS_OK) {
+        int64_t offset = file_seek_unlocked(f, 0, BFS_SEEK_END);
+        if (offset < 0) err = (bfs_err_t)offset;
+    }
+    int32_t result = err == BFS_OK ? bfs_file_write_unlocked(f, buf, len) : err;
+    bfs_lock_unlock(&f->fs->lock);
+    return result;
+}
+
 bfs_err_t bfs_file_mark_unlinked(bfs_file_t *f)
 {
     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;

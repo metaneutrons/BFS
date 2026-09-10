@@ -232,6 +232,25 @@ static void test_shared_handles_refresh_inode_state(void)
     teardown(fs);
 }
 
+static void test_append_uses_current_end_of_file(void)
+{
+    bfs_fs_t *fs = setup();
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "append", 6, &ino), BFS_OK);
+    bfs_file_t first, second;
+    TEST_ASSERT_EQ(bfs_file_open(&first, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&second, fs, ino), BFS_OK);
+
+    TEST_ASSERT_EQ(bfs_file_write(&first, "base", 4), 4);
+    TEST_ASSERT_EQ(bfs_file_append(&first, "-first", 6), 6);
+    TEST_ASSERT_EQ(bfs_file_append(&second, "-second", 7), 7);
+    TEST_ASSERT_EQ(bfs_file_seek(&first, 0, BFS_SEEK_SET), 0);
+    char data[18] = {0};
+    TEST_ASSERT_EQ(bfs_file_read(&first, data, sizeof(data)), 17);
+    TEST_ASSERT_MEM_EQ(data, "base-first-second", 17);
+    teardown(fs);
+}
+
 static void test_unlinked_open_file_lifetime_and_mount_recovery(void)
 {
     bfs_fs_t *fs = setup();
@@ -278,5 +297,6 @@ TEST_SUITE_BEGIN("File I/O")
     TEST_RUN(test_large_file);
     TEST_RUN(test_truncate_regrow_zeroes_tail);
     TEST_RUN(test_shared_handles_refresh_inode_state);
+    TEST_RUN(test_append_uses_current_end_of_file);
     TEST_RUN(test_unlinked_open_file_lifetime_and_mount_recovery);
 TEST_SUITE_END()
