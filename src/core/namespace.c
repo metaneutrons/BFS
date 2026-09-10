@@ -403,10 +403,14 @@ static bool fs_collect_unlinked_inode(const void *key, const void *value, void *
             scan->error = BFS_ERR_NOMEM;
             return false;
         }
-        uint32_t *items = realloc(scan->items, capacity * sizeof(*items));
+        uint32_t *items = malloc(capacity * sizeof(*items));
         if (!items) {
             scan->error = BFS_ERR_NOMEM;
             return false;
+        }
+        if (scan->items) {
+            memcpy(items, scan->items, scan->count * sizeof(*items));
+            free(scan->items);
         }
         scan->items = items;
         scan->capacity = capacity;
