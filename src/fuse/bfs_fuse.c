@@ -1,5 +1,5 @@
 /* SPDX-License-Identifier: MPL-2.0 */
-/* Linux libfuse3 read-only adapter for the shared BFS core. */
+/* Linux libfuse3 adapter for the shared BFS core. */
 
 #define FUSE_USE_VERSION 30
 
@@ -22,6 +22,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <sys/statvfs.h>
+#include <sys/xattr.h>
 #include <time.h>
 
 #define BFS_FUSE_ESCAPE_PREFIX "@bfs-hex-"
@@ -37,11 +38,13 @@ typedef struct {
     bfs_dir_tree_t *dir_tree;
     bfs_btree_t *inode_tree;
     struct bfs_fuse_file_handle *handles;
+    bool read_only;
 } bfs_fuse_ctx_t;
 
 typedef struct bfs_fuse_file_handle {
     bfs_file_t file;
     uint32_t inode;
+    bool append;
     struct bfs_fuse_file_handle *next;
 } bfs_fuse_file_handle_t;
 
@@ -52,6 +55,9 @@ typedef struct {
     bool by_id;
     bool found;
 } snapshot_selector_t;
+
+static bool has_open_inode(const bfs_fuse_ctx_t *ctx, uint32_t inode);
+static bfs_err_t detach_file_handle(bfs_fuse_ctx_t *ctx, bfs_fuse_file_handle_t *handle);
 
 static int fuse_error(bfs_err_t error)
 {
@@ -75,6 +81,16 @@ static int fuse_error(bfs_err_t error)
 static bool inode_number_valid(fuse_ino_t inode)
 {
     return inode > 0 && inode <= UINT32_MAX;
+}
+
+static bool ctx_is_writable(const bfs_fuse_ctx_t *ctx)
+{
+    return ctx && !ctx->read_only;
+}
+
+static bool inode_allows(const bfs_inode_t *inode, uint32_t protection_bit)
+{
+    return (bfs_be32(inode->protection) & protection_bit) == 0;
 }
 
 static bfs_err_t read_inode(const bfs_fuse_ctx_t *ctx, fuse_ino_t inode,
@@ -204,7 +220,7 @@ static bfs_err_t datestamp_seconds(const bfs_inode_t *inode, bool create, time_t
 static bool inode_is_executable(const bfs_inode_t *inode)
 {
     /* Amiga protection bits deny rights. FIBF_EXECUTE is bit 1. */
-    return (bfs_be32(inode->protection) & 2u) == 0;
+    return inode_allows(inode, 2u);
 }
 
 static bfs_err_t inode_stat(const bfs_fuse_ctx_t *ctx, fuse_ino_t inode_number,
@@ -214,7 +230,7 @@ static bfs_err_t inode_stat(const bfs_fuse_ctx_t *ctx, fuse_ino_t inode_number,
     uint32_t type = bfs_be32(inode->type);
     uint64_t size = ((uint64_t)bfs_be32(inode->size_hi) << 32) | bfs_be32(inode->size_lo);
     uint32_t links = bfs_be32(inode->link_count);
-    if (links == 0 || size > (uint64_t)INT64_MAX) return BFS_ERR_OVERFLOW;
+    if (size > (uint64_t)INT64_MAX) return BFS_ERR_OVERFLOW;
 
     memset(st, 0, sizeof(*st));
     st->st_ino = (ino_t)inode_number;
@@ -228,13 +244,22 @@ static bfs_err_t inode_stat(const bfs_fuse_ctx_t *ctx, fuse_ino_t inode_number,
         st->st_nlink != (nlink_t)links || st->st_blocks < 0)
         return BFS_ERR_OVERFLOW;
 
+    mode_t permissions = 0444;
+    if (ctx_is_writable(ctx)) {
+        permissions = 0;
+        if (inode_allows(inode, 8u)) permissions |= 0444;
+        if (inode_allows(inode, 4u) &&
+            (type != BFS_INODE_DIR || inode_allows(inode, 1u)))
+            permissions |= 0222;
+        if (inode_is_executable(inode)) permissions |= 0111;
+    }
     switch (type) {
     case BFS_INODE_DIR:
-        st->st_mode = S_IFDIR | 0555;
+        st->st_mode = S_IFDIR | permissions;
         break;
     case BFS_INODE_FILE:
     case BFS_INODE_HARDLINK:
-        st->st_mode = S_IFREG | (inode_is_executable(inode) ? 0555 : 0444);
+        st->st_mode = S_IFREG | permissions;
         break;
     case BFS_INODE_SOFTLINK:
         st->st_mode = S_IFLNK | 0777;
@@ -306,24 +331,29 @@ static bfs_err_t view_comment(const bfs_fuse_ctx_t *ctx, uint32_t inode,
     return BFS_OK;
 }
 
-static void reply_entry(fuse_req_t request, const bfs_fuse_ctx_t *ctx, uint32_t inode_number)
+static bfs_err_t make_entry(const bfs_fuse_ctx_t *ctx, uint32_t inode_number,
+                            struct fuse_entry_param *entry)
 {
     bfs_inode_t inode;
     bfs_err_t error = read_inode(ctx, inode_number, &inode);
-    if (error != BFS_OK) {
-        fuse_reply_err(request, fuse_error(error));
-        return;
-    }
+    if (error != BFS_OK) return error;
+    memset(entry, 0, sizeof(*entry));
+    entry->ino = inode_number;
+    error = inode_stat(ctx, inode_number, &inode, &entry->attr);
+    if (error != BFS_OK) return error;
+    entry->attr_timeout = 0;
+    entry->entry_timeout = 0;
+    return BFS_OK;
+}
+
+static void reply_entry(fuse_req_t request, const bfs_fuse_ctx_t *ctx, uint32_t inode_number)
+{
     struct fuse_entry_param entry;
-    memset(&entry, 0, sizeof(entry));
-    entry.ino = inode_number;
-    error = inode_stat(ctx, inode_number, &inode, &entry.attr);
+    bfs_err_t error = make_entry(ctx, inode_number, &entry);
     if (error != BFS_OK) {
         fuse_reply_err(request, fuse_error(error));
         return;
     }
-    entry.attr_timeout = 0;
-    entry.entry_timeout = 0;
     fuse_reply_entry(request, &entry);
 }
 
@@ -369,10 +399,15 @@ static void bfs_fuse_forget(fuse_req_t request, fuse_ino_t inode, uint64_t nlook
 
 static void bfs_fuse_getattr(fuse_req_t request, fuse_ino_t inode, struct fuse_file_info *info)
 {
-    (void)info;
     bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
     bfs_inode_t node;
-    bfs_err_t error = read_inode(ctx, inode, &node);
+    bfs_fuse_file_handle_t *handle = info && info->fh
+        ? (bfs_fuse_file_handle_t *)(uintptr_t)info->fh : NULL;
+    bool unlinked = handle && handle->inode == inode && handle->file.unlinked &&
+        has_open_inode(ctx, handle->inode);
+    bfs_err_t error = unlinked
+        ? bfs_inode_read_unlinked(ctx->inode_tree, (uint32_t)inode, &node)
+        : read_inode(ctx, inode, &node);
     struct stat st;
     if (error == BFS_OK) error = inode_stat(ctx, inode, &node, &st);
     if (error != BFS_OK) {
@@ -507,10 +542,37 @@ static void bfs_fuse_readdir(fuse_req_t request, fuse_ino_t inode, size_t size,
     free(buffer);
 }
 
+static bfs_err_t open_file_handle(bfs_fuse_ctx_t *ctx, uint32_t inode,
+                                  struct fuse_file_info *info)
+{
+    bfs_fuse_file_handle_t *handle = calloc(1, sizeof(*handle));
+    if (!handle) return BFS_ERR_NOMEM;
+    bfs_err_t error = ctx_is_writable(ctx)
+        ? bfs_file_open(&handle->file, &ctx->fs, inode)
+        : bfs_file_open_readonly_view(&handle->file, &ctx->fs, ctx->inode_tree, inode);
+    if (error != BFS_OK) {
+        free(handle);
+        return error;
+    }
+    handle->inode = inode;
+    handle->append = (info->flags & O_APPEND) != 0;
+    handle->next = ctx->handles;
+    ctx->handles = handle;
+    info->fh = (uint64_t)(uintptr_t)handle;
+    info->keep_cache = 0;
+    return BFS_OK;
+}
+
 static void bfs_fuse_open(fuse_req_t request, fuse_ino_t inode, struct fuse_file_info *info)
 {
     bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
-    if ((info->flags & O_ACCMODE) != O_RDONLY || (info->flags & (O_CREAT | O_TRUNC))) {
+    int access = info->flags & O_ACCMODE;
+    if (!inode_number_valid(inode)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    if (!ctx_is_writable(ctx) &&
+        (access != O_RDONLY || (info->flags & (O_CREAT | O_TRUNC)))) {
         fuse_reply_err(request, EROFS);
         return;
     }
@@ -524,23 +586,19 @@ static void bfs_fuse_open(fuse_req_t request, fuse_ino_t inode, struct fuse_file
         fuse_reply_err(request, fuse_error(error));
         return;
     }
-    bfs_fuse_file_handle_t *handle = calloc(1, sizeof(*handle));
-    if (!handle) {
-        fuse_reply_err(request, ENOMEM);
-        return;
-    }
-    error = bfs_file_open_readonly_view(&handle->file, &ctx->fs, ctx->inode_tree,
-                                        (uint32_t)inode);
+    error = open_file_handle(ctx, (uint32_t)inode, info);
+    if (error == BFS_OK && ctx_is_writable(ctx) && (info->flags & O_TRUNC))
+        error = bfs_file_truncate(&((bfs_fuse_file_handle_t *)(uintptr_t)info->fh)->file, 0);
     if (error != BFS_OK) {
-        free(handle);
+        bfs_fuse_file_handle_t *handle = (bfs_fuse_file_handle_t *)(uintptr_t)info->fh;
+        if (handle && ctx->handles == handle) {
+            ctx->handles = handle->next;
+            free(handle);
+        }
+        info->fh = 0;
         fuse_reply_err(request, fuse_error(error));
         return;
     }
-    handle->inode = (uint32_t)inode;
-    handle->next = ctx->handles;
-    ctx->handles = handle;
-    info->fh = (uint64_t)(uintptr_t)handle;
-    info->keep_cache = 0;
     fuse_reply_open(request, info);
 }
 
@@ -562,12 +620,17 @@ static void bfs_fuse_opendir(fuse_req_t request, fuse_ino_t inode, struct fuse_f
 static void bfs_fuse_read(fuse_req_t request, fuse_ino_t inode, size_t size,
                           off_t offset, struct fuse_file_info *info)
 {
-    (void)inode;
     if (offset < 0 || size > BFS_FUSE_MAX_REPLY || !info->fh) {
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
     bfs_fuse_file_handle_t *handle = (bfs_fuse_file_handle_t *)(uintptr_t)info->fh;
+    if (!inode_number_valid(inode) || handle->inode != inode ||
+        !has_open_inode(ctx, handle->inode)) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
     int64_t seek = bfs_file_seek(&handle->file, offset, BFS_SEEK_SET);
     if (seek < 0) {
         fuse_reply_err(request, fuse_error((bfs_err_t)seek));
@@ -594,16 +657,9 @@ static void bfs_fuse_release(fuse_req_t request, fuse_ino_t inode,
     (void)inode;
     bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
     bfs_fuse_file_handle_t *handle = (bfs_fuse_file_handle_t *)(uintptr_t)info->fh;
-    if (handle) {
-        bfs_fuse_file_handle_t **current = &ctx->handles;
-        while (*current && *current != handle) current = &(*current)->next;
-        if (*current) {
-            *current = handle->next;
-            free(handle);
-        }
-    }
+    bfs_err_t error = handle ? detach_file_handle(ctx, handle) : BFS_ERR_INVAL;
     info->fh = 0;
-    fuse_reply_err(request, 0);
+    fuse_reply_err(request, fuse_error(error));
 }
 
 static void bfs_fuse_readlink(fuse_req_t request, fuse_ino_t inode)
@@ -627,7 +683,9 @@ static void bfs_fuse_readlink(fuse_req_t request, fuse_ino_t inode)
         return;
     }
     bfs_file_t file;
-    error = bfs_file_open_readonly_view(&file, &ctx->fs, ctx->inode_tree, (uint32_t)inode);
+    error = ctx_is_writable(ctx)
+        ? bfs_file_open(&file, &ctx->fs, (uint32_t)inode)
+        : bfs_file_open_readonly_view(&file, &ctx->fs, ctx->inode_tree, (uint32_t)inode);
     int32_t count = error == BFS_OK ? bfs_file_read(&file, target, (uint32_t)length) : error;
     if (count != (int32_t)length || memchr(target, '\0', (size_t)length) != NULL) {
         free(target);
@@ -794,123 +852,456 @@ static void bfs_fuse_readonly(fuse_req_t request)
     fuse_reply_err(request, EROFS);
 }
 
+static bool has_open_inode(const bfs_fuse_ctx_t *ctx, uint32_t inode)
+{
+    for (const bfs_fuse_file_handle_t *handle = ctx->handles; handle; handle = handle->next)
+        if (handle->inode == inode) return true;
+    return false;
+}
+
+static bfs_err_t mark_open_inode_unlinked(bfs_fuse_ctx_t *ctx, uint32_t inode)
+{
+    bool found = false;
+    for (bfs_fuse_file_handle_t *handle = ctx->handles; handle; handle = handle->next) {
+        if (handle->inode != inode) continue;
+        bfs_err_t error = bfs_file_mark_unlinked(&handle->file);
+        if (error != BFS_OK) return error;
+        found = true;
+    }
+    return found ? BFS_OK : BFS_ERR_NOTFOUND;
+}
+
+static bfs_err_t detach_file_handle(bfs_fuse_ctx_t *ctx, bfs_fuse_file_handle_t *handle)
+{
+    bfs_fuse_file_handle_t **current = &ctx->handles;
+    while (*current && *current != handle) current = &(*current)->next;
+    if (!*current) return BFS_ERR_INVAL;
+    *current = handle->next;
+    bool reap = handle->file.unlinked && !has_open_inode(ctx, handle->inode);
+    uint32_t inode = handle->inode;
+    free(handle);
+    return reap ? bfs_fs_reap_unlinked_file(&ctx->fs, inode) : BFS_OK;
+}
+
 static void bfs_fuse_write(fuse_req_t request, fuse_ino_t inode, const char *buffer,
                            size_t size, off_t offset, struct fuse_file_info *info)
 {
-    (void)inode;
-    (void)buffer;
-    (void)size;
-    (void)offset;
-    (void)info;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(inode) || offset < 0 || size > INT32_MAX || !info->fh) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    bfs_fuse_file_handle_t *handle = (bfs_fuse_file_handle_t *)(uintptr_t)info->fh;
+    if (handle->inode != inode || !has_open_inode(ctx, handle->inode)) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    int32_t written;
+    if (handle->append) {
+        written = bfs_file_append(&handle->file, buffer, (uint32_t)size);
+    } else {
+        int64_t seek = bfs_file_seek(&handle->file, offset, BFS_SEEK_SET);
+        written = seek < 0 ? (int32_t)seek :
+            bfs_file_write(&handle->file, buffer, (uint32_t)size);
+    }
+    if (written < 0) {
+        fuse_reply_err(request, fuse_error((bfs_err_t)written));
+        return;
+    }
+    fuse_reply_write(request, (size_t)written);
 }
 
 static void bfs_fuse_setattr(fuse_req_t request, fuse_ino_t inode, struct stat *attr,
                              int to_set, struct fuse_file_info *info)
 {
-    (void)inode;
-    (void)attr;
-    (void)to_set;
     (void)info;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(inode) || !attr) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    if ((to_set & ~FUSE_SET_ATTR_SIZE) != 0) {
+        fuse_reply_err(request, EOPNOTSUPP);
+        return;
+    }
+    if ((to_set & FUSE_SET_ATTR_SIZE) == 0 || attr->st_size < 0) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    bfs_fuse_file_handle_t *handle = info && info->fh
+        ? (bfs_fuse_file_handle_t *)(uintptr_t)info->fh : NULL;
+    bfs_file_t temporary;
+    bfs_err_t error;
+    if (handle && handle->inode == inode && has_open_inode(ctx, handle->inode)) {
+        error = bfs_file_truncate(&handle->file, (uint64_t)attr->st_size);
+    } else {
+        error = bfs_file_open(&temporary, &ctx->fs, (uint32_t)inode);
+        if (error == BFS_OK) error = bfs_file_truncate(&temporary, (uint64_t)attr->st_size);
+    }
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_error(error));
+        return;
+    }
+    bfs_inode_t node;
+    struct stat result;
+    error = handle && handle->file.unlinked
+        ? bfs_inode_read_unlinked(ctx->inode_tree, (uint32_t)inode, &node)
+        : read_inode(ctx, inode, &node);
+    if (error == BFS_OK) error = inode_stat(ctx, inode, &node, &result);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_error(error));
+        return;
+    }
+    fuse_reply_attr(request, &result, 0);
 }
 
 static void bfs_fuse_setxattr(fuse_req_t request, fuse_ino_t inode, const char *name,
                                const char *value, size_t size, int flags)
 {
-    (void)inode;
-    (void)name;
-    (void)value;
-    (void)size;
-    (void)flags;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(inode)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    if (!name || size == 0 || size > BFS_FUSE_COMMENT_MAX || !value ||
+        (flags & ~(XATTR_CREATE | XATTR_REPLACE)) != 0 ||
+        ((flags & XATTR_CREATE) != 0 && (flags & XATTR_REPLACE) != 0) ||
+        (size != 0 && memchr(value, '\0', size) != NULL)) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    if (strcmp(name, "user.bfs.comment") != 0) {
+        fuse_reply_err(request, EOPNOTSUPP);
+        return;
+    }
+    char previous[BFS_FUSE_COMMENT_MAX];
+    size_t previous_length;
+    bfs_err_t prior = view_comment(ctx, (uint32_t)inode, previous, &previous_length);
+    if (prior != BFS_OK && prior != BFS_ERR_NOTFOUND) {
+        fuse_reply_err(request, fuse_error(prior));
+        return;
+    }
+    if ((flags & XATTR_CREATE) != 0 && prior == BFS_OK) {
+        fuse_reply_err(request, EEXIST);
+        return;
+    }
+    if ((flags & XATTR_REPLACE) != 0 && prior == BFS_ERR_NOTFOUND) {
+        fuse_reply_err(request, ENODATA);
+        return;
+    }
+    bfs_err_t error = bfs_fs_set_comment(&ctx->fs, (uint32_t)inode, value, (uint8_t)size);
+    fuse_reply_err(request, fuse_error(error));
 }
 
 static void bfs_fuse_removexattr(fuse_req_t request, fuse_ino_t inode, const char *name)
 {
-    (void)inode;
-    (void)name;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(inode)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    if (!name) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    if (strcmp(name, "user.bfs.comment") != 0) {
+        fuse_reply_err(request, EOPNOTSUPP);
+        return;
+    }
+    char previous[BFS_FUSE_COMMENT_MAX];
+    size_t previous_length;
+    bfs_err_t error = view_comment(ctx, (uint32_t)inode, previous, &previous_length);
+    if (error == BFS_ERR_NOTFOUND) {
+        fuse_reply_err(request, ENODATA);
+        return;
+    }
+    if (error == BFS_OK) error = bfs_fs_set_comment(&ctx->fs, (uint32_t)inode, NULL, 0);
+    fuse_reply_err(request, fuse_error(error));
 }
 
 static void bfs_fuse_create(fuse_req_t request, fuse_ino_t parent, const char *name,
                             mode_t mode, struct fuse_file_info *info)
 {
-    (void)parent;
-    (void)name;
     (void)mode;
-    (void)info;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(parent) || !info) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    char raw[BFS_NAME_MAX];
+    uint8_t length;
+    bfs_err_t error = decode_name(name, raw, &length);
+    uint32_t inode;
+    if (error == BFS_OK)
+        error = bfs_fs_create_file(&ctx->fs, (uint32_t)parent, raw, length, &inode);
+    if (error == BFS_OK) error = open_file_handle(ctx, inode, info);
+    struct fuse_entry_param entry;
+    if (error == BFS_OK) error = make_entry(ctx, inode, &entry);
+    if (error != BFS_OK) {
+        bfs_fuse_file_handle_t *handle = (bfs_fuse_file_handle_t *)(uintptr_t)info->fh;
+        if (handle && ctx->handles == handle) {
+            ctx->handles = handle->next;
+            free(handle);
+        }
+        info->fh = 0;
+        fuse_reply_err(request, fuse_error(error));
+        return;
+    }
+    fuse_reply_create(request, &entry, info);
 }
 
 static void bfs_fuse_mkdir(fuse_req_t request, fuse_ino_t parent, const char *name, mode_t mode)
 {
-    (void)parent;
-    (void)name;
     (void)mode;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(parent)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    char raw[BFS_NAME_MAX];
+    uint8_t length;
+    bfs_err_t error = decode_name(name, raw, &length);
+    uint32_t inode;
+    if (error == BFS_OK)
+        error = bfs_fs_mkdir(&ctx->fs, (uint32_t)parent, raw, length, &inode);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_error(error));
+        return;
+    }
+    reply_entry(request, ctx, inode);
 }
 
 static void bfs_fuse_mknod(fuse_req_t request, fuse_ino_t parent, const char *name,
                            mode_t mode, dev_t rdev)
 {
-    (void)parent;
-    (void)name;
-    (void)mode;
     (void)rdev;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!S_ISREG(mode)) {
+        fuse_reply_err(request, EOPNOTSUPP);
+        return;
+    }
+    if (!inode_number_valid(parent)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    char raw[BFS_NAME_MAX];
+    uint8_t length;
+    bfs_err_t error = decode_name(name, raw, &length);
+    uint32_t inode;
+    if (error == BFS_OK)
+        error = bfs_fs_create_file(&ctx->fs, (uint32_t)parent, raw, length, &inode);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_error(error));
+        return;
+    }
+    reply_entry(request, ctx, inode);
 }
 
 static void bfs_fuse_unlink(fuse_req_t request, fuse_ino_t parent, const char *name)
 {
-    (void)parent;
-    (void)name;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(parent)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    char raw[BFS_NAME_MAX];
+    uint8_t length;
+    bfs_err_t error = decode_name(name, raw, &length);
+    uint32_t inode = 0, type = 0, orphan = 0;
+    if (error == BFS_OK)
+        error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, raw, length, &inode, &type);
+    if (error == BFS_OK && type == BFS_INODE_DIR) {
+        fuse_reply_err(request, EISDIR);
+        return;
+    }
+    bool preserve = error == BFS_OK && has_open_inode(ctx, inode);
+    if (error == BFS_OK) {
+        error = preserve
+            ? bfs_fs_unlink_open_file(&ctx->fs, (uint32_t)parent, raw, length, &orphan)
+            : bfs_fs_delete_file(&ctx->fs, (uint32_t)parent, raw, length);
+    }
+    if (error == BFS_OK && orphan != 0) error = mark_open_inode_unlinked(ctx, orphan);
+    fuse_reply_err(request, fuse_error(error));
 }
 
 static void bfs_fuse_rmdir(fuse_req_t request, fuse_ino_t parent, const char *name)
 {
-    (void)parent;
-    (void)name;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(parent)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    char raw[BFS_NAME_MAX];
+    uint8_t length;
+    bfs_err_t error = decode_name(name, raw, &length);
+    if (error == BFS_OK)
+        error = bfs_fs_rmdir(&ctx->fs, (uint32_t)parent, raw, length);
+    fuse_reply_err(request, fuse_error(error));
 }
 
 static void bfs_fuse_rename(fuse_req_t request, fuse_ino_t parent, const char *name,
                             fuse_ino_t new_parent, const char *new_name, unsigned int flags)
 {
-    (void)parent;
-    (void)name;
-    (void)new_parent;
-    (void)new_name;
-    (void)flags;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(parent) || !inode_number_valid(new_parent)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    if (flags != 0) {
+        fuse_reply_err(request, EOPNOTSUPP);
+        return;
+    }
+    char old_raw[BFS_NAME_MAX], new_raw[BFS_NAME_MAX];
+    uint8_t old_length, new_length;
+    bfs_err_t error = decode_name(name, old_raw, &old_length);
+    if (error == BFS_OK) error = decode_name(new_name, new_raw, &new_length);
+    uint32_t replaced = 0, replaced_type = 0, orphan = 0;
+    if (error == BFS_OK) {
+        bfs_err_t lookup = bfs_dir_lookup(ctx->dir_tree, (uint32_t)new_parent,
+                                          new_raw, new_length, &replaced, &replaced_type);
+        if (lookup != BFS_OK && lookup != BFS_ERR_NOTFOUND) error = lookup;
+    }
+    bool preserve = error == BFS_OK && replaced != 0 &&
+        replaced_type != BFS_INODE_DIR && has_open_inode(ctx, replaced);
+    if (error == BFS_OK)
+        error = bfs_fs_rename_replace(&ctx->fs, (uint32_t)parent, old_raw, old_length,
+                                      (uint32_t)new_parent, new_raw, new_length,
+                                      preserve, &orphan);
+    if (error == BFS_OK && orphan != 0) error = mark_open_inode_unlinked(ctx, orphan);
+    fuse_reply_err(request, fuse_error(error));
 }
 
 static void bfs_fuse_link(fuse_req_t request, fuse_ino_t inode, fuse_ino_t new_parent,
                           const char *new_name)
 {
-    (void)inode;
-    (void)new_parent;
-    (void)new_name;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(inode) || !inode_number_valid(new_parent)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    char raw[BFS_NAME_MAX];
+    uint8_t length;
+    bfs_err_t error = decode_name(new_name, raw, &length);
+    if (error == BFS_OK)
+        error = bfs_fs_make_hardlink(&ctx->fs, (uint32_t)new_parent, raw, length,
+                                     (uint32_t)inode);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_error(error));
+        return;
+    }
+    reply_entry(request, ctx, (uint32_t)inode);
 }
 
 static void bfs_fuse_symlink(fuse_req_t request, const char *link, fuse_ino_t parent,
                              const char *name)
 {
-    (void)link;
-    (void)parent;
-    (void)name;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    if (!inode_number_valid(parent) || !link) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    char raw[BFS_NAME_MAX];
+    uint8_t name_length;
+    bfs_err_t error = decode_name(name, raw, &name_length);
+    size_t path_length = strnlen(link, UINT16_MAX + 1u);
+    if (error == BFS_OK && (path_length == 0 || path_length > UINT16_MAX)) error = BFS_ERR_OVERFLOW;
+    if (error == BFS_OK)
+        error = bfs_fs_make_softlink(&ctx->fs, (uint32_t)parent, raw, name_length,
+                                     link, (uint16_t)path_length);
+    uint32_t inode;
+    if (error == BFS_OK)
+        error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, raw, name_length,
+                               &inode, NULL);
+    if (error != BFS_OK) {
+        fuse_reply_err(request, fuse_error(error));
+        return;
+    }
+    reply_entry(request, ctx, inode);
 }
 
 static void bfs_fuse_fsync(fuse_req_t request, fuse_ino_t inode, int datasync,
                            struct fuse_file_info *info)
 {
-    (void)inode;
     (void)datasync;
     (void)info;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    if (!inode_number_valid(inode)) {
+        fuse_reply_err(request, EOVERFLOW);
+        return;
+    }
+    if (!ctx_is_writable(ctx)) {
+        bfs_fuse_readonly(request);
+        return;
+    }
+    fuse_reply_err(request, fuse_error(bfs_fs_sync(&ctx->fs)));
+}
+
+static void bfs_fuse_fsyncdir(fuse_req_t request, fuse_ino_t inode, int datasync,
+                              struct fuse_file_info *info)
+{
+    bfs_fuse_fsync(request, inode, datasync, info);
+}
+
+static void bfs_fuse_flush(fuse_req_t request, fuse_ino_t inode, struct fuse_file_info *info)
+{
+    (void)inode;
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    bfs_fuse_file_handle_t *handle = info
+        ? (bfs_fuse_file_handle_t *)(uintptr_t)info->fh : NULL;
+    if (!handle || !has_open_inode(ctx, handle->inode)) {
+        fuse_reply_err(request, EINVAL);
+        return;
+    }
+    /* flush/release only retire a file descriptor. Durable persistence is fsync. */
+    fuse_reply_err(request, 0);
 }
 
 static void bfs_fuse_fallocate(fuse_req_t request, fuse_ino_t inode, int mode,
@@ -921,7 +1312,16 @@ static void bfs_fuse_fallocate(fuse_req_t request, fuse_ino_t inode, int mode,
     (void)offset;
     (void)length;
     (void)info;
-    bfs_fuse_readonly(request);
+    bfs_fuse_ctx_t *ctx = fuse_req_userdata(request);
+    fuse_reply_err(request, ctx_is_writable(ctx) ? EOPNOTSUPP : EROFS);
+}
+
+static void bfs_fuse_releasedir(fuse_req_t request, fuse_ino_t inode,
+                                struct fuse_file_info *info)
+{
+    (void)inode;
+    if (info) info->fh = 0;
+    fuse_reply_err(request, 0);
 }
 
 static void bfs_fuse_init(void *userdata, struct fuse_conn_info *connection)
@@ -947,11 +1347,13 @@ static const struct fuse_lowlevel_ops bfs_fuse_operations = {
     .open = bfs_fuse_open,
     .read = bfs_fuse_read,
     .write = bfs_fuse_write,
+    .flush = bfs_fuse_flush,
     .release = bfs_fuse_release,
     .fsync = bfs_fuse_fsync,
     .opendir = bfs_fuse_opendir,
     .readdir = bfs_fuse_readdir,
-    .releasedir = bfs_fuse_release,
+    .releasedir = bfs_fuse_releasedir,
+    .fsyncdir = bfs_fuse_fsyncdir,
     .statfs = bfs_fuse_statfs,
     .setxattr = bfs_fuse_setxattr,
     .getxattr = bfs_fuse_getxattr,
@@ -987,16 +1389,17 @@ static bool parse_u64(const char *text, uint64_t *out)
 static void usage(const char *program)
 {
     fprintf(stderr, "Usage: %s --image PATH [--offset BYTES] [--length BYTES] "
-                    "[--snapshot NAME | --snapshot-id ID] MOUNTPOINT\n", program);
+                    "[--read-write] [--snapshot NAME | --snapshot-id ID] MOUNTPOINT\n", program);
 }
 
-static void free_open_handles(bfs_fuse_ctx_t *ctx)
+static bfs_err_t free_open_handles(bfs_fuse_ctx_t *ctx)
 {
+    bfs_err_t result = BFS_OK;
     while (ctx->handles) {
-        bfs_fuse_file_handle_t *handle = ctx->handles;
-        ctx->handles = handle->next;
-        free(handle);
+        bfs_err_t error = detach_file_handle(ctx, ctx->handles);
+        if (result == BFS_OK && error != BFS_OK) result = error;
     }
+    return result;
 }
 
 int main(int argc, char **argv)
@@ -1005,9 +1408,12 @@ int main(int argc, char **argv)
     const char *mountpoint = NULL;
     uint64_t offset = 0, length = 0;
     snapshot_selector_t selector = {0};
+    bool read_write = false;
     for (int index = 1; index < argc; index++) {
         const char *arg = argv[index];
-        if ((strcmp(arg, "--image") == 0 || strcmp(arg, "--offset") == 0 ||
+        if (strcmp(arg, "--read-write") == 0) {
+            read_write = true;
+        } else if ((strcmp(arg, "--image") == 0 || strcmp(arg, "--offset") == 0 ||
              strcmp(arg, "--length") == 0 || strcmp(arg, "--snapshot") == 0 ||
              strcmp(arg, "--snapshot-id") == 0) && ++index < argc) {
             const char *value = argv[index];
@@ -1044,14 +1450,19 @@ int main(int argc, char **argv)
         usage(argv[0]);
         return 2;
     }
+    if (read_write && (selector.name || selector.by_id)) {
+        fprintf(stderr, "bfs-fuse: snapshots are always read-only\n");
+        return 2;
+    }
 
     bfs_fuse_ctx_t ctx;
     memset(&ctx, 0, sizeof(ctx));
+    ctx.read_only = !read_write;
     bfs_posix_bio_options_t options = {
         .byte_offset = offset,
         .byte_length = length,
         .block_size = BFS_MIN_BLOCK_SIZE,
-        .writable = false,
+        .writable = read_write,
         .lock = true,
     };
     ctx.bio = bfs_posix_bio_open(image, &options);
@@ -1063,7 +1474,8 @@ int main(int argc, char **argv)
     bfs_superblock_t superblock;
     bfs_err_t error = bfs_posix_bio_get_range(ctx.bio, &selected_offset, &selected_length);
     if (error == BFS_OK) error = bfs_sb_probe(ctx.bio, selected_length, &superblock);
-    if (error == BFS_OK) error = bfs_fs_mount_readonly(&ctx.fs, ctx.bio);
+    if (error == BFS_OK)
+        error = read_write ? bfs_fs_mount(&ctx.fs, ctx.bio) : bfs_fs_mount_readonly(&ctx.fs, ctx.bio);
     if (error != BFS_OK) {
         char diagnostic[BFS_FORMAT_ERROR_MAX] = {0};
         if (error == BFS_ERR_UNSUPPORTED)
@@ -1103,7 +1515,8 @@ int main(int argc, char **argv)
         }
     }
 
-    char *fuse_argv[] = { argv[0], "-o", "ro,default_permissions,nodev,nosuid", NULL };
+    char *fuse_argv[] = { argv[0], "-o",
+        read_write ? "default_permissions,nodev,nosuid" : "ro,default_permissions,nodev,nosuid", NULL };
     struct fuse_args arguments = FUSE_ARGS_INIT(3, fuse_argv);
     struct fuse_session *session = fuse_session_new(&arguments, &bfs_fuse_operations,
                                                     sizeof(bfs_fuse_operations), &ctx);
@@ -1124,10 +1537,10 @@ int main(int argc, char **argv)
     int result = fuse_session_loop(session);
     fuse_session_unmount(session);
     fuse_session_destroy(session);
-    free_open_handles(&ctx);
+    if (free_open_handles(&ctx) != BFS_OK) result = 1;
     bfs_posix_bio_stats_t stats;
     if (bfs_posix_bio_get_stats(ctx.bio, &stats) != BFS_OK ||
-        stats.write_calls != 0 || stats.sync_calls != 0) {
+        (ctx.read_only && (stats.write_calls != 0 || stats.sync_calls != 0))) {
         fprintf(stderr, "bfs-fuse: read-only transport observed a write or sync\n");
         result = 1;
     }

@@ -1,11 +1,12 @@
 #!/usr/bin/env python3
-"""Actual Linux FUSE qualification for the read-only BFS adapter."""
+"""Actual Linux FUSE qualification for the BFS adapter."""
 
 import argparse
 import ctypes
 import errno
 import hashlib
 import json
+import multiprocessing
 import os
 from pathlib import Path
 import platform
@@ -43,8 +44,10 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def mount(image, mountpoint, snapshot=None):
+def mount(image, mountpoint, snapshot=None, read_write=False):
     arguments = [str(FUSE), "--image", str(image)]
+    if read_write:
+        arguments.append("--read-write")
     if snapshot:
         arguments.extend(["--snapshot", snapshot])
     arguments.append(str(mountpoint))
@@ -192,6 +195,28 @@ def expect_erofs(operation):
     raise RuntimeError("mutation unexpectedly succeeded")
 
 
+def expect_errno(expected, operation):
+    try:
+        operation()
+    except OSError as error:
+        require(error.errno == expected, f"expected errno {expected}, got {error}")
+        return
+    raise RuntimeError(f"operation unexpectedly succeeded; expected errno {expected}")
+
+
+def append_client(path, payload, repetitions):
+    descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CLOEXEC)
+    try:
+        for _ in range(repetitions):
+            total = 0
+            while total < len(payload):
+                count = os.write(descriptor, payload[total:])
+                require(count > 0, "append write made no progress")
+                total += count
+    finally:
+        os.close(descriptor)
+
+
 def run_conformance(root, cases):
     arguments = [str(CONFORMANCE), "--backend", "posix", "--root", str(root)]
     for case in cases:
@@ -257,6 +282,178 @@ def exercise_fixture(image, mountpoint):
     require(sha256(image) == before, "read-only snapshot mount changed the fixture image")
 
 
+def exercise_writable_fixture(image, mountpoint):
+    process = mount(image, mountpoint, read_write=True)
+    try:
+        work = mountpoint / "rw"
+        work.mkdir()
+        durable = work / "durable"
+        descriptor = os.open(durable, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+        try:
+            require(os.write(descriptor, b"base") == 4, "initial write was short")
+            os.fsync(descriptor)
+            os.ftruncate(descriptor, 9)
+            os.lseek(descriptor, 4, os.SEEK_SET)
+            require(os.read(descriptor, 5) == b"\0" * 5, "truncate extension is not zero-filled")
+        finally:
+            os.close(descriptor)
+        os.setxattr(durable, "user.bfs.comment", b"M6 writable mount")
+        require(os.getxattr(durable, "user.bfs.comment") == b"M6 writable mount",
+                "writable comment xattr differs")
+        expect_errno(errno.EOPNOTSUPP, lambda: os.setxattr(durable, "user.bfs.uid", b"1"))
+        expect_errno(errno.EOPNOTSUPP, lambda: os.chmod(durable, 0o600))
+
+        removable = work / "removable-comment"
+        removable.write_bytes(b"comment")
+        os.setxattr(removable, "user.bfs.comment", b"remove me")
+        os.removexattr(removable, "user.bfs.comment")
+        expect_errno(errno.ENODATA, lambda: os.getxattr(removable, "user.bfs.comment"))
+
+        node = work / "mknod-file"
+        os.mknod(node, stat.S_IFREG | 0o600)
+        require(node.is_file(), "regular mknod did not create a file")
+
+        positions = work / "positions"
+        positions.write_bytes(b"abcdef")
+        first = os.open(positions, os.O_RDONLY | os.O_CLOEXEC)
+        second = os.open(positions, os.O_RDONLY | os.O_CLOEXEC)
+        try:
+            require(os.read(first, 2) == b"ab", "first handle initial read differs")
+            require(os.read(second, 3) == b"abc", "second handle offset is not independent")
+            require(os.read(first, 2) == b"cd", "first handle offset changed unexpectedly")
+        finally:
+            os.close(first)
+            os.close(second)
+
+        linked = work / "durable-link"
+        os.link(durable, linked)
+        require(linked.read_bytes() == durable.read_bytes(), "hard-link data differs")
+        symbolic = work / "durable-symlink"
+        os.symlink("durable", symbolic)
+        require(os.readlink(symbolic) == "durable", "symlink target differs")
+
+        open_target = work / "open-target"
+        replacement = work / "replacement"
+        open_target.write_bytes(b"old")
+        replacement.write_bytes(b"new")
+        descriptor = os.open(open_target, os.O_RDWR | os.O_CLOEXEC)
+        try:
+            os.rename(replacement, open_target)
+            require(os.fstat(descriptor).st_nlink == 0,
+                    "replaced open target does not report zero links")
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            require(os.read(descriptor, 3) == b"old", "replacement lost open target data")
+            require(os.write(descriptor, b"+") == 1, "write through replaced handle was short")
+        finally:
+            os.close(descriptor)
+        require(open_target.read_bytes() == b"new", "replacement name did not expose new file")
+
+        source_directory = work / "source-directory"
+        target_directory = work / "target-directory"
+        source_directory.mkdir()
+        target_directory.mkdir()
+        os.rename(source_directory, target_directory)
+        require(target_directory.is_dir() and not source_directory.exists(),
+                "empty directory replacement differs")
+        os.rmdir(target_directory)
+        require(not target_directory.exists(), "rmdir did not remove empty directory")
+
+        unlinked = work / "unlinked"
+        unlinked.write_bytes(b"before")
+        descriptor = os.open(unlinked, os.O_RDWR | os.O_CLOEXEC)
+        try:
+            os.unlink(unlinked)
+            require(os.fstat(descriptor).st_nlink == 0,
+                    "unlinked open file does not report zero links")
+            os.lseek(descriptor, 0, os.SEEK_SET)
+            require(os.read(descriptor, 6) == b"before", "unlinked handle lost data")
+            os.lseek(descriptor, 0, os.SEEK_END)
+            require(os.write(descriptor, b"-after") == 6, "write through unlinked handle was short")
+        finally:
+            os.close(descriptor)
+        require(not unlinked.exists(), "unlinked name is still visible")
+
+        append_path = work / "append"
+        append_path.write_bytes(b"")
+        workers = 6
+        repetitions = 24
+        payloads = [f"worker-{worker:02d}\n".encode("ascii") for worker in range(workers)]
+        context = multiprocessing.get_context("fork")
+        processes = [context.Process(target=append_client,
+                                     args=(append_path, payload, repetitions))
+                     for payload in payloads]
+        for child in processes:
+            child.start()
+        for child in processes:
+            child.join(timeout=20)
+            require(child.exitcode == 0, f"append client exited with {child.exitcode}")
+        records = append_path.read_bytes().splitlines(keepends=True)
+        require(len(records) == workers * repetitions, "atomic append lost or merged records")
+        for payload in payloads:
+            require(records.count(payload) == repetitions,
+                    f"atomic append record count differs for {payload!r}")
+
+        case_name = work / "case-name"
+        case_name.write_bytes(b"case")
+        os.rename(case_name, work / "CASE-NAME")
+        require((work / "CASE-NAME").read_bytes() == b"case", "case-only rename differs")
+        expect_errno(errno.ENOTEMPTY, lambda: os.rmdir(work))
+        directory = os.open(work, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
+        try:
+            os.fsync(directory)
+        finally:
+            os.close(directory)
+    finally:
+        unmount(process, mountpoint)
+
+
+def create_interrupted_open_unlink_image(image, mountpoint, output):
+    process = mount(image, mountpoint, read_write=True)
+    descriptor = None
+    try:
+        orphan = mountpoint / "interrupted-orphan"
+        descriptor = os.open(orphan, os.O_RDWR | os.O_CREAT | os.O_EXCL | os.O_CLOEXEC, 0o600)
+        require(os.write(descriptor, b"interrupted state") == 17,
+                "interrupted fixture write was short")
+        os.fsync(descriptor)
+        os.unlink(orphan)
+        require(os.fstat(descriptor).st_nlink == 0,
+                "interrupted fixture did not retain a zero-link handle")
+        os.fsync(descriptor)
+        process.kill()
+        process.wait(timeout=10)
+        deadline = time.monotonic() + 10
+        while mountpoint.is_mount() and time.monotonic() < deadline:
+            time.sleep(0.05)
+        require(not mountpoint.is_mount(), "FUSE mount survived interrupted daemon")
+    finally:
+        if descriptor is not None:
+            try:
+                os.close(descriptor)
+            except OSError:
+                pass
+        if process.poll() is None:
+            process.kill()
+            process.wait(timeout=10)
+        process.communicate()
+    shutil.copyfile(image, output)
+    oracle_result(output)
+
+    process = mount(image, mountpoint, read_write=True)
+    try:
+        work = mountpoint / "rw"
+        require((work / "durable").read_bytes() == b"base" + b"\0" * 5,
+                "fsync/remount lost durable file state")
+        require(os.getxattr(work / "durable", "user.bfs.comment") == b"M6 writable mount",
+                "comment xattr did not survive remount")
+        require((work / "open-target").read_bytes() == b"new",
+                "replacement state did not survive remount")
+        require(not (work / "unlinked").exists(), "unlinked file returned after remount")
+        require((work / "CASE-NAME").is_file(), "case-only rename did not survive remount")
+    finally:
+        unmount(process, mountpoint)
+
+
 def update_superblock_crc(data, offset):
     data[offset + 236:offset + 240] = zlib.crc32(data[offset:offset + 236]).to_bytes(4, "big")
 
@@ -285,6 +482,12 @@ def exercise_rejections(image, temporary):
         completed = run(str(FUSE), "--image", str(bad_image), str(mountpoint))
         require(completed.returncode != 0, f"{label} image unexpectedly mounted")
 
+    mountpoint = temporary / "snapshot-write-mount"
+    mountpoint.mkdir()
+    completed = run(str(FUSE), "--image", str(image), "--read-write", "--snapshot",
+                    "oracle-snapshot", str(mountpoint))
+    require(completed.returncode != 0, "writable snapshot mount unexpectedly succeeded")
+
 
 def exercise_amiga_image(image, mountpoint):
     before = sha256(image)
@@ -304,6 +507,8 @@ def exercise_amiga_image(image, mountpoint):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--amiga-image", type=Path)
+    parser.add_argument("--writable-image-output", type=Path)
+    parser.add_argument("--interrupted-image-output", type=Path)
     args = parser.parse_args()
     require(os.name == "posix" and Path("/dev/fuse").exists(),
             "/dev/fuse is required; this is a failed qualification, not a skip")
@@ -318,10 +523,17 @@ def main():
         mountpoint = temporary / "mount"
         mountpoint.mkdir()
         exercise_fixture(image, mountpoint)
+        exercise_writable_fixture(image, mountpoint)
         exercise_rejections(image, temporary)
         if args.amiga_image:
             require(args.amiga_image.is_file(), "Amiga image is missing")
             exercise_amiga_image(args.amiga_image, mountpoint)
+        if args.writable_image_output:
+            shutil.copyfile(image, args.writable_image_output)
+            oracle_result(args.writable_image_output)
+        if args.interrupted_image_output:
+            create_interrupted_open_unlink_image(image, mountpoint,
+                                                 args.interrupted_image_output)
     print("FUSE qualification passed")
 
 
