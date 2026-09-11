@@ -12,7 +12,7 @@ import tempfile
 
 
 CPUS = ("020", "030", "040", "060", "080")
-BINARIES = ("bfshandler", "bfs-test", "bfsformat", "bfssnapshot") + tuple(
+BINARIES = ("bfshandler", "bfs-test", "bfs") + tuple(
     f"bfshandler.{cpu}" for cpu in CPUS
 )
 ARCHIVE_FILES = frozenset((*BINARIES, "BUILD-METADATA.json", "LICENSE", "README.md",

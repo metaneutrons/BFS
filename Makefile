@@ -11,6 +11,7 @@ HOST_AR  = ar
 AMIGA_CC = m68k-amigaos-gcc
 GCOVR    = gcovr
 GCOV     = gcov
+BFS_VERSION = $(strip $(shell cat version.txt))
 
 # ── Flags ───────────────────────────────────────────────────
 INCLUDES = -I include -I tests
@@ -263,12 +264,12 @@ AMIGA_LDFLAGS = -nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -la
 AMIGA_BASE_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -noixemul -fomit-frame-pointer \
                    -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I$(AMIGA_PREFIX)/ndk-include
 AMIGA_RELEASE_CPUS = 020 030 040 060 080
-AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -I$(AMIGA_PREFIX)/ndk-include
+AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -I$(AMIGA_PREFIX)/ndk-include \
+                   -DBFS_VERSION=\"$(BFS_VERSION)\"
 AMIGA_TOOL_LDFLAGS = -B$(AMIGA_PREFIX)/libnix/lib/ \
                      -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -s
 TOOL_SRCS_TEST = tools/bfs-test.c
-TOOL_SRCS_FMT = tools/bfsformat.c
-TOOL_SRCS_SNAP = tools/bfssnapshot.c
+TOOL_SRCS_BFS = tools/bfs.c tools/bfs_common.c tools/bfs_format.c tools/bfs_snapshot.c
 
 release:
 	@mkdir -p build/release build/link-maps
@@ -283,9 +284,7 @@ release:
 	@$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/release/bfs-test $(TOOL_SRCS_TEST) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfs-test.map
 	@$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/release/bfsformat $(TOOL_SRCS_FMT) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfsformat.map
-	@$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/release/bfssnapshot $(TOOL_SRCS_SNAP) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfssnapshot.map
+		-o build/release/bfs $(TOOL_SRCS_BFS) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfs.map
 	@cp build/release/bfshandler.020 build/release/bfshandler
 	@python3 tools/release/build_identity.py finish
 	@echo "Done. Binaries in build/release/"
@@ -307,7 +306,9 @@ compatibility-test: amiga $(BUILD_HOST)/mkbfs
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/compatibility-probe tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/amiga/bfsformat tools/bfsformat.c $(AMIGA_TOOL_LDFLAGS)
+		-o build/amiga/cli-fixture tests/amiga/cli_fixture.c $(AMIGA_TOOL_LDFLAGS)
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+		-o build/amiga/bfs $(TOOL_SRCS_BFS) $(AMIGA_TOOL_LDFLAGS)
 	python3 emulator-test/compatibility-test.py
 
 # ── CI integration test ─────────────────────────────────────

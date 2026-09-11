@@ -59,9 +59,9 @@ int main(void)
     struct Process *process = (struct Process *)FindTask(NULL);
     APTR old_window = process->pr_WindowPtr;
     process->pr_WindowPtr = (APTR)-1;
-    LONG args[1] = {0};
-    struct RDArgs *parsed = ReadArgs("EXPECT/N/A", args, NULL);
-    BOOL ok = parsed && check_format(*(LONG *)args[0]);
+    LONG args[2] = {0, 0};
+    struct RDArgs *parsed = ReadArgs("EXPECT/N/A,AFTER_FORMAT/S", args, NULL);
+    BOOL ok = parsed && (args[1] != 0 || check_format(*(LONG *)args[0]));
     if (parsed) FreeArgs(parsed);
     BPTR result = Open("SYS:compatibility.result", MODE_NEWFILE);
     const char *text = ok ? "PASS\n" : "FAIL\n";

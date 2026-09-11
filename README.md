@@ -71,7 +71,7 @@ TiB limits imposed by the on-disk block address space; 16 TiB is approximately
 The B+tree engine is shared across all metadata types, utilizing a **dynamic transaction tracking** architecture that ensures session-wide consistency and safe COW reclamation. It supports **online compaction** for metadata trees to maintain performance without downtime.
 
 `data=ordered` and metadata compaction are core API capabilities. The current
-Amiga `bfsformat` command does not expose arbitrary format-option flags.
+Amiga `bfs format` does not expose arbitrary format-option flags.
 
 The normative v2 byte layout is documented in [the on-disk format specification](docs/on-disk-format.md).
 
@@ -109,6 +109,23 @@ make amiga
 ```
 
 Output: `build/amiga/bfshandler`
+
+### AmigaOS administration
+
+Release archives publish one administration binary, `bfs`:
+
+```text
+bfs format BFS: Work
+bfs snapshot create Work: before-upgrade
+bfs snapshot list Work:
+bfs snapshot dir Work: before-upgrade
+bfs snapshot inspect Work: before-upgrade FILES
+bfs snapshot delete Work: before-upgrade
+bfs info Work:
+```
+
+`dir` and `inspect` show the snapshot root. Mounting a snapshot as a distinct
+read-only volume is not part of this command and remains future work.
 
 `make release` builds separate handlers for 68020, 68030, 68040, 68060 and Apollo
 68080. The unsuffixed `bfshandler` is the 68020 build; `bfshandler.080` targets
@@ -189,7 +206,7 @@ make emulator-test
 3. Format the partition:
 
    ```bash
-   Format DRIVE BFS: NAME "Work" NOICONS
+   bfs format BFS: Work
    ```
 
 ## License

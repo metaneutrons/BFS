@@ -62,28 +62,59 @@ def main():
     if not emulator:
         raise ValueError("fs-uae is required")
     work, rom, clean = prepare_media()
-    scenarios = [("v2", None, False, False, 0),
-                 ("new-primary", 0, False, False, 3),
-                 ("new-backup", 1, False, False, 3),
-                 ("options-primary", 0, True, False, 2),
-                 ("options-backup", 1, True, False, 2),
-                 ("damaged-version", 0, False, True, 0)]
-    for name, slot, options, damaged, expected in scenarios:
+    scenarios = [("format", None, False, False, 0, True, False),
+                 ("snapshot-commands", None, False, False, 0, False, True),
+                 ("v2", None, False, False, 0, False, False),
+                 ("new-primary", 0, False, False, 3, False, False),
+                 ("new-backup", 1, False, False, 3, False, False),
+                 ("options-primary", 0, True, False, 2, False, False),
+                 ("options-backup", 1, True, False, 2, False, False),
+                 ("damaged-version", 0, False, True, 0, False, False)]
+    for name, slot, options, damaged, expected, format_blank, snapshot_commands in scenarios:
         case = work / name
         system = case / "system"
         for directory in ("C", "L", "S"):
             (system / directory).mkdir(parents=True)
         shutil.copyfile(args.handler, system / "L/bfshandler")
         shutil.copyfile(ROOT / "build/amiga/compatibility-probe", system / "C/compatibility-probe")
-        shutil.copyfile(ROOT / "build/amiga/bfsformat", system / "C/bfsformat")
+        shutil.copyfile(ROOT / "build/amiga/cli-fixture", system / "C/cli-fixture")
+        shutil.copyfile(ROOT / "build/amiga/bfs", system / "C/bfs")
         image = case / "test.hdf"
-        shutil.copyfile(clean, image)
+        if format_blank:
+            with image.open("wb") as stream:
+                stream.truncate(32 * 1024 * 1024)
+        else:
+            shutil.copyfile(clean, image)
         if slot is not None:
             alter_copy(image, slot, options, damaged)
         before = hashlib.sha256(image.read_bytes()).digest()
-        startup = "FailAt 21\nC:bfsformat DH1: Test >SYS:format-message.txt\n" if expected else ""
+        if format_blank:
+            startup = "FailAt 21\nC:bfs format DH1: Test >SYS:format-message.txt\n"
+        elif snapshot_commands:
+            startup = """FailAt 11
+C:cli-fixture Compat:
+C:bfs snapshot create Compat: invalid/name >SYS:snapshot-invalid-name.txt
+C:bfs snapshot dir Compat: smoke INVALID >SYS:snapshot-invalid-option.txt
+C:bfs snapshot create Compat: >SYS:snapshot-missing-name.txt
+FailAt 21
+C:bfs info Missing: >SYS:info-missing-drive.txt
+C:bfs snapshot create Compat: smoke >SYS:snapshot-create.txt
+C:bfs snapshot list Compat: >SYS:snapshot-list.txt
+C:bfs snapshot dir Compat: smoke >SYS:snapshot-dir.txt
+C:bfs snapshot dir Compat: smoke DIRS >SYS:snapshot-dir-dirs.txt
+C:bfs snapshot dir Compat: smoke FILES >SYS:snapshot-dir-files.txt
+C:bfs snapshot inspect Compat: smoke >SYS:snapshot-inspect.txt
+C:bfs snapshot inspect Compat: smoke FILES >SYS:snapshot-inspect-files.txt
+C:bfs info Compat: >SYS:info.txt
+C:bfs snapshot delete Compat: smoke >SYS:snapshot-delete.txt
+"""
+        elif expected:
+            startup = "FailAt 21\nC:bfs format DH1: Test >SYS:format-message.txt\n"
+        else:
+            startup = ""
+        probe_arguments = f"{expected} AFTER_FORMAT" if format_blank else str(expected)
         (system / "S/Startup-Sequence").write_text(
-            startup + f"C:compatibility-probe {expected}\n", encoding="ascii")
+            startup + f"C:compatibility-probe {probe_arguments}\n", encoding="ascii")
         config = case / "test.fs-uae"
         config.write_text(f"""[fs-uae]
 amiga_model = A1200
@@ -116,7 +147,42 @@ automatic_input_grab = 0
         if expected:
             diagnosis = (system / "diagnosis.txt").read_bytes()
             if (system / "format-message.txt").read_bytes() != diagnosis + b"\n":
-                raise ValueError(f"{name}: bfsformat did not report the driver diagnosis")
+                raise ValueError(f"{name}: bfs format did not report the driver diagnosis")
+        if format_blank:
+            if (system / "format-message.txt").read_bytes() != b"Formatting DH1: as \"Test\"...\nFormat complete.\n":
+                raise ValueError(f"{name}: bfs format did not complete")
+        if snapshot_commands:
+            outputs = {path.name: path.read_bytes() for path in system.iterdir() if path.is_file()}
+            expected_outputs = {
+                "snapshot-create.txt": b"Snapshot created.\n",
+                "snapshot-list.txt": b"Snapshots on Compat:\n",
+                "snapshot-dir.txt": b"Directory \"smoke:\" on Compat:\n",
+                "snapshot-inspect.txt": b"Directory \"smoke:\" on Compat:\n",
+                "info.txt": b"Drive: Compat:\n",
+                "snapshot-delete.txt": b"Snapshot deleted.\n",
+                "snapshot-invalid-name.txt": b"Snapshot names cannot contain '/'.\n",
+                "snapshot-invalid-option.txt": b"Valid DIR and INSPECT options are DIRS and FILES.\n",
+                "snapshot-missing-name.txt": b"CREATE requires a name.\n",
+                "info-missing-drive.txt": b"Cannot find handler for Missing:\n",
+            }
+            for filename, expected_output in expected_outputs.items():
+                if expected_output not in outputs[filename]:
+                    raise ValueError(f"{name}: unexpected output from bfs command: {filename}")
+            if b"smoke" not in outputs["snapshot-list.txt"]:
+                raise ValueError(f"{name}: snapshot list omitted the created snapshot")
+            if (b"cli-file" not in outputs["snapshot-dir.txt"] or
+                    b"cli-dir" not in outputs["snapshot-dir.txt"] or
+                    b"(dir)" not in outputs["snapshot-dir.txt"]):
+                raise ValueError(f"{name}: snapshot directory listing omitted fixture entries")
+            if b"cli-dir" not in outputs["snapshot-dir-dirs.txt"] or b"cli-file" in outputs["snapshot-dir-dirs.txt"]:
+                raise ValueError(f"{name}: DIRS filter is incorrect")
+            if b"cli-file" not in outputs["snapshot-dir-files.txt"] or b"cli-dir" in outputs["snapshot-dir-files.txt"]:
+                raise ValueError(f"{name}: FILES filter is incorrect")
+            if b"cli-file" not in outputs["snapshot-inspect.txt"] or b"cli-dir" not in outputs["snapshot-inspect.txt"]:
+                raise ValueError(f"{name}: snapshot inspection omitted fixture entries")
+            if (b"cli-file" not in outputs["snapshot-inspect-files.txt"] or
+                    b"cli-dir" in outputs["snapshot-inspect-files.txt"]):
+                raise ValueError(f"{name}: INSPECT FILES filter is incorrect")
         print(f"PASS {name}", flush=True)
 
 
