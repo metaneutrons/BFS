@@ -118,11 +118,24 @@ def verify_events(events, result, limits):
     require(len(events) >= minimum_cycles, "soak has too few completed cycles")
 
 
-def verify_evidence_summary(result, events_path, events):
+def verify_storage(result, name):
+    storage = result.get(name)
+    require(isinstance(storage, dict), f"{name} is missing")
+    backing_storage = storage.get("backing_storage")
+    require(isinstance(backing_storage, list) and len(backing_storage) == 2 and
+            all(isinstance(value, str) and value for value in backing_storage),
+            f"{name} backing storage is invalid")
+    positive_integer(storage.get("available_bytes"), f"{name} available bytes")
+
+
+def verify_evidence_summary(result, output, events_path, events):
     evidence = result.get("evidence")
     require(isinstance(evidence, dict), "evidence summary is missing")
+    image = output / "soak.bfs"
+    require(image.is_file(), "preserved soak image is missing")
     expected = {
         "events_sha256": hashlib.sha256(events_path.read_bytes()).hexdigest(),
+        "soak_image_sha256": hashlib.sha256(image.read_bytes()).hexdigest(),
         "event_count": len(events),
         "total_operations": sum(event["operations"] for event in events),
         "total_pressure_writes": sum(event["pressure_writes"] for event in events),
@@ -139,7 +152,9 @@ def verify(output):
     events_path = output / "events.jsonl"
     events = load_events(events_path)
     verify_events(events, result, limits)
-    verify_evidence_summary(result, events_path, events)
+    verify_storage(result, "evidence_storage")
+    verify_storage(result, "workload_storage")
+    verify_evidence_summary(result, output, events_path, events)
     qualified = not preflight and result["completed_duration_seconds"] >= limits["target_duration_seconds"]
     require(result.get("qualified") is qualified, "qualification marker is inconsistent")
     return {"qualified": qualified, "events": len(events), "status": "passed"}

@@ -82,7 +82,8 @@ linux-qualification-soak: fuse conformance tools $(CONFORMANCE_FIXTURE) qualific
 	@test -c /dev/fuse || { echo "/dev/fuse is required for M7 soak" >&2; exit 1; }
 	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
 	@python3 tests/qualification/fuse_soak.py --output "$(OUTPUT)" \
-		--approval-reference "$(APPROVAL_REFERENCE)" $(SOAK_ARGS)
+		--approval-reference "$(APPROVAL_REFERENCE)" \
+		$(if $(IMAGE_DIRECTORY),--image-directory "$(IMAGE_DIRECTORY)") $(SOAK_ARGS)
 	@$(MAKE) linux-qualification-soak-verify OUTPUT="$(OUTPUT)"
 
 linux-qualification-soak-preflight: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests
