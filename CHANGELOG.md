@@ -1,5 +1,15 @@
 # Changelog
 
+## [0.1.5](https://github.com/metaneutrons/BFS/compare/v0.1.4...v0.1.5) (2026-09-11)
+
+
+### Features
+
+* **amiga:** unify administration commands under bfs ([#63](https://github.com/metaneutrons/BFS/issues/63)) ([80b372d](https://github.com/metaneutrons/BFS/commit/80b372df81e05b13170afb41c36a742e5f428801))
+* **ci:** add reproducible M7 Linux qualification ([#58](https://github.com/metaneutrons/BFS/issues/58)) ([cdf477d](https://github.com/metaneutrons/BFS/commit/cdf477dd0d8db636312c4a8742f2c9bdd4517b8f))
+* **fuse:** add qualified serialized read-write mount ([e6e8f02](https://github.com/metaneutrons/BFS/commit/e6e8f02e57dc78ec39ae266f84bebcbe639a8f39)), closes [#41](https://github.com/metaneutrons/BFS/issues/41)
+* unify BFS administration commands ([#67](https://github.com/metaneutrons/BFS/issues/67)) ([5b202ff](https://github.com/metaneutrons/BFS/commit/5b202ff003878ccf1160f62b47e9d079f1b2d660))
+
 ## [0.1.4](https://github.com/metaneutrons/BFS/compare/v0.1.3...v0.1.4) (2026-09-10)
 
 
