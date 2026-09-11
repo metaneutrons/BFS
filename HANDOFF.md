@@ -1,169 +1,141 @@
-# BFS: Uebergabe und Abschlussstand
+# BFS Handoff
 
-Stand: 2026-09-08. Repository: `metaneutrons/BFS`.
+Updated: 2026-09-11
+Repository: `metaneutrons/BFS`
 
-## 1. Ergebnis
+## Current Objective
 
-Die Release-Abnahme M4 ist abgeschlossen. Die Release-Codebasis steht auf
-`f2deb47b2a689bd4e8dbcef36f3de449a5265095` (`chore(main): release 0.1.1`).
-Die Abschlussdokumentation wurde danach in PR #24 und PR #25 auf dieser
-Release-Codebasis ergaenzt. Der stabile Release `v0.1.1` ist oeffentlich als
-`latest` publiziert.
+Start the approved M7-A4 Linux/FUSE qualification soak on Cachy. This is a
+real 72-hour target run, not a preflight. It must run from current `main`,
+preserve durable evidence, and use tmpfs only for the repeated workload image.
 
-Qualifiziert und gebaut sind Amiga-Handler fuer 68020, 68030, 68040, 68060
-und Apollo 68080. Der 68080-Build verwendet kein AMMX. Es liegt keine
-physische Apollo-Hardwarequalifikation vor.
+Fabian authorized proceeding through the actual start. Do not report M7 as
+qualified until the full duration has completed and the independent verifier
+has passed.
 
-Das Abschlusskriterium war:
+## Exact Repository State
 
-- funktionale Aenderungen reviewt, committed, gepusht und gemergt;
-- GCC, Clang, ASan/UBSan, Static Analyzer und Coverage bestanden;
-- CI inklusive `CI Success` und Amiga-FULL46 bestanden;
-- Release Please und der echte Release-Workflow end-to-end bestanden;
-- reproduzierbare Archive, SBOMs, Signaturen, Attestierungen und
-  oeffentliche Byte-Readbacks verifiziert;
-- Repo-Standard-Doctor ohne offene Findings bestanden.
+- `main` contains the M7 hybrid-storage runner at
+  `adb55a298aa675674884659afe03c461cbc63529`:
+  [PR #61](https://github.com/metaneutrons/BFS/pull/61), merged 2026-09-11.
+- It requires durable `OUTPUT` and supports a distinct
+  `IMAGE_DIRECTORY`. The runner copies the final 8 MiB image back to
+  durable evidence and records its SHA-256 digest.
+- A fresh target preflight on that merged commit is still required before the
+  target run. The earlier PR preflight was successful but does not substitute
+  for this final check.
+- No qualifying 72-hour run is running. No target-run approval comment has
+  been posted to [issue #29](https://github.com/metaneutrons/BFS/issues/29).
+  This is intentional: no GitHub record should claim a start before one occurs.
 
-Das ist eine belegte Release-Reife, keine Zusage allgemeiner Fehlerfreiheit.
+## Cachy Facts Already Verified
 
-## 2. Gemergte Lieferungen
+- Host: Cachy, kernel `7.1.3-2-cachyos`, x86_64, 12 CPUs, about 24 GiB RAM.
+- `/var/tmp` is durable Btrfs.
+- `/dev/shm` is tmpfs with sufficient capacity for the 8 MiB BFS image.
+- libfuse: fusermount3 3.18.2.
+- `systemd-run --user` works for detached user services.
+- Existing checkout used for preflight:
+  `/var/tmp/bfs-m7-preflight.Ey78T0/BFS`.
+- The prior hybrid preflight on the PR commit passed: one cycle in 30.009 s,
+  2,255 operations, 1,707 pressure writes, 2,692 KiB peak RSS, 5 FDs. Its
+  evidence was durable Btrfs and its workload image was tmpfs.
 
-- PR #11 Repository-Konventionen: `13b3939`
-- PR #12 Filesystem-Core und Recovery: `cedda17f8c2fe4e6389fa9a520f1a89941695605`
-- PR #13 Amiga-Delivery: `b923962c4091ca05b951d08e985a21740d25390b`
-- PR #14 Release- und CI-Hardening: `243339acd2f575857b33095fc1a138c079e9880f`
-- PR #21 dynamische Allocator-Reserve: `b88c63d`
-- PR #22 Release-Please-Tag-/Workflow-Abgleich: `134aff5`
-- PR #23 Draft-Release-Fallback ueber die paginierte GitHub-API:
-  `23dd64e`
-- PR #4 Release Please `v0.1.1`: `f2deb47`
+## Required Start Sequence
 
-Die Fremdbinaries sind nicht im Repository. Toolchains, AROS-ROMs, LHA und
-Cosign werden in den Workflows geladen und dort geprueft.
+1. Restore terminal execution first. The prior Codex session could not create
+   any process, including `/usr/bin/true`; therefore it could not access
+   Cachy. This was an execution-environment failure, not a BFS test failure.
 
-## 3. `fill_08` und `many_03`
+2. On Cachy, obtain the exact merged source without changing the remote:
+   ```sh
+   REPO=/var/tmp/bfs-m7-preflight.Ey78T0/BFS
+   git -C "$REPO" fetch origin main
+   git -C "$REPO" switch --detach origin/main
+   git -C "$REPO" rev-parse HEAD
+   ```
+   The final command must print
+   `adb55a298aa675674884659afe03c461cbc63529`.
 
-`fill_08` war ein realer Fehler in der Testdiagnostik, nicht der ausloesende
-Core-Fehler. Der Test nahm nach einem Short Write die partielle Datei nicht
-immer in das Cleanup auf. Ausserdem meldete `exnext_37` den Erfolg vor dem
-Cleanup. Beides ist korrigiert.
+3. Confirm no older target service is active. Do not stop any unrelated
+   service. Then create new, unique preflight paths:
+   ```sh
+   STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+   PREFLIGHT_OUTPUT=/var/tmp/bfs-m7-preflight-adb55a2-$STAMP
+   PREFLIGHT_IMAGE=/dev/shm/bfs-m7-preflight-image-adb55a2-$STAMP
+   cd "$REPO"
+   make linux-qualification-soak-preflight \
+     OUTPUT="$PREFLIGHT_OUTPUT" \
+     IMAGE_DIRECTORY="$PREFLIGHT_IMAGE"
+   make linux-qualification-soak-verify OUTPUT="$PREFLIGHT_OUTPUT"
+   ```
+   Inspect `result.json`, `events.jsonl`, and the preserved
+   `soak.bfs`. The evidence storage must be Btrfs, the workload storage
+   tmpfs, and `qualified` must remain `false` because this is only a
+   preflight.
 
-Der eigentliche Laufzeitfehler lag bei `many_03`: Die feste Reserve von 96
-Bloecken bewegte bei kleinen Transaktionen unnoetig viele Bloecke durch den
-Free-Space-Baum. Die Reserve wird jetzt aus der Baumhoehe abgeleitet und
-begrenzt. Danach bestand `many_03` lokal und in GitHub; der vollstaendige
-Amiga-Lauf meldete `# SUMMARY 46 46 0`.
+4. After that successful preflight, create an explicit approval comment on
+   [issue #29](https://github.com/metaneutrons/BFS/issues/29). State:
+   - operator: Fabian Schmieder, repository maintainer;
+   - commit: `adb55a298aa675674884659afe03c461cbc63529`;
+   - actual UTC start and planned UTC end, exactly 72 hours later;
+   - durable evidence path on `/var/tmp` and tmpfs workload path in
+     `/dev/shm`;
+   - detached user-service unit name;
+   - acceptance criterion: runner plus independent verifier complete with
+     `qualified: true`, no failed/incomplete checks or resource-limit
+     breach.
 
-## 4. Test- und Ruleset-Evidenz
+   Copy the resulting issue-comment URL. It is required as
+   `APPROVAL_REFERENCE`; the runner rejects other approval URLs.
 
-Lokale Nachweise auf dem finalen Code:
+5. Start the target run detached. Use fresh paths and the exact approval URL:
+   ```sh
+   STAMP=$(date -u +%Y%m%dT%H%M%SZ)
+   UNIT=bfs-m7-soak-adb55a2-$STAMP
+   OUTPUT=/var/tmp/bfs-m7-evidence-adb55a2-$STAMP
+   IMAGE_DIRECTORY=/dev/shm/bfs-m7-image-adb55a2-$STAMP
+   APPROVAL_REFERENCE=https://github.com/metaneutrons/BFS/issues/29#issuecomment-REPLACE
+   systemd-run --user --unit "$UNIT" --collect \
+     /usr/bin/env bash -lc \
+     "cd '$REPO' && exec make linux-qualification-soak \
+       APPROVAL_REFERENCE='$APPROVAL_REFERENCE' \
+       OUTPUT='$OUTPUT' IMAGE_DIRECTORY='$IMAGE_DIRECTORY'"
+   systemctl --user status "$UNIT" --no-pager
+   ```
+   Record the actual unit, UTC start, evidence path, and approval URL in a
+   follow-up comment on issue #29. Do not claim successful qualification at
+   launch.
 
-- `make host-test HOST_CC=gcc`: 31/31 Host-Binaries bestanden
-- `make host-test HOST_CC=clang`: 31/31 Host-Binaries bestanden
-- `make sanitize HOST_CC=clang`: alle Tests bestanden
-- `make analyze`: erfolgreich
-- `make coverage`: Core-Zeilen 88.4 % (`3997/4522`)
-- `make amiga-test`: erfolgreich
-- `BFS_TEST_TIMEOUT=1200 emulator-test/ci-test.sh`: `46/46`
-- Repository-Asset-Audit: keine getrackten Binaries
+6. At completion, inspect the service status and run:
+   ```sh
+   make linux-qualification-soak-verify OUTPUT="$OUTPUT"
+   ```
+   Preserve the complete durable evidence directory. Publish a concise result
+   comment on issue #29 including run duration, event hash, final-image hash,
+   operation/pressure-write totals, resource maxima, verifier result, and the
+   `qualified` value. Investigate any non-success result; do not rerun over
+   an existing evidence directory.
 
-GitHub-Nachweise:
+## Other Work That Must Not Distract From M7 Start
 
-- PR #23 CI [34163038783](https://github.com/metaneutrons/BFS/actions/runs/34163038783):
-  alle Checks gruen, einschliesslich Amiga und `CI Success`
-- Release-Please [34164653505](https://github.com/metaneutrons/BFS/actions/runs/34164653505):
-  App-Token-Preflight, PR-Erzeugung und Dispatch bestanden
-- finaler Main-CI [34164653510](https://github.com/metaneutrons/BFS/actions/runs/34164653510):
-  alle Checks gruen, einschliesslich Amiga und `CI Success`
-- Branch-Ruleset `22394435`: `CI Success`, Squash-only, lineare Historie,
-  aktuelle Pflichtchecks und aufgeloeste Diskussionen
-- Tag-Ruleset `22394437`: immutable Tags
+- [PR #63](https://github.com/metaneutrons/BFS/pull/63) unifies the AmigaOS
+  administration interface under `bfs`. It is open, based on PR #61's former
+  branch, and must be rebased/retargeted only after its CI is green. It is not
+  a prerequisite for M7.
+- [Issue #62](https://github.com/metaneutrons/BFS/issues/62) tracks that CLI
+  unification.
+- [Issue #64](https://github.com/metaneutrons/BFS/issues/64) plans read-only
+  AmigaOS snapshot mounts. No handler implementation exists yet.
+- [PR #57](https://github.com/metaneutrons/BFS/pull/57) is the Release Please
+  release PR. Do not merge or publish a release merely because the M7 target
+  has started. Release decisions come after qualification evidence is complete.
 
-Repo-Standard-Doctor:
+## Guardrails
 
-- `check-repo-standard.sh metaneutrons/BFS --publishes`: 19 bestanden,
-  0 fehlgeschlagen, 2 Hinweise
-- Fixture-Test: 16 bestanden, 0 fehlgeschlagen
-- Hinweise: provider-spezifische Secret-Patterns sind fuer das Benutzerkonto
-  nicht abrufbar; die `release`-Umgebung hat bewusst kein statisches Secret.
-  Beide Hinweise sind account- bzw. OIDC-seitig und keine offenen Codebefunde.
-
-## 5. Release-Evidenz
-
-### Qualification
-
-Der unveraenderliche Tag `v0.1.0-qualification.3` zeigt auf Commit
-`23dd64ef1027c7037ecbca17502c4c99a8807060` und wurde mit
-[Run 34163917438](https://github.com/metaneutrons/BFS/actions/runs/34163917438)
-qualifiziert. Der Run bestand mit reproduzierbarem Build, Clean-Room-Smoke,
-SBOMs, keyless Sigstore-Signaturen, GitHub-Attestierungen, Tamper-Rejection,
-Asset-Upload und oeffentlichem Readback.
-
-Die sechs Eintraege der Kandidaten-`SHA256SUMS` sind im oeffentlichen
-[Qualification-Release](https://github.com/metaneutrons/BFS/releases/tag/v0.1.0-qualification.3)
-verifiziert. Die zentralen Archive haben folgende Digests:
-
-| Asset | SHA-256 |
-| --- | --- |
-| `bfs-v0.1.0-qualification.3-amiga.tar.gz` | `435e15e34359c12121b782acdfc41828f2312b9762ab52d8f412f1a2dfd09e25` |
-| `bfs-v0.1.0-qualification.3-amiga.lha` | `e6f820943d8ce2f0de0f90bdc915c190d8612d56d4c024b435fb15f63fcfa439` |
-| `SHA256SUMS` | `83e0bca3f482783e8eee24c8eaeb090c904707963369cfffe8f37509742001cf` |
-
-Der vorherige Tag `v0.1.0-qualification.2` wurde wegen des API-Draft-Fehlers
-nicht wiederverwendet. Tags wurden nicht verschoben oder geloescht.
-
-### Stable
-
-Der unveraenderliche Tag `v0.1.1` zeigt auf `f2deb47b2a689bd4e8dbcef36f3de449a5265095`.
-Der echte Stable-Workflow
-[34164683697](https://github.com/metaneutrons/BFS/actions/runs/34164683697)
-bestand vollstaendig. Die Release-Promotion lief erst nach allen
-Verifikationsstufen. Der oeffentliche Release ist
-[v0.1.1](https://github.com/metaneutrons/BFS/releases/tag/v0.1.1), nicht Draft,
-nicht Prerelease und `latest`.
-
-Alle sieben Stable-Assets wurden heruntergeladen und gegen `SHA256SUMS`
-geprueft:
-
-| Asset | SHA-256 |
-| --- | --- |
-| `bfs-v0.1.1-amiga.tar.gz` | `22be69b83988040e723242eda7bcaaba037008a4391d3609d93f851a76b18f5e` |
-| `bfs-v0.1.1-amiga.lha` | `33c1f9394a3913b2e4d897d94a56aa573d4f7e92c3de134fc8e54afc2953c0eb` |
-| `bfs-v0.1.1-amiga.tar.gz.spdx.json` | `13ed599790f89d216d1d48fe9243313a2627ef60467a430b052e22dac5d8ec4b` |
-| `bfs-v0.1.1-amiga.lha.spdx.json` | `dcf6271b4a10135a344435331a0e2cf7edd1251d232fb3ab549e13170fb3f989` |
-| `bfs-v0.1.1-amiga.tar.gz.sigstore.json` | `cfc97b245732de4e3f6cf1720dbf626f6a5b6a1e5e85edb48317185cbcf59f7f` |
-| `bfs-v0.1.1-amiga.lha.sigstore.json` | `6081ca406309634ea17f97978e2c68b71a84b84ab775feb63407183f278eb548` |
-| `SHA256SUMS` | `afb7250081dc2bd324c0118923713a249edf8801aaceb0f1c9120f114c6a109f` |
-
-## 6. Dokumentation und Grenzen
-
-README und Release-Readiness-Plan dokumentieren:
-
-- Default-Handler 68020 sowie die Varianten 68030, 68040, 68060 und 68080;
-- 68080 ohne AMMX und ohne daraus abgeleitete Hardwarebehauptung;
-- `make release`, `make emulator-test` und die Amiga-Mount-/Format-Schritte;
-- reproduzierbare Archive, Checksummen, SBOM-/Sigstore-Pruefung und Runtime-
-  Lizenzen;
-- die Grenze zwischen Compiler-/Emulatornachweis und echter Hardwareabnahme.
-
-Es gibt keine behauptete physische Apollo-Qualifikation und keine AMMX-
-Optimierung. Dependabot-PRs #15 bis #19 sind normale Wartungsarbeiten und
-nicht Teil dieser abgeschlossenen Release-Abnahme; bei ihrer Annahme ist die
-volle CI erneut zu bewerten.
-
-Die bereinigten beschreibbaren Refs enthalten keine Fremdbinaries. GitHub kann
-serverseitig versteckte alte PR-Refs weiterhin aufbewahren. Das ist eine
-separate Support-Angelegenheit; dafuer keine weiteren lokalen Filter-Laeufe
-oder Force-Pushes ausfuehren.
-
-## 7. Wiederaufnahme-Regeln
-
-- Keine Tags verschieben, loeschen oder wiederverwenden.
-- Fremdbinaries ausschliesslich in CI laden und dort per Hash/Identitaet
-  pruefen.
-- Keine Hardwarequalifikation aus Emulator- oder Compiler-Evidenz ableiten.
-- Neue funktionale Arbeit von aktuellem `origin/main` abzweigen und in
-  funktional gruppierten Conventional-Commits liefern.
-- Vor jeder neuen Release-Aussage alle betroffenen CI-, Asset- und Readback-
-  Nachweise mit neuer Identitaet wiederholen.
-- Keine Secrets, ROMs, HDFs oder Buildartefakte committen.
+- Never place the complete evidence directory in tmpfs.
+- Never reuse an existing output or image directory.
+- Do not claim real Apollo 68080 hardware coverage from emulator evidence.
+- Do not close issue #29 solely because the FUSE soak passes; its broader
+  remaining scope must be reviewed after evidence is available.
+- Do not move or recreate release tags.
