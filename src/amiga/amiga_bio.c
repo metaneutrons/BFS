@@ -96,6 +96,7 @@ static bfs_err_t amiga_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
     struct IOExtTD *req = ab->request;
     uint64_t byte_off;
 
+    if (ab->read_only) return BFS_ERR_UNSUPPORTED;
     if (blk >= bio->block_count) return BFS_ERR_INVAL;
     if (bio->block_size == 0) return BFS_ERR_INVAL;
     byte_off = ab->partition_start_byte + (uint64_t)blk * bio->block_size;
@@ -126,6 +127,7 @@ static bfs_err_t amiga_sync(bfs_bio_t *bio)
     amiga_bio_t *ab = (amiga_bio_t *)bio;
     struct IOExtTD *req = ab->request;
 
+    if (ab->read_only) return BFS_ERR_UNSUPPORTED;
     /* Flush device buffers and ensure data is physically written */
     req->iotd_Req.io_Command = CMD_UPDATE;
     req->iotd_Req.io_Data = NULL;
@@ -227,6 +229,7 @@ bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
     ab->sector_size = sector_size;
     ab->total_sectors = total_sectors;
     ab->removable = removable;
+    ab->read_only = false;
 
     /* Standard commands are both sufficient and most compatible below 4 GiB. */
     uint64_t partition_end = ab->partition_start_byte + partition_size_bytes(ab);
@@ -237,6 +240,11 @@ bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
     if (partition_end > (1ULL << 32) && ab->access_mode == ACCESS_STD)
         return BFS_ERR_INVAL;
     return BFS_OK;
+}
+
+void bfs_amiga_bio_set_readonly(amiga_bio_t *ab, bool read_only)
+{
+    if (ab) ab->read_only = read_only;
 }
 
 bfs_err_t bfs_amiga_bio_set_blocksize(amiga_bio_t *ab, uint32_t fs_block_size)

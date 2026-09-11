@@ -270,7 +270,8 @@ AMIGA_LDFLAGS = -nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -la
 AMIGA_BASE_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -noixemul -fomit-frame-pointer \
                    -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I$(AMIGA_PREFIX)/ndk-include
 AMIGA_RELEASE_CPUS = 020 030 040 060 080
-AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -I$(AMIGA_PREFIX)/ndk-include \
+AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -Isrc/amiga \
+			   -I$(AMIGA_PREFIX)/ndk-include \
                    -DBFS_VERSION=\"$(BFS_VERSION)\"
 AMIGA_TOOL_LDFLAGS = -B$(AMIGA_PREFIX)/libnix/lib/ \
                      -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -s
@@ -302,18 +303,25 @@ amiga-test: amiga
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o $(BUILD_AMIGA)/bfs-test tools/bfs-test.c $(AMIGA_TOOL_LDFLAGS)
 
+# The integration suite installs the same public administration command that
+# is shipped in release builds.  Keep a named target so CI, compatibility
+# tests, and local invocation cannot silently exercise different binaries.
+$(BUILD_AMIGA)/bfs: $(TOOL_SRCS_BFS) tools/bfs_command.h \
+		src/amiga/snapshot_protocol.h
+	@mkdir -p $(BUILD_AMIGA)
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+		-o $@ $(TOOL_SRCS_BFS) $(AMIGA_TOOL_LDFLAGS)
+
 .PHONY: compatibility-test
-compatibility-test: amiga $(BUILD_HOST)/bfs
+compatibility-test: amiga $(BUILD_HOST)/bfs $(BUILD_AMIGA)/bfs
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/compatibility-probe tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/cli-fixture tests/amiga/cli_fixture.c $(AMIGA_TOOL_LDFLAGS)
-	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/amiga/bfs $(TOOL_SRCS_BFS) $(AMIGA_TOOL_LDFLAGS)
 	python3 emulator-test/compatibility-test.py
 
 # ── CI integration test ─────────────────────────────────────
-ci-test: amiga amiga-test $(BUILD_HOST)/bfs
+ci-test: amiga amiga-test $(BUILD_AMIGA)/bfs $(BUILD_HOST)/bfs
 	@emulator-test/ci-test.sh
 
 # ── Emulator integration test ───────────────────────────────

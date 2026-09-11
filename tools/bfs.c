@@ -29,6 +29,8 @@ static void usage(void)
     bfs_put("  bfs snapshot list DRIVE:\n");
     bfs_put("  bfs snapshot dir DRIVE: NAME [DIRS|FILES]\n");
     bfs_put("  bfs snapshot inspect DRIVE: NAME [DIRS|FILES]\n");
+    bfs_put("  bfs snapshot mount DRIVE: NAME TARGET:\n");
+    bfs_put("  bfs snapshot unmount TARGET:\n");
     bfs_put("  bfs check DRIVE:\n");
     bfs_put("  bfs info DRIVE:\n");
 }

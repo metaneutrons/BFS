@@ -70,6 +70,13 @@ handling is serial, so ordinary filesystem I/O waits until the scan completes.
 `bfs check DRIVE:` is the matching AmigaDOS command. Older handlers return
 `ERROR_ACTION_NOT_KNOWN`.
 
+## Snapshot volumes
+
+The versioned snapshot-mount packet and private startup contract are specified
+in [AmigaOS snapshot volumes](amiga-snapshot-volumes.md). The source handler
+uses a pin to coordinate snapshot deletion and its own lifetime with each
+mounted read-only view.
+
 ## References
 
 - [AmigaOS SetProtection](https://developer.amigaos3.net/autodocs/dos.library/SetProtection.html)

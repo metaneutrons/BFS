@@ -8,11 +8,7 @@
 #include <proto/dos.h>
 
 #include "bfs_command.h"
-
-#define ACTION_BFS_SNAPSHOT_CREATE 3000
-#define ACTION_BFS_SNAPSHOT_DELETE 3001
-#define ACTION_BFS_SNAPSHOT_LIST   3002
-#define ACTION_BFS_SNAPSHOT_SHOW   3003
+#include "snapshot_protocol.h"
 
 static void put_protection(ULONG protection)
 {
@@ -74,8 +70,8 @@ static int snapshot_create_or_delete(struct MsgPort *port, const char *operation
         bfs_put("Snapshot names must contain 1 to 31 characters.\n");
         return 10;
     }
-    action = bfs_equal_nocase(operation, "create") ? ACTION_BFS_SNAPSHOT_CREATE
-                                                    : ACTION_BFS_SNAPSHOT_DELETE;
+    action = bfs_equal_nocase(operation, "create") ? BFS_ACTION_SNAPSHOT_CREATE
+                                                    : BFS_ACTION_SNAPSHOT_DELETE;
     bfs_put(bfs_equal_nocase(operation, "create") ? "Creating snapshot \""
                                                    : "Deleting snapshot \"");
     bfs_put(name);
@@ -104,7 +100,7 @@ static int snapshot_list(struct MsgPort *port, const char *drive, const char *na
     bfs_put(drive);
     bfs_put("\n");
     while (1) {
-        LONG result = DoPkt(port, ACTION_BFS_SNAPSHOT_LIST, (LONG)buffer,
+        LONG result = DoPkt(port, BFS_ACTION_SNAPSHOT_LIST, (LONG)buffer,
                             (LONG)sizeof(buffer), (LONG)last_id, 0, 0);
         ULONG next_id;
         ULONG snapshot_id, timestamp;
@@ -188,7 +184,7 @@ static int snapshot_directory(struct MsgPort *port, const char *drive, int detai
     bfs_put(drive);
     bfs_put("\n");
     while (1) {
-        LONG result = DoPkt(port, ACTION_BFS_SNAPSHOT_SHOW, (LONG)MKBADDR(bfs_bstr_bytes(&request)),
+        LONG result = DoPkt(port, BFS_ACTION_SNAPSHOT_SHOW, (LONG)MKBADDR(bfs_bstr_bytes(&request)),
                             (LONG)buffer, (LONG)sizeof(buffer), (LONG)last_key, 0);
         ULONG next_key;
         char type;
@@ -246,6 +242,70 @@ static int snapshot_directory(struct MsgPort *port, const char *drive, int detai
     return 0;
 }
 
+static int snapshot_capability(struct MsgPort *port, ULONG required)
+{
+    bfs_snapshot_capability_t capability = {0, 0};
+    if (!DoPkt(port, BFS_ACTION_SNAPSHOT_CAPABILITY, (LONG)&capability,
+               sizeof(capability), 0, 0, 0) ||
+        capability.version != BFS_SNAPSHOT_STARTUP_VERSION ||
+        (capability.flags & required) == 0) {
+        bfs_put("This handler does not support BFS snapshot volumes.\n");
+        return 20;
+    }
+    return 0;
+}
+
+static int snapshot_mount(struct MsgPort *port, const char *drive,
+                          const char *name, const char *target)
+{
+    bfs_bstr_t request = {0};
+    int result;
+
+    if (!name || !target || !name[0] || !target[0]) {
+        bfs_put("MOUNT requires DRIVE:, SNAPSHOT-NAME and TARGET:.\n");
+        return 10;
+    }
+    if (!bfs_build_name_bstr(bfs_bstr_bytes(&request), name)) {
+        bfs_put("Snapshot names must contain 1 to 31 characters.\n");
+        return 10;
+    }
+    result = snapshot_capability(port, BFS_SNAPSHOT_CAP_MOUNT_SOURCE);
+    if (result) return result;
+    if (!DoPkt(port, BFS_ACTION_SNAPSHOT_MOUNT,
+               (LONG)MKBADDR(bfs_bstr_bytes(&request)), (LONG)target, 0, 0, 0)) {
+        PrintFault(IoErr(), "bfs");
+        return 20;
+    }
+    bfs_put("Mounted snapshot \"");
+    bfs_put(name);
+    bfs_put("\" from ");
+    bfs_put(drive);
+    bfs_put(" as ");
+    bfs_put(target);
+    bfs_put("\n");
+    return 0;
+}
+
+static int snapshot_unmount(struct MsgPort *port, const char *target,
+                            const char *name, const char *option)
+{
+    int result;
+    if (name || option) {
+        bfs_put("UNMOUNT accepts only a target drive.\n");
+        return 10;
+    }
+    result = snapshot_capability(port, BFS_SNAPSHOT_CAP_MOUNTED_VIEW);
+    if (result) return result;
+    if (!DoPkt(port, ACTION_DIE, 0, 0, 0, 0, 0)) {
+        PrintFault(IoErr(), "bfs");
+        return 20;
+    }
+    bfs_put("Unmounted ");
+    bfs_put(target);
+    bfs_put("\n");
+    return 0;
+}
+
 int bfs_snapshot_command(const char *operation, const char *drive,
                          const char *name, const char *option)
 {
@@ -260,6 +320,10 @@ int bfs_snapshot_command(const char *operation, const char *drive,
     }
     if (bfs_equal_nocase(operation, "create") || bfs_equal_nocase(operation, "delete")) {
         result = snapshot_create_or_delete(port, operation, name, option);
+    } else if (bfs_equal_nocase(operation, "mount")) {
+        result = snapshot_mount(port, drive, name, option);
+    } else if (bfs_equal_nocase(operation, "unmount")) {
+        result = snapshot_unmount(port, drive, name, option);
     } else if (bfs_equal_nocase(operation, "list")) {
         result = snapshot_list(port, drive, name, option);
     } else if (bfs_equal_nocase(operation, "dir")) {
@@ -269,7 +333,7 @@ int bfs_snapshot_command(const char *operation, const char *drive,
     } else {
         bfs_put("Unknown snapshot command: ");
         bfs_put(operation);
-        bfs_put("\nValid: CREATE, DELETE, LIST, DIR, INSPECT\n");
+        bfs_put("\nValid: CREATE, DELETE, LIST, DIR, INSPECT, MOUNT, UNMOUNT\n");
         result = 10;
     }
     return result;

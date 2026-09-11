@@ -109,6 +109,12 @@ C:bfs snapshot dir Compat: smoke FILES >SYS:snapshot-dir-files.txt
 C:bfs snapshot inspect Compat: smoke >SYS:snapshot-inspect.txt
 C:bfs snapshot inspect Compat: smoke FILES >SYS:snapshot-inspect-files.txt
 C:bfs info Compat: >SYS:info.txt
+C:bfs snapshot mount Compat: smoke SnapshotView: >SYS:snapshot-mount.txt
+C:cli-fixture SnapshotView: PROBE >SYS:snapshot-mounted-before-live-change.txt
+C:Delete Compat:cli-file
+C:cli-fixture SnapshotView: PROBE >SYS:snapshot-mounted-file.txt
+C:bfs snapshot delete Compat: smoke >SYS:snapshot-delete-busy.txt
+C:bfs snapshot unmount SnapshotView: >SYS:snapshot-unmount.txt
 C:bfs snapshot delete Compat: smoke >SYS:snapshot-delete.txt
 """
         elif expected:
@@ -163,6 +169,9 @@ automatic_input_grab = 0
                 "snapshot-inspect.txt": b"Directory \"smoke:\" on Compat:\n",
                 "info.txt": b"Drive: Compat:\n",
                 "check.txt": b"Errors: 0  Warnings: 0\nLeaked blocks: 0\nCLEAN\n",
+                "snapshot-mount.txt": b"Mounted snapshot \"smoke\" from Compat: as SnapshotView:\n",
+                "snapshot-mounted-before-live-change.txt": b"PROBE OK\n",
+                "snapshot-mounted-file.txt": b"PROBE OK\n",
                 "snapshot-delete.txt": b"Snapshot deleted.\n",
                 "snapshot-invalid-name.txt": b"Snapshot names cannot contain '/'.\n",
                 "snapshot-invalid-option.txt": b"Valid DIR and INSPECT options are DIRS and FILES.\n",
@@ -188,6 +197,8 @@ automatic_input_grab = 0
             if (b"cli-file" not in outputs["snapshot-inspect-files.txt"] or
                     b"cli-dir" in outputs["snapshot-inspect-files.txt"]):
                 raise ValueError(f"{name}: INSPECT FILES filter is incorrect")
+            if b"Snapshot deleted.\n" in outputs["snapshot-delete-busy.txt"]:
+                raise ValueError(f"{name}: mounted snapshot was deleted")
         print(f"PASS {name}", flush=True)
 
 
