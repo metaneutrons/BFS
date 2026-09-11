@@ -68,3 +68,6 @@ fully checked. Checking an image that is mounted elsewhere is unsupported.
 
 Host fault injection and emulator tests do not establish physical Apollo 68080
 hardware qualification, storage-device flush correctness or absence of all bugs.
+The bounded execution and evidence design for broader fault/corruption work is
+in [fault and corruption qualification](plans/fault-corruption-qualification.md).
+It does not change these failure semantics or make a physical-storage claim.
