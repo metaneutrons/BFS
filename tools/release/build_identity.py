@@ -10,8 +10,10 @@ import sys
 
 from release_integrity import BINARIES, digest, require
 
-INPUTS = ("Makefile", "src", "include", "tools/bfs-test.c", "tools/bfs-test-cases.def",
-          "tools/bfsformat.c", "tools/bfssnapshot.c", "tools/release/build_identity.py")
+INPUTS = ("Makefile", "src", "include", "version.txt", "tools/bfs-test.c",
+          "tools/bfs-test-cases.def", "tools/bfs.c", "tools/bfs_command.h",
+          "tools/bfs_common.c", "tools/bfs_format.c", "tools/bfs_snapshot.c",
+          "tools/release/build_identity.py")
 RECORD = Path("build/link-maps/build-identity.json")
 
 
@@ -41,11 +43,10 @@ def main():
     mode = sys.argv[1]
     source = source_identity()
     if mode == "begin":
-        RECORD.parent.mkdir(parents=True, exist_ok=True)
+        for directory in (Path("build/release"), RECORD.parent):
+            shutil.rmtree(directory, ignore_errors=True)
+            directory.mkdir(parents=True, exist_ok=True)
         RECORD.write_text(json.dumps({"state": "building", "source": source}), encoding="utf-8")
-        for name in BINARIES:
-            (Path("build/release") / name).unlink(missing_ok=True)
-            (RECORD.parent / f"{name}.map").unlink(missing_ok=True)
         return
     record = json.loads(RECORD.read_bytes())
     binaries = {name: digest((Path("build/release") / name).read_bytes()) for name in BINARIES}

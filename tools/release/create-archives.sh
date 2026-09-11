@@ -29,8 +29,7 @@ required=(
     bfshandler.060
     bfshandler.080
     bfs-test
-    bfsformat
-    bfssnapshot
+    bfs
 )
 for file in "${required[@]}"; do
     [[ -s "$source_dir/$file" ]] || { printf 'ERROR: missing %s.\n' "$source_dir/$file" >&2; exit 1; }
@@ -83,7 +82,7 @@ metadata["files"] = {
 }
 metadata_path.write_text(json.dumps(metadata, indent=2, sort_keys=True) + "\n", encoding="utf-8")
 for path in [root, *sorted(root.rglob("*"))]:
-    path.chmod(0o755 if path.is_dir() or path.name in ("bfs-test", "bfsformat", "bfssnapshot")
+    path.chmod(0o755 if path.is_dir() or path.name in ("bfs-test", "bfs")
                or path.name.startswith("bfshandler") else 0o644)
     os.utime(path, (epoch, epoch), follow_symlinks=False)
 PY

@@ -42,7 +42,7 @@ driver. Older unsupported versions and unknown option bits have distinct text.
 An interactive Amiga caller receives a one-time requester on an attempted file
 operation or format. A caller with `pr_WindowPtr == -1` suppresses that requester;
 headless operation does not require Intuition. Packet `BFS_ACTION_FORMAT_ERROR`
-returns the same bounded text, including while unmounted. `bfsformat` queries it
+returns the same bounded text, including while unmounted. `bfs format` queries it
 before attempting a format. See [packet contracts](amiga-packets.md).
 
 ## Geometry
