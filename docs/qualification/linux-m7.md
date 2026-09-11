@@ -15,16 +15,24 @@ dispatcher, concurrency profile, every command, elapsed time, exit status, and
 hashes plus bounded tails of captured output. The tails retain a failure reason
 without allowing an unbounded test log to become CI evidence.
 
-The fast profile runs direct-core and conformance tests, then mounts each of the
-seven legal BFS block sizes (1, 2, 4, 8, 16, 32, and 64 KiB). Every mounted
-case creates the fixture through the shared core, compares it with the
-independent oracle, exercises read-only and read/write operation paths,
-hard-links, snapshots, 255-byte names, maximum comments, 2 and 4 GiB sparse
-file offsets, fragmented allocation, disk-full recovery, abrupt daemon
-termination, and both individual and dual-superblock rejection paths. The
-direct-core portion includes the bounded corruption, fault-injection, crash,
-durability, stress, and seed-corpus tests. Sparse offsets qualify representation
-behavior only; they do not claim that a real maximum-capacity medium was tested.
+The fast profile runs direct-core and conformance tests, then mounts every
+cross-product of the seven legal BFS block sizes (1, 2, 4, 8, 16, 32, and 64
+KiB) and the eight legal format-option masks (0 through 7): 56 mounted cases.
+Every mounted case creates the fixture through the shared core, verifies the
+requested option mask with the independent oracle, compares read-only and
+read/write operation paths, and exercises hard-links, snapshots, 255-byte
+names, maximum comments, 2 and 4 GiB sparse file offsets, fragmented
+allocation, disk-full recovery, and dual-superblock rejection. An additional
+mounted case at 4 KiB with option mask 7 kills the FUSE daemon while retaining
+an unlinked, fsynced file handle, validates the preserved image with the oracle,
+and remounts it. Direct-core tests cover individual primary and backup
+superblock recovery, dual-copy rejection, failed barriers, modeled hardware and
+transport faults, crash injection, durability and stress workloads. The model
+suite executes six fixed seeds (12345, 99999, 31415, 27182, 65537 and 20260910)
+for 500 operations each. The versioned matrix records that bounded fault and
+workload set; its validation rejects a reduced or detached declaration. Sparse
+offsets qualify representation behavior only; they do not claim that a real
+maximum-capacity medium was tested.
 
 The selected dispatcher is `fuse_session_loop`: libfuse invokes callbacks
 serially. The mounted workload starts multiple client processes for atomic

@@ -34,6 +34,7 @@ int main(int argc, char **argv)
     bool hard_link = false;
     uint32_t block_size = DEFAULT_BLOCK_SIZE;
     uint32_t block_count = DEFAULT_BLOCK_COUNT;
+    uint32_t format_options = 0;
     if (argc < 2) return 2;
     for (int index = 2; index < argc; index++) {
         if (strcmp(argv[index], "--directory-scale") == 0) directory_scale = true;
@@ -42,9 +43,14 @@ int main(int argc, char **argv)
                  parse_u32(argv[++index], &block_size)) continue;
         else if (strcmp(argv[index], "--block-count") == 0 && index + 1 < argc &&
                  parse_u32(argv[++index], &block_count)) continue;
+        else if (strcmp(argv[index], "--format-options") == 0 && index + 1 < argc &&
+                 parse_u32(argv[++index], &format_options)) continue;
         else return 2;
     }
     if (!bfs_block_size_valid(block_size) || block_count < BFS_MIN_VOLUME_BLOCKS)
+        return 2;
+    if (format_options & ~(BFS_OPT_DATA_CHECKSUMS | BFS_OPT_SNAPSHOTS |
+                           BFS_OPT_DATA_ORDERED))
         return 2;
     uint64_t image_size = (uint64_t)block_size * block_count;
     if (image_size > INT64_MAX) return 2;
@@ -64,7 +70,7 @@ int main(int argc, char **argv)
     uint32_t oracle_inode;
     bfs_file_t file;
     const char contents[] = "oracle contents";
-    bfs_err_t error = bfs_fs_format(bio, "Oracle", 0);
+    bfs_err_t error = bfs_fs_format(bio, "Oracle", format_options);
     if (error == BFS_OK) error = bfs_fs_mount(&fs, bio);
     if (error == BFS_OK) {
         error = bfs_fs_create_file(&fs, BFS_ROOT_INO, "oracle.txt", 10, &inode);

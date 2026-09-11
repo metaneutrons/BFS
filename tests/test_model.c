@@ -283,6 +283,7 @@ static void test_model_seed_2(void) { test_model_check_seed(99999, 500); }
 static void test_model_seed_3(void) { test_model_check_seed(31415, 500); }
 static void test_model_seed_4(void) { test_model_check_seed(27182, 500); }
 static void test_model_seed_5(void) { test_model_check_seed(65537, 500); }
+static void test_model_seed_6(void) { test_model_check_seed(20260910, 500); }
 
 TEST_SUITE_BEGIN("Property-Based Model Check")
     TEST_RUN(test_model_seed_1);
@@ -290,5 +291,6 @@ TEST_SUITE_BEGIN("Property-Based Model Check")
     TEST_RUN(test_model_seed_3);
     TEST_RUN(test_model_seed_4);
     TEST_RUN(test_model_seed_5);
+    TEST_RUN(test_model_seed_6);
     TEST_RUN(test_model_persistence);
 TEST_SUITE_END()
