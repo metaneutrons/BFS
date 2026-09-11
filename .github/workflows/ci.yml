@@ -62,7 +62,7 @@ jobs:
       - name: Compile host tools
         env:
           HOST_CC: ${{ matrix.compiler }}
-        run: make tools build/host/mkbfs HOST_CC="$HOST_CC"
+        run: make tools HOST_CC="$HOST_CC"
 
   linux-build:
     name: Debian 12 Host Build
