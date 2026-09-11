@@ -19,7 +19,7 @@ ORACLE = ROOT / "tools" / "bfs-format-oracle.py"
 PERSISTENCE_MODEL = ROOT / "tools" / "bfs-persistence-model.py"
 CORE = ROOT / "build" / "host" / "bfs-conformance-core"
 POSIX = ROOT / "build" / "host" / "bfs-conformance-posix"
-MKBFS = ROOT / "build" / "host" / "mkbfs"
+BFS = ROOT / "build" / "host" / "bfs"
 FIXTURE_WRITER = ROOT / "build" / "host" / "conformance-fixture-writer"
 LINK_CHECK = ROOT / "tools" / "check-conformance-linkage.sh"
 sys.path.insert(0, str(ROOT / "tools"))
@@ -191,7 +191,8 @@ class ConformanceTests(unittest.TestCase):
             image = Path(temporary) / "oracle.bfs"
             with image.open("wb") as output:
                 output.truncate(4096 * 512)
-            self.assertEqual(run(str(MKBFS), str(image), "4096", "Oracle").returncode, 0)
+            self.assertEqual(run(str(BFS), "format", str(image), "--label", "Oracle",
+                                 "--block-size", "4096").returncode, 0)
             completed = run(str(ORACLE), str(image))
         self.assertEqual(completed.returncode, 0, completed.stderr)
         result = json.loads(completed.stdout)

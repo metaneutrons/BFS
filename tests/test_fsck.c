@@ -11,26 +11,6 @@
 
 #define IMAGE "test_fsck.img"
 
-static int run_fsck(bool fix)
-{
-    pid_t child = fork();
-    if (child < 0) return -1;
-    if (child == 0) {
-        int output = open("test_fsck.log", O_WRONLY | O_CREAT | O_TRUNC, 0600);
-        if (output < 0) _exit(126);
-        if (dup2(output, STDOUT_FILENO) < 0 || dup2(output, STDERR_FILENO) < 0)
-            _exit(126);
-        close(output);
-        /* Fixed executable/arguments in the test build directory, with no shell. */
-        execl("./bfsfsck", "bfsfsck", IMAGE, fix ? "--fix" : (char *)NULL, /* Flawfinder: ignore */
-              (char *)NULL);
-        _exit(127);
-    }
-    int status;
-    if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return -1;
-    return WEXITSTATUS(status);
-}
-
 static int run_bfs_check(bool repair)
 {
     pid_t child = fork();
@@ -81,7 +61,6 @@ static void test_clean_snapshot_and_readonly_check(void)
         TEST_ASSERT_EQ(bfs_bio_read(bio, block, after), BFS_OK);
         TEST_ASSERT_MEM_EQ(after, before + (size_t)block * bio->block_size, sizeof(after));
     }
-    TEST_ASSERT_EQ(run_fsck(false), 0);
     free(before);
 
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
@@ -91,7 +70,6 @@ static void test_clean_snapshot_and_readonly_check(void)
     TEST_ASSERT_EQ(bfs_refcount_inc(&fs.refcount, data), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
     TEST_ASSERT_EQ(run_bfs_check(false), 2);
-    TEST_ASSERT_EQ(run_fsck(false), 2);
     bfs_bio_close(bio);
     unlink(IMAGE);
     unlink("test_fsck.log");
@@ -117,8 +95,8 @@ static void test_unsupported_format_never_repaired(void)
             TEST_ASSERT(before != NULL);
             for (unsigned block = 0; block < 256; block++)
                 TEST_ASSERT_EQ(bfs_bio_read(bio, block, before + block * 4096), BFS_OK);
-            TEST_ASSERT_EQ(run_fsck(false), 1);
-            TEST_ASSERT_EQ(run_fsck(true), 1);
+            TEST_ASSERT_EQ(run_bfs_check(false), 1);
+            TEST_ASSERT_EQ(run_bfs_check(true), 1);
             FILE *log = fopen("test_fsck.log", "r");
             TEST_ASSERT(log != NULL);
             char message[256];
@@ -159,7 +137,6 @@ static void test_retained_open_inode_is_checker_visible_until_recovery(void)
 
     /* A read-only check must keep ownership of the retained inode's extents. */
     bfs_fs_abandon(&fs);
-    TEST_ASSERT_EQ(run_fsck(false), 0);
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
     bfs_inode_t inode;
     TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_ERR_NOTFOUND);

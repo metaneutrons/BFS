@@ -155,8 +155,7 @@ build/host/bfs info work.bfs
 `format` and every write-capable administration operation accept only regular
 image files. `check` opens the image read-only; `--repair` can reclaim only
 unreachable blocks after a structurally clean scan. It does not attempt a
-general corruption repair. The compatibility binaries `mkbfs` and `bfsfsck`
-remain available with their established syntax and invoke the same code paths.
+general corruption repair.
 
 For a Linux mount, build the FUSE adapter as well:
 
@@ -166,10 +165,10 @@ build/host/bfs mount work.bfs /mnt/bfs
 build/host/bfs mount work.bfs /mnt/bfs-rw --read-write
 ```
 
-The default mount is read-only. `bfs mount` starts the sibling `bfs-fuse`
-adapter, which retains the single implementation of mount lifecycle, image
-range (`--offset`, `--length`) and snapshot selection (`--snapshot` or
-`--snapshot-id`). A writable mount is explicit and is refused for snapshots.
+The default mount is read-only. The `bfs` binary contains the FUSE adapter on
+Linux builds, so mount lifecycle, image range (`--offset`, `--length`) and
+snapshot selection (`--snapshot` or `--snapshot-id`) have one canonical entry
+point. A writable mount is explicit and is refused for snapshots.
 
 ### Stress test binary
 

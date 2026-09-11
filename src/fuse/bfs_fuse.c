@@ -1524,8 +1524,8 @@ static bool parse_u64(const char *text, uint64_t *out)
 
 static void usage(const char *program)
 {
-    fprintf(stderr, "Usage: %s --image PATH [--offset BYTES] [--length BYTES] "
-                    "[--read-write] [--snapshot NAME | --snapshot-id ID] MOUNTPOINT\n", program);
+    fprintf(stderr, "Usage: %s mount IMAGE MOUNTPOINT [--offset BYTES] [--length BYTES] "
+                    "[--read-write] [--snapshot NAME | --snapshot-id ID]\n", program);
 }
 
 static bfs_err_t free_open_handles(bfs_fuse_ctx_t *ctx)
@@ -1538,23 +1538,28 @@ static bfs_err_t free_open_handles(bfs_fuse_ctx_t *ctx)
     return result;
 }
 
-int main(int argc, char **argv)
+int bfs_fuse_mount_main(int argc, char **argv)
 {
-    const char *image = NULL;
-    const char *mountpoint = NULL;
+    const char *image;
+    const char *mountpoint;
     uint64_t offset = 0, length = 0;
     snapshot_selector_t selector = {0};
     bool read_write = false;
-    for (int index = 1; index < argc; index++) {
+    if (argc < 4) {
+        usage(argv[0]);
+        return 2;
+    }
+    image = argv[2];
+    mountpoint = argv[3];
+    for (int index = 4; index < argc; index++) {
         const char *arg = argv[index];
         if (strcmp(arg, "--read-write") == 0) {
             read_write = true;
-        } else if ((strcmp(arg, "--image") == 0 || strcmp(arg, "--offset") == 0 ||
-             strcmp(arg, "--length") == 0 || strcmp(arg, "--snapshot") == 0 ||
+        } else if ((strcmp(arg, "--offset") == 0 || strcmp(arg, "--length") == 0 ||
+             strcmp(arg, "--snapshot") == 0 ||
              strcmp(arg, "--snapshot-id") == 0) && ++index < argc) {
             const char *value = argv[index];
-            if (strcmp(arg, "--image") == 0) image = value;
-            else if (strcmp(arg, "--offset") == 0 && !parse_u64(value, &offset)) {
+            if (strcmp(arg, "--offset") == 0 && !parse_u64(value, &offset)) {
                 usage(argv[0]); return 2;
             } else if (strcmp(arg, "--length") == 0 && !parse_u64(value, &length)) {
                 usage(argv[0]); return 2;
@@ -1572,22 +1577,13 @@ int main(int argc, char **argv)
                 selector.by_id = true;
                 selector.id = (uint32_t)id;
             }
-        } else if (arg[0] == '-') {
-            usage(argv[0]);
-            return 2;
-        } else if (!mountpoint) {
-            mountpoint = arg;
         } else {
             usage(argv[0]);
             return 2;
         }
     }
-    if (!image || !mountpoint) {
-        usage(argv[0]);
-        return 2;
-    }
     if (read_write && (selector.name || selector.by_id)) {
-        fprintf(stderr, "bfs-fuse: snapshots are always read-only\n");
+        fprintf(stderr, "bfs mount: snapshots are always read-only\n");
         return 2;
     }
 
@@ -1603,7 +1599,7 @@ int main(int argc, char **argv)
     };
     ctx.bio = bfs_posix_bio_open(image, &options);
     if (!ctx.bio) {
-        perror("bfs-fuse: cannot open image");
+        perror("bfs mount: cannot open image");
         return 1;
     }
     uint64_t selected_offset, selected_length;
@@ -1616,7 +1612,7 @@ int main(int argc, char **argv)
         char diagnostic[BFS_FORMAT_ERROR_MAX] = {0};
         if (error == BFS_ERR_UNSUPPORTED)
             bfs_sb_describe_unsupported(&superblock, diagnostic);
-        fprintf(stderr, "bfs-fuse: cannot mount %s: %s%sBFS error %d\n", image,
+        fprintf(stderr, "bfs mount: cannot mount %s: %s%sBFS error %d\n", image,
                 diagnostic, diagnostic[0] ? "; " : "", error);
         bfs_bio_close(ctx.bio);
         return 1;
@@ -1644,7 +1640,7 @@ int main(int argc, char **argv)
                 error = BFS_ERR_CORRUPT;
         }
         if (error != BFS_OK) {
-            fprintf(stderr, "bfs-fuse: snapshot selection failed: BFS error %d\n", error);
+            fprintf(stderr, "bfs mount: snapshot selection failed: BFS error %d\n", error);
             bfs_fs_unmount(&ctx.fs);
             bfs_bio_close(ctx.bio);
             return 1;
@@ -1658,13 +1654,13 @@ int main(int argc, char **argv)
                                                     sizeof(bfs_fuse_operations), &ctx);
     fuse_opt_free_args(&arguments);
     if (!session) {
-        fprintf(stderr, "bfs-fuse: cannot initialize libfuse\n");
+        fprintf(stderr, "bfs mount: cannot initialize libfuse\n");
         bfs_fs_unmount(&ctx.fs);
         bfs_bio_close(ctx.bio);
         return 1;
     }
     if (fuse_session_mount(session, mountpoint) != 0) {
-        fprintf(stderr, "bfs-fuse: cannot mount %s\n", mountpoint);
+        fprintf(stderr, "bfs mount: cannot mount %s\n", mountpoint);
         fuse_session_destroy(session);
         bfs_fs_unmount(&ctx.fs);
         bfs_bio_close(ctx.bio);
@@ -1677,7 +1673,7 @@ int main(int argc, char **argv)
     bfs_posix_bio_stats_t stats;
     if (bfs_posix_bio_get_stats(ctx.bio, &stats) != BFS_OK ||
         (ctx.read_only && (stats.write_calls != 0 || stats.sync_calls != 0))) {
-        fprintf(stderr, "bfs-fuse: read-only transport observed a write or sync\n");
+        fprintf(stderr, "bfs mount: read-only transport observed a write or sync\n");
         result = 1;
     }
     if (bfs_fs_unmount(&ctx.fs) != BFS_OK) result = 1;

@@ -21,9 +21,8 @@ import linux_qualification
 
 
 ROOT = linux_qualification.ROOT
-FUSE = ROOT / "build" / "host" / "bfs-fuse"
+BFS = ROOT / "build" / "host" / "bfs"
 FIXTURE = ROOT / "build" / "host" / "conformance-fixture-writer"
-CHECKER = ROOT / "build" / "host" / "bfsfsck"
 ORACLE = ROOT / "tools" / "bfs-format-oracle.py"
 APPROVAL_REFERENCE = re.compile(
     r"https://github\.com/metaneutrons/BFS/issues/29#issuecomment-[1-9][0-9]*\Z"
@@ -50,12 +49,11 @@ def run(*command, timeout=60):
 
 
 def mount(image, mountpoint, snapshot=None, read_write=True):
-    command = [str(FUSE), "--image", str(image)]
+    command = [str(BFS), "mount", str(image), str(mountpoint)]
     if read_write:
         command.append("--read-write")
     if snapshot:
         command.extend(["--snapshot", snapshot])
-    command.append(str(mountpoint))
     process = subprocess.Popen(command,
                                cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)  # nosec B603
     deadline = time.monotonic() + 10
@@ -64,7 +62,7 @@ def mount(image, mountpoint, snapshot=None, read_write=True):
             return process
         if process.poll() is not None:
             _, errors = process.communicate()
-            raise RuntimeError(f"bfs-fuse exited before mount: {errors}")
+            raise RuntimeError(f"bfs mount exited before mount: {errors}")
         time.sleep(0.05)
     if process.poll() is None:
         process.send_signal(signal.SIGTERM)
@@ -73,7 +71,7 @@ def mount(image, mountpoint, snapshot=None, read_write=True):
     except subprocess.TimeoutExpired:
         process.kill()
         _, errors = process.communicate(timeout=5)
-    raise RuntimeError(f"bfs-fuse mount timed out: {errors}")
+    raise RuntimeError(f"bfs mount timed out: {errors}")
 
 
 def unmount(process, mountpoint):
@@ -88,7 +86,7 @@ def unmount(process, mountpoint):
     except subprocess.TimeoutExpired as error:
         process.kill()
         process.wait(timeout=5)
-        raise RuntimeError("bfs-fuse did not exit after unmount") from error
+        raise RuntimeError("bfs mount did not exit after unmount") from error
     _, errors = process.communicate()
     require(process.returncode == 0, errors)
 
@@ -209,7 +207,7 @@ def run_clients(root, cycle, limits):
 
 
 def verify_image(image):
-    for command in ((str(ORACLE), str(image)), (str(CHECKER), str(image))):
+    for command in ((str(ORACLE), str(image)), (str(BFS), "check", str(image))):
         completed = run(*command)
         require(completed.returncode == 0, completed.stderr + completed.stdout)
 
@@ -430,7 +428,7 @@ def main():
         require(not image_directory.exists(), "refusing to overwrite soak image directory")
     require(Path("/dev/fuse").is_char_device(), "/dev/fuse is required for the soak")
     require(Path("/proc/meminfo").is_file(), "/proc resource metrics are required for the soak")
-    require(FUSE.is_file() and FIXTURE.is_file() and CHECKER.is_file(), "build soak prerequisites first")
+    require(BFS.is_file() and FIXTURE.is_file(), "build soak prerequisites first")
     output.mkdir(parents=True)
     if image_directory != output:
         image_directory.mkdir(parents=True)

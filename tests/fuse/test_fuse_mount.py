@@ -20,7 +20,7 @@ import zlib
 
 
 ROOT = Path(__file__).resolve().parents[2]
-FUSE = ROOT / "build" / "host" / "bfs-fuse"
+BFS = ROOT / "build" / "host" / "bfs"
 FIXTURE = ROOT / "build" / "host" / "conformance-fixture-writer"
 ORACLE = ROOT / "tools" / "bfs-format-oracle.py"
 CONFORMANCE = ROOT / "tools" / "bfs-conformance.py"
@@ -45,24 +45,23 @@ def require(condition, message):
 
 
 def mount(image, mountpoint, snapshot=None, read_write=False):
-    arguments = [str(FUSE), "--image", str(image)]
+    arguments = [str(BFS), "mount", str(image), str(mountpoint)]
     if read_write:
         arguments.append("--read-write")
     if snapshot:
         arguments.extend(["--snapshot", snapshot])
-    arguments.append(str(mountpoint))
     process = subprocess.Popen(arguments, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)  # nosec B603
     deadline = time.monotonic() + 10
     while time.monotonic() < deadline:
         if process.poll() is not None:
             _, errors = process.communicate()
-            raise RuntimeError(f"bfs-fuse exited before mount: {errors}")
+            raise RuntimeError(f"bfs mount exited before mount: {errors}")
         if mountpoint.is_mount():
             return process
         time.sleep(0.05)
     process.send_signal(signal.SIGTERM)
     _, errors = process.communicate(timeout=5)
-    raise RuntimeError(f"bfs-fuse mount timed out: {errors}")
+    raise RuntimeError(f"bfs mount timed out: {errors}")
 
 
 def unmount(process, mountpoint):
@@ -73,7 +72,7 @@ def unmount(process, mountpoint):
     except subprocess.TimeoutExpired as error:
         process.kill()
         process.wait(timeout=5)
-        raise RuntimeError("bfs-fuse did not exit after unmount") from error
+        raise RuntimeError("bfs mount did not exit after unmount") from error
     _, errors = process.communicate()
     require(process.returncode == 0, errors)
 
@@ -578,13 +577,13 @@ def exercise_rejections(image, temporary):
         bad_image.write_bytes(data)
         mountpoint = temporary / f"{label}-mount"
         mountpoint.mkdir()
-        completed = run(str(FUSE), "--image", str(bad_image), str(mountpoint))
+        completed = run(str(BFS), "mount", str(bad_image), str(mountpoint))
         require(completed.returncode != 0, f"{label} image unexpectedly mounted")
 
     mountpoint = temporary / "snapshot-write-mount"
     mountpoint.mkdir()
-    completed = run(str(FUSE), "--image", str(image), "--read-write", "--snapshot",
-                    "oracle-snapshot", str(mountpoint))
+    completed = run(str(BFS), "mount", str(image), str(mountpoint), "--read-write",
+                    "--snapshot", "oracle-snapshot")
     require(completed.returncode != 0, "writable snapshot mount unexpectedly succeeded")
 
 
@@ -621,10 +620,10 @@ def main():
     require(0 <= args.format_options <= 7, "unsupported BFS format options")
     require(os.name == "posix" and Path("/dev/fuse").exists(),
             "/dev/fuse is required; this is a failed qualification, not a skip")
-    require(FUSE.is_file() and os.access(FUSE, os.X_OK), "bfs-fuse is not built")
+    require(BFS.is_file() and os.access(BFS, os.X_OK), "bfs is not built")
     require(FIXTURE.is_file() and os.access(FIXTURE, os.X_OK), "fixture writer is not built")
     require(shutil.which("fusermount3"), "fusermount3 is required")
-    with tempfile.TemporaryDirectory(prefix="bfs-fuse-test-") as directory:
+    with tempfile.TemporaryDirectory(prefix="bfs-mount-test-") as directory:
         temporary = Path(directory)
         image = temporary / "fixture.bfs"
         fixture_arguments = [str(FIXTURE), str(image), "--directory-scale", "--block-size",

@@ -17,7 +17,7 @@ transaction, flush a cache, change the backup-superblock slot, or call a
 transport write callback. Closing a read-only mount must release memory only.
 
 The legacy mutable API remains available to the Amiga handler. It must not be
-used by `bfs-fuse` in M5. The implementation may share parsing and validation
+used by `bfs mount` in M5. The implementation may share parsing and validation
 internals, but mode checks belong in `libbfs`, not only in a FUSE callback.
 
 A filesystem instance has one owner. No caller may use it after close starts,

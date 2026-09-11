@@ -59,7 +59,7 @@ soak. Before starting it, record in issue #29:
 Each cycle keeps 64 client file handles open across four processes while it
 writes, fsyncs, reads, renames, hard-links and removes files. It also creates
 and verifies fragmented files, fills the volume until `ENOSPC`, verifies space
-recovery after deletion, unmounts, runs the independent oracle and `bfsfsck`,
+recovery after deletion, unmounts, runs the independent oracle and `bfs check`,
 then remounts the committed `oracle-snapshot` read-only and confirms that a
 write is refused. This exercises FUSE snapshot reading; Linux snapshot creation
 and deletion remain out of scope.

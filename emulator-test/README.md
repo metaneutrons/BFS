@@ -65,7 +65,7 @@ The locations can be overridden with `BFS_AMIGA_ASSETS_DIR`, `BFS_ROM_FILE`, `BF
 `BFS_PFS3_HANDLER`.
 
 ```bash
-make amiga build/host/mkbfs
+make amiga build/host/bfs
 ./emulator-test/build-bench-image.sh
 ./emulator-test/run-bench.sh
 ```

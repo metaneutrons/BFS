@@ -1,15 +1,18 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Canonical POSIX administration command for BFS images. */
 
-#include <limits.h>
+#include <errno.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
-#include <unistd.h>
 
 #include "bfs_fs.h"
-#include "bfs_host_commands.h"
 #include "bfs_host_common.h"
 #include "bfs_snapshot.h"
+
+#ifdef BFS_FUSE_ENABLED
+int bfs_fuse_mount_main(int argc, char **argv);
+#endif
 
 static void usage(void)
 {
@@ -39,6 +42,7 @@ static int format_command(int argc, char **argv)
     const char *label = NULL;
     const char *block_size = "4096";
     bool block_size_seen = false;
+    uint32_t block_size_value;
 
     if (argc < 5) {
         usage();
@@ -71,20 +75,24 @@ static int format_command(int argc, char **argv)
         usage();
         return 2;
     }
-    char *legacy_argv[] = { "mkbfs", (char *)image, (char *)block_size,
-                            (char *)label, NULL };
-    return bfs_host_mkbfs_main(4, legacy_argv);
+    char *end = NULL;
+    errno = 0;
+    unsigned long parsed = strtoul(block_size, &end, 10);
+    if (errno != 0 || !end || *end != '\0' || parsed > UINT32_MAX) {
+        fprintf(stderr, "Invalid block size: %s\n", block_size);
+        return 2;
+    }
+    block_size_value = (uint32_t)parsed;
+    return bfs_host_format_image(image, block_size_value, label);
 }
 
 static int check_command(int argc, char **argv)
 {
     if (argc == 3) {
-        char *legacy_argv[] = { "bfsfsck", argv[2], NULL };
-        return bfs_host_fsck_main(2, legacy_argv);
+        return bfs_host_check_image(argv[2], false);
     }
     if (argc == 4 && strcmp(argv[3], "--repair") == 0) {
-        char *legacy_argv[] = { "bfsfsck", argv[2], "--fix", NULL };
-        return bfs_host_fsck_main(3, legacy_argv);
+        return bfs_host_check_image(argv[2], true);
     }
     usage();
     return 2;
@@ -208,33 +216,17 @@ static int info_command(int argc, char **argv)
 
 static int mount_command(int argc, char **argv)
 {
+#ifdef BFS_FUSE_ENABLED
+    return bfs_fuse_mount_main(argc, argv);
+#else
+    (void)argv;
     if (argc < 4) {
         usage();
         return 2;
     }
-    char sibling[PATH_MAX];
-    char *fuse_argv[argc + 2];
-    int out = 0;
-    const char *fuse_program = "bfs-fuse";
-    const char *slash = strrchr(argv[0], '/');
-    if (slash) {
-        size_t directory_length = (size_t)(slash - argv[0]) + 1u;
-        if (directory_length + sizeof("bfs-fuse") <= sizeof(sibling)) {
-            memcpy(sibling, argv[0], directory_length);
-            memcpy(sibling + directory_length, "bfs-fuse", sizeof("bfs-fuse"));
-            fuse_program = sibling;
-        }
-    }
-    fuse_argv[out++] = (char *)fuse_program;
-    fuse_argv[out++] = "--image";
-    fuse_argv[out++] = argv[2];
-    for (int index = 4; index < argc; index++) fuse_argv[out++] = argv[index];
-    fuse_argv[out++] = argv[3];
-    fuse_argv[out] = NULL;
-    if (fuse_program == sibling) execv(fuse_program, fuse_argv);
-    else execvp(fuse_program, fuse_argv);
-    perror("bfs mount: cannot start bfs-fuse");
-    return 127;
+    fprintf(stderr, "bfs mount requires a Linux build with libfuse3 development files\n");
+    return 1;
+#endif
 }
 
 int main(int argc, char **argv)

@@ -50,7 +50,8 @@ def prepare_media():
     clean = work / "clean.hdf"
     with clean.open("wb") as stream:
         stream.truncate(32 * 1024 * 1024)
-    run_checked([ROOT / "build/host/mkbfs", clean, "4096", "Compat"])
+    run_checked([ROOT / "build/host/bfs", "format", clean,
+                 "--label", "Compat", "--block-size", "4096"])
     return work, rom, clean
 
 

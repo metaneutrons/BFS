@@ -73,7 +73,7 @@ rdbtool -f "$HDF" create size=128Mi cyls=256 heads=16 secs=32 \
 # Format partition area with BFS
 PART_BLOCKS=$(( (254 * 16 * 32 * 512) / 4096 ))
 dd if=/dev/zero of="$PART_FILE" bs=4096 count="$PART_BLOCKS" status=none
-"$PROJECT_DIR/build/host/mkbfs" "$PART_FILE" >/dev/null
+"$PROJECT_DIR/build/host/bfs" format "$PART_FILE" --label BFSTest >/dev/null
 dd if="$PART_FILE" of="$HDF" bs=512 seek=1024 conv=notrunc status=none
 rm -f "$PART_FILE"
 

@@ -9,7 +9,7 @@ runtime_dir=${BFS_EMULATOR_RUNTIME:-"$build_dir/emulator"}
 aros_dir=${BFS_AROS_DIR:-"$runtime_dir/aros"}
 handler=${BFS_HANDLER:-"$build_dir/amiga/bfshandler"}
 test_binary=${BFS_TEST_BINARY:-"$build_dir/amiga/bfs-test"}
-mkbfs=${BFS_MKBFS:-"$build_dir/host/mkbfs"}
+bfs=${BFS_CLI:-"$build_dir/host/bfs"}
 fixture=${BFS_TEST_HDF:-}
 timeout_seconds=${BFS_TEST_TIMEOUT:-1800}
 profile=${BFS_TEST_PROFILE:-full}
@@ -46,7 +46,7 @@ fi
 if [[ -n "$fixture" ]]; then
     [[ -f "$fixture" ]] || { printf 'ERROR: HDF fixture not found: %s\n' "$fixture" >&2; exit 2; }
 else
-    [[ -x "$mkbfs" ]] || { printf 'ERROR: mkbfs not found: %s\n' "$mkbfs" >&2; exit 2; }
+    [[ -x "$bfs" ]] || { printf 'ERROR: bfs not found: %s\n' "$bfs" >&2; exit 2; }
 fi
 
 mkdir -p "$runtime_dir"
@@ -81,7 +81,7 @@ if [[ -n "$fixture" ]]; then
     cp "$fixture" "$hdf"
 else
     dd if=/dev/zero of="$hdf" bs=1M count=32 status=none
-    "$mkbfs" "$hdf" 4096 BFSTest
+    "$bfs" format "$hdf" --label BFSTest --block-size 4096
 fi
 
 cat > "$config" <<EOF
