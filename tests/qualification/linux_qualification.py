@@ -7,6 +7,7 @@ import json
 import os
 from pathlib import Path
 import platform
+import re
 import shutil
 import subprocess  # nosec B404 - repository build products are invoked without a shell
 import sys
@@ -17,6 +18,71 @@ ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_MATRIX = Path(__file__).with_name("linux-m7-matrix.json")
 LEGAL_BLOCK_SIZES = (1024, 2048, 4096, 8192, 16384, 32768, 65536)
 OUTPUT_TAIL_LIMIT = 8192
+MODEL_SEED_CALL = re.compile(r"test_model_check_seed\((\d+),\s*(\d+)\)")
+REQUIRED_OPTION_COMBINATIONS = [
+    {"name": "none", "bits": 0},
+    {"name": "checksums", "bits": 1},
+    {"name": "snapshots", "bits": 2},
+    {"name": "checksums-snapshots", "bits": 3},
+    {"name": "ordered", "bits": 4},
+    {"name": "checksums-ordered", "bits": 5},
+    {"name": "snapshots-ordered", "bits": 6},
+    {"name": "checksums-snapshots-ordered", "bits": 7},
+]
+REQUIRED_SEED_CORPUS_SUFFIX = [77777, 67890, 11111, 54321, 3735928559]
+REQUIRED_FAULT_WORKLOAD_MATRIX = {
+    "seeded_workloads": {
+        "model": {
+            "seeds": [12345, 99999, 31415, 27182, 65537, 20260910],
+            "operations_per_seed": 500,
+        },
+        "model_persistence": {
+            "seeds": [77777],
+            "operations_per_seed": 200,
+        },
+        "robustness_fuzz": {
+            "seeds": [12345, 67890, 11111, 99999, 54321],
+            "operations_per_seed": 2000,
+        },
+        "edge_case_fuzz": {
+            "seeds": [3735928559],
+            "operations_per_seed": 5000,
+        },
+        "stress_random_operations": {
+            "seeds": [12345],
+            "operations_per_seed": 2000,
+        },
+        "invariant_random_operations": {
+            "seeds": [12345],
+            "operations_per_seed": 1000,
+        },
+    },
+    "crash_injection": {
+        "source": "tests/test_crash_inject.c",
+        "cut_points": {
+            "create": {"minimum": 1, "maximum": 15, "bound": "actual_write_count"},
+            "delete": {"minimum": 1, "maximum": 15, "bound": "actual_write_count"},
+            "write": {"minimum": 1, "maximum": 15, "bound": "actual_write_count"},
+            "sync": {"minimum": 1, "maximum": 10, "bound": "actual_write_count"},
+        },
+    },
+    "transport_faults": ["eintr_and_partial_transfer", "io_error",
+                         "geometry_and_allocation_failure"],
+    "hardware_failures": ["torn_superblock", "torn_btree_node", "read_error",
+                          "allocation_failure", "both_superblocks_torn",
+                          "ordered_sync_error", "failed_cow_write"],
+    "superblock_copy_recovery": {
+        "individually_damaged": ["primary", "backup"],
+        "both_damaged": "rejected",
+    },
+    "durability": ["backup_superblock_protection", "fragmented_truncate_reclamation",
+                   "data_ordered_consistency"],
+    "workloads": ["disk_full", "random_operations", "crash_recovery_cycles",
+                  "fsck_open_inode_recovery"],
+    "mounted_fuse": ["read_only_and_read_write", "oracle_comparison", "hard_links",
+                     "snapshots", "long_names_and_comments", "sparse_offsets",
+                     "fragmentation", "disk_full_recovery", "abrupt_daemon_termination"],
+}
 
 
 def require(condition, message):
@@ -28,21 +94,63 @@ def digest(path):
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
+def json_digest(value):
+    encoded = json.dumps(value, sort_keys=True, separators=(",", ":")).encode("ascii")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def model_seed_corpus():
+    source = (ROOT / "tests/test_model.c").read_text(encoding="utf-8")
+    calls = MODEL_SEED_CALL.findall(source)
+    require(calls, "model seed calls are absent")
+    require(all(int(operations) == 500 for _, operations in calls),
+            "model seed operation count changed without a new format version")
+    return [int(seed) for seed, _ in calls]
+
+
+def seed_corpus():
+    return model_seed_corpus() + REQUIRED_SEED_CORPUS_SUFFIX
+
+
+def mounted_cases(matrix):
+    cases = []
+    for block_size in matrix["fast"]["block_sizes"]:
+        for option in matrix["fast"]["option_combinations"]:
+            cases.append({"block_size": block_size, "format_options": option["bits"],
+                          "format_option_name": option["name"]})
+    return cases
+
+
 def load_matrix(path):
     matrix = json.loads(path.read_text(encoding="ascii"))
-    require(matrix.get("format_version") == 1, "unsupported matrix format")
+    require(matrix.get("format_version") == 2, "unsupported matrix format")
     require(matrix.get("dispatcher", {}).get("function") == "fuse_session_loop",
             "matrix must require the serialized dispatcher")
     require(matrix.get("dispatcher", {}).get("profile") ==
             "serialized callbacks; concurrent client processes may queue requests",
             "matrix must describe the serialized callback profile")
-    require(matrix.get("seed_corpus") == [1, 2, 3, 4, 5, 20260910],
-            "matrix seed corpus changed without a new format version")
+    require(matrix.get("seed_corpus") == seed_corpus(),
+            "matrix seed corpus does not match executed deterministic tests")
+    require(matrix.get("fault_workload_matrix") == REQUIRED_FAULT_WORKLOAD_MATRIX,
+            "matrix fault/workload coverage changed without a new format version")
     fast = matrix.get("fast", {})
     require(tuple(fast.get("block_sizes", ())) == LEGAL_BLOCK_SIZES,
             "matrix must cover every legal BFS block size")
+    require(fast.get("option_combinations") == REQUIRED_OPTION_COMBINATIONS,
+            "matrix must cover every legal BFS format-option combination")
     require(fast.get("block_count", 0) >= 64, "matrix volume is too small")
     require(fast.get("operation_timeout_seconds", 0) > 0, "matrix timeout is invalid")
+    interruption = fast.get("abrupt_daemon_termination", {})
+    require(interruption.get("block_size") in LEGAL_BLOCK_SIZES,
+            "matrix abrupt-termination block size is unsupported")
+    require(interruption.get("block_count") >= 64,
+            "matrix abrupt-termination volume is too small")
+    require(interruption.get("option_name") == "checksums-snapshots-ordered" and
+            interruption.get("format_options") == 7,
+            "matrix abrupt-termination format options are unsupported")
+    cases = mounted_cases(matrix)
+    require(len(cases) == len(LEGAL_BLOCK_SIZES) * len(REQUIRED_OPTION_COMBINATIONS),
+            "matrix must retain every block-size and format-option case")
     soak = matrix.get("soak", {})
     require(soak.get("target_duration_seconds") == 72 * 60 * 60,
             "M7 soak target must remain 72 hours")
@@ -88,11 +196,11 @@ def output_tail(text):
     return text[-OUTPUT_TAIL_LIMIT:]
 
 
-def make_record(name, command, timeout):
+def make_record(name, command, timeout, parameters=None):
     started = time.monotonic()
     completed = subprocess.run(command, cwd=ROOT, check=False, capture_output=True, text=True,
                                timeout=timeout)  # nosec B603
-    return {
+    record = {
         "name": name,
         "command": command,
         "duration_seconds": round(time.monotonic() - started, 3),
@@ -102,10 +210,13 @@ def make_record(name, command, timeout):
         "stdout_tail": output_tail(completed.stdout),
         "stderr_tail": output_tail(completed.stderr),
     }
+    if parameters is not None:
+        record["parameters"] = parameters
+    return record
 
 
-def run_record(records, name, command, timeout):
-    record = make_record(name, command, timeout)
+def run_record(records, name, command, timeout, parameters=None):
+    record = make_record(name, command, timeout, parameters)
     records.append(record)
     require(record["returncode"] == 0, f"{name} failed; inspect the evidence record")
 
@@ -114,17 +225,33 @@ def run_fast_matrix(matrix, records):
     timeout = matrix["fast"]["operation_timeout_seconds"]
     run_record(records, "direct-core-and-conformance",
                [make_executable(), "host-test", "conformance-test", "HOST_CC=gcc"], timeout)
-    for block_size in matrix["fast"]["block_sizes"]:
+    for case in mounted_cases(matrix):
         command = [sys.executable, "tests/fuse/test_fuse_mount.py", "--block-size",
-                   str(block_size), "--block-count", str(matrix["fast"]["block_count"]),
-                   "--hard-link", "--disk-pressure"]
-        run_record(records, f"mounted-fuse-{block_size}", command, timeout)
+                   str(case["block_size"]), "--block-count",
+                   str(matrix["fast"]["block_count"]), "--format-options",
+                   str(case["format_options"]), "--hard-link", "--disk-pressure"]
+        run_record(records,
+                   f"mounted-fuse-{case['block_size']}-{case['format_option_name']}",
+                   command, timeout, case)
+    interruption = matrix["fast"]["abrupt_daemon_termination"]
+    command = [sys.executable, "tests/fuse/test_fuse_mount.py", "--block-size",
+               str(interruption["block_size"]), "--block-count",
+               str(interruption["block_count"]), "--format-options",
+               str(interruption["format_options"]), "--hard-link", "--disk-pressure",
+               "--interrupted-daemon"]
+    run_record(records, "mounted-fuse-abrupt-daemon-termination", command, timeout,
+               {"block_size": interruption["block_size"],
+                "format_options": interruption["format_options"],
+                "format_option_name": interruption["option_name"],
+                "interrupted_daemon": True})
 
 
 def environment(matrix_path):
+    matrix = json.loads(matrix_path.read_text(encoding="ascii"))
     return {
         "commit": git_commit(),
         "matrix_sha256": digest(matrix_path),
+        "fault_workload_matrix_sha256": json_digest(matrix["fault_workload_matrix"]),
         "platform": platform.platform(),
         "python": platform.python_version(),
         "dispatcher": "fuse_session_loop",

@@ -1,14 +1,76 @@
 {
-  "format_version": 1,
+  "format_version": 2,
   "dispatcher": {
     "function": "fuse_session_loop",
     "profile": "serialized callbacks; concurrent client processes may queue requests"
   },
-  "seed_corpus": [1, 2, 3, 4, 5, 20260910],
+  "seed_corpus": [12345, 99999, 31415, 27182, 65537, 20260910, 77777, 67890, 11111, 54321, 3735928559],
+  "fault_workload_matrix": {
+    "seeded_workloads": {
+      "model": {
+        "seeds": [12345, 99999, 31415, 27182, 65537, 20260910],
+        "operations_per_seed": 500
+      },
+      "model_persistence": {
+        "seeds": [77777],
+        "operations_per_seed": 200
+      },
+      "robustness_fuzz": {
+        "seeds": [12345, 67890, 11111, 99999, 54321],
+        "operations_per_seed": 2000
+      },
+      "edge_case_fuzz": {
+        "seeds": [3735928559],
+        "operations_per_seed": 5000
+      },
+      "stress_random_operations": {
+        "seeds": [12345],
+        "operations_per_seed": 2000
+      },
+      "invariant_random_operations": {
+        "seeds": [12345],
+        "operations_per_seed": 1000
+      }
+    },
+    "crash_injection": {
+      "source": "tests/test_crash_inject.c",
+      "cut_points": {
+        "create": {"minimum": 1, "maximum": 15, "bound": "actual_write_count"},
+        "delete": {"minimum": 1, "maximum": 15, "bound": "actual_write_count"},
+        "write": {"minimum": 1, "maximum": 15, "bound": "actual_write_count"},
+        "sync": {"minimum": 1, "maximum": 10, "bound": "actual_write_count"}
+      }
+    },
+    "transport_faults": ["eintr_and_partial_transfer", "io_error", "geometry_and_allocation_failure"],
+    "hardware_failures": ["torn_superblock", "torn_btree_node", "read_error", "allocation_failure", "both_superblocks_torn", "ordered_sync_error", "failed_cow_write"],
+    "superblock_copy_recovery": {
+      "individually_damaged": ["primary", "backup"],
+      "both_damaged": "rejected"
+    },
+    "durability": ["backup_superblock_protection", "fragmented_truncate_reclamation", "data_ordered_consistency"],
+    "workloads": ["disk_full", "random_operations", "crash_recovery_cycles", "fsck_open_inode_recovery"],
+    "mounted_fuse": ["read_only_and_read_write", "oracle_comparison", "hard_links", "snapshots", "long_names_and_comments", "sparse_offsets", "fragmentation", "disk_full_recovery", "abrupt_daemon_termination"]
+  },
   "fast": {
     "block_sizes": [1024, 2048, 4096, 8192, 16384, 32768, 65536],
+    "option_combinations": [
+      {"name": "none", "bits": 0},
+      {"name": "checksums", "bits": 1},
+      {"name": "snapshots", "bits": 2},
+      {"name": "checksums-snapshots", "bits": 3},
+      {"name": "ordered", "bits": 4},
+      {"name": "checksums-ordered", "bits": 5},
+      {"name": "snapshots-ordered", "bits": 6},
+      {"name": "checksums-snapshots-ordered", "bits": 7}
+    ],
     "block_count": 512,
-    "operation_timeout_seconds": 300
+    "operation_timeout_seconds": 300,
+    "abrupt_daemon_termination": {
+      "block_size": 4096,
+      "block_count": 512,
+      "option_name": "checksums-snapshots-ordered",
+      "format_options": 7
+    }
   },
   "soak": {
     "target_duration_seconds": 259200,

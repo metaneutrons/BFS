@@ -153,7 +153,7 @@ The host suites cover:
 - **Robustness** — concurrent-style ops, resource exhaustion
 - **Hardware failure** — simulated I/O errors, partial writes
 - **Crash injection** — bounded power-loss simulation across create, delete, write and sync cut points
-- **Model checking** — five fixed PRNG seeds, 2,500 random operations and invariant checks after every operation
+- **Model checking** — six fixed PRNG seeds, 3,000 random operations and invariant checks after every operation
 - **Real-world** — large directory workloads, fragmentation patterns
 - **Hunt** — targeted regression tests
 - **Snapshots** — create, delete, list, and inspect read-only snapshot metadata

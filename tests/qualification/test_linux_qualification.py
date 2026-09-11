@@ -61,6 +61,14 @@ class LinuxQualificationTests(unittest.TestCase):
     def test_current_matrix_is_valid(self):
         matrix = linux_qualification.load_matrix(linux_qualification.DEFAULT_MATRIX)
         self.assertEqual(matrix["soak"]["target_duration_seconds"], 72 * 60 * 60)
+        self.assertEqual(matrix["seed_corpus"], linux_qualification.seed_corpus())
+        self.assertEqual([item["bits"] for item in matrix["fast"]["option_combinations"]],
+                         list(range(8)))
+        cases = linux_qualification.mounted_cases(matrix)
+        self.assertEqual(len(cases), 56)
+        self.assertEqual({(case["block_size"], case["format_options"]) for case in cases},
+                         {(block_size, option) for block_size in
+                          linux_qualification.LEGAL_BLOCK_SIZES for option in range(8)})
 
     def test_rejects_missing_block_size(self):
         matrix = json.loads(linux_qualification.DEFAULT_MATRIX.read_text(encoding="ascii"))
@@ -69,6 +77,33 @@ class LinuxQualificationTests(unittest.TestCase):
             path = Path(directory) / "matrix.json"
             path.write_text(json.dumps(matrix), encoding="ascii")
             with self.assertRaisesRegex(RuntimeError, "block size"):
+                linux_qualification.load_matrix(path)
+
+    def test_rejects_missing_format_option(self):
+        matrix = json.loads(linux_qualification.DEFAULT_MATRIX.read_text(encoding="ascii"))
+        matrix["fast"]["option_combinations"].pop()
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.json"
+            path.write_text(json.dumps(matrix), encoding="ascii")
+            with self.assertRaisesRegex(RuntimeError, "format-option"):
+                linux_qualification.load_matrix(path)
+
+    def test_rejects_missing_deterministic_seed(self):
+        matrix = json.loads(linux_qualification.DEFAULT_MATRIX.read_text(encoding="ascii"))
+        matrix["seed_corpus"].remove(20260910)
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.json"
+            path.write_text(json.dumps(matrix), encoding="ascii")
+            with self.assertRaisesRegex(RuntimeError, "seed corpus"):
+                linux_qualification.load_matrix(path)
+
+    def test_rejects_changed_fault_workload_matrix(self):
+        matrix = json.loads(linux_qualification.DEFAULT_MATRIX.read_text(encoding="ascii"))
+        del matrix["fault_workload_matrix"]["crash_injection"]["cut_points"]["sync"]
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "matrix.json"
+            path.write_text(json.dumps(matrix), encoding="ascii")
+            with self.assertRaisesRegex(RuntimeError, "fault/workload"):
                 linux_qualification.load_matrix(path)
 
     def test_rejects_short_soak(self):
@@ -105,6 +140,13 @@ class LinuxQualificationTests(unittest.TestCase):
 
     def test_evidence_output_is_bounded(self):
         self.assertEqual(len(linux_qualification.output_tail("x" * 9000)), 8192)
+
+    def test_fault_workload_digest_is_stable(self):
+        matrix = linux_qualification.load_matrix(linux_qualification.DEFAULT_MATRIX)
+        changed = json.loads(json.dumps(matrix["fault_workload_matrix"]))
+        changed["workloads"].pop()
+        self.assertNotEqual(linux_qualification.json_digest(matrix["fault_workload_matrix"]),
+                            linux_qualification.json_digest(changed))
 
     def test_soak_profile_has_capacity_and_handle_pressure(self):
         matrix = linux_qualification.load_matrix(linux_qualification.DEFAULT_MATRIX)

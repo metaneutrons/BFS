@@ -610,12 +610,15 @@ def main():
     parser.add_argument("--interrupted-image-output", type=Path)
     parser.add_argument("--block-size", type=int, default=4096)
     parser.add_argument("--block-count", type=int, default=512)
+    parser.add_argument("--format-options", type=lambda value: int(value, 0), default=0)
     parser.add_argument("--hard-link", action="store_true")
     parser.add_argument("--disk-pressure", action="store_true")
+    parser.add_argument("--interrupted-daemon", action="store_true")
     args = parser.parse_args()
     legal_block_sizes = {1024, 2048, 4096, 8192, 16384, 32768, 65536}
     require(args.block_size in legal_block_sizes, "unsupported BFS block size")
     require(args.block_count >= 64, "fixture block count is too small")
+    require(0 <= args.format_options <= 7, "unsupported BFS format options")
     require(os.name == "posix" and Path("/dev/fuse").exists(),
             "/dev/fuse is required; this is a failed qualification, not a skip")
     require(FUSE.is_file() and os.access(FUSE, os.X_OK), "bfs-fuse is not built")
@@ -625,11 +628,14 @@ def main():
         temporary = Path(directory)
         image = temporary / "fixture.bfs"
         fixture_arguments = [str(FIXTURE), str(image), "--directory-scale", "--block-size",
-                             str(args.block_size), "--block-count", str(args.block_count)]
+                             str(args.block_size), "--block-count", str(args.block_count),
+                             "--format-options", str(args.format_options)]
         if args.hard_link:
             fixture_arguments.append("--hard-link")
         require(run(*fixture_arguments).returncode == 0,
                 "cannot create FUSE fixture")
+        require(oracle_result(image)["superblock"]["options"] == args.format_options,
+                "fixture format options differ")
         mountpoint = temporary / "mount"
         mountpoint.mkdir()
         exercise_fixture(image, mountpoint)
@@ -650,6 +656,9 @@ def main():
         if args.interrupted_image_output:
             create_interrupted_open_unlink_image(image, mountpoint,
                                                  args.interrupted_image_output)
+        if args.interrupted_daemon:
+            create_interrupted_open_unlink_image(image, mountpoint,
+                                                 temporary / "interrupted.bfs")
     print("FUSE qualification passed")
 
 
