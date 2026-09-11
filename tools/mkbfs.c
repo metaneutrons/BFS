@@ -3,12 +3,13 @@
 
 #include "bfs_fs.h"
 #include "bfs_posix_bio.h"
+#include "bfs_host_commands.h"
 #include <errno.h>
 #include <limits.h>
 #include <stdio.h>
 #include <stdlib.h>
 
-int main(int argc, char **argv)
+int bfs_host_mkbfs_main(int argc, char **argv)
 {
     uint32_t block_size = 4096;
     const char *volname = "BFSTest";
@@ -51,3 +52,10 @@ int main(int argc, char **argv)
     bfs_bio_close(bio);
     return 0;
 }
+
+#ifndef BFS_HOST_COMMAND_LIBRARY
+int main(int argc, char **argv)
+{
+    return bfs_host_mkbfs_main(argc, argv);
+}
+#endif

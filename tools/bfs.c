@@ -29,6 +29,7 @@ static void usage(void)
     bfs_put("  bfs snapshot list DRIVE:\n");
     bfs_put("  bfs snapshot dir DRIVE: NAME [DIRS|FILES]\n");
     bfs_put("  bfs snapshot inspect DRIVE: NAME [DIRS|FILES]\n");
+    bfs_put("  bfs check DRIVE:\n");
     bfs_put("  bfs info DRIVE:\n");
 }
 
@@ -96,6 +97,13 @@ int main(void)
             result = 10;
         } else {
             result = bfs_info_command(first);
+        }
+    } else if (bfs_equal_nocase(command, "check")) {
+        if (!first || second || third || fourth) {
+            usage();
+            result = 10;
+        } else {
+            result = bfs_check_command(first);
         }
     } else {
         usage();

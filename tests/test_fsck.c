@@ -31,6 +31,25 @@ static int run_fsck(bool fix)
     return WEXITSTATUS(status);
 }
 
+static int run_bfs_check(bool repair)
+{
+    pid_t child = fork();
+    if (child < 0) return -1;
+    if (child == 0) {
+        int output = open("test_fsck.log", O_WRONLY | O_CREAT | O_TRUNC, 0600);
+        if (output < 0) _exit(126);
+        if (dup2(output, STDOUT_FILENO) < 0 || dup2(output, STDERR_FILENO) < 0)
+            _exit(126);
+        close(output);
+        execl("./bfs", "bfs", "check", IMAGE, repair ? "--repair" : (char *)NULL,
+              (char *)NULL); /* Flawfinder: ignore */
+        _exit(127);
+    }
+    int status;
+    if (waitpid(child, &status, 0) != child || !WIFEXITED(status)) return -1;
+    return WEXITSTATUS(status);
+}
+
 static void test_clean_snapshot_and_readonly_check(void)
 {
     unlink(IMAGE);
@@ -51,12 +70,18 @@ static void test_clean_snapshot_and_readonly_check(void)
     TEST_ASSERT(before != NULL);
     for (uint32_t block = 0; block < bio->block_count; block++)
         TEST_ASSERT_EQ(bfs_bio_read(bio, block, before + (size_t)block * bio->block_size), BFS_OK);
-    TEST_ASSERT_EQ(run_fsck(false), 0);
+    TEST_ASSERT_EQ(run_bfs_check(false), 0);
     uint8_t after[4096];
     for (uint32_t block = 0; block < bio->block_count; block++) {
         TEST_ASSERT_EQ(bfs_bio_read(bio, block, after), BFS_OK);
         TEST_ASSERT_MEM_EQ(after, before + (size_t)block * bio->block_size, sizeof(after));
     }
+    TEST_ASSERT_EQ(run_bfs_check(true), 0);
+    for (uint32_t block = 0; block < bio->block_count; block++) {
+        TEST_ASSERT_EQ(bfs_bio_read(bio, block, after), BFS_OK);
+        TEST_ASSERT_MEM_EQ(after, before + (size_t)block * bio->block_size, sizeof(after));
+    }
+    TEST_ASSERT_EQ(run_fsck(false), 0);
     free(before);
 
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
@@ -65,6 +90,7 @@ static void test_clean_snapshot_and_readonly_check(void)
     TEST_ASSERT_EQ(bfs_extent_lookup(&file.extents, 0, &data), BFS_OK);
     TEST_ASSERT_EQ(bfs_refcount_inc(&fs.refcount, data), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    TEST_ASSERT_EQ(run_bfs_check(false), 2);
     TEST_ASSERT_EQ(run_fsck(false), 2);
     bfs_bio_close(bio);
     unlink(IMAGE);
@@ -143,8 +169,30 @@ static void test_retained_open_inode_is_checker_visible_until_recovery(void)
     unlink("test_fsck.log");
 }
 
+static void test_canonical_repair_reclaims_only_leaks(void)
+{
+    unlink(IMAGE);
+    bfs_bio_t *bio = bio_emu_create(IMAGE, 4096, 1024);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "Repair", 0), BFS_OK);
+
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    TEST_ASSERT(bfs_freespace_alloc(&fs.freespace, 1) != BFS_BLK_NULL);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+
+    TEST_ASSERT_EQ(run_bfs_check(false), 1);
+    TEST_ASSERT_EQ(run_bfs_check(true), 1);
+    TEST_ASSERT_EQ(run_bfs_check(false), 0);
+
+    bfs_bio_close(bio);
+    unlink(IMAGE);
+    unlink("test_fsck.log");
+}
+
 TEST_SUITE_BEGIN("Filesystem Checker")
     TEST_RUN(test_clean_snapshot_and_readonly_check);
     TEST_RUN(test_unsupported_format_never_repaired);
     TEST_RUN(test_retained_open_inode_is_checker_visible_until_recovery);
+    TEST_RUN(test_canonical_repair_reclaims_only_leaks);
 TEST_SUITE_END()

@@ -13,6 +13,7 @@ from release_integrity import BINARIES, digest, require
 INPUTS = ("Makefile", "src", "include", "version.txt", "tools/bfs-test.c",
           "tools/bfs-test-cases.def", "tools/bfs.c", "tools/bfs_command.h",
           "tools/bfs_common.c", "tools/bfs_format.c", "tools/bfs_snapshot.c",
+          "tools/bfs_check.c",
           "tools/release/build_identity.py")
 RECORD = Path("build/link-maps/build-identity.json")
 

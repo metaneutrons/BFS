@@ -32,10 +32,11 @@ left no mountable namespace. Regression tests damage either fresh copy at
 
 The Amiga handler retains unsupported-format errors across failed mount and
 remount attempts, maps them to `ERROR_NOT_IMPLEMENTED`, and refuses ordinary
-file operations and `ACTION_FORMAT` on that medium. `bfsfsck`, including
-`--fix`, reports the incompatibility without modifying the image. The explicit
-low-level format API and `mkbfs` remain destructive initialization tools; they
-are not migration or recovery paths.
+file operations and `ACTION_FORMAT` on that medium. `bfs check`, including
+`--repair` (`bfsfsck --fix` remains compatible), reports the incompatibility
+without modifying the image. The explicit low-level format API and `mkbfs`
+remain destructive initialization tools; they are not migration or recovery
+paths.
 
 The diagnosis names the detected version and the version supported by this
 driver. Older unsupported versions and unknown option bits have distinct text.

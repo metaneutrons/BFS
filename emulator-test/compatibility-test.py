@@ -98,6 +98,8 @@ C:bfs snapshot dir Compat: smoke INVALID >SYS:snapshot-invalid-option.txt
 C:bfs snapshot create Compat: >SYS:snapshot-missing-name.txt
 FailAt 21
 C:bfs info Missing: >SYS:info-missing-drive.txt
+C:bfs check Missing: >SYS:check-missing-drive.txt
+C:bfs check Compat: >SYS:check.txt
 C:bfs snapshot create Compat: smoke >SYS:snapshot-create.txt
 C:bfs snapshot list Compat: >SYS:snapshot-list.txt
 C:bfs snapshot dir Compat: smoke >SYS:snapshot-dir.txt
@@ -159,11 +161,13 @@ automatic_input_grab = 0
                 "snapshot-dir.txt": b"Directory \"smoke:\" on Compat:\n",
                 "snapshot-inspect.txt": b"Directory \"smoke:\" on Compat:\n",
                 "info.txt": b"Drive: Compat:\n",
+                "check.txt": b"Errors: 0  Warnings: 0\nLeaked blocks: 0\nCLEAN\n",
                 "snapshot-delete.txt": b"Snapshot deleted.\n",
                 "snapshot-invalid-name.txt": b"Snapshot names cannot contain '/'.\n",
                 "snapshot-invalid-option.txt": b"Valid DIR and INSPECT options are DIRS and FILES.\n",
                 "snapshot-missing-name.txt": b"CREATE requires a name.\n",
                 "info-missing-drive.txt": b"Cannot find handler for Missing:\n",
+                "check-missing-drive.txt": b"Cannot find handler for Missing:\n",
             }
             for filename, expected_output in expected_outputs.items():
                 if expected_output not in outputs[filename]:

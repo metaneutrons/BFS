@@ -167,7 +167,7 @@ sanitize:
 		-fno-omit-frame-pointer -fsanitize=address,undefined $(INCLUDES) \
 		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L'
 
-tools: $(BUILD_HOST)/bfsfsck $(BUILD_HOST)/mkbfs
+tools: $(BUILD_HOST)/bfs $(BUILD_HOST)/bfsfsck $(BUILD_HOST)/mkbfs
 
 conformance: $(CONFORMANCE_CORE) $(CONFORMANCE_POSIX)
 
@@ -204,9 +204,18 @@ $(HOST_LIB): $(HOST_CORE_OBJS)
 	@mkdir -p $(dir $@)
 	$(HOST_AR) rcs $@ $^
 
-$(BUILD_HOST)/bfsfsck: tools/bfsfsck.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
+$(BUILD_HOST)/bfsfsck: tools/bfsfsck.c tools/bfs_host_common.c tools/bfs_host_common.h \
+		tools/bfs_host_commands.h $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
 	@mkdir -p $(BUILD_HOST)
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ tools/bfsfsck.c tools/bfs_host_common.c $(HOST_POSIX_OBJ) $(HOST_LIB)
+
+$(BUILD_HOST)/bfs: tools/bfs_host.c tools/bfsfsck.c tools/mkbfs.c \
+		tools/bfs_host_common.c tools/bfs_host_common.h tools/bfs_host_commands.h \
+		$(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -DBFS_HOST_COMMAND_LIBRARY -o $@ \
+		tools/bfs_host.c tools/bfsfsck.c tools/mkbfs.c tools/bfs_host_common.c \
+		$(HOST_POSIX_OBJ) $(HOST_LIB)
 
 $(BUILD_HOST)/test_%: tests/test_%.c $(CORE_SRC) $(EMU_SRC) $(HOST_HEADERS)
 	@mkdir -p $(BUILD_HOST)
@@ -222,7 +231,7 @@ $(BUILD_HOST)/test_posix_faults: tests/test_posix_faults.c tests/posix_bio_fault
 	$(HOST_CC) $(HOST_CFLAGS) -DBFS_POSIX_BIO_FAULT_TEST -o $@ \
 		tests/test_posix_faults.c tests/posix_bio_faults.c src/host/posix_bio.c $(HOST_LIB)
 
-$(BUILD_HOST)/test_fsck: $(BUILD_HOST)/bfsfsck
+$(BUILD_HOST)/test_fsck: $(BUILD_HOST)/bfs $(BUILD_HOST)/bfsfsck
 
 amiga:
 	@mkdir -p $(BUILD_AMIGA)
@@ -269,7 +278,7 @@ AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -I$(AMIGA_PR
 AMIGA_TOOL_LDFLAGS = -B$(AMIGA_PREFIX)/libnix/lib/ \
                      -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -s
 TOOL_SRCS_TEST = tools/bfs-test.c
-TOOL_SRCS_BFS = tools/bfs.c tools/bfs_common.c tools/bfs_format.c tools/bfs_snapshot.c
+TOOL_SRCS_BFS = tools/bfs.c tools/bfs_common.c tools/bfs_format.c tools/bfs_snapshot.c tools/bfs_check.c
 
 release:
 	@mkdir -p build/release build/link-maps
@@ -291,7 +300,7 @@ release:
 	@ls -la build/release/
 
 # ── Host tools ──────────────────────────────────────────────
-$(BUILD_HOST)/mkbfs: tools/mkbfs.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
+$(BUILD_HOST)/mkbfs: tools/mkbfs.c tools/bfs_host_commands.h $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
 
