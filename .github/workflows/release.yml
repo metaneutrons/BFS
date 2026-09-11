@@ -91,10 +91,10 @@ jobs:
       - name: Create smoke-test filesystem fixture
         run: |
           set -euo pipefail
-          make build/host/mkbfs
+          make build/host/bfs
           mkdir smoke
           dd if=/dev/zero of=smoke/bfs-smoke.hdf bs=1M count=32 status=none
-          build/host/mkbfs smoke/bfs-smoke.hdf 4096 BFSTest
+          build/host/bfs format smoke/bfs-smoke.hdf --label BFSTest --block-size 4096
           (cd smoke && sha256sum bfs-smoke.hdf > bfs-smoke.hdf.sha256)
 
       - name: Upload unsigned release payloads

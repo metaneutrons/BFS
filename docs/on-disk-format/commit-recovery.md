@@ -44,8 +44,8 @@ atomicity of an in-place overwrite.
 
 A crash after root publication and before deferred reclamation can leave
 allocated but unreachable blocks. That is space leakage, not an alternate
-namespace. `bfsfsck --fix` is responsible for rebuilding free-space accounting.
-The deferred-free queue itself is never written as a recovery journal.
+namespace. `bfs check IMAGE --repair` rebuilds free-space accounting. The
+deferred-free queue itself is never written as a recovery journal.
 
 ## Snapshot deletion state machine
 

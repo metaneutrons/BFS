@@ -39,7 +39,7 @@ check_prereqs() {
 
 build_all() {
     echo "=== Building handler + stress test ==="
-    make -C "$PROJECT_DIR" amiga amiga-stresstest build/host/mkbfs
+    make -C "$PROJECT_DIR" amiga amiga-stresstest build/host/bfs
 
     echo "=== Building verify tool ==="
     mkdir -p "$BUILD_HOST"
@@ -51,7 +51,7 @@ build_all() {
 create_hdf() {
     echo "=== Creating ${HDF_SIZE}MB test HDF ==="
     dd if=/dev/zero of="$HDF" bs=1M count="$HDF_SIZE" status=none
-    "$BUILD_HOST/mkbfs" "$HDF" 4096 BFSStress
+    "$BUILD_HOST/bfs" format "$HDF" --label BFSStress --block-size 4096
     echo "Created: $HDF"
 }
 

@@ -29,6 +29,8 @@
 #include "bfs_dir.h"
 #include "bfs_inode.h"
 #include "bfs_snapshot.h"
+#include "bfs_fsck.h"
+#include "bfs_diagnostics.h"
 #include "amiga_bio.h"
 
 /* ── Packet number constants ────────────────────────────────── */
@@ -954,6 +956,42 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         /* Packet capacity was checked above; the source has exactly this size. */
         memcpy(buffer, h->format_error, BFS_FORMAT_ERROR_MAX); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         res1 = h->format_error[0] ? DOSTRUE : DOSFALSE;
+        res2 = 0;
+        break;
+    }
+
+    case BFS_ACTION_CHECK: {
+        ULONG *summary = (ULONG *)pkt->dp_Arg1;
+        bfs_fs_t checked;
+        bfs_fsck_report_t report;
+        bfs_err_t err;
+
+        if (!summary || pkt->dp_Arg2 <
+                        (LONG)(BFS_CHECK_REPORT_WORDS * sizeof(*summary))) {
+            res2 = ERROR_BAD_NUMBER;
+            break;
+        }
+
+        /* The handler processes packets serially. Scan a separate read-only
+         * mount so CHECK observes the last committed state without changing
+         * the live write transaction. */
+        err = bfs_fs_mount_readonly(&checked, &h->cache.bio);
+        if (err != BFS_OK) {
+            res2 = Pfs4ToDosError(err);
+            break;
+        }
+        err = bfs_fs_check(&checked, false, &report);
+        if (bfs_fs_unmount(&checked) != BFS_OK && err == BFS_OK)
+            err = BFS_ERR_IO;
+        if (err != BFS_OK && err != BFS_ERR_CORRUPT) {
+            res2 = Pfs4ToDosError(err);
+            break;
+        }
+        summary[0] = report.errors;
+        summary[1] = report.warnings;
+        summary[2] = report.leaked_blocks;
+        summary[3] = report.repaired_blocks;
+        res1 = DOSTRUE;
         res2 = 0;
         break;
     }

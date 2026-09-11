@@ -33,7 +33,7 @@ DISKSPEED="${BFS_DISKSPEED:-$SCRIPT_DIR/.cache/DiskSpeed}"
 [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
 command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
 [ -f "$PROJECT_DIR/build/amiga/bfshandler" ] || { echo "ERROR: run 'make amiga' first"; exit 1; }
-[ -f "$PROJECT_DIR/build/host/mkbfs" ] || { echo "ERROR: run 'make build/host/mkbfs' first"; exit 1; }
+[ -f "$PROJECT_DIR/build/host/bfs" ] || { echo "ERROR: run 'make build/host/bfs' first"; exit 1; }
 
 echo "=== Building BFS vs PFS3 Benchmark ==="
 
@@ -109,7 +109,7 @@ BFS_BLOCKS=$(( (510 * 16 * 32 * 512) / 4096 ))
 PART_FILE=$(mktemp)
 trap 'rm -f "$PART_FILE"' EXIT
 dd if=/dev/zero of="$PART_FILE" bs=4096 count="$BFS_BLOCKS" status=none
-"$PROJECT_DIR/build/host/mkbfs" "$PART_FILE" >/dev/null
+"$PROJECT_DIR/build/host/bfs" format "$PART_FILE" --label BFSTest >/dev/null
 dd if="$PART_FILE" of="$BFS_HDF" bs=512 seek=$(( BFS_OFFSET / 512 )) conv=notrunc status=none
 rm -f "$PART_FILE"
 trap - EXIT

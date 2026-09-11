@@ -298,7 +298,7 @@ Dependencies: M1, M2, M3.
 Execution: https://github.com/metaneutrons/BFS/issues/40
 Dependencies: M3, M4.
 
-- M5-A1: Build `bfs-fuse` with libfuse 3. Provide mount/foreground/unmount,
+- M5-A1: Build `bfs mount` with libfuse 3. Provide mount/foreground/unmount,
   lookup/getattr, directory streams, open/read/release, readlink, statfs and
   the agreed read-only metadata/xattr view. Separate inode lookup references
   from open handles and handle cancellation/disconnect without leaks or hangs.

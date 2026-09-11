@@ -43,7 +43,13 @@ HOST_POSIX_OBJ = $(BUILD_HOST)/obj/host/posix_bio.o
 HOST_LIB = $(BUILD_HOST)/libbfs.a
 FUSE_CFLAGS = $(shell pkg-config --cflags fuse3 2>/dev/null)
 FUSE_LIBS = $(shell pkg-config --libs fuse3 2>/dev/null)
-FUSE_BIN = $(BUILD_HOST)/bfs-fuse
+BFS_WITH_FUSE ?= $(shell pkg-config --exists fuse3 && echo 1)
+BFS_FUSE_SRC =
+BFS_FUSE_FLAGS =
+ifeq ($(BFS_WITH_FUSE),1)
+BFS_FUSE_SRC = src/fuse/bfs_fuse.c
+BFS_FUSE_FLAGS = -DBFS_FUSE_ENABLED $(FUSE_CFLAGS)
+endif
 CONFORMANCE_CORE = $(BUILD_HOST)/bfs-conformance-core
 CONFORMANCE_POSIX = $(BUILD_HOST)/bfs-conformance-posix
 CONFORMANCE_FIXTURE = $(BUILD_HOST)/conformance-fixture-writer
@@ -59,7 +65,9 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 
 .PHONY: fuse
 
-fuse: $(FUSE_BIN)
+fuse:
+	@pkg-config --exists fuse3 || { echo "libfuse3 development files are required" >&2; exit 1; }
+	@$(MAKE) --always-make BFS_WITH_FUSE=1 $(BUILD_HOST)/bfs
 
 .PHONY: fuse-test
 
@@ -167,7 +175,7 @@ sanitize:
 		-fno-omit-frame-pointer -fsanitize=address,undefined $(INCLUDES) \
 		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L'
 
-tools: $(BUILD_HOST)/bfsfsck $(BUILD_HOST)/mkbfs
+tools: $(BUILD_HOST)/bfs
 
 conformance: $(CONFORMANCE_CORE) $(CONFORMANCE_POSIX)
 
@@ -187,11 +195,6 @@ $(CONFORMANCE_FIXTURE): tests/conformance/fixture_writer.c $(HOST_LIB) $(HOST_PO
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
 
-$(FUSE_BIN): src/fuse/bfs_fuse.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
-	@pkg-config --exists fuse3 || { echo "libfuse3 development files are required" >&2; exit 1; }
-	@mkdir -p $(BUILD_HOST)
-	$(HOST_CC) $(HOST_CFLAGS) $(FUSE_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB) $(FUSE_LIBS)
-
 $(BUILD_HOST)/obj/core/%.o: src/core/%.c $(CORE_HEADERS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
@@ -204,9 +207,12 @@ $(HOST_LIB): $(HOST_CORE_OBJS)
 	@mkdir -p $(dir $@)
 	$(HOST_AR) rcs $@ $^
 
-$(BUILD_HOST)/bfsfsck: tools/bfsfsck.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
+$(BUILD_HOST)/bfs: tools/bfs_host.c tools/bfs_host_common.c tools/bfs_host_common.h $(BFS_FUSE_SRC) \
+		$(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
 	@mkdir -p $(BUILD_HOST)
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
+	$(HOST_CC) $(HOST_CFLAGS) $(BFS_FUSE_FLAGS) -o $@ \
+		tools/bfs_host.c tools/bfs_host_common.c $(BFS_FUSE_SRC) \
+		$(HOST_POSIX_OBJ) $(HOST_LIB) $(FUSE_LIBS)
 
 $(BUILD_HOST)/test_%: tests/test_%.c $(CORE_SRC) $(EMU_SRC) $(HOST_HEADERS)
 	@mkdir -p $(BUILD_HOST)
@@ -222,7 +228,7 @@ $(BUILD_HOST)/test_posix_faults: tests/test_posix_faults.c tests/posix_bio_fault
 	$(HOST_CC) $(HOST_CFLAGS) -DBFS_POSIX_BIO_FAULT_TEST -o $@ \
 		tests/test_posix_faults.c tests/posix_bio_faults.c src/host/posix_bio.c $(HOST_LIB)
 
-$(BUILD_HOST)/test_fsck: $(BUILD_HOST)/bfsfsck
+$(BUILD_HOST)/test_fsck: $(BUILD_HOST)/bfs
 
 amiga:
 	@mkdir -p $(BUILD_AMIGA)
@@ -269,7 +275,7 @@ AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -I$(AMIGA_PR
 AMIGA_TOOL_LDFLAGS = -B$(AMIGA_PREFIX)/libnix/lib/ \
                      -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -s
 TOOL_SRCS_TEST = tools/bfs-test.c
-TOOL_SRCS_BFS = tools/bfs.c tools/bfs_common.c tools/bfs_format.c tools/bfs_snapshot.c
+TOOL_SRCS_BFS = tools/bfs.c tools/bfs_common.c tools/bfs_format.c tools/bfs_snapshot.c tools/bfs_check.c
 
 release:
 	@mkdir -p build/release build/link-maps
@@ -290,11 +296,6 @@ release:
 	@echo "Done. Binaries in build/release/"
 	@ls -la build/release/
 
-# ── Host tools ──────────────────────────────────────────────
-$(BUILD_HOST)/mkbfs: tools/mkbfs.c $(HOST_LIB) $(HOST_POSIX_OBJ) $(CORE_HEADERS)
-	@mkdir -p $(BUILD_HOST)
-	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(HOST_POSIX_OBJ) $(HOST_LIB)
-
 # ── Amiga test binary ───────────────────────────────────────
 amiga-test: amiga
 	@mkdir -p $(BUILD_AMIGA)
@@ -302,7 +303,7 @@ amiga-test: amiga
 		-o $(BUILD_AMIGA)/bfs-test tools/bfs-test.c $(AMIGA_TOOL_LDFLAGS)
 
 .PHONY: compatibility-test
-compatibility-test: amiga $(BUILD_HOST)/mkbfs
+compatibility-test: amiga $(BUILD_HOST)/bfs
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/compatibility-probe tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
@@ -312,7 +313,7 @@ compatibility-test: amiga $(BUILD_HOST)/mkbfs
 	python3 emulator-test/compatibility-test.py
 
 # ── CI integration test ─────────────────────────────────────
-ci-test: amiga amiga-test $(BUILD_HOST)/mkbfs
+ci-test: amiga amiga-test $(BUILD_HOST)/bfs
 	@emulator-test/ci-test.sh
 
 # ── Emulator integration test ───────────────────────────────

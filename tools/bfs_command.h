@@ -26,6 +26,7 @@ int bfs_contains_slash(const char *text);
 int bfs_format_command(const char *drive, const char *name);
 int bfs_snapshot_command(const char *operation, const char *drive,
                          const char *name, const char *option);
+int bfs_check_command(const char *drive);
 int bfs_info_command(const char *drive);
 
 #endif

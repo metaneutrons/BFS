@@ -54,6 +54,22 @@ requester naming the actual format version and supported version. The caller's
 `pr_WindowPtr == -1` suppresses this requester. Unknown option bits are reported
 separately from newer or older unsupported versions.
 
+## Filesystem check
+
+`BFS_ACTION_CHECK` (3005) is available only while BFS is mounted. Argument 1
+points to four `ULONG` result words and argument 2 is the buffer capacity in
+bytes, at least `BFS_CHECK_REPORT_WORDS * sizeof(ULONG)`. The result order is
+structural errors, warnings, leaked blocks and repaired blocks. Invalid
+arguments return DOSFALSE / `ERROR_BAD_NUMBER`; a handler or I/O failure
+returns DOSFALSE with the translated DOS error.
+
+The handler creates a short-lived read-only mount over its cached block device,
+checks the last committed filesystem state, then drops that mount. It never
+repairs or commits data, and does not modify the handler's live mount. Packet
+handling is serial, so ordinary filesystem I/O waits until the scan completes.
+`bfs check DRIVE:` is the matching AmigaDOS command. Older handlers return
+`ERROR_ACTION_NOT_KNOWN`.
+
 ## References
 
 - [AmigaOS SetProtection](https://developer.amigaos3.net/autodocs/dos.library/SetProtection.html)

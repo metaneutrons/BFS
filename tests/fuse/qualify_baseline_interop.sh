@@ -13,16 +13,15 @@ output_directory=$3
 project_directory=$(cd "$(dirname "$0")/../.." && pwd)
 baseline_commit=431ead6159e5d4217f029ac2b6dd02a51db7d8a2
 baseline_directory="$output_directory/baseline-v0.1.3"
-fuse_binary="$project_directory/build/host/bfs-fuse"
-checker="$project_directory/build/host/bfsfsck"
+bfs="$project_directory/build/host/bfs"
 oracle="$project_directory/tools/bfs-format-oracle.py"
 
 [[ -f "$normal_image" && -f "$interrupted_image" ]] || {
     printf 'ERROR: both input images must exist.\n' >&2
     exit 2
 }
-[[ -x "$fuse_binary" && -x "$checker" ]] || {
-    printf 'ERROR: build bfs-fuse and bfsfsck before baseline qualification.\n' >&2
+[[ -x "$bfs" ]] || {
+    printf 'ERROR: build bfs before baseline qualification.\n' >&2
     exit 2
 }
 command -v fusermount3 >/dev/null 2>&1 || {
@@ -55,11 +54,10 @@ mount_and_check() {
     local mount_directory
     mount_directory=$(mktemp -d "$output_directory/fuse-mount.XXXXXX")
     local log="$mount_directory/fuse.log"
-    local -a arguments=("$fuse_binary" --image "$image")
+    local -a arguments=("$bfs" mount "$image" "$mount_directory")
     if [[ "$writable" == true ]]; then
         arguments+=(--read-write)
     fi
-    arguments+=("$mount_directory")
     "${arguments[@]}" >"$log" 2>&1 &
     local fuse_pid=$!
     local mounted=false
@@ -93,7 +91,7 @@ qualify_image() {
     local output_image="$output_directory/baseline-$label.bfs"
 
     python3 "$oracle" "$input_image" >/dev/null
-    "$checker" "$input_image" >/dev/null
+    "$bfs" check "$input_image" >/dev/null
     BFS_HANDLER="$baseline_directory/build/amiga/bfshandler" \
     BFS_TEST_BINARY="$baseline_directory/build/amiga/bfs-test" \
     BFS_TEST_HDF="$input_image" \
@@ -110,11 +108,11 @@ qualify_image() {
     }
     command cp -f "${images[0]}" "$output_image"
     python3 "$oracle" "$output_image" >/dev/null
-    "$checker" "$output_image" >/dev/null
+    "$bfs" check "$output_image" >/dev/null
     mount_and_check "$output_image" false
     mount_and_check "$output_image" true
     python3 "$oracle" "$output_image" >/dev/null
-    "$checker" "$output_image" >/dev/null
+    "$bfs" check "$output_image" >/dev/null
 }
 
 qualify_image normal "$normal_image"

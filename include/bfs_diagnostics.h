@@ -8,4 +8,11 @@
 #define BFS_ACTION_FORMAT_ERROR 3004
 #define BFS_FORMAT_ERROR_MAX 192
 
+/* Mounted-only Amiga packet: Arg1 = ULONG[BFS_CHECK_REPORT_WORDS], Arg2 =
+ * its byte capacity. The handler always runs this as a read-only scan of the
+ * last committed state. The result words are errors, warnings, leaked blocks
+ * and repaired blocks (which is always zero for this packet). */
+#define BFS_ACTION_CHECK 3005
+#define BFS_CHECK_REPORT_WORDS 4
+
 #endif

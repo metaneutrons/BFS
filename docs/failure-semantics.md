@@ -61,8 +61,8 @@ can fail with an allocation error. They do not impose a fixed 64 MiB file limit.
 
 Deferred frees are not a persistent reclamation journal. A crash between root
 publication and reclamation can leave allocated, unreachable blocks; offline
-`bfsfsck --fix` is needed to rebuild free-space accounting. A read-only `bfsfsck`
-run does not commit metadata or resume unfinished snapshot deletion. An image
+`bfs check IMAGE --repair` is needed to rebuild free-space accounting. A
+read-only `bfs check` run does not commit metadata or resume unfinished snapshot deletion. An image
 with unfinished deletion requires a writable recovery pass before it can be
 fully checked. Checking an image that is mounted elsewhere is unsupported.
 
