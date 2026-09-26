@@ -69,6 +69,13 @@ class FaultCampaignTests(unittest.TestCase):
             with self.assertRaisesRegex(RuntimeError, "overwrite"):
                 fault_campaign.prepare_output(output, fault_campaign.DEFAULT_MANIFEST)
 
+    def test_creates_a_missing_evidence_parent(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory) / "new" / "evidence"
+            copied_manifest = fault_campaign.prepare_output(output, fault_campaign.DEFAULT_MANIFEST)
+            self.assertTrue(copied_manifest.is_file())
+            self.assertTrue(output.is_dir())
+
     def test_campaign_evidence_is_independently_verifiable(self):
         with tempfile.TemporaryDirectory() as directory:
             output = self.run_campaign(directory)

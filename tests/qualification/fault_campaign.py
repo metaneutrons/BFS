@@ -189,6 +189,10 @@ def load_manifest(path):
 
 def prepare_output(path, manifest_path):
     require(not path.exists() and not path.is_symlink(), "refusing to overwrite campaign evidence")
+    try:
+        path.parent.mkdir(mode=0o700, parents=True, exist_ok=True)
+    except OSError as error:
+        raise RuntimeError(f"cannot create campaign evidence parent: {path.parent}") from error
     directory(path.parent, "campaign evidence parent")
     require(not path.parent.is_symlink(), "campaign evidence parent must not be a symlink")
     path.mkdir(mode=0o700)
