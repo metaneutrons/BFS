@@ -167,9 +167,41 @@ static void test_canonical_repair_reclaims_only_leaks(void)
     unlink("test_fsck.log");
 }
 
+static void test_data_checksum_corruption_is_not_clean(void)
+{
+    unlink(IMAGE);
+    bfs_bio_t *bio = bio_emu_create(IMAGE, 4096, 1024);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "Checks", BFS_OPT_DATA_CHECKSUMS), BFS_OK);
+
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "checked", 7, &ino), BFS_OK);
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&file, "checksummed", 10), 10);
+    bfs_blk_t data_block;
+    TEST_ASSERT_EQ(bfs_extent_lookup(&file.extents, 0, &data_block), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+
+    uint8_t block[4096];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, data_block, block), BFS_OK);
+    block[0] ^= 1;
+    TEST_ASSERT_EQ(bfs_bio_write(bio, data_block, block), BFS_OK);
+    TEST_ASSERT_EQ(bfs_bio_sync(bio), BFS_OK);
+    TEST_ASSERT_EQ(run_bfs_check(false), 2);
+    TEST_ASSERT_EQ(run_bfs_check(true), 2);
+
+    bfs_bio_close(bio);
+    unlink(IMAGE);
+    unlink("test_fsck.log");
+}
+
 TEST_SUITE_BEGIN("Filesystem Checker")
     TEST_RUN(test_clean_snapshot_and_readonly_check);
     TEST_RUN(test_unsupported_format_never_repaired);
     TEST_RUN(test_retained_open_inode_is_checker_visible_until_recovery);
     TEST_RUN(test_canonical_repair_reclaims_only_leaks);
+    TEST_RUN(test_data_checksum_corruption_is_not_clean);
 TEST_SUITE_END()

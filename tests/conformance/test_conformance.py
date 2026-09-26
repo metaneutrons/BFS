@@ -266,6 +266,20 @@ class ConformanceTests(unittest.TestCase):
         self.assertEqual(completed.returncode, 3)
         self.assertEqual(json.loads(completed.stdout)["status"], "error")
 
+    def test_oracle_rejects_corrupted_checksummed_data(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "checksummed.bfs"
+            self.assertEqual(run(str(FIXTURE_WRITER), str(image), "--format-options", "1").returncode,
+                             0)
+            corrupted = bytearray(image.read_bytes())
+            offset = corrupted.find(b"live contents")
+            self.assertGreaterEqual(offset, 0)
+            corrupted[offset] ^= 1
+            image.write_bytes(corrupted)
+            completed = run(str(ORACLE), str(image))
+        self.assertEqual(completed.returncode, 3)
+        self.assertEqual(json.loads(completed.stdout)["code"], "data checksum mismatch")
+
     def test_oracle_and_conformance_programs_are_independent(self):
         self.assertNotIn("bfs_", ORACLE.read_text(encoding="utf-8"))
         symbols = run("/usr/bin/nm", "-g", str(CORE)).stdout

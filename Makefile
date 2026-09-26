@@ -61,7 +61,8 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
 	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release \
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
-	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests
+	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
+	fault-qualification fault-qualification-verify
 
 .PHONY: fuse
 
@@ -76,8 +77,18 @@ fuse-test: fuse conformance $(CONFORMANCE_FIXTURE)
 	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
 	@python3 tests/fuse/test_fuse_mount.py
 
-qualification-tests:
+qualification-tests: $(BUILD_HOST)/bfs $(CONFORMANCE_FIXTURE) $(BUILD_HOST)/test_crash_inject \
+		$(BUILD_HOST)/test_posix_faults
 	@python3 -m unittest discover -s tests/qualification -p 'test_*.py' -v
+
+fault-qualification: qualification-tests
+	@test -n "$(OUTPUT)" || { echo "OUTPUT is required" >&2; exit 2; }
+	@python3 tests/qualification/fault_campaign.py --output "$(OUTPUT)"
+	@$(MAKE) fault-qualification-verify OUTPUT="$(OUTPUT)"
+
+fault-qualification-verify:
+	@test -n "$(OUTPUT)" || { echo "OUTPUT is required" >&2; exit 2; }
+	@python3 tests/qualification/verify_fault_campaign.py --output "$(OUTPUT)"
 
 linux-qualification-fast: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests
 	@test -c /dev/fuse || { echo "/dev/fuse is required for M7 qualification" >&2; exit 1; }
