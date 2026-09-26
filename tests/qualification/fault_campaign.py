@@ -32,6 +32,9 @@ ADAPTERS = {
     "crash-injection": ROOT / "build" / "host" / "test_crash_inject",
     "posix-transport": ROOT / "build" / "host" / "test_posix_faults",
 }
+CASE_REQUIRED_FIELDS = ("case_id", "suite_version", "case_type", "family", "scenario", "seed",
+                        "fault_model", "fault_point", "mutation", "mutation_location",
+                        "expected_class", "expected_states", "observers", "timeout_seconds")
 
 
 def require(condition, message):
@@ -118,6 +121,60 @@ def command_record(name, command, timeout, cwd=ROOT):
     }
 
 
+def validate_geometry(manifest):
+    geometry = manifest.get("geometry")
+    require(isinstance(geometry, dict), "campaign geometry is missing")
+    for field in ("block_size", "block_count", "format_options"):
+        require(isinstance(geometry.get(field), int) and geometry[field] >= 0,
+                f"campaign geometry field is invalid: {field}")
+
+
+def validate_case_identity(case, suite_version, seen):
+    require(isinstance(case, dict), "campaign case must be an object")
+    require(all(field in case for field in CASE_REQUIRED_FIELDS), "campaign case is incomplete")
+    identifier = case["case_id"]
+    require(isinstance(identifier, str) and identifier and set(identifier) <= CASE_ID_CHARACTERS,
+            f"invalid campaign case identifier: {identifier!r}")
+    require(identifier not in seen, f"duplicate campaign case identifier: {identifier}")
+    seen.add(identifier)
+    require(case["suite_version"] == suite_version,
+            f"campaign case has mismatched suite version: {identifier}")
+    require(case["case_type"] in CASE_TYPES, f"unsupported campaign case type: {identifier}")
+    return identifier
+
+
+def validate_case_contract(case, identifier):
+    for field in ("family", "scenario", "fault_model", "fault_point", "mutation_location"):
+        require(isinstance(case[field], str) and case[field],
+                f"campaign {field.replace('_', ' ')} is invalid: {identifier}")
+    require(isinstance(case["seed"], int) and case["seed"] >= 0,
+            f"campaign seed is invalid: {identifier}")
+    require(isinstance(case["mutation"], dict) and case["mutation"].get("kind") in MUTATIONS,
+            f"campaign mutation is invalid: {identifier}")
+    require(case["expected_class"] in OUTCOME_CLASSES,
+            f"unknown campaign outcome class: {identifier}")
+    require(case["expected_class"] != "inconclusive-device",
+            f"device outcome is outside the image campaign: {identifier}")
+    require(isinstance(case["expected_states"], list) and case["expected_states"],
+            f"campaign expected states are missing: {identifier}")
+    require(isinstance(case["observers"], list) and case["observers"],
+            f"campaign observers are missing: {identifier}")
+    require(isinstance(case["timeout_seconds"], int) and case["timeout_seconds"] > 0,
+            f"campaign timeout is invalid: {identifier}")
+
+
+def validate_case_type(case, identifier):
+    if case["case_type"] == "adapter-suite":
+        require(case.get("adapter") in ADAPTERS, f"unknown fault adapter: {identifier}")
+    else:
+        require("adapter" not in case, f"image case cannot declare an adapter: {identifier}")
+    require(isinstance(case.get("fixture_leak", False), bool),
+            f"campaign fixture leak flag is invalid: {identifier}")
+    if case["case_type"] == "repairable-leak":
+        require(case["expected_class"] == "repairable-leak",
+                f"repairable case has wrong outcome class: {identifier}")
+
+
 def load_manifest(path):
     regular_file(path, "campaign manifest")
     try:
@@ -127,63 +184,16 @@ def load_manifest(path):
     require(manifest.get("format_version") == 1, "unsupported campaign manifest format")
     require(isinstance(manifest.get("suite_version"), str) and manifest["suite_version"],
             "campaign suite version is missing")
-    geometry = manifest.get("geometry")
-    require(isinstance(geometry, dict), "campaign geometry is missing")
-    for field in ("block_size", "block_count", "format_options"):
-        require(isinstance(geometry.get(field), int) and geometry[field] >= 0,
-                f"campaign geometry field is invalid: {field}")
+    validate_geometry(manifest)
     require(isinstance(manifest.get("default_timeout_seconds"), int) and
             manifest["default_timeout_seconds"] > 0, "campaign timeout is invalid")
     cases = manifest.get("cases")
     require(isinstance(cases, list) and cases, "campaign cases are missing")
     seen = set()
-    required = ("case_id", "suite_version", "case_type", "family", "scenario", "seed",
-                "fault_model", "fault_point", "mutation", "mutation_location", "expected_class",
-                "expected_states", "observers", "timeout_seconds")
     for case in cases:
-        require(isinstance(case, dict), "campaign case must be an object")
-        require(all(field in case for field in required), "campaign case is incomplete")
-        identifier = case["case_id"]
-        require(isinstance(identifier, str) and identifier and set(identifier) <= CASE_ID_CHARACTERS,
-                f"invalid campaign case identifier: {identifier!r}")
-        require(identifier not in seen, f"duplicate campaign case identifier: {identifier}")
-        seen.add(identifier)
-        require(case["suite_version"] == manifest["suite_version"],
-                f"campaign case has mismatched suite version: {identifier}")
-        require(case["case_type"] in CASE_TYPES, f"unsupported campaign case type: {identifier}")
-        require(isinstance(case["family"], str) and case["family"],
-                f"campaign family is invalid: {identifier}")
-        require(isinstance(case["scenario"], str) and case["scenario"],
-                f"campaign scenario is invalid: {identifier}")
-        require(isinstance(case["seed"], int) and case["seed"] >= 0,
-                f"campaign seed is invalid: {identifier}")
-        require(isinstance(case["fault_model"], str) and case["fault_model"],
-                f"campaign fault model is invalid: {identifier}")
-        require(isinstance(case["fault_point"], str) and case["fault_point"],
-                f"campaign fault point is invalid: {identifier}")
-        require(isinstance(case["mutation"], dict) and case["mutation"].get("kind") in MUTATIONS,
-                f"campaign mutation is invalid: {identifier}")
-        require(isinstance(case["mutation_location"], str) and case["mutation_location"],
-                f"campaign mutation location is invalid: {identifier}")
-        require(case["expected_class"] in OUTCOME_CLASSES,
-                f"unknown campaign outcome class: {identifier}")
-        require(case["expected_class"] != "inconclusive-device",
-                f"device outcome is outside the image campaign: {identifier}")
-        require(isinstance(case["expected_states"], list) and case["expected_states"],
-                f"campaign expected states are missing: {identifier}")
-        require(isinstance(case["observers"], list) and case["observers"],
-                f"campaign observers are missing: {identifier}")
-        require(isinstance(case["timeout_seconds"], int) and case["timeout_seconds"] > 0,
-                f"campaign timeout is invalid: {identifier}")
-        if case["case_type"] == "adapter-suite":
-            require(case.get("adapter") in ADAPTERS, f"unknown fault adapter: {identifier}")
-        else:
-            require("adapter" not in case, f"image case cannot declare an adapter: {identifier}")
-        require(isinstance(case.get("fixture_leak", False), bool),
-                f"campaign fixture leak flag is invalid: {identifier}")
-        if case["case_type"] == "repairable-leak":
-            require(case["expected_class"] == "repairable-leak",
-                    f"repairable case has wrong outcome class: {identifier}")
+        identifier = validate_case_identity(case, manifest["suite_version"], seen)
+        validate_case_contract(case, identifier)
+        validate_case_type(case, identifier)
     return manifest
 
 
@@ -338,17 +348,8 @@ def source_identity(manifest_path):
             "binary_hashes": {name: digest(path) for name, path in binaries.items()}}
 
 
-def execute_case(case, output, geometry, identity):
-    case_directory = output / "cases" / case["case_id"]
-    case_directory.mkdir(parents=True)
-    path_within(case_directory, output)
-    image = case_directory / "image.bfs"
-    baseline = case_directory / "baseline.bfs"
-    commands = []
-    fixture = command_record("baseline-builder", fixture_command(baseline, geometry,
-                             case.get("fixture_leak", False)), case["timeout_seconds"])
-    commands.append(fixture)
-    record = {
+def make_case_record(case, identity, commands):
+    return {
         "case_id": case["case_id"],
         "suite_version": case["suite_version"],
         "family": case["family"],
@@ -365,6 +366,51 @@ def execute_case(case, output, geometry, identity):
         "binary_hashes": identity["binary_hashes"],
         "commands": commands,
     }
+
+
+def prepare_case_image(case, output, geometry, commands):
+    case_directory = output / "cases" / case["case_id"]
+    case_directory.mkdir(parents=True)
+    path_within(case_directory, output)
+    image = case_directory / "image.bfs"
+    baseline = case_directory / "baseline.bfs"
+    fixture = command_record("baseline-builder", fixture_command(baseline, geometry,
+                             case.get("fixture_leak", False)), case["timeout_seconds"])
+    commands.append(fixture)
+    return case_directory, image, baseline, fixture
+
+
+def observe_adapter_case(case, image, case_directory, commands):
+    adapter = ADAPTERS[case["adapter"]]
+    mutation = {"kind": case["mutation"]["kind"], "adapter": case["adapter"]}
+    commands.append(command_record("adapter-suite", [str(adapter)], case["timeout_seconds"],
+                                   cwd=case_directory))
+    matched = commands[-1]["returncode"] == 0 and observe_consistent(
+        image, case["timeout_seconds"], commands)
+    return mutation, "consistent" if matched else "unexpected"
+
+
+def observe_image_case(case, image, commands):
+    if case["mutation"]["kind"] == "fixture-leaked-allocation":
+        mutation = {"kind": "fixture-leaked-allocation", "ranges": [],
+                    "before_sha256": digest(image), "after_sha256": digest(image)}
+    else:
+        mutation = mutate_image(image, case["mutation"]["kind"])
+    if case["expected_class"] == "consistent":
+        matched = observe_consistent(image, case["timeout_seconds"], commands)
+        return mutation, "consistent" if matched else "unexpected"
+    if case["expected_class"] == "rejected":
+        matched = observe_rejected(image, case["timeout_seconds"], commands,
+                                   "repair-refusal" in case["observers"])
+        return mutation, "rejected" if matched else "unexpected"
+    matched = observe_repairable_leak(image, case["timeout_seconds"], commands)
+    return mutation, "repairable-leak" if matched else "unexpected"
+
+
+def execute_case(case, output, geometry, identity):
+    commands = []
+    case_directory, image, baseline, fixture = prepare_case_image(case, output, geometry, commands)
+    record = make_case_record(case, identity, commands)
     if fixture["returncode"] != 0 or not baseline.exists():
         record.update({"observed_class": "unexpected", "result": "failed",
                        "error": "baseline builder failed"})
@@ -375,29 +421,10 @@ def execute_case(case, output, geometry, identity):
     regular_file(image, "campaign case image")
     try:
         if case["case_type"] == "adapter-suite":
-            adapter = ADAPTERS[case["adapter"]]
-            record["mutation"] = {"kind": case["mutation"]["kind"], "adapter": case["adapter"]}
-            commands.append(command_record("adapter-suite", [str(adapter)], case["timeout_seconds"],
-                                           cwd=case_directory))
-            matched = commands[-1]["returncode"] == 0 and observe_consistent(
-                image, case["timeout_seconds"], commands)
-            observed = "consistent" if matched else "unexpected"
+            mutation, observed = observe_adapter_case(case, image, case_directory, commands)
         else:
-            if case["mutation"]["kind"] == "fixture-leaked-allocation":
-                record["mutation"] = {"kind": "fixture-leaked-allocation", "ranges": [],
-                                      "before_sha256": digest(image), "after_sha256": digest(image)}
-            else:
-                record["mutation"] = mutate_image(image, case["mutation"]["kind"])
-            if case["expected_class"] == "consistent":
-                matched = observe_consistent(image, case["timeout_seconds"], commands)
-                observed = "consistent" if matched else "unexpected"
-            elif case["expected_class"] == "rejected":
-                matched = observe_rejected(image, case["timeout_seconds"], commands,
-                                           "repair-refusal" in case["observers"])
-                observed = "rejected" if matched else "unexpected"
-            else:
-                matched = observe_repairable_leak(image, case["timeout_seconds"], commands)
-                observed = "repairable-leak" if matched else "unexpected"
+            mutation, observed = observe_image_case(case, image, commands)
+        record["mutation"] = mutation
         record.update({"observed_class": observed, "result": "passed" if
                        observed == case["expected_class"] else "failed"})
     except (OSError, RuntimeError, subprocess.SubprocessError) as error:
