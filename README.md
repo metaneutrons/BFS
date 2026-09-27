@@ -120,13 +120,17 @@ bfs snapshot create Work: before-upgrade
 bfs snapshot list Work:
 bfs snapshot dir Work: before-upgrade
 bfs snapshot inspect Work: before-upgrade FILES
+bfs snapshot mount Work: before-upgrade SNAP:
+bfs snapshot unmount SNAP:
 bfs snapshot delete Work: before-upgrade
 bfs check Work:
 bfs info Work:
 ```
 
-`dir` and `inspect` show the snapshot root. Mounting a snapshot as a distinct
-read-only volume is not part of this command and remains future work.
+`dir` and `inspect` show the snapshot root. `mount` exposes that same immutable
+root as a separate read-only DOS volume; it never follows later live-root
+updates. Mounted snapshots cannot be mutated or deleted until `unmount` has
+released their handler pin. See [the AmigaOS snapshot-volume contract](docs/amiga-snapshot-volumes.md).
 
 `make release` builds separate handlers for 68020, 68030, 68040, 68060 and Apollo
 68080. The unsuffixed `bfshandler` is the 68020 build; `bfshandler.080` targets

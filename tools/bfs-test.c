@@ -21,6 +21,7 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include "../src/amiga/dos_packets.h"
+#include "snapshot_protocol.h"
 
 /* Request 32KB stack from AmigaOS */
 LONG __stack = 32768;
@@ -1459,10 +1460,6 @@ static void test_mixed_sizes(void)
 
 /* ── Snapshot tests (via DoPkt to handler) ─────────────────── */
 
-#define ACTION_BFS_SNAPSHOT_CREATE 3000
-#define ACTION_BFS_SNAPSHOT_DELETE 3001
-#define ACTION_BFS_SNAPSHOT_LIST   3002
-
 static void test_snapshot_create_delete(void)
 {
     const char *T = "snap_34";
@@ -1475,16 +1472,16 @@ static void test_snapshot_create_delete(void)
     int nlen = 9;
     bstr[0] = nlen; tool_memcpy(bstr + 1, sname, nlen);
 
-    LONG res = DoPkt(port, ACTION_BFS_SNAPSHOT_CREATE, (LONG)MKBADDR(bstr), 0, 0, 0, 0);
+    LONG res = DoPkt(port, BFS_ACTION_SNAPSHOT_CREATE, (LONG)MKBADDR(bstr), 0, 0, 0, 0);
     if (!res) { fail(T, "create"); return; }
 
     /* Verify exists */
     char lbuf[64];
-    res = DoPkt(port, ACTION_BFS_SNAPSHOT_LIST, (LONG)lbuf, (LONG)sizeof(lbuf), 0, 0, 0);
+    res = DoPkt(port, BFS_ACTION_SNAPSHOT_LIST, (LONG)lbuf, (LONG)sizeof(lbuf), 0, 0, 0);
     if (!res) { fail(T, "list"); return; }
 
     /* Delete */
-    res = DoPkt(port, ACTION_BFS_SNAPSHOT_DELETE, (LONG)MKBADDR(bstr), 0, 0, 0, 0);
+    res = DoPkt(port, BFS_ACTION_SNAPSHOT_DELETE, (LONG)MKBADDR(bstr), 0, 0, 0, 0);
     if (!res) { fail(T, "delete"); return; }
 
     pass(T);
