@@ -93,7 +93,7 @@ def main():
             startup = "FailAt 21\nC:bfs format DH1: Test >SYS:format-message.txt\n"
         elif snapshot_commands:
             startup = """FailAt 11
-C:cli-fixture Compat:
+C:cli-fixture Compat: >SYS:fixture-create.txt
 C:bfs snapshot create Compat: invalid/name >SYS:snapshot-invalid-name.txt
 C:bfs snapshot dir Compat: smoke INVALID >SYS:snapshot-invalid-option.txt
 C:bfs snapshot create Compat: >SYS:snapshot-missing-name.txt
@@ -109,6 +109,21 @@ C:bfs snapshot dir Compat: smoke FILES >SYS:snapshot-dir-files.txt
 C:bfs snapshot inspect Compat: smoke >SYS:snapshot-inspect.txt
 C:bfs snapshot inspect Compat: smoke FILES >SYS:snapshot-inspect-files.txt
 C:bfs info Compat: >SYS:info.txt
+C:bfs snapshot mount Compat: smoke Compat: >SYS:snapshot-mount-collision.txt
+C:bfs snapshot mount Compat: smoke SnapshotView: >SYS:snapshot-mount.txt
+C:bfs snapshot mount Compat: smoke SnapshotSecond: >SYS:snapshot-second-mount.txt
+C:cli-fixture SnapshotView: PROBE >SYS:snapshot-mounted-before-live-change.txt
+C:Delete Compat:cli-file
+C:Delete Compat:cli-dir/nested-file
+C:Delete Compat:cli-dir/nested-link
+C:cli-fixture SnapshotView: PROBE >SYS:snapshot-mounted-file.txt
+C:cli-fixture SnapshotSecond: PROBE >SYS:snapshot-second-mounted-file.txt
+C:cli-fixture Compat: EXPECTBUSY=smoke >SYS:snapshot-delete-busy.txt
+C:bfs snapshot unmount SnapshotView: >SYS:snapshot-unmount.txt
+C:cli-fixture SnapshotView: EXPECTABSENT >SYS:snapshot-unmounted.txt
+C:cli-fixture Compat: EXPECTBUSY=smoke >SYS:snapshot-delete-still-busy.txt
+C:bfs snapshot unmount SnapshotSecond: >SYS:snapshot-second-unmount.txt
+C:cli-fixture SnapshotSecond: EXPECTABSENT >SYS:snapshot-second-unmounted.txt
 C:bfs snapshot delete Compat: smoke >SYS:snapshot-delete.txt
 """
         elif expected:
@@ -158,11 +173,23 @@ automatic_input_grab = 0
             outputs = {path.name: path.read_bytes() for path in system.iterdir() if path.is_file()}
             expected_outputs = {
                 "snapshot-create.txt": b"Snapshot created.\n",
+                "fixture-create.txt": b"FIXTURE OK\n",
                 "snapshot-list.txt": b"Snapshots on Compat:\n",
                 "snapshot-dir.txt": b"Directory \"smoke:\" on Compat:\n",
                 "snapshot-inspect.txt": b"Directory \"smoke:\" on Compat:\n",
                 "info.txt": b"Drive: Compat:\n",
                 "check.txt": b"Errors: 0  Warnings: 0\nLeaked blocks: 0\nCLEAN\n",
+                "snapshot-mount.txt": b"Mounted snapshot \"smoke\" from Compat: as SnapshotView:\n",
+                "snapshot-second-mount.txt": b"Mounted snapshot \"smoke\" from Compat: as SnapshotSecond:\n",
+                "snapshot-mounted-before-live-change.txt": b"PROBE OK\n",
+                "snapshot-mounted-file.txt": b"PROBE OK\n",
+                "snapshot-second-mounted-file.txt": b"PROBE OK\n",
+                "snapshot-delete-busy.txt": b"BUSY OK\n",
+                "snapshot-unmount.txt": b"Unmounted SnapshotView:\n",
+                "snapshot-unmounted.txt": b"ABSENT OK\n",
+                "snapshot-delete-still-busy.txt": b"BUSY OK\n",
+                "snapshot-second-unmount.txt": b"Unmounted SnapshotSecond:\n",
+                "snapshot-second-unmounted.txt": b"ABSENT OK\n",
                 "snapshot-delete.txt": b"Snapshot deleted.\n",
                 "snapshot-invalid-name.txt": b"Snapshot names cannot contain '/'.\n",
                 "snapshot-invalid-option.txt": b"Valid DIR and INSPECT options are DIRS and FILES.\n",
@@ -188,6 +215,8 @@ automatic_input_grab = 0
             if (b"cli-file" not in outputs["snapshot-inspect-files.txt"] or
                     b"cli-dir" in outputs["snapshot-inspect-files.txt"]):
                 raise ValueError(f"{name}: INSPECT FILES filter is incorrect")
+            if b"Mounted snapshot" in outputs["snapshot-mount-collision.txt"]:
+                raise ValueError(f"{name}: failed snapshot mount published a target")
         print(f"PASS {name}", flush=True)
 
 
