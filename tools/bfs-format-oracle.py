@@ -208,6 +208,8 @@ def digest_file(image, superblock, inode):
         disk, length = be32(value, 0), be32(value, 4)
         if length == 0 or disk + length > superblock["block_count"] or logical < cursor:
             raise OracleError("invalid extent range")
+        if superblock["options"] & 1 and length != 1:
+            raise OracleError("checksummed extent length is invalid")
         while cursor < min(logical, size):
             count = min(len(ZERO_CHUNK), min(logical, size) - cursor)
             digest.update(ZERO_CHUNK[:count])
@@ -216,6 +218,9 @@ def digest_file(image, superblock, inode):
             if cursor >= size:
                 break
             data = block_at(image, superblock, disk + index)
+            if superblock["options"] & 1:
+                if be32(value, 8) == 0 or crc32(data) != be32(value, 8):
+                    raise OracleError("data checksum mismatch")
             count = min(len(data), size - cursor)
             digest.update(data[:count])
             cursor += count

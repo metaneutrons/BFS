@@ -5,6 +5,7 @@
 
 #include "bfs_alloc.h"
 #include "bfs_btree.h"
+#include "bfs_crc32.h"
 #include "bfs_dir.h"
 #include "bfs_extent.h"
 #include "bfs_inode.h"
@@ -20,6 +21,7 @@ typedef struct {
     bfs_fsck_report_t report;
     uint8_t *block_map;
     uint8_t *reference_map;
+    uint8_t *data_buffer;
     uint32_t block_count;
     bool reference_saturated;
 } check_state_t;
@@ -118,7 +120,17 @@ static bool extent_data_cb(const void *key, const void *value, void *context)
     (void)key;
     check_state_t *state = (check_state_t *)context;
     const bfs_extent_val_t *extent = (const bfs_extent_val_t *)value;
-    mark_range(state, bfs_be32(extent->disk_block), bfs_be32(extent->length), 3, true);
+    bfs_blk_t disk_block = bfs_be32(extent->disk_block);
+    uint32_t length = bfs_be32(extent->length);
+
+    mark_range(state, disk_block, length, 3, true);
+    if (!state->fs->data_checksums) return true;
+    if (length != 1 || !state->data_buffer ||
+        bfs_bio_read(state->fs->bio, disk_block, state->data_buffer) != BFS_OK ||
+        bfs_be32(extent->data_crc32) == 0 ||
+        bfs_be32(extent->data_crc32) !=
+        bfs_crc32(0, state->data_buffer, state->fs->bio->block_size))
+        check_error(state);
     return true;
 }
 
@@ -261,7 +273,9 @@ bfs_err_t bfs_fs_check(bfs_fs_t *fs, bool repair, bfs_fsck_report_t *report)
     state.block_count = fs->bio->block_count;
     state.block_map = calloc(state.block_count, 1);
     state.reference_map = calloc(state.block_count, 1);
-    if (!state.block_map || !state.reference_map) {
+    if (fs->data_checksums) state.data_buffer = malloc(fs->bio->block_size);
+    if (!state.block_map || !state.reference_map || (fs->data_checksums && !state.data_buffer)) {
+        free(state.data_buffer);
         free(state.reference_map);
         free(state.block_map);
         return BFS_ERR_NOMEM;
@@ -286,6 +300,7 @@ bfs_err_t bfs_fs_check(bfs_fs_t *fs, bool repair, bfs_fsck_report_t *report)
     }
 
     *report = state.report;
+    free(state.data_buffer);
     free(state.reference_map);
     free(state.block_map);
     return result;

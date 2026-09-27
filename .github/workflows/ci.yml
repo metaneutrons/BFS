@@ -102,6 +102,21 @@ jobs:
           path: build/linux-qualification/
           if-no-files-found: warn
 
+  fault-corruption-qualification:
+    name: Fault and Corruption Qualification
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Run bounded modelled-image fault campaign
+        run: make fault-qualification OUTPUT=build/fault-qualification/ci HOST_CC=gcc
+      - name: Preserve fault campaign evidence
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: fault-corruption-qualification-evidence
+          path: build/fault-qualification/
+          if-no-files-found: warn
+
   sanitizers:
     name: Address and Undefined Behavior Sanitizers
     runs-on: ubuntu-24.04
@@ -222,7 +237,7 @@ jobs:
     name: CI Success
     if: always()
     needs:
-      [commit-hygiene, quality, host-tests, linux-build, fuse-conformance, sanitizers, static-analysis, coverage, integration-test]
+      [commit-hygiene, quality, host-tests, linux-build, fuse-conformance, fault-corruption-qualification, sanitizers, static-analysis, coverage, integration-test]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

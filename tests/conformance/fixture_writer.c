@@ -1,6 +1,7 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /* Test-only committed-image producer for the independent format oracle. */
 
+#include "bfs_alloc.h"
 #include "bfs_file.h"
 #include "bfs_fs.h"
 #include "bfs_posix_bio.h"
@@ -32,6 +33,7 @@ int main(int argc, char **argv)
 {
     bool directory_scale = false;
     bool hard_link = false;
+    bool leaked_allocation = false;
     uint32_t block_size = DEFAULT_BLOCK_SIZE;
     uint32_t block_count = DEFAULT_BLOCK_COUNT;
     uint32_t format_options = 0;
@@ -39,6 +41,7 @@ int main(int argc, char **argv)
     for (int index = 2; index < argc; index++) {
         if (strcmp(argv[index], "--directory-scale") == 0) directory_scale = true;
         else if (strcmp(argv[index], "--hard-link") == 0) hard_link = true;
+        else if (strcmp(argv[index], "--leak") == 0) leaked_allocation = true;
         else if (strcmp(argv[index], "--block-size") == 0 && index + 1 < argc &&
                  parse_u32(argv[++index], &block_size)) continue;
         else if (strcmp(argv[index], "--block-count") == 0 && index + 1 < argc &&
@@ -106,6 +109,9 @@ int main(int argc, char **argv)
     if (error == BFS_OK) error = bfs_file_truncate(&file, 0);
     if (error == BFS_OK && bfs_file_write(&file, "live contents", 13) != 13)
         error = BFS_ERR_IO;
+    if (error == BFS_OK && leaked_allocation &&
+        bfs_freespace_alloc(&fs.freespace, 1) == BFS_BLK_NULL)
+        error = BFS_ERR_NOSPC;
     if (fs.mounted && bfs_fs_unmount(&fs) != BFS_OK && error == BFS_OK) error = BFS_ERR_IO;
     bfs_bio_close(bio);
     return error == BFS_OK ? 0 : 1;
