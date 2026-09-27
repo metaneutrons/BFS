@@ -16,6 +16,8 @@ typedef struct amiga_bio {
     uint32_t sector_size;
     uint64_t total_sectors;
     UWORD access_mode;
+    /* Accessed by the write path in amiga_bio.c. */
+    // cppcheck-suppress unusedStructMember
     bool read_only;
     /* Read by the change-state check in amiga_bio.c. */
     // cppcheck-suppress unusedStructMember

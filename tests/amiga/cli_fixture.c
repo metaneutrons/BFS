@@ -140,6 +140,19 @@ static int snapshot_write_open_rejected(const char *volume)
     return IoErr() == ERROR_DISK_WRITE_PROTECTED;
 }
 
+static int snapshot_metadata_matches(BPTR file)
+{
+    struct FileInfoBlock fib;
+
+    return file && Examine(file, &fib) && fib.fib_DirEntryType == ST_FILE &&
+           fib.fib_Size == NESTED_FILE_SIZE &&
+           fib.fib_Protection == NESTED_FILE_PROTECTION &&
+           fib.fib_Date.ds_Days == NESTED_FILE_DAYS &&
+           fib.fib_Date.ds_Minute == NESTED_FILE_MINUTES &&
+           fib.fib_Date.ds_Tick == NESTED_FILE_TICKS &&
+           text_equal(fib.fib_Comment, NESTED_FILE_COMMENT);
+}
+
 static int snapshot_file_matches(const char *volume)
 {
     char path[128];
@@ -177,14 +190,7 @@ static int snapshot_file_matches(const char *volume)
 
     file = ok ? Lock(path, SHARED_LOCK) : 0;
     if (!file) ok = 0;
-    if (ok && (!Examine(file, &fib) || fib.fib_DirEntryType != ST_FILE ||
-               fib.fib_Size != NESTED_FILE_SIZE ||
-               fib.fib_Protection != NESTED_FILE_PROTECTION ||
-               fib.fib_Date.ds_Days != NESTED_FILE_DAYS ||
-               fib.fib_Date.ds_Minute != NESTED_FILE_MINUTES ||
-               fib.fib_Date.ds_Tick != NESTED_FILE_TICKS ||
-               !text_equal(fib.fib_Comment, NESTED_FILE_COMMENT)))
-        ok = 0;
+    if (ok && !snapshot_metadata_matches(file)) ok = 0;
     if (ok && !path_for(path, sizeof(path), volume, NESTED_LINK_NAME)) ok = 0;
     link = ok ? Lock(path, SHARED_LOCK) : 0;
     if (!link) ok = 0;

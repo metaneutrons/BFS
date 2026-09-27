@@ -385,6 +385,132 @@ static void DestroySnapshotPin(struct bfs_handler *h,
     (void)h;
 }
 
+static void DiscardSnapshotMount(bfs_snapshot_startup_t *startup,
+                                 struct bfs_snapshot_pin *pin, bool published)
+{
+    if (startup && startup->volume_node) {
+        if (published) RemDosEntry(startup->volume_node);
+        FreeDosEntry(startup->volume_node);
+    }
+    if (startup && startup->device_node)
+        FreeDosEntry((struct DosList *)startup->device_node);
+    if (pin) FreeVec(pin);
+    if (startup) FreeVec(startup);
+}
+
+static LONG AllocateSnapshotMount(const char *target, bfs_snapshot_startup_t **startup_out,
+                                  struct bfs_snapshot_pin **pin_out)
+{
+    bfs_snapshot_startup_t *startup;
+    struct bfs_snapshot_pin *pin;
+    LONG error = ERROR_NO_FREE_STORE;
+
+    startup = (bfs_snapshot_startup_t *)AllocVec(sizeof(*startup), MEMF_PUBLIC | MEMF_CLEAR);
+    pin = (struct bfs_snapshot_pin *)AllocVec(sizeof(*pin), MEMF_PUBLIC | MEMF_CLEAR);
+    if (!startup || !pin) goto fail;
+    if (!CopySnapshotMountName(target, startup->mount_name)) {
+        error = ERROR_INVALID_COMPONENT_NAME;
+        goto fail;
+    }
+    CopySnapshotDeviceName(startup->mount_name, startup->device_name);
+    startup->device_node = (struct DeviceNode *)MakeDosEntry(startup->device_name, DLT_DEVICE);
+    if (!startup->device_node) goto fail;
+    startup->volume_node = MakeDosEntry(startup->mount_name, DLT_VOLUME);
+    if (!startup->volume_node) goto fail;
+    startup->volume_node->dol_misc.dol_volume.dol_DiskType = BFS_SB_MAGIC;
+    DateStamp(&startup->volume_node->dol_misc.dol_volume.dol_VolumeDate);
+    *startup_out = startup;
+    *pin_out = pin;
+    return 0;
+fail:
+    if (error == ERROR_NO_FREE_STORE && IoErr()) error = IoErr();
+    DiscardSnapshotMount(startup, pin, false);
+    return error;
+}
+
+static LONG ConfigureSnapshotMount(struct bfs_handler *h, bfs_snapshot_startup_t *startup,
+                                   const bfs_snapshot_record_t *record)
+{
+    const UBYTE *device_bstr = (const UBYTE *)BADDR(h->startup->fssm_Device);
+    uint32_t words;
+
+    if (!device_bstr || device_bstr[0] == 0 || device_bstr[0] >= sizeof(startup->device_bstr))
+        return ERROR_BAD_NUMBER;
+    memcpy(startup->device_bstr, device_bstr, (size_t)device_bstr[0] + 1u); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    startup->magic = BFS_SNAPSHOT_STARTUP_MAGIC;
+    startup->version = BFS_SNAPSHOT_STARTUP_VERSION;
+    startup->size = sizeof(*startup);
+    startup->pin = ++h->next_snapshot_pin;
+    if (startup->pin == 0) startup->pin = ++h->next_snapshot_pin;
+    startup->source_port = h->msgport;
+    startup->record = *record;
+    startup->fssm.fssm_Unit = h->startup->fssm_Unit;
+    startup->fssm.fssm_Device = MKBADDR(startup->device_bstr);
+    startup->fssm.fssm_Environ = MKBADDR(&startup->envec);
+    startup->fssm.fssm_Flags = h->startup->fssm_Flags;
+    words = h->dosenvec->de_TableSize + 1u;
+    if (words > sizeof(startup->envec) / sizeof(ULONG))
+        words = sizeof(startup->envec) / sizeof(ULONG);
+    memcpy(&startup->envec, h->dosenvec, words * sizeof(ULONG)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    startup->device_node->dn_Startup = MKBADDR(&startup->fssm);
+    startup->device_node->dn_GlobalVec = (BPTR)-1;
+    startup->device_node->dn_StackSize = h->devnode->dn_StackSize ? h->devnode->dn_StackSize : 32768;
+    startup->device_node->dn_Priority = h->devnode->dn_Priority;
+    return 0;
+}
+
+static LONG PublishSnapshotVolume(bfs_snapshot_startup_t *startup)
+{
+    struct DosList *doslist = AttemptLockDosList(LDF_VOLUMES | LDF_WRITE);
+    LONG error = 0;
+
+    if (!doslist) return ERROR_OBJECT_IN_USE;
+    /* AddDosEntry accepts duplicate volume names on AROS.  Do not let a
+     * snapshot target shadow an existing live volume or another view. */
+    if (FindDosEntry(doslist, startup->mount_name, LDF_VOLUMES)) {
+        error = ERROR_OBJECT_EXISTS;
+    } else if (AddDosEntry(startup->volume_node) == DOSFALSE) {
+        error = IoErr() ? IoErr() : ERROR_OBJECT_EXISTS;
+    }
+    UnLockDosList(LDF_VOLUMES | LDF_WRITE);
+    return error;
+}
+
+static LONG StartSnapshotWorker(bfs_snapshot_startup_t *startup)
+{
+    struct StandardPacket packet;
+    struct MsgPort *reply = CreateMsgPort();
+    struct Process *process;
+
+    if (!reply) return ERROR_NO_FREE_STORE;
+    process = CreateNewProcTags(NP_Entry, (ULONG)EntryPoint,
+                                NP_StackSize, startup->device_node->dn_StackSize < 131072 ?
+                                              131072 : startup->device_node->dn_StackSize,
+                                NP_Priority, startup->device_node->dn_Priority,
+                                NP_Name, (ULONG)startup->mount_name, TAG_DONE);
+    if (!process) {
+        LONG error = IoErr() ? IoErr() : ERROR_NO_FREE_STORE;
+        DeleteMsgPort(reply);
+        return error;
+    }
+    memset(&packet, 0, sizeof(packet));
+    packet.sp_Msg.mn_Node.ln_Name = (char *)&packet.sp_Pkt;
+    packet.sp_Msg.mn_Length = sizeof(packet);
+    packet.sp_Pkt.dp_Link = &packet.sp_Msg;
+    packet.sp_Pkt.dp_Port = reply;
+    packet.sp_Pkt.dp_Type = ACTION_STARTUP;
+    packet.sp_Pkt.dp_Arg3 = (LONG)MKBADDR(startup->device_node);
+    packet.sp_Pkt.dp_Arg4 = (LONG)startup;
+    packet.sp_Pkt.dp_Arg5 = BFS_SNAPSHOT_STARTUP_PACKET_MAGIC;
+    PutMsg(&process->pr_MsgPort, &packet.sp_Msg);
+    WaitPort(reply);
+    (void)GetMsg(reply);
+    DeleteMsgPort(reply);
+    if (packet.sp_Pkt.dp_Res1 == DOSFALSE)
+        return packet.sp_Pkt.dp_Res2 ? packet.sp_Pkt.dp_Res2 : ERROR_NOT_A_DOS_DISK;
+    return 0;
+}
+
 static LONG StartSnapshotHandler(struct bfs_handler *h, const UBYTE *snapshot_bstr,
                                  const char *target)
 {
@@ -393,171 +519,27 @@ static LONG StartSnapshotHandler(struct bfs_handler *h, const UBYTE *snapshot_bs
     bfs_snapshot_record_t record;
     bfs_snapshot_startup_t *startup = NULL;
     struct bfs_snapshot_pin *pin = NULL;
-    struct DeviceNode *node = NULL;
-    struct DosList *volume = NULL;
-    struct Process *process;
-    struct MsgPort *reply = NULL;
-    struct StandardPacket packet;
     bfs_err_t err;
+    LONG error;
+    bool published = false;
 
-    if (!h->startup || h->snapshot_startup)
-        return ERROR_NOT_IMPLEMENTED;
+    if (!h->startup || h->snapshot_startup) return ERROR_NOT_IMPLEMENTED;
     if (!CopySnapshotBstrName(snapshot_bstr, snapshot_name, sizeof(snapshot_name)))
         return ERROR_INVALID_COMPONENT_NAME;
-    if (!h->fs.has_snapshots)
-        return ERROR_OBJECT_NOT_FOUND;
+    if (!h->fs.has_snapshots) return ERROR_OBJECT_NOT_FOUND;
     err = bfs_snapshot_find_by_name(&h->fs, snapshot_name, &snapshot_id, &record);
     if (err != BFS_OK) return Pfs4ToDosError(err);
-
-    startup = (bfs_snapshot_startup_t *)AllocVec(sizeof(*startup),
-                                                  MEMF_PUBLIC | MEMF_CLEAR);
-    pin = (struct bfs_snapshot_pin *)AllocVec(sizeof(*pin), MEMF_PUBLIC | MEMF_CLEAR);
-    if (!startup || !pin) {
-        if (pin) FreeVec(pin);
-        if (startup) FreeVec(startup);
-        return ERROR_NO_FREE_STORE;
+    error = AllocateSnapshotMount(target, &startup, &pin);
+    if (!error) error = ConfigureSnapshotMount(h, startup, &record);
+    if (!error) {
+        error = PublishSnapshotVolume(startup);
+        published = error == 0;
     }
-    if (!CopySnapshotMountName(target, startup->mount_name)) {
-        FreeVec(pin);
-        FreeVec(startup);
-        return ERROR_INVALID_COMPONENT_NAME;
+    if (!error) error = StartSnapshotWorker(startup);
+    if (error) {
+        DiscardSnapshotMount(startup, pin, published);
+        return error;
     }
-    CopySnapshotDeviceName(startup->mount_name, startup->device_name);
-
-    node = (struct DeviceNode *)MakeDosEntry(startup->device_name, DLT_DEVICE);
-    if (!node) {
-        FreeVec(pin);
-        FreeVec(startup);
-        return IoErr() ? IoErr() : ERROR_NO_FREE_STORE;
-    }
-    volume = MakeDosEntry(startup->mount_name, DLT_VOLUME);
-    if (!volume) {
-        FreeDosEntry((struct DosList *)node);
-        FreeVec(pin);
-        FreeVec(startup);
-        return IoErr() ? IoErr() : ERROR_NO_FREE_STORE;
-    }
-    volume->dol_Task = NULL;
-    volume->dol_misc.dol_volume.dol_DiskType = BFS_SB_MAGIC;
-    DateStamp(&volume->dol_misc.dol_volume.dol_VolumeDate);
-    {
-        const UBYTE *device_bstr = (const UBYTE *)BADDR(h->startup->fssm_Device);
-        if (!device_bstr || device_bstr[0] == 0 ||
-            device_bstr[0] >= sizeof(startup->device_bstr)) {
-            FreeDosEntry((struct DosList *)node);
-            FreeDosEntry(volume);
-            FreeVec(pin);
-            FreeVec(startup);
-            return ERROR_BAD_NUMBER;
-        }
-        memcpy(startup->device_bstr, device_bstr, (size_t)device_bstr[0] + 1u); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
-    }
-    startup->magic = BFS_SNAPSHOT_STARTUP_MAGIC;
-    startup->version = BFS_SNAPSHOT_STARTUP_VERSION;
-    startup->size = sizeof(*startup);
-    startup->pin = ++h->next_snapshot_pin;
-    if (startup->pin == 0) startup->pin = ++h->next_snapshot_pin;
-    startup->source_port = h->msgport;
-    startup->device_node = node;
-    startup->volume_node = volume;
-    startup->record = record;
-    startup->fssm.fssm_Unit = h->startup->fssm_Unit;
-    startup->fssm.fssm_Device = MKBADDR(startup->device_bstr);
-    startup->fssm.fssm_Environ = MKBADDR(&startup->envec);
-    startup->fssm.fssm_Flags = h->startup->fssm_Flags;
-    {
-        uint32_t words = h->dosenvec->de_TableSize + 1u;
-        if (words > sizeof(startup->envec) / sizeof(ULONG))
-            words = sizeof(startup->envec) / sizeof(ULONG);
-        memcpy(&startup->envec, h->dosenvec, words * sizeof(ULONG)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
-    }
-    node->dn_Startup = MKBADDR(&startup->fssm);
-    node->dn_GlobalVec = (BPTR)-1;
-    node->dn_StackSize = h->devnode->dn_StackSize ? h->devnode->dn_StackSize : 32768;
-    node->dn_Priority = h->devnode->dn_Priority;
-    /* The private DeviceNode is never published.  The source owns TARGET:'s
-     * Volume entry throughout the worker's lifetime; the worker only binds
-     * its ready packet port to it. */
-    reply = CreateMsgPort();
-    if (!reply) {
-        FreeDosEntry((struct DosList *)node);
-        FreeDosEntry(volume);
-        FreeVec(pin);
-        FreeVec(startup);
-        return ERROR_NO_FREE_STORE;
-    }
-    /* A mount request reaches us through DOS packet routing.  Some DOS
-     * implementations still hold a device-list read lock on that path;
-     * never block the handler trying to upgrade it. */
-    struct DosList *doslist = AttemptLockDosList(LDF_VOLUMES | LDF_WRITE);
-    if (!doslist) {
-        DeleteMsgPort(reply);
-        FreeDosEntry(volume);
-        FreeDosEntry((struct DosList *)node);
-        FreeVec(pin);
-        FreeVec(startup);
-        return ERROR_OBJECT_IN_USE;
-    }
-    /* AddDosEntry accepts duplicate volume names on AROS.  Do not let a
-     * snapshot target shadow an existing live volume or another view. */
-    if (FindDosEntry(doslist, startup->mount_name, LDF_VOLUMES)) {
-        UnLockDosList(LDF_VOLUMES | LDF_WRITE);
-        DeleteMsgPort(reply);
-        FreeDosEntry(volume);
-        FreeDosEntry((struct DosList *)node);
-        FreeVec(pin);
-        FreeVec(startup);
-        return ERROR_OBJECT_EXISTS;
-    }
-    if (AddDosEntry(volume) == DOSFALSE) {
-        LONG error = IoErr();
-        UnLockDosList(LDF_VOLUMES | LDF_WRITE);
-        DeleteMsgPort(reply);
-        FreeDosEntry(volume);
-        FreeDosEntry((struct DosList *)node);
-        FreeVec(pin);
-        FreeVec(startup);
-        return error ? error : ERROR_OBJECT_EXISTS;
-    }
-    UnLockDosList(LDF_VOLUMES | LDF_WRITE);
-    process = CreateNewProcTags(NP_Entry, (ULONG)EntryPoint,
-                                NP_StackSize, node->dn_StackSize < 131072 ?
-                                              131072 : node->dn_StackSize,
-                                NP_Priority, node->dn_Priority,
-                                NP_Name, (ULONG)startup->mount_name,
-                                TAG_DONE);
-    if (!process) {
-        DeleteMsgPort(reply);
-        RemDosEntry(volume);
-        FreeDosEntry(volume);
-        FreeDosEntry((struct DosList *)node);
-        FreeVec(pin);
-        FreeVec(startup);
-        return IoErr() ? IoErr() : ERROR_NO_FREE_STORE;
-    }
-    memset(&packet, 0, sizeof(packet));
-    packet.sp_Msg.mn_Node.ln_Name = (char *)&packet.sp_Pkt;
-    packet.sp_Msg.mn_Length = sizeof(packet);
-    packet.sp_Pkt.dp_Link = &packet.sp_Msg;
-    packet.sp_Pkt.dp_Port = reply;
-    packet.sp_Pkt.dp_Type = ACTION_STARTUP;
-    packet.sp_Pkt.dp_Arg3 = (LONG)MKBADDR(node);
-    packet.sp_Pkt.dp_Arg4 = (LONG)startup;
-    packet.sp_Pkt.dp_Arg5 = BFS_SNAPSHOT_STARTUP_PACKET_MAGIC;
-    PutMsg(&process->pr_MsgPort, &packet.sp_Msg);
-    WaitPort(reply);
-    (void)GetMsg(reply);
-    DeleteMsgPort(reply);
-    if (packet.sp_Pkt.dp_Res1 == DOSFALSE) {
-        LONG error = packet.sp_Pkt.dp_Res2;
-        RemDosEntry(volume);
-        FreeDosEntry(volume);
-        FreeDosEntry((struct DosList *)node);
-        FreeVec(pin);
-        FreeVec(startup);
-        return error ? error : ERROR_NOT_A_DOS_DISK;
-    }
-
     pin->id = snapshot_id;
     pin->token = startup->pin;
     pin->startup = startup;
