@@ -87,6 +87,14 @@ completion marker. Run `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DI
 recheck retained outputs. The result is an emulated AmigaOS comparison, not a
 native-hardware throughput claim.
 
+For diagnostic phase profiling, build `make amiga-fs-profile-bench`, set
+`BFS_BENCH_MODE=profile`, and use a new `BFS_BENCH_RUN_DIR` with the same builder and
+runner. This measures fresh-file and same-file overwrite calls separately from
+`Flush` and `Close`, then verifies an 8 MiB read. The output is
+`bfs.profile.tsv` and `pfs3.profile.tsv`; validate it with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" profile`. These numbers
+separate AmigaDOS API phases, not internal block-I/O or crash durability.
+
 ## Troubleshooting
 
 - **AROS ROM missing:** run `make emulator-setup` and retry.

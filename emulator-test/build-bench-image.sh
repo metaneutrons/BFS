@@ -23,10 +23,24 @@ ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
 ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
 PFS3="${BFS_PFS3_HANDLER:-$SCRIPT_DIR/.cache/pfs3aio}"
 BENCH_ORDER="${BFS_BENCH_ORDER:-bfs-first}"
+BENCH_MODE="${BFS_BENCH_MODE:-compare}"
 case "$BENCH_ORDER" in
     bfs-first|pfs3-first) ;;
     *) echo "ERROR: BFS_BENCH_ORDER must be bfs-first or pfs3-first" >&2; exit 2 ;;
 esac
+case "$BENCH_MODE" in
+    compare|profile) ;;
+    *) echo "ERROR: BFS_BENCH_MODE must be compare or profile" >&2; exit 2 ;;
+esac
+if [ "$BENCH_MODE" = profile ]; then
+    GUEST_TOOL=fs-profile-bench
+    RESULT_SUFFIX=profile.tsv
+    COMPLETION_MARKER=BFS-PFS3-PROFILE-COMPLETE
+else
+    GUEST_TOOL=fs-compare-bench
+    RESULT_SUFFIX=tsv
+    COMPLETION_MARKER=BFS-PFS3-COMPLETE
+fi
 
 # ── Prerequisites ─────────────────────────────────────────────
 [ -f "$ROM" ] || { echo "ERROR: ROM not found: $ROM (set BFS_ROM_FILE)"; exit 1; }
@@ -34,7 +48,7 @@ esac
 [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
 command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
 [ -f "$PROJECT_DIR/build/amiga/bfshandler" ] || { echo "ERROR: run 'make amiga' first"; exit 1; }
-[ -f "$PROJECT_DIR/build/amiga/fs-compare-bench" ] || { echo "ERROR: run 'make amiga-fs-compare-bench' first"; exit 1; }
+[ -f "$PROJECT_DIR/build/amiga/$GUEST_TOOL" ] || { echo "ERROR: run 'make amiga-$GUEST_TOOL' first"; exit 1; }
 [ -f "$PROJECT_DIR/build/host/bfs" ] || { echo "ERROR: run 'make build/host/bfs' first"; exit 1; }
 
 echo "=== Building BFS vs PFS3 Benchmark ==="
@@ -48,7 +62,7 @@ mkdir -p "$WB/C" "$WB/L" "$WB/Libs" "$WB/S" "$WB/Devs" "$WB/Results"
 cp -R "$ASSETS/C/." "$WB/C/"
 if [ -d "$ASSETS/L" ]; then cp -R "$ASSETS/L/." "$WB/L/"; fi
 if [ -d "$ASSETS/Libs" ]; then cp -R "$ASSETS/Libs/." "$WB/Libs/"; fi
-cp "$PROJECT_DIR/build/amiga/fs-compare-bench" "$WB/C/fs-compare-bench"
+cp "$PROJECT_DIR/build/amiga/$GUEST_TOOL" "$WB/C/$GUEST_TOOL"
 cp "$PROJECT_DIR/build/amiga/bfshandler" "$WB/L/"
 cp "$PFS3" "$WB/L/pfs3aio"
 
@@ -88,11 +102,11 @@ else
 fi
 for filesystem in "${order[@]}"; do
     if [ "$filesystem" = bfs ]; then drive=DH1; else drive=DH2; fi
-    printf 'Echo "--- %s Benchmark (%s:) ---"\nC:fs-compare-bench %s: >SYS:Results/%s.tsv\nEcho "AFTER_%s" >SYS:Results/phase-%s.txt\n' \
-        "$filesystem" "$drive" "$drive" "$filesystem" "$filesystem" "$filesystem" >>"$WB/S/Startup-Sequence"
+    printf 'Echo "--- %s Benchmark (%s:) ---"\nC:%s %s: >SYS:Results/%s.%s\nEcho "AFTER_%s" >SYS:Results/phase-%s.txt\n' \
+        "$filesystem" "$drive" "$GUEST_TOOL" "$drive" "$filesystem" "$RESULT_SUFFIX" "$filesystem" "$filesystem" >>"$WB/S/Startup-Sequence"
 done
+printf 'Echo "%s" >SYS:Results/complete.txt\n' "$COMPLETION_MARKER" >>"$WB/S/Startup-Sequence"
 cat >> "$WB/S/Startup-Sequence" <<'AMIGA'
-Echo "BFS-PFS3-COMPLETE" >SYS:Results/complete.txt
 
 Echo ""
 Echo "============================================"
@@ -103,6 +117,7 @@ AMIGA
 
 echo "  Boot directory: $WB"
 echo "  Order: $BENCH_ORDER"
+echo "  Mode: $BENCH_MODE"
 
 # ── Create BFS HDF (256MB) ────────────────────────────────────
 echo "Creating BFS partition (255.5 MiB)..."

@@ -6,7 +6,17 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 BENCH_DIR="${BFS_BENCH_RUN_DIR:-$PROJECT_DIR/build/benchmark}"
+BENCH_MODE="${BFS_BENCH_MODE:-compare}"
 TIMEOUT="${1:-600}"
+case "$BENCH_MODE" in
+    compare)
+        RESULT_SUFFIX=tsv
+        ;;
+    profile)
+        RESULT_SUFFIX=profile.tsv
+        ;;
+    *) echo "ERROR: BFS_BENCH_MODE must be compare or profile" >&2; exit 2 ;;
+esac
 
 [[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {
     echo "ERROR: timeout must be a positive integer" >&2
@@ -69,6 +79,7 @@ EOF
 
 echo "=== BFS vs PFS3 Benchmark (FS-UAE 68040) ==="
 echo "Evidence directory: $BENCH_DIR"
+echo "Mode: $BENCH_MODE"
 echo "Timeout: ${TIMEOUT}s"
 echo ""
 
@@ -107,18 +118,18 @@ if [ -f "$RESULTS/info.txt" ] && [ -s "$RESULTS/info.txt" ]; then
     cat "$RESULTS/info.txt"
 fi
 echo ""
-if [ -f "$RESULTS/bfs.tsv" ] && [ -s "$RESULTS/bfs.tsv" ]; then
+if [ -f "$RESULTS/bfs.$RESULT_SUFFIX" ] && [ -s "$RESULTS/bfs.$RESULT_SUFFIX" ]; then
     echo "=== BFS Results ==="
-    cat "$RESULTS/bfs.tsv"
+    cat "$RESULTS/bfs.$RESULT_SUFFIX"
 else
     echo "ERROR: BFS benchmark did not complete" >&2
 fi
 echo ""
-if [ -f "$RESULTS/pfs3.tsv" ] && [ -s "$RESULTS/pfs3.tsv" ]; then
+if [ -f "$RESULTS/pfs3.$RESULT_SUFFIX" ] && [ -s "$RESULTS/pfs3.$RESULT_SUFFIX" ]; then
     echo "=== PFS3 Results ==="
-    cat "$RESULTS/pfs3.tsv"
+    cat "$RESULTS/pfs3.$RESULT_SUFFIX"
 else
     echo "ERROR: PFS3 benchmark did not complete" >&2
 fi
 
-"$SCRIPT_DIR/verify-bench-results.sh" "$BENCH_DIR"
+"$SCRIPT_DIR/verify-bench-results.sh" "$BENCH_DIR" "$BENCH_MODE"
