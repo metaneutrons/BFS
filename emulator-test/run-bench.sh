@@ -4,6 +4,8 @@
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BENCH_DIR="${BFS_BENCH_RUN_DIR:-$PROJECT_DIR/build/benchmark}"
 TIMEOUT="${1:-600}"
 
 [[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {
@@ -11,22 +13,25 @@ TIMEOUT="${1:-600}"
     exit 2
 }
 
-WB="${BFS_BENCH_WB_DIR:-$SCRIPT_DIR/.bench-wb}"
-BFS_HDF="$SCRIPT_DIR/bench-bfs.hdf"
-PFS_HDF="$SCRIPT_DIR/bench-pfs3.hdf"
+WB="$BENCH_DIR/system"
+BFS_HDF="$BENCH_DIR/bench-bfs.hdf"
+PFS_HDF="$BENCH_DIR/bench-pfs3.hdf"
 ROM="${BFS_ROM_FILE:-$SCRIPT_DIR/.assets/A1200.47.102.rom}"
+RESULTS="$WB/Results"
+COMPLETION="$RESULTS/complete.txt"
+CFG="$BENCH_DIR/bench.fs-uae"
+EMULATOR_LOG="$BENCH_DIR/fs-uae.log"
 
 [ -d "$WB" ] || { echo "ERROR: Run build-bench-image.sh first"; exit 1; }
 [ -f "$BFS_HDF" ] || { echo "ERROR: bench-bfs.hdf not found"; exit 1; }
 [ -f "$PFS_HDF" ] || { echo "ERROR: bench-pfs3.hdf not found"; exit 1; }
 [ -f "$ROM" ] || { echo "ERROR: ROM not found"; exit 1; }
 command -v fs-uae >/dev/null || { echo "ERROR: fs-uae not found"; exit 1; }
+[ ! -e "$COMPLETION" ] && [ ! -e "$CFG" ] && [ ! -e "$EMULATOR_LOG" ] || {
+    echo "ERROR: refusing to overwrite existing benchmark evidence in $BENCH_DIR" >&2
+    exit 2
+}
 
-# Clean previous results
-rm -f "$WB/Results/bfs.txt" "$WB/Results/pfs3.txt" "$WB/Results/info.txt"
-rm -f "$WB/Results/"*.uaem
-
-CFG=$(mktemp)
 PID=
 TIMER_PID=
 # Called indirectly by the EXIT trap below (SC2317 on older ShellCheck).
@@ -38,7 +43,6 @@ cleanup() {
     if [ -n "$TIMER_PID" ] && kill "$TIMER_PID" 2>/dev/null; then
         if wait "$TIMER_PID" 2>/dev/null; then :; fi
     fi
-    rm -f "$CFG"
 }
 trap cleanup EXIT
 cat > "$CFG" << EOF
@@ -58,13 +62,17 @@ hard_drive_2 = $PFS_HDF
 floppy_speed = 0
 window_width = 800
 window_height = 600
+window_hidden = 1
+automatic_input_grab = 0
+audio_driver = null
 EOF
 
 echo "=== BFS vs PFS3 Benchmark (FS-UAE 68040) ==="
+echo "Evidence directory: $BENCH_DIR"
 echo "Timeout: ${TIMEOUT}s"
 echo ""
 
-FSEMU_AUDIO_DRIVER=null fs-uae "$CFG" &
+FSEMU_AUDIO_DRIVER=null fs-uae "$CFG" >"$EMULATOR_LOG" 2>&1 &
 PID=$!
 (
     sleep "$TIMEOUT"
@@ -74,11 +82,11 @@ PID=$!
 ) &
 TIMER_PID=$!
 
-# Wait for completion (check for pfs3.txt = last result written)
+# Wait for a marker written only after both checked workload runs completed.
 for _ in $(seq 1 "$TIMEOUT"); do
     sleep 1
-    if [ -f "$WB/Results/pfs3.txt" ] && [ -s "$WB/Results/pfs3.txt" ]; then
-        sleep 2  # let it finish writing
+    if [ -f "$COMPLETION" ]; then
+        sleep 1
         if kill "$PID" 2>/dev/null; then :; fi
         break
     fi
@@ -91,30 +99,26 @@ TIMER_PID=
 if wait "$PID" 2>/dev/null; then :; fi
 PID=
 trap - EXIT
-rm -f "$CFG"
 
 # ── Show results ──────────────────────────────────────────────
 echo ""
-result_status=0
-if [ -f "$WB/Results/info.txt" ] && [ -s "$WB/Results/info.txt" ]; then
+if [ -f "$RESULTS/info.txt" ] && [ -s "$RESULTS/info.txt" ]; then
     echo "=== Machine Info ==="
-    cat "$WB/Results/info.txt"
+    cat "$RESULTS/info.txt"
 fi
 echo ""
-if [ -f "$WB/Results/bfs.txt" ] && [ -s "$WB/Results/bfs.txt" ]; then
+if [ -f "$RESULTS/bfs.tsv" ] && [ -s "$RESULTS/bfs.tsv" ]; then
     echo "=== BFS Results ==="
-    cat "$WB/Results/bfs.txt"
+    cat "$RESULTS/bfs.tsv"
 else
     echo "ERROR: BFS benchmark did not complete" >&2
-    result_status=1
 fi
 echo ""
-if [ -f "$WB/Results/pfs3.txt" ] && [ -s "$WB/Results/pfs3.txt" ]; then
+if [ -f "$RESULTS/pfs3.tsv" ] && [ -s "$RESULTS/pfs3.tsv" ]; then
     echo "=== PFS3 Results ==="
-    cat "$WB/Results/pfs3.txt"
+    cat "$RESULTS/pfs3.tsv"
 else
     echo "ERROR: PFS3 benchmark did not complete" >&2
-    result_status=1
 fi
 
-exit "$result_status"
+"$SCRIPT_DIR/verify-bench-results.sh" "$BENCH_DIR"

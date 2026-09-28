@@ -1,10 +1,10 @@
 #!/bin/bash
-# Build a benchmark HDF image for BFS vs PFS3 comparison.
+# Build isolated HDF images for a checked BFS vs PFS3 comparison.
 #
 # Layout:
-#   DH0: Directory filesystem (boot) — WB3.2 + DiskSpeed + benchmark script
-#   DH1: RDB HDF with BFS partition (256MB, pre-formatted)
-#   DH2: RDB HDF with PFS3 partition (256MB, formatted on first boot)
+#   DH0: Directory filesystem (boot) — WB3.2 + neutral benchmark program
+#   DH1: RDB HDF with BFS partition (255.5 MiB, pre-formatted)
+#   DH2: RDB HDF with PFS3 partition (255.5 MiB, formatted on first boot)
 #
 # For real hardware (CF card), combine into single RDB image.
 # For FS-UAE testing, use run-bench.sh which mounts them separately.
@@ -12,51 +12,55 @@
 # Usage:
 #   ./emulator-test/build-bench-image.sh
 #
-# Output:
-#   emulator-test/bench-bfs.hdf   — BFS test partition
-#   emulator-test/bench-pfs3.hdf  — PFS3 test partition
-#   emulator-test/.bench-wb/      — Boot directory (WB + scripts)
+# Output: a private directory below build/benchmark, or BFS_BENCH_RUN_DIR.
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
 PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+BENCH_DIR="${BFS_BENCH_RUN_DIR:-$PROJECT_DIR/build/benchmark}"
 
 ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
 ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
 PFS3="${BFS_PFS3_HANDLER:-$SCRIPT_DIR/.cache/pfs3aio}"
-DISKSPEED="${BFS_DISKSPEED:-$SCRIPT_DIR/.cache/DiskSpeed}"
+BENCH_ORDER="${BFS_BENCH_ORDER:-bfs-first}"
+case "$BENCH_ORDER" in
+    bfs-first|pfs3-first) ;;
+    *) echo "ERROR: BFS_BENCH_ORDER must be bfs-first or pfs3-first" >&2; exit 2 ;;
+esac
 
 # ── Prerequisites ─────────────────────────────────────────────
 [ -f "$ROM" ] || { echo "ERROR: ROM not found: $ROM (set BFS_ROM_FILE)"; exit 1; }
 [ -f "$PFS3" ] || { echo "ERROR: pfs3aio not found: $PFS3 (set BFS_PFS3_HANDLER)"; exit 1; }
-[ -f "$DISKSPEED" ] || { echo "ERROR: DiskSpeed not found: $DISKSPEED (set BFS_DISKSPEED)"; exit 1; }
 [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
 command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
 [ -f "$PROJECT_DIR/build/amiga/bfshandler" ] || { echo "ERROR: run 'make amiga' first"; exit 1; }
+[ -f "$PROJECT_DIR/build/amiga/fs-compare-bench" ] || { echo "ERROR: run 'make amiga-fs-compare-bench' first"; exit 1; }
 [ -f "$PROJECT_DIR/build/host/bfs" ] || { echo "ERROR: run 'make build/host/bfs' first"; exit 1; }
 
 echo "=== Building BFS vs PFS3 Benchmark ==="
 
 # ── Setup boot directory ──────────────────────────────────────
-WB="$SCRIPT_DIR/.bench-wb"
-rm -rf "$WB"
+WB="$BENCH_DIR/system"
+[ ! -e "$WB" ] || { echo "ERROR: refusing to overwrite $WB" >&2; exit 2; }
+mkdir -p "$BENCH_DIR"
 mkdir -p "$WB/C" "$WB/L" "$WB/Libs" "$WB/S" "$WB/Devs" "$WB/Results"
 
 cp -R "$ASSETS/C/." "$WB/C/"
 if [ -d "$ASSETS/L" ]; then cp -R "$ASSETS/L/." "$WB/L/"; fi
 if [ -d "$ASSETS/Libs" ]; then cp -R "$ASSETS/Libs/." "$WB/Libs/"; fi
-cp "$DISKSPEED" "$WB/C/DiskSpeed"
+cp "$PROJECT_DIR/build/amiga/fs-compare-bench" "$WB/C/fs-compare-bench"
 cp "$PROJECT_DIR/build/amiga/bfshandler" "$WB/L/"
 cp "$PFS3" "$WB/L/pfs3aio"
 
 # ── Startup-Sequence ──────────────────────────────────────────
 cat > "$WB/S/Startup-Sequence" << 'AMIGA'
-; BFS vs PFS3 DiskSpeed Benchmark
+; BFS vs PFS3 checked AmigaDOS benchmark
+FailAt 21
 Wait 3
 
 Echo ""
 Echo "============================================"
-Echo "  BFS vs PFS3 DiskSpeed Benchmark"
+Echo "  BFS vs PFS3 Filesystem Benchmark"
 Echo "============================================"
 Echo ""
 
@@ -70,20 +74,25 @@ Info >>SYS:Results/info.txt
 
 ; Format PFS3 partition
 Echo "Formatting DH2: (PFS3)..."
-Format DRIVE DH2: NAME PFSTest NOICONS QUICK <NIL: >NIL:
+C:Format DRIVE DH2: NAME PFSTest NOICONS QUICK <NIL: >SYS:Results/format-pfs3.txt
 Wait 2
+Info >SYS:Results/info-after-format.txt
 
 Echo ""
-Echo "--- BFS Benchmark (DH1:) ---"
-Echo ""
-C:DiskSpeed DRIVE=DH1: ALL >SYS:Results/bfs.txt
-Type SYS:Results/bfs.txt
+AMIGA
 
-Echo ""
-Echo "--- PFS3 Benchmark (DH2:) ---"
-Echo ""
-C:DiskSpeed DRIVE=DH2: ALL >SYS:Results/pfs3.txt
-Type SYS:Results/pfs3.txt
+if [ "$BENCH_ORDER" = bfs-first ]; then
+    order=(bfs pfs3)
+else
+    order=(pfs3 bfs)
+fi
+for filesystem in "${order[@]}"; do
+    if [ "$filesystem" = bfs ]; then drive=DH1; else drive=DH2; fi
+    printf 'Echo "--- %s Benchmark (%s:) ---"\nC:fs-compare-bench %s: >SYS:Results/%s.tsv\nEcho "AFTER_%s" >SYS:Results/phase-%s.txt\n' \
+        "$filesystem" "$drive" "$drive" "$filesystem" "$filesystem" "$filesystem" >>"$WB/S/Startup-Sequence"
+done
+cat >> "$WB/S/Startup-Sequence" <<'AMIGA'
+Echo "BFS-PFS3-COMPLETE" >SYS:Results/complete.txt
 
 Echo ""
 Echo "============================================"
@@ -93,46 +102,47 @@ Echo "============================================"
 AMIGA
 
 echo "  Boot directory: $WB"
+echo "  Order: $BENCH_ORDER"
 
 # ── Create BFS HDF (256MB) ────────────────────────────────────
-echo "Creating BFS partition (256MB)..."
-BFS_HDF="$SCRIPT_DIR/bench-bfs.hdf"
-rm -f "$BFS_HDF"
+echo "Creating BFS partition (255.5 MiB)..."
+BFS_HDF="$BENCH_DIR/bench-bfs.hdf"
+[ ! -e "$BFS_HDF" ] || { echo "ERROR: refusing to overwrite $BFS_HDF" >&2; exit 2; }
 rdbtool -f "$BFS_HDF" create size=256Mi cyls=512 heads=16 secs=32 \
     + init \
-    + add name=DH1 start=2 end=511 dostype=0x42465300 bootable=False \
+    + add name=DH1 start=2 end=1023 dostype=0x42465300 bootable=False \
     + fsadd "$PROJECT_DIR/build/amiga/bfshandler" version=1.0 dostype=0x42465300 >/dev/null 2>&1
 
 # Pre-format BFS
 BFS_OFFSET=$(( 2 * 16 * 32 * 512 ))
-BFS_BLOCKS=$(( (510 * 16 * 32 * 512) / 4096 ))
+BFS_BLOCKS=$(( (1022 * 16 * 32 * 512) / 4096 ))
 PART_FILE=$(mktemp)
 trap 'rm -f "$PART_FILE"' EXIT
 dd if=/dev/zero of="$PART_FILE" bs=4096 count="$BFS_BLOCKS" status=none
-"$PROJECT_DIR/build/host/bfs" format "$PART_FILE" --label BFSTest >/dev/null
+"$PROJECT_DIR/build/host/bfs" format "$PART_FILE" --label BFSTest --block-size 4096 >/dev/null
 dd if="$PART_FILE" of="$BFS_HDF" bs=512 seek=$(( BFS_OFFSET / 512 )) conv=notrunc status=none
 rm -f "$PART_FILE"
 trap - EXIT
 echo "  BFS: $BFS_HDF ($(du -h "$BFS_HDF" | cut -f1))"
 
 # ── Create PFS3 HDF (256MB) ──────────────────────────────────
-echo "Creating PFS3 partition (256MB)..."
-PFS_HDF="$SCRIPT_DIR/bench-pfs3.hdf"
-rm -f "$PFS_HDF"
+echo "Creating PFS3 partition (255.5 MiB)..."
+PFS_HDF="$BENCH_DIR/bench-pfs3.hdf"
+[ ! -e "$PFS_HDF" ] || { echo "ERROR: refusing to overwrite $PFS_HDF" >&2; exit 2; }
 rdbtool -f "$PFS_HDF" create size=256Mi cyls=512 heads=16 secs=32 \
     + init \
-    + add name=DH2 start=2 end=511 dostype=0x50465303 bootable=False \
-    + fsadd "$PFS3" version=19.2 dostype=0x50465303 >/dev/null 2>&1
+    + add name=DH2 start=2 end=1023 dostype=0x50465303 bootable=False \
+    + fsadd "$PFS3" version="${BFS_PFS3_VERSION:-20.0}" dostype=0x50465303 >/dev/null 2>&1
 echo "  PFS3: $PFS_HDF ($(du -h "$PFS_HDF" | cut -f1))"
 
 # ── Done ──────────────────────────────────────────────────────
 echo ""
 echo "=== Done ==="
 echo ""
-echo "Test in FS-UAE:  ./emulator-test/run-bench.sh"
+echo "Test in FS-UAE: BFS_BENCH_RUN_DIR=$BENCH_DIR ./emulator-test/run-bench.sh"
 echo ""
 echo "For real hardware, create a single RDB image:"
 echo "  Partition 1: FFS boot (copy $WB contents)"
-echo "  Partition 2: BFS 256MB (DosType 0x42465300)"
-echo "  Partition 3: PFS3 256MB (DosType 0x50465303)"
+echo "  Partition 2: BFS 255.5 MiB (DosType 0x42465300)"
+echo "  Partition 3: PFS3 255.5 MiB (DosType 0x50465303)"
 echo "  Add bfshandler + pfs3aio to RDB filesystem entries"

@@ -62,7 +62,7 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release \
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
 	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
-	fault-qualification fault-qualification-verify
+	fault-qualification fault-qualification-verify amiga-fs-compare-bench
 
 .PHONY: fuse
 
@@ -342,6 +342,14 @@ emulator-test-ci: ci-test
 
 emulator-setup:
 	@tools/install-aros-rom.sh build/emulator/aros
+
+amiga-fs-compare-bench:
+	@mkdir -p $(BUILD_AMIGA)
+	$(AMIGA_CC) -std=c99 $(AMIGA_WARNINGS) -noixemul -m68020 -O2 \
+		-I$(AMIGA_PREFIX)/ndk-include \
+		-B$(AMIGA_PREFIX)/libnix/lib/ \
+		-L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib \
+		-o $(BUILD_AMIGA)/fs-compare-bench tools/fs-compare-bench.c -lamiga
 
 amiga-bench:
 	@mkdir -p $(BUILD_AMIGA)
