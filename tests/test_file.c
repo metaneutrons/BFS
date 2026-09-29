@@ -313,8 +313,8 @@ static void test_append_unaligned_eof_multiblock(void)
         prefix[i] = (uint8_t)(i * 7u + 0x40u);
     for (uint32_t i = 0; i < sizeof(appended); i++)
         appended[i] = (uint8_t)(i * 11u + (i / BLK_SIZE) * 29u + 3u);
-    memcpy(expected, prefix, sizeof(prefix));
-    memcpy(expected + sizeof(prefix), appended, sizeof(appended));
+    for (uint32_t i = 0; i < sizeof(expected); i++)
+        expected[i] = i < sizeof(prefix) ? prefix[i] : appended[i - sizeof(prefix)];
 
     bfs_file_t file;
     TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
@@ -371,6 +371,24 @@ static void test_checksum_append_uses_per_block_extents(void)
     teardown(fs);
 }
 
+static void test_batch_append_checks_scratch_capacity(void)
+{
+    bfs_fs_t *fs = setup();
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "capacity", 8, &ino), BFS_OK);
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    uint8_t data[2u * BLK_SIZE] = {0};
+    uint32_t capacity = fs->scratch_capacity;
+    TEST_ASSERT_EQ(capacity, BLK_SIZE);
+    fs->scratch_capacity = capacity - 1;
+    TEST_ASSERT_EQ(bfs_file_append(&file, data, sizeof(data)), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(file.size, 0);
+    fs->scratch_capacity = capacity;
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+    teardown(fs);
+}
+
 static void test_unlinked_open_file_lifetime_and_mount_recovery(void)
 {
     bfs_fs_t *fs = setup();
@@ -421,5 +439,6 @@ TEST_SUITE_BEGIN("File I/O")
     TEST_RUN(test_batch_append_single_contiguous_extent);
     TEST_RUN(test_append_unaligned_eof_multiblock);
     TEST_RUN(test_checksum_append_uses_per_block_extents);
+    TEST_RUN(test_batch_append_checks_scratch_capacity);
     TEST_RUN(test_unlinked_open_file_lifetime_and_mount_recovery);
 TEST_SUITE_END()

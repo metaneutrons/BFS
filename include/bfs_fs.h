@@ -67,6 +67,9 @@ typedef struct bfs_fs {
     uint32_t           pending_count;
     uint32_t           pending_frees_cap; /* allocated capacity; tests may lower it */
     uint8_t           *scratch;        /* pre-allocated block buffer for file I/O */
+    /* Set by fs.c and checked by file.c before copying a full block. */
+    // cppcheck-suppress unusedStructMember
+    uint32_t           scratch_capacity; /* allocated bytes in scratch */
     bfs_fs_lock_t         lock;
 } bfs_fs_t;
 

@@ -896,6 +896,96 @@ static void test_allocator_refill_failure_can_retry_free(void)
     unlink(TEST_IMG);
 }
 
+static bool append_file_state_matches(bfs_fs_t *fs, uint32_t ino,
+                                      uint64_t expected_size,
+                                      bool check_extent_root,
+                                      bfs_blk_t expected_extent_root,
+                                      bool check_block_one_hole,
+                                      const uint8_t *expected_data,
+                                      uint32_t expected_data_size)
+{
+    bfs_file_t file;
+    bfs_blk_t mapped;
+    uint8_t actual[4u * BLK_SIZE];
+    if (expected_data_size > sizeof(actual) ||
+        bfs_file_open(&file, fs, ino) != BFS_OK || file.size != expected_size)
+        return false;
+    if (check_extent_root && file.extents.tree.root != expected_extent_root)
+        return false;
+    if (check_block_one_hole &&
+        bfs_extent_lookup(&file.extents, 1, &mapped) != BFS_ERR_NOTFOUND)
+        return false;
+    if (bfs_file_read(&file, actual, sizeof(actual)) != (int32_t)expected_data_size)
+        return false;
+    return expected_data_size == 0 ||
+           (expected_data && memcmp(actual, expected_data, expected_data_size) == 0);
+}
+
+static bool append_fsck_has_no_leaks(bfs_fs_t *fs)
+{
+    bfs_fsck_report_t report;
+    return fs->pending_count == 0 &&
+           bfs_fs_check(fs, false, &report) == BFS_OK &&
+           report.errors == 0 && report.leaked_blocks == 0;
+}
+
+static bool append_sync_remount_matches_file(failing_bio_t *fb, bfs_fs_t *fs,
+                                              uint32_t ino, uint64_t expected_size,
+                                              bool check_extent_root,
+                                              bfs_blk_t expected_root,
+                                              bool check_block_one_hole,
+                                              const uint8_t *expected_data)
+{
+    if (bfs_fs_sync(fs) != BFS_OK || !append_fsck_has_no_leaks(fs) ||
+        bfs_fs_unmount(fs) != BFS_OK)
+        return false;
+    if (bfs_fs_mount(fs, &fb->base) != BFS_OK ||
+        !append_file_state_matches(fs, ino, expected_size, check_extent_root,
+                                   expected_root, check_block_one_hole,
+                                   expected_data, (uint32_t)expected_size) ||
+        !append_fsck_has_no_leaks(fs))
+        return false;
+    return bfs_fs_unmount(fs) == BFS_OK;
+}
+
+static bool setup_append_file(const char *volume_name,
+                              const uint8_t *initial_data,
+                              uint32_t initial_size, bfs_bio_t **bio_out,
+                              failing_bio_t *fb, bfs_fs_t *fs,
+                              uint32_t *ino_out, bfs_file_t *file)
+{
+    *bio_out = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    if (!*bio_out || bfs_fs_format(*bio_out, volume_name, 0) != BFS_OK)
+        return false;
+    init_failing_bio(fb, *bio_out);
+    if (bfs_fs_mount(fs, &fb->base) != BFS_OK ||
+        bfs_fs_create_file(fs, BFS_ROOT_INO, "file", 4, ino_out) != BFS_OK)
+        return false;
+    if (initial_size > 0 &&
+        (bfs_file_open(file, fs, *ino_out) != BFS_OK ||
+         bfs_file_write(file, initial_data, initial_size) != (int32_t)initial_size))
+        return false;
+    return bfs_fs_sync(fs) == BFS_OK &&
+           bfs_file_open(file, fs, *ino_out) == BFS_OK;
+}
+
+static bool append_fails_extent_write_after_payloads(failing_bio_t *fb,
+                                                      bfs_file_t *file,
+                                                      const uint8_t *data,
+                                                      uint32_t block_count,
+                                                      failing_bio_t *extent_fault)
+{
+    init_failing_bio(extent_fault, &fb->base);
+    extent_fault->fail_all_writes = true;
+    file->extents.tree.bio = &extent_fault->base;
+    fb->watched_data = data;
+    fb->watched_data_blocks = block_count;
+    int32_t written = bfs_file_append(file, data, block_count * BLK_SIZE);
+    return written == BFS_ERR_IO &&
+           fb->watched_data_write_attempts == block_count &&
+           fb->failed_writes == 0 && extent_fault->failed_writes == 1;
+}
+
 static void test_short_write_publishes_inode(void)
 {
     uint8_t data[3u * BLK_SIZE], actual[sizeof(data)];
@@ -944,24 +1034,18 @@ static void test_short_write_publishes_inode(void)
 
 static void test_append_data_write_failure_publishes_prefix(void)
 {
-    uint8_t data[4u * BLK_SIZE], actual[sizeof(data)];
+    uint8_t data[4u * BLK_SIZE];
     for (uint32_t block = 0; block < 4; block++)
         memset(data + (size_t)block * BLK_SIZE, (int)(0x41u + block), BLK_SIZE);
 
     unlink(TEST_IMG);
-    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
-    TEST_ASSERT(bio != NULL);
-    TEST_ASSERT_EQ(bfs_fs_format(bio, "AppendShortWrite", 0), BFS_OK);
-
+    bfs_bio_t *bio;
     failing_bio_t fb;
-    init_failing_bio(&fb, bio);
     bfs_fs_t fs;
-    TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
     uint32_t ino;
-    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "file", 4, &ino), BFS_OK);
-    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     bfs_file_t file;
-    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT(setup_append_file("AppendShortWrite", NULL, 0, &bio, &fb,
+                                  &fs, &ino, &file));
     TEST_ASSERT_EQ(file.size, 0);
 
     /* Fail the third matching full-block data write, after two completed blocks. */
@@ -973,66 +1057,38 @@ static void test_append_data_write_failure_publishes_prefix(void)
     TEST_ASSERT_EQ(fb.watched_data_write_attempts, 3);
     TEST_ASSERT_EQ(fb.failed_writes, 1);
 
+    TEST_ASSERT(fb.watched_data == data);
+    TEST_ASSERT_EQ(fb.watched_data_blocks, 4);
+    TEST_ASSERT_EQ(fb.data_writes_until_failure, 0);
     /* Turn off payload matching before checking or syncing the filesystem. */
     fb.watched_data = NULL;
-    fb.watched_data_blocks = 0;
-    fb.data_writes_until_failure = 0;
     TEST_ASSERT_EQ(fs.recovery_error, BFS_OK);
     TEST_ASSERT_EQ(file.extents.tree.free_sink_err, BFS_OK);
+    TEST_ASSERT(append_file_state_matches(&fs, ino, 2u * BLK_SIZE, false,
+                                          BFS_BLK_NULL, false, data,
+                                          2u * BLK_SIZE));
 
-    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
-    TEST_ASSERT_EQ(file.size, (uint64_t)(2u * BLK_SIZE));
-    TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)),
-                   (int32_t)(2u * BLK_SIZE));
-    TEST_ASSERT_MEM_EQ(actual, data, 2u * BLK_SIZE);
-
-    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
-    TEST_ASSERT_EQ(fs.pending_count, 0);
-    bfs_fsck_report_t report;
-    TEST_ASSERT_EQ(bfs_fs_check(&fs, false, &report), BFS_OK);
-    TEST_ASSERT_EQ(report.errors, 0);
-    TEST_ASSERT_EQ(report.leaked_blocks, 0);
-
-    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
-    TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
-    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
-    TEST_ASSERT_EQ(file.size, (uint64_t)(2u * BLK_SIZE));
-    TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)),
-                   (int32_t)(2u * BLK_SIZE));
-    TEST_ASSERT_MEM_EQ(actual, data, 2u * BLK_SIZE);
-    TEST_ASSERT_EQ(bfs_fs_check(&fs, false, &report), BFS_OK);
-    TEST_ASSERT_EQ(report.errors, 0);
-    TEST_ASSERT_EQ(report.leaked_blocks, 0);
-
-    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    TEST_ASSERT(append_sync_remount_matches_file(
+        &fb, &fs, ino, 2u * BLK_SIZE, false, BFS_BLK_NULL, false, data));
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }
 
 static void test_append_extent_write_failure_preserves_old_file(void)
 {
-    uint8_t original[BLK_SIZE], data[4u * BLK_SIZE], actual[BLK_SIZE];
+    uint8_t original[BLK_SIZE], data[4u * BLK_SIZE];
     memset(original, 0x29, sizeof(original));
     for (uint32_t block = 0; block < 4; block++)
         memset(data + (size_t)block * BLK_SIZE, (int)(0x51u + block), BLK_SIZE);
 
     unlink(TEST_IMG);
-    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
-    TEST_ASSERT(bio != NULL);
-    TEST_ASSERT_EQ(bfs_fs_format(bio, "AppendMetaFail", 0), BFS_OK);
-
+    bfs_bio_t *bio;
     failing_bio_t fb;
-    init_failing_bio(&fb, bio);
     bfs_fs_t fs;
-    TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
     uint32_t ino;
-    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "file", 4, &ino), BFS_OK);
     bfs_file_t file;
-    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
-    TEST_ASSERT_EQ(bfs_file_write(&file, original, sizeof(original)), BLK_SIZE);
-    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
-
-    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT(setup_append_file("AppendMetaFail", original, sizeof(original),
+                                  &bio, &fb, &fs, &ino, &file));
     uint64_t original_size = file.size;
     bfs_blk_t original_extent_root = file.extents.tree.root;
     TEST_ASSERT_EQ(original_size, (uint64_t)BLK_SIZE);
@@ -1042,56 +1098,22 @@ static void test_append_extent_write_failure_preserves_old_file(void)
      * still use the filesystem BIO, whose payload matcher proves the batch data
      * writes completed before the extent insert failed. */
     failing_bio_t extent_fault;
-    init_failing_bio(&extent_fault, &fb.base);
-    extent_fault.fail_all_writes = true;
-    file.extents.tree.bio = &extent_fault.base;
-    fb.watched_data = data;
-    fb.watched_data_blocks = 4;
-
-    int32_t written = bfs_file_append(&file, data, sizeof(data));
-    TEST_ASSERT_EQ(written, BFS_ERR_IO);
-    TEST_ASSERT_EQ(fb.watched_data_write_attempts, 4);
-    TEST_ASSERT_EQ(fb.failed_writes, 0);
-    TEST_ASSERT_EQ(extent_fault.failed_writes, 1);
+    TEST_ASSERT(append_fails_extent_write_after_payloads(&fb, &file, data, 4,
+                                                         &extent_fault));
     TEST_ASSERT_EQ(file.extents.tree.root, original_extent_root);
     TEST_ASSERT_EQ(file.size, original_size);
     TEST_ASSERT_EQ(file.extents.tree.free_sink_err, BFS_OK);
     TEST_ASSERT_EQ(fs.recovery_error, BFS_OK);
 
+    TEST_ASSERT(fb.watched_data == data);
+    TEST_ASSERT_EQ(fb.watched_data_blocks, 4);
     fb.watched_data = NULL;
-    fb.watched_data_blocks = 0;
-    extent_fault.fail_all_writes = false;
+    TEST_ASSERT(append_file_state_matches(&fs, ino, original_size, true,
+                                          original_extent_root, true, original,
+                                          BLK_SIZE));
 
-    bfs_file_t verify;
-    TEST_ASSERT_EQ(bfs_file_open(&verify, &fs, ino), BFS_OK);
-    TEST_ASSERT_EQ(verify.size, original_size);
-    TEST_ASSERT_EQ(verify.extents.tree.root, original_extent_root);
-    TEST_ASSERT_EQ(bfs_extent_lookup(&verify.extents, 1, &(bfs_blk_t){0}),
-                   BFS_ERR_NOTFOUND);
-    TEST_ASSERT_EQ(bfs_file_read(&verify, actual, sizeof(actual)), BLK_SIZE);
-    TEST_ASSERT_MEM_EQ(actual, original, sizeof(original));
-
-    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
-    TEST_ASSERT_EQ(fs.pending_count, 0);
-    bfs_fsck_report_t report;
-    TEST_ASSERT_EQ(bfs_fs_check(&fs, false, &report), BFS_OK);
-    TEST_ASSERT_EQ(report.errors, 0);
-    TEST_ASSERT_EQ(report.leaked_blocks, 0);
-
-    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
-    TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
-    TEST_ASSERT_EQ(bfs_file_open(&verify, &fs, ino), BFS_OK);
-    TEST_ASSERT_EQ(verify.size, original_size);
-    TEST_ASSERT_EQ(verify.extents.tree.root, original_extent_root);
-    TEST_ASSERT_EQ(bfs_extent_lookup(&verify.extents, 1, &(bfs_blk_t){0}),
-                   BFS_ERR_NOTFOUND);
-    TEST_ASSERT_EQ(bfs_file_read(&verify, actual, sizeof(actual)), BLK_SIZE);
-    TEST_ASSERT_MEM_EQ(actual, original, sizeof(original));
-    TEST_ASSERT_EQ(bfs_fs_check(&fs, false, &report), BFS_OK);
-    TEST_ASSERT_EQ(report.errors, 0);
-    TEST_ASSERT_EQ(report.leaked_blocks, 0);
-
-    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    TEST_ASSERT(append_sync_remount_matches_file(
+        &fb, &fs, ino, original_size, true, original_extent_root, true, original));
     bfs_bio_close(bio);
     unlink(TEST_IMG);
 }

@@ -216,6 +216,7 @@ static bfs_err_t file_prepare_new_run(bfs_file_t *f, uint32_t len,
     const uint32_t bs = fs->bio->block_size;
     *run_count = 0;
 
+    if (fs->scratch_capacity < bs) return BFS_ERR_CORRUPT;
     if (f->extents.data_checksums || fs->has_snapshots ||
         f->offset != f->size || f->offset % bs != 0 || len / bs < 2)
         return BFS_OK;
@@ -265,9 +266,15 @@ static bfs_err_t file_write_allocated_run(bfs_file_t *f, const uint8_t *input,
 {
     bfs_fs_t *fs = f->fs;
     const uint32_t bs = fs->bio->block_size;
+    if (fs->scratch_capacity < bs) {
+        bfs_err_t cleanup = file_release_unmapped_run(fs, start, count);
+        return cleanup != BFS_OK ? cleanup : BFS_ERR_CORRUPT;
+    }
     uint32_t initialized = 0;
     bfs_err_t write_error = BFS_OK;
     for (; initialized < count; initialized++) {
+        /* The one-block scratch buffer is DMA-safe; the caller's input need
+         * not be. Capacity is checked before allocating the run. */
         memcpy(fs->scratch, input + (size_t)initialized * bs, bs);
         write_error = bfs_bio_write(fs->bio, start + initialized, fs->scratch);
         if (write_error != BFS_OK) break;

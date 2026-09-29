@@ -264,6 +264,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
 
     fs->scratch = malloc(bio->block_size);
     if (!fs->scratch) { err = BFS_ERR_NOMEM; goto fail; }
+    fs->scratch_capacity = bio->block_size;
 
     if (!read_only) {
         /* Open handles cannot survive a process crash. Reclaim their
@@ -272,6 +273,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
         if (err != BFS_OK) {
             free(fs->scratch);
             fs->scratch = NULL;
+            fs->scratch_capacity = 0;
             goto fail;
         }
         /* Resume any interrupted snapshot deletions. */
@@ -279,6 +281,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
         if (err != BFS_OK) {
             free(fs->scratch);
             fs->scratch = NULL;
+            fs->scratch_capacity = 0;
             goto fail;
         }
     }
@@ -288,6 +291,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
 fail:
     free(fs->scratch);
     fs->scratch = NULL;
+    fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
     fs->mounted = false;
@@ -503,6 +507,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
     if (fs->read_only) {
         free(fs->scratch);
         fs->scratch = NULL;
+        fs->scratch_capacity = 0;
         free(fs->pending_frees_dynamic);
         fs->pending_frees_dynamic = NULL;
         fs->mounted = false;
@@ -514,6 +519,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
         bfs_err_t recovery_error = fs->recovery_error;
         free(fs->scratch);
         fs->scratch = NULL;
+        fs->scratch_capacity = 0;
         free(fs->pending_frees_dynamic);
         fs->pending_frees_dynamic = NULL;
         fs->mounted = false;
@@ -528,6 +534,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
     }
     free(fs->scratch);
     fs->scratch = NULL;
+    fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
     fs->mounted = false;
@@ -541,6 +548,7 @@ void bfs_fs_abandon(bfs_fs_t *fs)
     if (!fs || !fs->mounted) return;
     free(fs->scratch);
     fs->scratch = NULL;
+    fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
     fs->mounted = false;
