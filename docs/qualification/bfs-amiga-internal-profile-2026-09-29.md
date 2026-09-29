@@ -19,11 +19,13 @@ free-space, extent and other trees remains unmeasured.
 ## Method and validity
 
 - Source before this debug-only change: `6d8a7a5f1c113ba402aeb780a0ec12a89fc2cd64`.
+  The first two evidence binaries were built from the tree committed as
+  `9f84249724e8c99b8af30a34709caf017695a86b`.
   The normal `make amiga` handler remains byte-identical to the prior comparison
   build, SHA-256 `09ad9eb7308b87ce5c112ba4f7ece786bff0d1a64d416b34f9f690987819a647`.
-  The separate `bfshandler-probe` binary has SHA-256
+  The separate `bfshandler-probe` binary used in the first two runs has SHA-256
   `acaa15b0e6c01d7158cde1187c24262af798c8aebfa292106aef494a72feb689`;
-  the guest profile tool has SHA-256
+  the guest profile tool used in those runs has SHA-256
   `244378e8784c496de6c774b1b55c664a284f8129ce93a82873d792680165cd34`.
 - Same host, FS-UAE A1200/68040, Kickstart/Workbench and 255.5 MiB BFS geometry
   as [the initial comparison](bfs-pfs3-performance-2026-09-28.md). Only BFS was
@@ -64,6 +66,14 @@ than overwrite. The previous API-phase profile found that `Write`, not
 separates device-service time from CPU time in the B-tree/allocator code.
 Overwriting follows file creation in both runs, so cache warmth is also a
 possible contributor to the time difference.
+
+A third fresh-image regression after the CI-driven, behavior-preserving code
+cleanup produced the same operation counts. It measured 10.387 s for fresh
+`Write` and 1.435 s for overwrite `Write`; its exact guest output is preserved
+below. The rebuilt debug handler has SHA-256
+`9cd34594dc113e3d43f66e4e1bd9132658858b748507d31b094e78df0e5ff33c`
+and the rebuilt guest tool has SHA-256
+`4ef37a8b78ec6cbb5eddb454a33c99604475aa32b105b150384e70ab69e8c2ac`.
 
 ## Reproduction and next decision
 
@@ -107,5 +117,6 @@ SHA-256 of committed guest evidence:
 | --- | --- |
 | Run 1 TSV | `d260f45e6c1c5c9712ccc326c1ddbaf8939184c6a94d3246568093d35365153e` |
 | Run 2 TSV | `13444f91c0e23f1e7ddf7b44e790426e93c6a748767042ae3f67c84ae51a32b1` |
-| Mount inventory (identical) | `459660577a72a25fa8134102a459f43d64aa14dc20bc691cdc101925bd485008` |
-| Completion marker (identical) | `8ba1a480268413cfe1a54ddfca2468de9f3e70bf697b7cc784fe6171c8aaebd6` |
+| Post-CI-fix regression TSV | `6dd0eb0c62162f62d93062ca021016b9a1b5317b5b4ce7cd53a22224d673a922` |
+| Mount inventory (identical across three runs) | `459660577a72a25fa8134102a459f43d64aa14dc20bc691cdc101925bd485008` |
+| Completion marker (identical across three runs) | `8ba1a480268413cfe1a54ddfca2468de9f3e70bf697b7cc784fe6171c8aaebd6` |

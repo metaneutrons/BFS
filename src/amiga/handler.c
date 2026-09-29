@@ -1330,7 +1330,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         bfs_perf_probe_snapshot_t snapshot = bfs_perf_probe_counters;
         snapshot.version = BFS_PERF_PROBE_VERSION;
         snapshot.size = (ULONG)sizeof(snapshot);
-        memcpy(target, &snapshot, sizeof(snapshot));
+        *target = snapshot;
         res1 = DOSTRUE;
         res2 = 0;
         break;

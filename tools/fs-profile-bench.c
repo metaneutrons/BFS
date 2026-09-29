@@ -287,6 +287,35 @@ static BOOL write_pass(BPTR handle, const char *write_metric,
     return flush_ok && close_ok;
 }
 
+static const char *profile_write_phase(const char *drive, const char *path,
+                                       BOOL internal_mode, BOOL overwrite,
+                                       bfs_perf_probe_snapshot_t *snapshot)
+{
+    BPTR handle = Open(path, overwrite ? MODE_READWRITE : MODE_NEWFILE);
+    const char *failure_phase = overwrite ? "overwrite-write" : "fresh-write";
+
+    if (!handle) return overwrite ? "overwrite-open" : "fresh-open";
+    if (overwrite && Seek(handle, 0, OFFSET_BEGINNING) < 0) {
+        Close(handle);
+        return "overwrite-seek";
+    }
+    if (internal_mode && !perf_reset(drive)) {
+        Close(handle);
+        return overwrite ? "perf-reset-overwrite" : "perf-reset-fresh";
+    }
+    if (!write_pass(handle,
+                    overwrite ? "OVERWRITE_WRITE_US" : "FRESH_WRITE_US",
+                    overwrite ? "OVERWRITE_FLUSH_US" : "FRESH_FLUSH_US",
+                    overwrite ? "OVERWRITE_CLOSE_US" : "FRESH_CLOSE_US",
+                    &failure_phase)) return failure_phase;
+    if (internal_mode) {
+        if (!perf_read(drive, snapshot))
+            return overwrite ? "perf-read-overwrite" : "perf-read-fresh";
+        emit_counter_rows(overwrite ? "OVERWRITE" : "FRESH", snapshot);
+    }
+    return NULL;
+}
+
 static int run(const char *drive, BOOL internal_mode)
 {
     char path[128];
@@ -305,37 +334,10 @@ static int run(const char *drive, BOOL internal_mode)
     }
     if (IoErr() != ERROR_OBJECT_NOT_FOUND) return fail("fresh-check");
 
-    handle = Open(path, MODE_NEWFILE);
-    if (!handle) return fail("fresh-open");
-    if (internal_mode && !perf_reset(drive)) {
-        Close(handle);
-        return fail("perf-reset-fresh");
-    }
-    phase = "fresh-write";
-    if (!write_pass(handle, "FRESH_WRITE_US", "FRESH_FLUSH_US",
-                    "FRESH_CLOSE_US", &phase)) return fail(phase);
-    if (internal_mode) {
-        if (!perf_read(drive, &snapshot)) return fail("perf-read-fresh");
-        emit_counter_rows("FRESH", &snapshot);
-    }
-
-    handle = Open(path, MODE_READWRITE);
-    if (!handle) return fail("overwrite-open");
-    if (Seek(handle, 0, OFFSET_BEGINNING) < 0) {
-        Close(handle);
-        return fail("overwrite-seek");
-    }
-    if (internal_mode && !perf_reset(drive)) {
-        Close(handle);
-        return fail("perf-reset-overwrite");
-    }
-    phase = "overwrite-write";
-    if (!write_pass(handle, "OVERWRITE_WRITE_US", "OVERWRITE_FLUSH_US",
-                    "OVERWRITE_CLOSE_US", &phase)) return fail(phase);
-    if (internal_mode) {
-        if (!perf_read(drive, &snapshot)) return fail("perf-read-overwrite");
-        emit_counter_rows("OVERWRITE", &snapshot);
-    }
+    phase = profile_write_phase(drive, path, internal_mode, FALSE, &snapshot);
+    if (phase) return fail(phase);
+    phase = profile_write_phase(drive, path, internal_mode, TRUE, &snapshot);
+    if (phase) return fail(phase);
 
     handle = Open(path, MODE_OLDFILE);
     if (!handle) return fail("read-open");
@@ -367,7 +369,6 @@ static int run(const char *drive, BOOL internal_mode)
 
 int main(int argc, char **argv)
 {
-    ULONG index;
     int result;
     BOOL internal_mode = FALSE;
 
@@ -390,6 +391,7 @@ int main(int argc, char **argv)
     if (!expected || !received) {
         result = fail("allocation");
     } else {
+        ULONG index;
         for (index = 0; index < BUFFER_BYTES; index++)
             expected[index] = (UBYTE)((index * 31UL + 17UL) & 0xff);
         result = run(argv[1], internal_mode);
