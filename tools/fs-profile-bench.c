@@ -8,6 +8,8 @@
 #include <proto/dos.h>
 #include <proto/exec.h>
 
+#include "perf_probe.h"
+
 #define BUFFER_BYTES 65536UL
 #define FILE_BYTES (8UL * 1024UL * 1024UL)
 #define WRITE_COUNT (FILE_BYTES / BUFFER_BYTES)
@@ -23,6 +25,16 @@ static ULONG text_length(const char *value)
     ULONG length = 0;
     while (value[length]) length++;
     return length;
+}
+
+static BOOL text_equal(const char *first, const char *second)
+{
+    ULONG index = 0;
+    while (first[index] && second[index]) {
+        if (first[index] != second[index]) return FALSE;
+        index++;
+    }
+    return first[index] == second[index];
 }
 
 static void copy_bytes(void *destination, const void *source, ULONG length)
@@ -148,6 +160,43 @@ static BOOL valid_drive(const char *drive)
     return TRUE;
 }
 
+static BOOL perf_reset(const char *drive)
+{
+    struct MsgPort *port = DeviceProc(drive);
+    if (!port) return FALSE;
+    return DoPkt(port, BFS_ACTION_PERF_RESET, 0, 0, 0, 0, 0) != 0;
+}
+
+static BOOL perf_read(const char *drive, bfs_perf_probe_snapshot_t *snapshot)
+{
+    struct MsgPort *port = DeviceProc(drive);
+    if (!port) return FALSE;
+    snapshot->version = 0;
+    snapshot->size = 0;
+    if (!DoPkt(port, BFS_ACTION_PERF_READ, (LONG)snapshot,
+               (LONG)sizeof(*snapshot), 0, 0, 0)) return FALSE;
+    return snapshot->version == BFS_PERF_PROBE_VERSION &&
+           snapshot->size == (ULONG)sizeof(*snapshot);
+}
+
+static void emit_counter_rows(const char *prefix,
+                              const bfs_perf_probe_snapshot_t *snapshot)
+{
+    if (text_equal(prefix, "FRESH")) {
+        metric("FRESH_BIO_READS", snapshot->bio_read_calls);
+        metric("FRESH_BIO_WRITES", snapshot->bio_write_calls);
+        metric("FRESH_BIO_UPDATES", snapshot->bio_update_calls);
+        metric("FRESH_FREESPACE_ALLOCS", snapshot->freespace_alloc_calls);
+        metric("FRESH_EXTENT_MAPS", snapshot->extent_map_calls);
+    } else {
+        metric("OVERWRITE_BIO_READS", snapshot->bio_read_calls);
+        metric("OVERWRITE_BIO_WRITES", snapshot->bio_write_calls);
+        metric("OVERWRITE_BIO_UPDATES", snapshot->bio_update_calls);
+        metric("OVERWRITE_FREESPACE_ALLOCS", snapshot->freespace_alloc_calls);
+        metric("OVERWRITE_EXTENT_MAPS", snapshot->extent_map_calls);
+    }
+}
+
 static BOOL timed_writes(BPTR handle, unsigned long long *duration,
                          const char **failure_phase)
 {
@@ -238,7 +287,7 @@ static BOOL write_pass(BPTR handle, const char *write_metric,
     return flush_ok && close_ok;
 }
 
-static int run(const char *drive)
+static int run(const char *drive, BOOL internal_mode)
 {
     char path[128];
     BPTR handle, lock;
@@ -246,6 +295,7 @@ static int run(const char *drive)
     unsigned long long read_us;
     ULONG offset;
     const char *phase;
+    bfs_perf_probe_snapshot_t snapshot;
 
     if (!make_path(path, sizeof(path), drive, "fsprofile.bin")) return fail("path");
     lock = Lock(path, ACCESS_READ);
@@ -257,9 +307,17 @@ static int run(const char *drive)
 
     handle = Open(path, MODE_NEWFILE);
     if (!handle) return fail("fresh-open");
+    if (internal_mode && !perf_reset(drive)) {
+        Close(handle);
+        return fail("perf-reset-fresh");
+    }
     phase = "fresh-write";
     if (!write_pass(handle, "FRESH_WRITE_US", "FRESH_FLUSH_US",
                     "FRESH_CLOSE_US", &phase)) return fail(phase);
+    if (internal_mode) {
+        if (!perf_read(drive, &snapshot)) return fail("perf-read-fresh");
+        emit_counter_rows("FRESH", &snapshot);
+    }
 
     handle = Open(path, MODE_READWRITE);
     if (!handle) return fail("overwrite-open");
@@ -267,9 +325,17 @@ static int run(const char *drive)
         Close(handle);
         return fail("overwrite-seek");
     }
+    if (internal_mode && !perf_reset(drive)) {
+        Close(handle);
+        return fail("perf-reset-overwrite");
+    }
     phase = "overwrite-write";
     if (!write_pass(handle, "OVERWRITE_WRITE_US", "OVERWRITE_FLUSH_US",
                     "OVERWRITE_CLOSE_US", &phase)) return fail(phase);
+    if (internal_mode) {
+        if (!perf_read(drive, &snapshot)) return fail("perf-read-overwrite");
+        emit_counter_rows("OVERWRITE", &snapshot);
+    }
 
     handle = Open(path, MODE_OLDFILE);
     if (!handle) return fail("read-open");
@@ -303,9 +369,13 @@ int main(int argc, char **argv)
 {
     ULONG index;
     int result;
+    BOOL internal_mode = FALSE;
 
-    emit("FS_PROFILE_BENCH\t1\n");
-    if (argc != 2 || !argv[1] || !*argv[1]) return fail("usage");
+    if (argc == 3 && argv[2] && text_equal(argv[2], "internal"))
+        internal_mode = TRUE;
+    if (internal_mode) emit("FS_INTERNAL_PROFILE\t1\n");
+    else emit("FS_PROFILE_BENCH\t1\n");
+    if ((argc != 2 && !internal_mode) || !argv[1] || !*argv[1]) return fail("usage");
     if (!valid_drive(argv[1])) return fail("drive");
     emit("DRIVE\t");
     emit(argv[1]);
@@ -322,7 +392,7 @@ int main(int argc, char **argv)
     } else {
         for (index = 0; index < BUFFER_BYTES; index++)
             expected[index] = (UBYTE)((index * 31UL + 17UL) & 0xff);
-        result = run(argv[1]);
+        result = run(argv[1], internal_mode);
     }
     if (received) FreeVec(received);
     if (expected) FreeVec(expected);

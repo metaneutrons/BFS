@@ -22,6 +22,7 @@ BENCH_DIR="${BFS_BENCH_RUN_DIR:-$PROJECT_DIR/build/benchmark}"
 ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
 ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
 PFS3="${BFS_PFS3_HANDLER:-$SCRIPT_DIR/.cache/pfs3aio}"
+HANDLER="${BFS_BENCH_HANDLER_FILE:-$PROJECT_DIR/build/amiga/bfshandler}"
 BENCH_ORDER="${BFS_BENCH_ORDER:-bfs-first}"
 BENCH_MODE="${BFS_BENCH_MODE:-compare}"
 case "$BENCH_ORDER" in
@@ -29,15 +30,22 @@ case "$BENCH_ORDER" in
     *) echo "ERROR: BFS_BENCH_ORDER must be bfs-first or pfs3-first" >&2; exit 2 ;;
 esac
 case "$BENCH_MODE" in
-    compare|profile) ;;
-    *) echo "ERROR: BFS_BENCH_MODE must be compare or profile" >&2; exit 2 ;;
+    compare|profile|internal) ;;
+    *) echo "ERROR: BFS_BENCH_MODE must be compare, profile, or internal" >&2; exit 2 ;;
 esac
-if [ "$BENCH_MODE" = profile ]; then
+if [ "$BENCH_MODE" = internal ]; then
     GUEST_TOOL=fs-profile-bench
+    GUEST_ARGS=internal
+    RESULT_SUFFIX=internal.tsv
+    COMPLETION_MARKER=BFS-INTERNAL-COMPLETE
+elif [ "$BENCH_MODE" = profile ]; then
+    GUEST_TOOL=fs-profile-bench
+    GUEST_ARGS=
     RESULT_SUFFIX=profile.tsv
     COMPLETION_MARKER=BFS-PFS3-PROFILE-COMPLETE
 else
     GUEST_TOOL=fs-compare-bench
+    GUEST_ARGS=
     RESULT_SUFFIX=tsv
     COMPLETION_MARKER=BFS-PFS3-COMPLETE
 fi
@@ -47,7 +55,7 @@ fi
 [ -f "$PFS3" ] || { echo "ERROR: pfs3aio not found: $PFS3 (set BFS_PFS3_HANDLER)"; exit 1; }
 [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
 command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
-[ -f "$PROJECT_DIR/build/amiga/bfshandler" ] || { echo "ERROR: run 'make amiga' first"; exit 1; }
+[ -f "$HANDLER" ] || { echo "ERROR: handler not found: $HANDLER"; exit 1; }
 [ -f "$PROJECT_DIR/build/amiga/$GUEST_TOOL" ] || { echo "ERROR: run 'make amiga-$GUEST_TOOL' first"; exit 1; }
 [ -f "$PROJECT_DIR/build/host/bfs" ] || { echo "ERROR: run 'make build/host/bfs' first"; exit 1; }
 
@@ -63,7 +71,7 @@ cp -R "$ASSETS/C/." "$WB/C/"
 if [ -d "$ASSETS/L" ]; then cp -R "$ASSETS/L/." "$WB/L/"; fi
 if [ -d "$ASSETS/Libs" ]; then cp -R "$ASSETS/Libs/." "$WB/Libs/"; fi
 cp "$PROJECT_DIR/build/amiga/$GUEST_TOOL" "$WB/C/$GUEST_TOOL"
-cp "$PROJECT_DIR/build/amiga/bfshandler" "$WB/L/"
+cp "$HANDLER" "$WB/L/bfshandler"
 cp "$PFS3" "$WB/L/pfs3aio"
 
 # ── Startup-Sequence ──────────────────────────────────────────
@@ -101,9 +109,10 @@ else
     order=(pfs3 bfs)
 fi
 for filesystem in "${order[@]}"; do
+    if [ "$BENCH_MODE" = internal ] && [ "$filesystem" != bfs ]; then continue; fi
     if [ "$filesystem" = bfs ]; then drive=DH1; else drive=DH2; fi
-    printf 'Echo "--- %s Benchmark (%s:) ---"\nC:%s %s: >SYS:Results/%s.%s\nEcho "AFTER_%s" >SYS:Results/phase-%s.txt\n' \
-        "$filesystem" "$drive" "$GUEST_TOOL" "$drive" "$filesystem" "$RESULT_SUFFIX" "$filesystem" "$filesystem" >>"$WB/S/Startup-Sequence"
+    printf 'Echo "--- %s Benchmark (%s:) ---"\nC:%s %s: %s >SYS:Results/%s.%s\nEcho "AFTER_%s" >SYS:Results/phase-%s.txt\n' \
+        "$filesystem" "$drive" "$GUEST_TOOL" "$drive" "$GUEST_ARGS" "$filesystem" "$RESULT_SUFFIX" "$filesystem" "$filesystem" >>"$WB/S/Startup-Sequence"
 done
 printf 'Echo "%s" >SYS:Results/complete.txt\n' "$COMPLETION_MARKER" >>"$WB/S/Startup-Sequence"
 cat >> "$WB/S/Startup-Sequence" <<'AMIGA'
@@ -126,7 +135,7 @@ BFS_HDF="$BENCH_DIR/bench-bfs.hdf"
 rdbtool -f "$BFS_HDF" create size=256Mi cyls=512 heads=16 secs=32 \
     + init \
     + add name=DH1 start=2 end=1023 dostype=0x42465300 bootable=False \
-    + fsadd "$PROJECT_DIR/build/amiga/bfshandler" version=1.0 dostype=0x42465300 >/dev/null 2>&1
+    + fsadd "$HANDLER" version=1.0 dostype=0x42465300 >/dev/null 2>&1
 
 # Pre-format BFS
 BFS_OFFSET=$(( 2 * 16 * 32 * 512 ))

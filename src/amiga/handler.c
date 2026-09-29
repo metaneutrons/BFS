@@ -35,6 +35,9 @@
 #include "bfs_diagnostics.h"
 #include "amiga_bio.h"
 #include "snapshot_mount.h"
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 /* ── Packet number constants ────────────────────────────────── */
 /* Only define if not already provided by NDK headers */
@@ -178,6 +181,9 @@ _Static_assert(offsetof(bfs_open_file_t, file) == 0,
 /* Amiga library bases — set globally for proto headers */
 struct ExecBase *SysBase;
 struct DosLibrary *DOSBase;
+#ifdef BFS_PERF_PROBE
+bfs_perf_probe_snapshot_t bfs_perf_probe_counters;
+#endif
 
 static ULONG DiskChangeHandler(register struct bfs_handler *h __asm("a1"))
 {
@@ -1298,6 +1304,38 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     }
 
     switch (pkt->dp_Type) {
+
+#ifdef BFS_PERF_PROBE
+    case BFS_ACTION_PERF_RESET:
+        bfs_perf_probe_counters.bio_read_calls = 0;
+        bfs_perf_probe_counters.bio_write_calls = 0;
+        bfs_perf_probe_counters.bio_update_calls = 0;
+        bfs_perf_probe_counters.freespace_alloc_calls = 0;
+        bfs_perf_probe_counters.extent_map_calls = 0;
+        res1 = DOSTRUE;
+        res2 = 0;
+        break;
+
+    case BFS_ACTION_PERF_READ: {
+        bfs_perf_probe_snapshot_t *target =
+            (bfs_perf_probe_snapshot_t *)pkt->dp_Arg1;
+        if (!target) {
+            res2 = ERROR_REQUIRED_ARG_MISSING;
+            break;
+        }
+        if (pkt->dp_Arg2 != (LONG)sizeof(*target)) {
+            res2 = ERROR_BAD_NUMBER;
+            break;
+        }
+        bfs_perf_probe_snapshot_t snapshot = bfs_perf_probe_counters;
+        snapshot.version = BFS_PERF_PROBE_VERSION;
+        snapshot.size = (ULONG)sizeof(snapshot);
+        memcpy(target, &snapshot, sizeof(snapshot));
+        res1 = DOSTRUE;
+        res2 = 0;
+        break;
+    }
+#endif
 
     case BFS_ACTION_SNAPSHOT_CAPABILITY: {
         bfs_snapshot_capability_t *capability =

@@ -12,6 +12,7 @@ case "$mode" in
         metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
         metric_count=6
         value_pattern='^[1-9][0-9]*$'
+        filesystems=(bfs pfs3)
         ;;
     profile)
         marker_text=BFS-PFS3-PROFILE-COMPLETE
@@ -20,8 +21,18 @@ case "$mode" in
         metrics='FRESH_WRITE_US FRESH_FLUSH_US FRESH_CLOSE_US OVERWRITE_WRITE_US OVERWRITE_FLUSH_US OVERWRITE_CLOSE_US READ_VERIFY_8M_US'
         metric_count=7
         value_pattern='^[0-9]+$'
+        filesystems=(bfs pfs3)
         ;;
-    *) printf 'ERROR: mode must be compare or profile\n' >&2; exit 2 ;;
+    internal)
+        marker_text=BFS-INTERNAL-COMPLETE
+        suffix=internal.tsv
+        header=FS_INTERNAL_PROFILE
+        metrics='FRESH_WRITE_US FRESH_FLUSH_US FRESH_CLOSE_US FRESH_BIO_READS FRESH_BIO_WRITES FRESH_BIO_UPDATES FRESH_FREESPACE_ALLOCS FRESH_EXTENT_MAPS OVERWRITE_WRITE_US OVERWRITE_FLUSH_US OVERWRITE_CLOSE_US OVERWRITE_BIO_READS OVERWRITE_BIO_WRITES OVERWRITE_BIO_UPDATES OVERWRITE_FREESPACE_ALLOCS OVERWRITE_EXTENT_MAPS READ_VERIFY_8M_US'
+        metric_count=17
+        value_pattern='^[0-9]+$'
+        filesystems=(bfs)
+        ;;
+    *) printf 'ERROR: mode must be compare, profile, or internal\n' >&2; exit 2 ;;
 esac
 results="$run_dir/system/Results"
 marker="$results/complete.txt"
@@ -39,7 +50,7 @@ grep -Eq 'DH2.*Read/Write PFSTest' "$info" || {
     printf 'ERROR: PFS3 volume was not mounted\n' >&2; exit 1;
 }
 
-for filesystem in bfs pfs3; do
+for filesystem in "${filesystems[@]}"; do
     output="$results/$filesystem.$suffix"
     [[ -s "$output" ]] || { printf 'ERROR: missing %s workload output\n' "$filesystem" >&2; exit 1; }
     if [[ "$filesystem" == bfs ]]; then drive=DH1:; else drive=DH2:; fi
@@ -54,4 +65,4 @@ for filesystem in bfs pfs3; do
     ' "$output" || { printf 'ERROR: invalid or incomplete %s workload output\n' "$filesystem" >&2; exit 1; }
 done
 
-printf 'PASS: both mounted volumes have complete, data-checked workload results\n'
+printf 'PASS: requested mounted-volume workload outputs are complete and data-checked\n'

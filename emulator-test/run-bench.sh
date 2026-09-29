@@ -15,7 +15,10 @@ case "$BENCH_MODE" in
     profile)
         RESULT_SUFFIX=profile.tsv
         ;;
-    *) echo "ERROR: BFS_BENCH_MODE must be compare or profile" >&2; exit 2 ;;
+    internal)
+        RESULT_SUFFIX=internal.tsv
+        ;;
+    *) echo "ERROR: BFS_BENCH_MODE must be compare, profile, or internal" >&2; exit 2 ;;
 esac
 
 [[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {
@@ -125,11 +128,13 @@ else
     echo "ERROR: BFS benchmark did not complete" >&2
 fi
 echo ""
-if [ -f "$RESULTS/pfs3.$RESULT_SUFFIX" ] && [ -s "$RESULTS/pfs3.$RESULT_SUFFIX" ]; then
-    echo "=== PFS3 Results ==="
-    cat "$RESULTS/pfs3.$RESULT_SUFFIX"
-else
-    echo "ERROR: PFS3 benchmark did not complete" >&2
+if [ "$BENCH_MODE" != internal ]; then
+    if [ -f "$RESULTS/pfs3.$RESULT_SUFFIX" ] && [ -s "$RESULTS/pfs3.$RESULT_SUFFIX" ]; then
+        echo "=== PFS3 Results ==="
+        cat "$RESULTS/pfs3.$RESULT_SUFFIX"
+    else
+        echo "ERROR: PFS3 benchmark did not complete" >&2
+    fi
 fi
 
 "$SCRIPT_DIR/verify-bench-results.sh" "$BENCH_DIR" "$BENCH_MODE"

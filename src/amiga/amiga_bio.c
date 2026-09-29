@@ -19,6 +19,9 @@
 #include <devices/trackdisk.h>
 #include <proto/exec.h>
 #include "amiga_bio.h"
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 /* ── Constants for 64-bit extensions ───────────────────────── */
 
@@ -85,6 +88,9 @@ static bfs_err_t amiga_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
     if (ab->access_mode != ACCESS_STD)
         req->iotd_Req.io_Actual = (ULONG)(byte_off >> 32);
 
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.bio_read_calls++;
+#endif
     if (DoIO((struct IORequest *)req) || req->iotd_Req.io_Actual != bio->block_size)
         return BFS_ERR_IO;
     return BFS_OK;
@@ -117,6 +123,9 @@ static bfs_err_t amiga_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
     if (ab->access_mode != ACCESS_STD)
         req->iotd_Req.io_Actual = (ULONG)(byte_off >> 32);
 
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.bio_write_calls++;
+#endif
     if (DoIO((struct IORequest *)req) || req->iotd_Req.io_Actual != bio->block_size)
         return BFS_ERR_IO;
     return BFS_OK;
@@ -134,6 +143,9 @@ static bfs_err_t amiga_sync(bfs_bio_t *bio)
     req->iotd_Req.io_Length = 0;
     req->iotd_Req.io_Offset = 0;
     req->iotd_Req.io_Actual = 0;
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.bio_update_calls++;
+#endif
     if (DoIO((struct IORequest *)req) != 0)
         return BFS_ERR_IO;
 

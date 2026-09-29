@@ -15,6 +15,9 @@
 
 #include "bfs_alloc.h"
 #include <string.h>
+#ifdef BFS_PERF_PROBE
+#include "../amiga/perf_probe.h"
+#endif
 
 #define BFS_ALLOC_RESERVE_MIN 16u
 #define BFS_ALLOC_RESERVE_DEPTH_MARGIN 4u
@@ -299,6 +302,9 @@ static bfs_err_t alloc_one_from_largest(bfs_freespace_t *fs, bfs_blk_t *result_o
 
 bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
 {
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.freespace_alloc_calls++;
+#endif
     if (!fs || !fs->tree.bio || count == 0) return BFS_BLK_NULL;
     fs->last_error = BFS_OK;
     if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE) {

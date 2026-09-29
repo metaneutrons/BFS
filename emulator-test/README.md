@@ -95,6 +95,15 @@ runner. This measures fresh-file and same-file overwrite calls separately from
 `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" profile`. These numbers
 separate AmigaDOS API phases, not internal block-I/O or crash durability.
 
+For BFS-only internal call counts, build `make amiga-perf-probe-handler
+amiga-fs-profile-bench`, set `BFS_BENCH_MODE=internal` and
+`BFS_BENCH_HANDLER_FILE="$(pwd)/build/amiga/bfshandler-probe"`, and choose another
+fresh run directory. The debug handler exposes private reset/read packets and counts
+underlying device reads, writes, updates, free-space allocations and extent maps.
+The normal `make amiga` handler is unaffected; never ship the debug handler as a
+release artifact. Validate retained output with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" internal`.
+
 ## Troubleshooting
 
 - **AROS ROM missing:** run `make emulator-setup` and retry.

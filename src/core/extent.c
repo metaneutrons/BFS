@@ -11,6 +11,9 @@
 
 #include "bfs_extent.h"
 #include <string.h>
+#ifdef BFS_PERF_PROBE
+#include "../amiga/perf_probe.h"
+#endif
 
 /* ── B+tree ops ────────────────────────────────────────────── */
 
@@ -149,6 +152,9 @@ static bfs_err_t extent_insert_raw(bfs_extent_tree_t *et, uint32_t file_block,
 bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
                                bfs_blk_t disk_block, uint32_t crc)
 {
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.extent_map_calls++;
+#endif
     if (!et || !extent_range_valid(et, disk_block, 1))
         return BFS_ERR_INVAL;
     return extent_insert_raw(et, file_block, disk_block, 1, crc);
