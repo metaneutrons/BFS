@@ -60,24 +60,36 @@ these remain explicit recovery-test targets for the multi-level increment.
 `make check` passed on the final core code. The focused new hardware-fault
 test passed after it was added; the subsequent full AddressSanitizer and
 UndefinedBehaviorSanitizer suite passed. The full `make ci-test` run passed
-46/46 Amiga integration checks using the final normal handler, SHA-256
+46/46 Amiga integration checks using the pre-Codacy normal handler, SHA-256
 `6d90adf951d29917da38816478c0ee93cce206462284e9a0d35d416a2cde539a`.
 `make coverage` passed with 89.4% core line coverage against the 85% gate.
 The final probe handler, SHA-256
 `487ae8e74d6a633dafe4bce6a926fb78d3f9ac30a7a47c3d50169abe9bcb765c`,
 passed a fresh PFS3-first deep-compare run and exactly reproduced the
 3,029 / 1,089 / 2,660 free-tree write counts. A separate fresh BFS-first
-compare run with the final normal handler passed the verifier and measured
+compare run with that pre-fix normal handler passed the verifier and measured
 2,972,015 µs for create, 1,242,810 µs for the 8 MiB write, and 2,613,171 µs
-for delete. This one final-code validation is excluded from the paired means
+for delete. This one pre-fix validation is excluded from the paired means
 above. The guest comparison tool has SHA-256
 `e4702d5e306a1598bc0a0757938903edd19e35faa0bd8ea4a9a0917282ca3366`.
 
+The subsequent portability and static-analysis fix changed the handler binary
+without changing the batch algorithm. The corrected normal handler, SHA-256
+`ea13c3304c50b5440cb7add300188fdd3bce393900ec5fc379842a30cab5c37b`,
+passed another full 46/46 Amiga integration run. A fresh checked BFS-first
+comparison measured 2,796,721 µs for create, 1,180,856 µs for the 8 MiB
+write, and 2,503,858 µs for delete. The corrected probe handler, SHA-256
+`7384baf794379ea3c01995a229576c970d60922f8f3622d5195c4d59e0dc1757`,
+passed a fresh PFS3-first deep comparison and reproduced 3,029 / 1,089 /
+2,660 free-tree node writes. These single post-fix runs validate the final
+binary but are not added to the paired timing means.
+
 The [raw evidence](evidence/bfs-free-tree-leaf-batch-2026-09-29/) contains
-the three exploratory deep-compare runs, two normal candidate runs and final
-normal/probe validations. Each retains both checked guest TSVs, completion
+the three exploratory deep-compare runs, two normal candidate runs, the
+pre-fix normal/probe validations and both post-fix runs. Each retains both
+checked guest TSVs, completion
 marker, post-format machine
-information, FS-UAE configuration and log. `SHA256SUMS` verifies all 42 copied
+information, FS-UAE configuration and log. `SHA256SUMS` verifies all 54 copied
 files. The HDF images, ROM and licensed PFS3 handler are not committed. These
 are A1200/68040 FS-UAE 3.2.35 results on fresh 255.5 MiB BFS/PFS3
 partitions, not physical-device throughput or power-loss qualification.
