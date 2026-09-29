@@ -40,10 +40,10 @@ EMULATOR_LOG="$BENCH_DIR/fs-uae.log"
 [ -f "$PFS_HDF" ] || { echo "ERROR: bench-pfs3.hdf not found"; exit 1; }
 [ -f "$ROM" ] || { echo "ERROR: ROM not found"; exit 1; }
 command -v fs-uae >/dev/null || { echo "ERROR: fs-uae not found"; exit 1; }
-[ ! -e "$COMPLETION" ] && [ ! -e "$CFG" ] && [ ! -e "$EMULATOR_LOG" ] || {
+if [ -e "$COMPLETION" ] || [ -e "$CFG" ] || [ -e "$EMULATOR_LOG" ]; then
     echo "ERROR: refusing to overwrite existing benchmark evidence in $BENCH_DIR" >&2
     exit 2
-}
+fi
 
 PID=
 TIMER_PID=

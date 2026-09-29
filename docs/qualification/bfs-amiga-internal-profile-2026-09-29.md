@@ -81,6 +81,26 @@ by metadata category or measure aggregate device-service time; do not infer that
 removing `CMD_UPDATE` is the answer from these counts. Any candidate must be
 rerun with this counter harness, the original workload, and fault/crash tests.
 
+The source path gives a more specific, still unproven hypothesis. For every
+missing file block, `bfs_file_write` allocates one data block, writes it, then
+calls `bfs_extent_map_block`; that function inserts a length-one B-tree entry.
+The insertion COW-writes tree nodes, and node allocation itself updates the
+free-space tree. Thus sequential creation pays repeated extent-tree and
+allocator work rather than publishing a single contiguous extent. The counters
+do not assign the 14,462 extra writes among these structures.
+
+A bounded optimization experiment would target aligned, full-block appends on
+checksum-disabled files: allocate a contiguous run, write its data blocks, then
+publish one range mapping. Retain the existing per-block path if a run is not
+available. `bfs_extent_append` cannot be used as-is because it publishes the
+mapping before writing file data. A prototype must preserve short writes and
+ordered-data recovery: after a failed data write, publish at most the written
+prefix and release the unused suffix; after a mapping or cleanup error, avoid
+both leaked ownership and exposure of unwritten blocks. Checksum-enabled and
+snapshot paths need explicit regression coverage. In addition to the existing
+file, extent and allocation tests, add multi-block write-failure and crash
+injection cases; the current crash coverage is predominantly single-block.
+
 SHA-256 of committed guest evidence:
 
 | Artifact | SHA-256 |

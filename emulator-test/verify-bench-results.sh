@@ -2,7 +2,7 @@
 # Accept only a completed, symmetric, data-checked filesystem comparison.
 set -euo pipefail
 
-run_dir=${1:?usage: verify-bench-results.sh RUN_DIR [compare|profile]}
+run_dir=${1:?usage: verify-bench-results.sh RUN_DIR [compare|profile|internal]}
 mode=${2:-compare}
 case "$mode" in
     compare)
@@ -38,10 +38,10 @@ results="$run_dir/system/Results"
 marker="$results/complete.txt"
 info="$results/info-after-format.txt"
 
-[[ -f "$marker" ]] && [[ $(tr -d '\r\n' <"$marker") == "$marker_text" ]] || {
+if [[ ! -f "$marker" ]] || [[ $(tr -d '\r\n' <"$marker") != "$marker_text" ]]; then
     printf 'ERROR: guest completion marker is absent or invalid\n' >&2
     exit 1
-}
+fi
 [[ -s "$info" ]] || { printf 'ERROR: post-format volume inventory is missing\n' >&2; exit 1; }
 grep -Eq 'DH1.*Read/Write BFSTest' "$info" || {
     printf 'ERROR: BFS volume was not mounted\n' >&2; exit 1;
