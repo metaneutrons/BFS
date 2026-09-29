@@ -88,23 +88,32 @@ started during this performance work. The checked guest benchmark and its
 strict verifier confirm actual data contents rather than timing alone.
 
 The same final normal handler and licensed test assets were copied by matching
-SHA-256 to a separate CachyOS x86_64 host with FS-UAE 3.2.35. Four fresh
-`xvfb-run` guest comparisons passed: two with the slicing CRC and two with a
+SHA-256 to a separate CachyOS x86_64 host with FS-UAE 3.2.35. Eight fresh
+`xvfb-run` guest comparisons passed: four with the slicing CRC and four with a
 control handler built from the same final source except for the original CRC
 assembly from commit `464a523`. The control handler SHA-256 is
 `6a21071cd5a60209a98f4e62433865d1ba9a7ba36023e2e85271642e9ccb0a60`.
-An unrelated long-running FS-UAE process consumed CPU on Cachy, and the PFS3
-8 MiB write control ranged from 41,025 to 81,023 µs. Therefore the Cachy
-wall times validate portability and data integrity, but are not included in
-the speedup table or treated as clean CRC-attribution evidence. FS-UAE was
-already installed there; no package installation was necessary. During these
-runs the benchmark script's redundant background timer was removed because
-it left orphaned `sleep` processes after successful remote runs. The patched
-script passed ShellCheck and a subsequent Cachy run left no timeout process.
+An unrelated, long-running FS-UAE process initially consumed substantial CPU.
+It was a `coffin.service` systemd user service, not Docker. After temporarily
+stopping only that service, a four-run ABBA comparison in both filesystem
+orders measured slicing CRC versus original CRC at 2,599,409.5 versus
+2,699,665.5 µs for create (−3.7%), 1,153,945 versus 1,204,185 µs for the
+8 MiB write (−4.2%), and 2,331,347 versus 2,477,234 µs for delete (−5.9%).
+These modest differences support retaining the assembly change, but do not
+establish precise hardware speedups: one PFS3 8 MiB write control was an
+outlier at 92,735 µs, whereas the other three were 42,048–44,480 µs.
+The first four busy-host Cachy runs are retained for portability and data
+integrity only. None of the Cachy wall times enter the primary Mac table.
+`coffin.service` was restarted after the quiet comparisons. FS-UAE was
+already installed on Cachy; no package installation was necessary.
+
+The benchmark script's redundant background timer was removed because it
+left orphaned `sleep` processes after successful remote runs. The patched
+script passed ShellCheck, and the later Cachy runs left no timeout process.
 
 The [raw evidence](evidence/bfs-node-write-retention-2026-09-29/) contains the
 CRC-only, pre-cleanup combined, and final-source normal run pairs plus both
-combined deep runs and four Cachy comparisons. It includes guest outputs,
+combined deep runs and eight Cachy comparisons. It includes guest outputs,
 completion markers, machine information, FS-UAE configurations and
-logs. `SHA256SUMS` verifies all 72 evidence files. Licensed ROM, Workbench
+logs. `SHA256SUMS` verifies all 96 evidence files. Licensed ROM, Workbench
 files, PFS3 handler and HDFs are excluded.
