@@ -267,8 +267,12 @@ static bool alloc_scan_cb(const void *key, const void *val, void *ctx)
     return true;
 }
 
-static bfs_err_t alloc_one_from_largest(bfs_freespace_t *fs, bfs_blk_t *result_out)
+/* Take a tail run from the highest-key free extent with one COW mutation.
+ * Reserving adjacent blocks one by one needlessly rewrites the same tree path. */
+static bfs_err_t alloc_tail_from_highest(bfs_freespace_t *fs, uint32_t requested,
+                                         bfs_blk_t *result_out, uint32_t *taken_out)
 {
+    if (requested == 0) return BFS_ERR_INVAL;
     uint32_t max_key = bfs_be32(UINT32_MAX);
     uint32_t found_key, found_len;
     bfs_err_t err = bfs_btree_search_floor(&fs->tree, &max_key, &found_key,
@@ -281,20 +285,23 @@ static bfs_err_t alloc_one_from_largest(bfs_freespace_t *fs, bfs_blk_t *result_o
         blk_start >= fs->tree.bio->block_count ||
         blk_len > fs->tree.bio->block_count - blk_start)
         return BFS_ERR_CORRUPT;
-    if (fs->total_free == 0) return BFS_ERR_CORRUPT;
+    uint32_t taken = blk_len < requested ? blk_len : requested;
+    if (fs->total_free < taken) return BFS_ERR_CORRUPT;
 
-    bfs_blk_t result = blk_start + blk_len - 1;
-    if (blk_len == 1) {
+    bfs_blk_t result = blk_start + blk_len - taken;
+    // cppcheck-suppress knownConditionTrueFalse
+    if (blk_len == taken) {
         err = bfs_btree_delete(&fs->tree, &found_key);
     } else {
-        uint32_t new_len = bfs_be32(blk_len - 1);
+        uint32_t new_len = bfs_be32(blk_len - taken);
         err = bfs_btree_update(&fs->tree, &found_key, &new_len);
     }
     if (err != BFS_OK) return err;
 
-    fs->total_free--;
+    fs->total_free -= taken;
     fs->roving = result + 1;
     *result_out = result;
+    *taken_out = taken;
     return BFS_OK;
 }
 
@@ -341,7 +348,8 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
 
     if (count == 1) {
         bfs_blk_t result = BFS_BLK_NULL;
-        bfs_err_t one_err = alloc_one_from_largest(fs, &result);
+        uint32_t taken = 0;
+        bfs_err_t one_err = alloc_tail_from_highest(fs, 1, &result, &taken);
         if (one_err == BFS_OK) {
             fs->in_alloc = false;
             fs->last_error = BFS_OK;
@@ -637,21 +645,26 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
     uint32_t target = reserve_refill_target(fs);
     while (fs->reserve_count < target &&
            fs->total_free > fs->global_reserve + 1) {
+        uint32_t wanted = target - fs->reserve_count;
+        uint32_t surplus = fs->total_free - fs->global_reserve - 1;
+        if (wanted > surplus) wanted = surplus;
         fs->in_alloc = true;
 
-        bfs_blk_t blk = BFS_BLK_NULL;
-        bfs_err_t err = alloc_one_from_largest(fs, &blk);
+        bfs_blk_t start = BFS_BLK_NULL;
+        uint32_t taken = 0;
+        bfs_err_t err = alloc_tail_from_highest(fs, wanted, &start, &taken);
         if (err != BFS_OK) {
             fs->in_alloc = false;
             return err == BFS_ERR_NOTFOUND ? BFS_ERR_CORRUPT : err;
         }
 
-        if (fs->reserve_count < BFS_ALLOC_RESERVE_SIZE) {
-            fs->reserve[fs->reserve_count++] = blk;
-        } else {
+        if (taken > BFS_ALLOC_RESERVE_SIZE - fs->reserve_count) {
             fs->in_alloc = false;
             return BFS_ERR_CORRUPT;
         }
+        /* Preserve the old descending order and LIFO allocation behavior. */
+        for (uint32_t i = 0; i < taken; i++)
+            fs->reserve[fs->reserve_count++] = start + taken - 1 - i;
 
         fs->in_alloc = false;
     }
@@ -661,16 +674,45 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
 /* Return any unused reserve-pool blocks to the free tree (called at transaction
  * commit so the reserve doesn't permanently hold space). Temporarily lifts
  * global_reserve so these frees aren't themselves blocked by the reserve floor. */
+static bool reserve_block_is_emergency(const bfs_freespace_t *fs, bfs_blk_t blk)
+{
+    if (!fs->sb) return false;
+    for (uint32_t i = 0; i < BFS_EMERGENCY_POOL_SIZE; i++) {
+        if (bfs_be32(fs->sb->emergency_pool[i]) == blk) return true;
+    }
+    return false;
+}
+
 bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
 {
-    if (!fs || fs->reserve_count > BFS_ALLOC_RESERVE_SIZE) return BFS_ERR_INVAL;
+    if (!fs || !fs->tree.bio || fs->reserve_count > BFS_ALLOC_RESERVE_SIZE)
+        return BFS_ERR_INVAL;
     uint32_t saved_global_reserve = fs->global_reserve;
     fs->global_reserve = UINT32_MAX;
     while (fs->reserve_count > 0) {
-        bfs_blk_t blk = fs->reserve[--fs->reserve_count];
-        bfs_err_t err = bfs_freespace_free(fs, blk, 1);
+        bfs_blk_t start = fs->reserve[fs->reserve_count - 1];
+        uint32_t run = 1;
+        /* Keep enough scratch blocks for a free-tree COW mutation. A run may
+         * not include emergency-pool blocks, which must be returned singly. */
+        uint32_t scratch = 4u * fs->tree.height + 8u;
+        uint32_t limit = fs->reserve_count > scratch
+            ? fs->reserve_count - scratch : 1;
+        if (!reserve_block_is_emergency(fs, start)) {
+            while (run < limit && run < fs->tree.bio->block_count - start &&
+                   fs->reserve[fs->reserve_count - 1 - run] == start + run &&
+                   !reserve_block_is_emergency(fs, start + run))
+                run++;
+        }
+        fs->reserve_count -= run;
+        bfs_err_t err = bfs_freespace_free(fs, start, run);
         if (err != BFS_OK) {
-            fs->reserve[fs->reserve_count++] = blk;
+            if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE ||
+                run > BFS_ALLOC_RESERVE_SIZE - fs->reserve_count) {
+                err = BFS_ERR_CORRUPT;
+            } else {
+                for (uint32_t i = run; i > 0; i--)
+                    fs->reserve[fs->reserve_count++] = start + i - 1;
+            }
             fs->global_reserve = saved_global_reserve;
             fs->last_error = err;
             return err;

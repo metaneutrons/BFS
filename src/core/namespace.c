@@ -42,6 +42,15 @@ static bfs_err_t fs_cleanup_result(bfs_fs_t *fs, bfs_err_t primary, bfs_err_t cl
     return cleanup == BFS_OK ? primary : cleanup;
 }
 
+/* Compensating directory mutations clear the tree's transient free-sink error.
+ * Preserve an uncertain COW retirement before any such compensation begins. */
+static void fs_latch_dir_retirement_error(bfs_fs_t *fs)
+{
+    if (fs->dir_tree.tree.free_sink_err != BFS_OK &&
+        fs->recovery_error == BFS_OK)
+        fs->recovery_error = fs->dir_tree.tree.free_sink_err;
+}
+
 static bfs_err_t fs_namespace_result(bfs_fs_t *fs, bfs_err_t result)
 {
     bfs_err_t error = fs->recovery_error;
@@ -252,6 +261,7 @@ static bfs_err_t fs_mkdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
     }
     err = bfs_dir_insert(&fs->dir_tree, parent_ino, name, name_len, ino, BFS_INODE_DIR);
     if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
         bfs_err_t cleanup_err = bfs_dir_remove(&fs->dir_tree, ino, "..", 2);
         if (cleanup_err == BFS_OK)
             cleanup_err = bfs_inode_delete(&fs->inode_tree, ino);
@@ -324,6 +334,7 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino,
     }
     err = bfs_dir_remove(&fs->dir_tree, parent_ino, name, name_len);
     if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
         err = fs_cleanup_result(fs, err, fs_restore_comment(fs, ino, &comment));
         goto delete_out;
     }
@@ -465,12 +476,15 @@ static bfs_err_t fs_rmdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
         if (err != BFS_OK) return err;
     }
     err = bfs_dir_remove(&fs->dir_tree, dir_ino, "..", 2);
-    if (err != BFS_OK && err != BFS_ERR_NOTFOUND)
+    if (err != BFS_OK && err != BFS_ERR_NOTFOUND) {
+        fs_latch_dir_retirement_error(fs);
         return fs_cleanup_result(fs, err, fs_restore_comment(fs, dir_ino, &comment));
+    }
     bool removed_dotdot = err == BFS_OK;
 
     err = bfs_dir_remove(&fs->dir_tree, parent_ino, name, name_len);
     if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
         bfs_err_t rollback_err = BFS_OK;
         if (removed_dotdot)
             rollback_err = bfs_dir_insert(&fs->dir_tree, dir_ino, "..", 2,
@@ -695,12 +709,16 @@ static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, const fs_rename_request_t *req
     err = fs_rename_install_destination(fs, request, &state);
     if (err != BFS_OK) return err;
     err = fs_rename_update_dotdot(fs, request, &state, request->new_parent);
-    if (err != BFS_OK) return fs_cleanup_result(fs, err,
-                                                fs_rename_restore_destination(fs, request, &state));
+    if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
+        return fs_cleanup_result(fs, err,
+                                 fs_rename_restore_destination(fs, request, &state));
+    }
 
     err = bfs_dir_remove(&fs->dir_tree, request->old_parent, request->old_name,
                          request->old_len);
     if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
         bfs_err_t rollback_err = fs_rename_update_dotdot(fs, request, &state, state.old_dotdot);
         bfs_err_t destination_err = fs_rename_restore_destination(fs, request, &state);
         if (rollback_err == BFS_OK) rollback_err = destination_err;
@@ -847,6 +865,7 @@ static bfs_err_t fs_set_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
     uint32_t comment_parent = ino | 0x80000000u;
     err = bfs_dir_insert(&fs->dir_tree, comment_parent, comment, len, ino, 0);
     if (err != BFS_OK && old_comment.found) {
+        fs_latch_dir_retirement_error(fs);
         bfs_err_t rollback_err = bfs_dir_insert(&fs->dir_tree, comment_parent,
                                                 old_comment.name,
                                                 old_comment.len, ino, 0);

@@ -794,6 +794,7 @@ static void test_failed_extent_rollback_marks_ownership_uncertain(void)
 
 static void test_delete_write_failures_preserve_comment(void)
 {
+    unsigned post_mutation_failures = 0;
     for (uint32_t fail_at = 1; fail_at <= 16; fail_at++) {
         unlink(TEST_IMG);
         bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
@@ -813,8 +814,21 @@ static void test_delete_write_failures_preserve_comment(void)
         // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
         TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (fs.recovery_error != BFS_OK) {
+            /* COW retirement can fail after the working directory root moves.
+             * Never commit that uncertain root; recover the old committed view. */
+            post_mutation_failures++;
+            TEST_ASSERT_EQ(fs.recovery_error, BFS_ERR_IO);
+            TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
+            bfs_fs_abandon(&fs);
+            TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO,
+                                          "file", 4, NULL, NULL), BFS_OK);
+        } else if (err != BFS_OK) {
+            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO,
+                                          "file", 4, NULL, NULL), BFS_OK);
+        }
         if (err != BFS_OK) {
-            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "file", 4, NULL, NULL), BFS_OK);
             char comment[80];
             TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, ino, comment, sizeof(comment)), BFS_OK);
             TEST_ASSERT_MEM_EQ(comment, "keep", 5);
@@ -822,6 +836,178 @@ static void test_delete_write_failures_preserve_comment(void)
         TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
         bfs_bio_close(bio);
     }
+    TEST_ASSERT(post_mutation_failures > 0);
+    unlink(TEST_IMG);
+}
+
+static void test_rmdir_write_failures_preserve_committed_directory(void)
+{
+    unsigned recovery_failures = 0;
+    for (uint32_t fail_at = 1; fail_at <= 32; fail_at++) {
+        unlink(TEST_IMG);
+        bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+        TEST_ASSERT(bio != NULL);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "RmdirFault", 0), BFS_OK);
+        failing_bio_t fb;
+        init_failing_bio(&fb, bio);
+        bfs_fs_t fs;
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+        uint32_t dir_ino;
+        TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "dir", 3, &dir_ino), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, dir_ino, "keep", 4), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+        fb.writes_until_failure = fail_at;
+        bfs_err_t err = bfs_fs_rmdir(&fs, BFS_ROOT_INO, "dir", 3);
+        // cppcheck-suppress redundantAssignment
+        fb.writes_until_failure = 0;
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            if (fs.recovery_error != BFS_OK) {
+                recovery_failures++;
+                TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
+                bfs_fs_abandon(&fs);
+            } else {
+                TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+            }
+            TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO,
+                                          "dir", 3, NULL, NULL), BFS_OK);
+            char comment[80];
+            TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, dir_ino, comment,
+                                              sizeof(comment)), BFS_OK);
+            TEST_ASSERT_MEM_EQ(comment, "keep", 5);
+        }
+        TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        bfs_bio_close(bio);
+    }
+    TEST_ASSERT(recovery_failures > 0);
+    unlink(TEST_IMG);
+}
+
+static void test_rename_write_failures_preserve_committed_paths(void)
+{
+    unsigned recovery_failures = 0;
+    for (uint32_t fail_at = 1; fail_at <= 32; fail_at++) {
+        unlink(TEST_IMG);
+        bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+        TEST_ASSERT(bio != NULL);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "RenameFault", 0), BFS_OK);
+        failing_bio_t fb;
+        init_failing_bio(&fb, bio);
+        bfs_fs_t fs;
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+        uint32_t src, dst, child;
+        TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "src", 3, &src), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "dst", 3, &dst), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, src, "child", 5, &child), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+        fb.writes_until_failure = fail_at;
+        bfs_err_t err = bfs_fs_rename(&fs, src, "child", 5, dst, "moved", 5);
+        // cppcheck-suppress redundantAssignment
+        fb.writes_until_failure = 0;
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            if (fs.recovery_error != BFS_OK) {
+                recovery_failures++;
+                TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
+                bfs_fs_abandon(&fs);
+            } else {
+                TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+            }
+            TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, src,
+                                          "child", 5, NULL, NULL), BFS_OK);
+            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, dst,
+                                          "moved", 5, NULL, NULL), BFS_ERR_NOTFOUND);
+            uint32_t parent = 0;
+            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, child, "..", 2,
+                                          &parent, NULL), BFS_OK);
+            TEST_ASSERT_EQ(parent, src);
+        }
+        TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        bfs_bio_close(bio);
+    }
+    TEST_ASSERT(recovery_failures > 0);
+    unlink(TEST_IMG);
+}
+
+static void test_mkdir_write_failures_preserve_committed_tree(void)
+{
+    unsigned recovery_failures = 0;
+    for (uint32_t fail_at = 1; fail_at <= 24; fail_at++) {
+        unlink(TEST_IMG);
+        bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+        TEST_ASSERT(bio != NULL);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "MkdirFault", 0), BFS_OK);
+        failing_bio_t fb;
+        init_failing_bio(&fb, bio);
+        bfs_fs_t fs;
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+        fb.writes_until_failure = fail_at;
+        uint32_t ino;
+        bfs_err_t err = bfs_fs_mkdir(&fs, BFS_ROOT_INO, "newdir", 6, &ino);
+        // cppcheck-suppress redundantAssignment
+        fb.writes_until_failure = 0;
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            if (fs.recovery_error != BFS_OK) {
+                recovery_failures++;
+                TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
+                bfs_fs_abandon(&fs);
+            } else {
+                TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+            }
+            TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO,
+                                          "newdir", 6, NULL, NULL), BFS_ERR_NOTFOUND);
+        }
+        TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        bfs_bio_close(bio);
+    }
+    TEST_ASSERT(recovery_failures > 0);
+    unlink(TEST_IMG);
+}
+
+static void test_comment_write_failures_preserve_committed_value(void)
+{
+    unsigned recovery_failures = 0;
+    for (uint32_t fail_at = 1; fail_at <= 24; fail_at++) {
+        unlink(TEST_IMG);
+        bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+        TEST_ASSERT(bio != NULL);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "CommentFault", 0), BFS_OK);
+        failing_bio_t fb;
+        init_failing_bio(&fb, bio);
+        bfs_fs_t fs;
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+        uint32_t ino;
+        TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "file", 4, &ino), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, "old", 3), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+        fb.writes_until_failure = fail_at;
+        bfs_err_t err = bfs_fs_set_comment(&fs, ino, "new", 3);
+        // cppcheck-suppress redundantAssignment
+        fb.writes_until_failure = 0;
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            if (fs.recovery_error != BFS_OK) {
+                recovery_failures++;
+                TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
+                bfs_fs_abandon(&fs);
+            } else {
+                TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+            }
+            TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+            char comment[80];
+            TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, ino, comment,
+                                              sizeof(comment)), BFS_OK);
+            TEST_ASSERT_MEM_EQ(comment, "old", 4);
+        }
+        TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        bfs_bio_close(bio);
+    }
+    TEST_ASSERT(recovery_failures > 0);
     unlink(TEST_IMG);
 }
 
@@ -893,6 +1079,47 @@ static void test_allocator_refill_failure_can_retry_free(void)
     TEST_ASSERT_EQ(bfs_freespace_free(&fs.freespace, block, 1), BFS_ERR_EXISTS);
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
     bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_write_failures_preserve_committed_tree(void)
+{
+    unsigned failures = 0;
+    for (uint32_t fail_at = 1; fail_at <= 16; fail_at++) {
+        unlink(TEST_IMG);
+        bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+        TEST_ASSERT(bio != NULL);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "ReserveFault", 0), BFS_OK);
+        failing_bio_t fb;
+        init_failing_bio(&fb, bio);
+        bfs_fs_t fs;
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+        TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&fs.freespace), BFS_OK);
+        uint32_t count = fs.freespace.reserve_count;
+        uint32_t scratch = 4u * fs.freespace.tree.height + 8u;
+        TEST_ASSERT(count > scratch + 1);
+        bfs_blk_t start = fs.freespace.reserve[count - 1];
+        TEST_ASSERT_EQ(fs.freespace.reserve[count - 2], start + 1);
+
+        fb.writes_until_failure = fail_at;
+        bfs_err_t err = bfs_freespace_return_reserve(&fs.freespace);
+        // cppcheck-suppress redundantAssignment
+        fb.writes_until_failure = 0;
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) failures++;
+
+        /* The failed working tree must never replace the committed root. */
+        bfs_fs_abandon(&fs);
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+        bfs_fsck_report_t report;
+        TEST_ASSERT_EQ(bfs_fs_check(&fs, false, &report), BFS_OK);
+        TEST_ASSERT_EQ(report.errors, 0);
+        TEST_ASSERT_EQ(report.leaked_blocks, 0);
+        TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        bfs_bio_close(bio);
+    }
+    TEST_ASSERT(failures > 0);
     unlink(TEST_IMG);
 }
 
@@ -1141,8 +1368,13 @@ TEST_SUITE_BEGIN("Hardware Failure Simulation")
     TEST_RUN(test_persistent_delete_failure_requires_remount);
     TEST_RUN(test_failed_extent_rollback_marks_ownership_uncertain);
     TEST_RUN(test_delete_write_failures_preserve_comment);
+    TEST_RUN(test_rmdir_write_failures_preserve_committed_directory);
+    TEST_RUN(test_rename_write_failures_preserve_committed_paths);
+    TEST_RUN(test_mkdir_write_failures_preserve_committed_tree);
+    TEST_RUN(test_comment_write_failures_preserve_committed_value);
     TEST_RUN(test_snapshot_delete_write_failure_recovery);
     TEST_RUN(test_allocator_refill_failure_can_retry_free);
+    TEST_RUN(test_reserve_return_write_failures_preserve_committed_tree);
     TEST_RUN(test_short_write_publishes_inode);
     TEST_RUN(test_append_data_write_failure_publishes_prefix);
     TEST_RUN(test_append_extent_write_failure_preserves_old_file);
