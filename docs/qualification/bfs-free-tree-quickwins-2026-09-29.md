@@ -64,7 +64,11 @@ mkdir and comment replacement with remount checks of committed state.
 The normal and probe m68k handlers build with `make amiga` and
 `make amiga-perf-probe-handler`. The host suite, crash injection and hardware
 failure simulations pass. `make check` and its static/quality gates were run
-for this candidate.
+for this candidate. The changed allocation layout exposed a platform-dependent
+assumption in the existing primary-superblock CRC campaign: backup recovery
+can be clean or leave a repairable leak. The campaign now qualifies either
+path, while the separate deliberate-leak case still requires repair. Its
+contract tests and the full nine-case fault campaign pass locally.
 
 ## Evidence and limits
 

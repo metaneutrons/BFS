@@ -7,7 +7,7 @@ This is the executable, first software stage of [issue #28](https://github.com/m
 `tests/qualification/fault-campaign-v1.json` is the versioned source of truth. The initial direct-host campaign creates only disposable regular BFS images and covers:
 
 - a clean committed baseline;
-- primary-superblock CRC fallback, including its explicitly permitted free-space-leak repair;
+- primary-superblock CRC fallback, clean or with explicitly permitted free-space-leak repair;
 - dual-superblock rejection;
 - a CRC-valid but structurally invalid directory-tree header;
 - a byte-level corruption of checksummed file data;
@@ -18,7 +18,7 @@ This is the executable, first software stage of [issue #28](https://github.com/m
 
 Every case declares its fault model, fault point, mutation location, expected outcome class, expected states, observer set, timeout, and seed before it runs. The runner rejects incomplete manifests, duplicate identifiers, unknown outcome classes, unowned evidence paths, and existing evidence directories.
 
-The primary-superblock fallback is intentionally classified as `repairable-leak`, not `consistent`: the older valid root is readable and independently oracle-consistent, but it may leave a block allocated by the newer, rejected superblock unreachable. This is acceptable only when the checker reports a warning, repair reclaims the leak, and a second checker and oracle pass.
+The primary-superblock fallback is classified as `recoverable`: the backup root must be independently oracle-consistent. Depending on the allocator's working-root layout, the checker may find it clean or report an unreachable allocation from the newer, rejected superblock. In the latter case, repair must reclaim the leak and a second checker and oracle must pass. The separate deliberate-leak case still requires the strict `repairable-leak` outcome.
 
 ## Running and retaining evidence
 
