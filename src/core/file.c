@@ -275,7 +275,7 @@ static bfs_err_t file_write_allocated_run(bfs_file_t *f, const uint8_t *input,
     for (; initialized < count; initialized++) {
         /* The one-block scratch buffer is DMA-safe; the caller's input need
          * not be. Capacity is checked before allocating the run. */
-        memcpy(fs->scratch, input + (size_t)initialized * bs, bs);
+        memcpy(fs->scratch, input + (size_t)initialized * bs, bs); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         write_error = bfs_bio_write(fs->bio, start + initialized, fs->scratch);
         if (write_error != BFS_OK) break;
     }
