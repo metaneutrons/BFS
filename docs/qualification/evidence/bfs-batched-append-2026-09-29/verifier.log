@@ -1,0 +1,13 @@
+Verifier: emulator-test/verify-bench-results.sh build/benchmark/<run> internal
+Execution order: baseline-1, candidate-1, candidate-2, baseline-2
+
+$ emulator-test/verify-bench-results.sh build/benchmark/baseline-1 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-1 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-2 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/baseline-2 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-refactor-1 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked

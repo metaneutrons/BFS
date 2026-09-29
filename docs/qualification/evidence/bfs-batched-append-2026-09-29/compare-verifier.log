@@ -1,0 +1,7 @@
+Verifier: emulator-test/verify-bench-results.sh build/benchmark/<run> compare
+Run order: candidate-compare-1 (bfs-first), candidate-compare-2 (pfs3-first)
+
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-compare-1 compare
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-compare-2 compare
+PASS: requested mounted-volume workload outputs are complete and data-checked
