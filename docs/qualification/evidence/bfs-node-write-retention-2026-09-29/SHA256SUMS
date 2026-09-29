@@ -34,6 +34,12 @@ bbd29308e466ca2557b1d2deb66482c902df5f924e11ee540c1fcbe896dbe432  ./crc-only-pfs
 e875ae34813b0277d62ba363a0f925a167bbae8c5f506ca0bf0c2f7e9f703002  ./crc-only-pfs3-first/fs-uae.log
 035190680cc986eb59535717de9476625fd9ba287162dce00a0a76c3f20f0c30  ./crc-only-pfs3-first/info.txt
 69edc925b90f02fc15627e37ab6567df8ae900352144ffec77372ec2a13625f6  ./crc-only-pfs3-first/pfs3.tsv
+df7d8d18fd38728b964219b5c31a0e697e814d8ba511cf1bd1e9d38c8fcae273  ./crc-only-deep/bench.fs-uae
+eb7bfe615a3105fc227c3f4d96dd0a1821c2813f2a33994d55b7df40398a71b0  ./crc-only-deep/bfs.deep-compare.tsv
+81c4760af5af82566811dbd3329c626358563def824ca64e89d58a929f356091  ./crc-only-deep/complete.txt
+e875ae34813b0277d62ba363a0f925a167bbae8c5f506ca0bf0c2f7e9f703002  ./crc-only-deep/fs-uae.log
+5fd07b200b4e185eb4d5e500ee3197d9f34a6174f27da3562d62a758318612b7  ./crc-only-deep/info.txt
+0df4fedcbf2969e09919d4d0bf08a56e224d1ccb77c489b97b59b3cd40924014  ./crc-only-deep/pfs3.deep-compare.tsv
 7e85bded975b54f5e8614c9165cf2c75496c3144326d4bf0cc321f0fec978b07  ./final-deep/bench.fs-uae
 3e82cf588e83aaeb4f5e817a1a796ec31c1d66cde25c0d247081bad0d30defee  ./final-deep/bfs.deep-compare.tsv
 81c4760af5af82566811dbd3329c626358563def824ca64e89d58a929f356091  ./final-deep/complete.txt

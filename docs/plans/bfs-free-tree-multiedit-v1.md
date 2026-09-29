@@ -77,6 +77,14 @@ changes. Neither may overwrite an old-root-reachable node. The previous
 current-transaction node-reuse prototype failed the pending-free fault tests,
 so that shortcut is excluded.
 
+A second local prototype served top-level single-block requests from the
+surplus reserve pool before refilling it in a batch. The focused allocator
+test passed, but the handler's repeated-overwrite workflow hit the commit
+settlement limit with one pending block left (`BFS_ERR_AGAIN` after 256
+iterations). The change was removed. A future allocation-side optimization
+must prove not only block ownership, but also termination of the
+publish/reclaim fixed point under repeated commits.
+
 ## Qualification gates
 
 - Allocator and B-tree tests: adjacency, gaps, overlap, duplicate input,

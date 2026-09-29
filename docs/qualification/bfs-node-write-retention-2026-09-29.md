@@ -112,8 +112,8 @@ left orphaned `sleep` processes after successful remote runs. The patched
 script passed ShellCheck, and the later Cachy runs left no timeout process.
 
 The [raw evidence](evidence/bfs-node-write-retention-2026-09-29/) contains the
-CRC-only, pre-cleanup combined, and final-source normal run pairs plus both
-combined deep runs and eight Cachy comparisons. It includes guest outputs,
-completion markers, machine information, FS-UAE configurations and
-logs. `SHA256SUMS` verifies all 96 evidence files. Licensed ROM, Workbench
+CRC-only, pre-cleanup combined, and final-source normal run pairs, the
+CRC-only and both combined deep runs, and eight Cachy comparisons. It includes
+guest outputs, completion markers, machine information, FS-UAE configurations
+and logs. `SHA256SUMS` verifies all 102 evidence files. Licensed ROM, Workbench
 files, PFS3 handler and HDFs are excluded.
