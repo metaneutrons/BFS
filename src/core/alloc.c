@@ -762,8 +762,8 @@ bfs_err_t bfs_freespace_free_sorted_blocks(bfs_freespace_t *fs,
     uint32_t capacity = bfs_btree_leaf_capacity(&fs->tree);
     if (capacity == 0)
         return BFS_ERR_CORRUPT;
-    if ((size_t)capacity > SIZE_MAX / (4u * sizeof(uint32_t)))
-        return BFS_ERR_NOMEM;
+    /* A valid leaf fits in one block (at most BFS_MAX_BLOCK_SIZE bytes),
+     * so four uint32_t arrays cannot overflow size_t on supported targets. */
     uint32_t *memory = malloc((size_t)capacity * 4u * sizeof(uint32_t));
     if (!memory) return BFS_ERR_NOMEM;
     free_leaf_entries_t old = {

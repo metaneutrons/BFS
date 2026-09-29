@@ -314,6 +314,10 @@ static void test_crash_during_batch_append(void)
     unlink(TEST_IMG);
 }
 
+static const char delete_batch_names[6][7] = {
+    "batch0", "batch1", "batch2", "batch3", "batch4", "batch5"
+};
+
 static void make_baseline_with_delete_batch(void)
 {
     make_baseline();
@@ -322,10 +326,8 @@ static void make_baseline_with_delete_batch(void)
     bfs_fs_t fs;
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
     for (uint32_t i = 0; i < 6; i++) {
-        char name[16];
-        snprintf(name, sizeof(name), "batch%u", i);
-        TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, name,
-                                           (uint8_t)strlen(name), NULL), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO,
+                                           delete_batch_names[i], 6, NULL), BFS_OK);
     }
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
@@ -335,10 +337,7 @@ static void make_baseline_with_delete_batch(void)
 static void op_delete_batch(bfs_fs_t *fs)
 {
     for (uint32_t i = 0; i < 6; i++) {
-        char name[16];
-        snprintf(name, sizeof(name), "batch%u", i);
-        (void)bfs_fs_delete_file(fs, BFS_ROOT_INO, name,
-                                 (uint8_t)strlen(name));
+        (void)bfs_fs_delete_file(fs, BFS_ROOT_INO, delete_batch_names[i], 6);
     }
     (void)bfs_fs_sync(fs);
 }
@@ -352,11 +351,9 @@ static bool verify_delete_batch_after_crash(void)
     if (valid) {
         bfs_err_t first = BFS_OK;
         for (uint32_t i = 0; i < 6; i++) {
-            char name[16];
             uint32_t ino, type;
-            snprintf(name, sizeof(name), "batch%u", i);
-            bfs_err_t err = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, name,
-                                            (uint8_t)strlen(name), &ino, &type);
+            bfs_err_t err = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO,
+                                            delete_batch_names[i], 6, &ino, &type);
             if (i == 0) first = err;
             if (err != first || (err != BFS_OK && err != BFS_ERR_NOTFOUND))
                 valid = false;

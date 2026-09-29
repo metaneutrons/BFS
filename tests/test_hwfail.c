@@ -1143,7 +1143,7 @@ static void test_batch_leaf_write_failure_preserves_root(void)
     fb.writes_until_failure = 1;
     TEST_ASSERT_EQ(bfs_freespace_free_sorted_blocks(&fs.freespace, blocks, 2),
                    BFS_ERR_IO);
-    fb.writes_until_failure = 0;
+    TEST_ASSERT_EQ(fb.writes_until_failure, 0);
     TEST_ASSERT_EQ(fs.freespace.tree.root, old_root);
     TEST_ASSERT_EQ(fs.freespace.total_free, old_free);
     TEST_ASSERT_EQ(bfs_freespace_free_sorted_blocks(&fs.freespace, blocks, 2),

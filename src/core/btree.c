@@ -34,7 +34,7 @@
 
 static uint8_t *alloc_buf(const bfs_btree_t *tree) { return malloc(tree->bio->block_size); }
 
-static void copy_key(uint8_t *destination, const uint8_t *source, uint32_t length)
+static void copy_bytes(uint8_t *destination, const uint8_t *source, uint32_t length)
 {
     for (uint32_t index = 0; index < length; index++) destination[index] = source[index];
 }
@@ -476,12 +476,12 @@ static void build_root_leaf_replacement(bfs_btree_t *tree, uint8_t *new_buf,
     node_init(tree, new_buf, BFS_BTNODE_LEAF);
     hdr_of(new_buf)->num_keys = bfs_be32(count);
     for (uint32_t i = 0; i < count; i++) {
-        memcpy(node_key(tree, new_buf, i),
-               (const uint8_t *)keys + (size_t)i * tree->ops->key_size,
-               tree->ops->key_size);
-        memcpy(leaf_val(tree, new_buf, i),
-               (const uint8_t *)vals + (size_t)i * tree->ops->val_size,
-               tree->ops->val_size);
+        copy_bytes(node_key(tree, new_buf, i),
+                   (const uint8_t *)keys + (size_t)i * tree->ops->key_size,
+                   tree->ops->key_size);
+        copy_bytes(leaf_val(tree, new_buf, i),
+                   (const uint8_t *)vals + (size_t)i * tree->ops->val_size,
+                   tree->ops->val_size);
     }
     hdr_of(new_buf)->right_sibling =
         ((const bfs_btnode_hdr_t *)old_buf)->right_sibling;
@@ -1009,7 +1009,7 @@ bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
         err = BFS_ERR_CORRUPT;
         goto rekey_cleanup;
     }
-    copy_key(node_key(tree, leaf, index), new_key, tree->ops->key_size);
+    copy_bytes(node_key(tree, leaf, index), new_key, tree->ops->key_size);
     err = rekey_commit_path(tree, &mutation, path, node_bufs, depth);
 
 rekey_cleanup:
