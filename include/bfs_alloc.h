@@ -52,6 +52,14 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count);
 /* Free count blocks starting at start. Merges with adjacent free extents. */
 bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count);
 
+/* Atomically reclaim sorted, distinct single blocks when the free tree has a
+ * single leaf. Returns BFS_ERR_UNSUPPORTED without reclaiming any input if the
+ * bounded leaf fast path cannot represent the result; callers then use the
+ * ordinary range-free path. Intended for post-publication pending frees. */
+bfs_err_t bfs_freespace_free_sorted_blocks(bfs_freespace_t *fs,
+                                           const bfs_blk_t *blocks,
+                                           uint32_t count);
+
 /* Get the bfs_allocator_t interface (for B+tree COW use) */
 bfs_allocator_t *bfs_freespace_allocator(bfs_freespace_t *fs);
 

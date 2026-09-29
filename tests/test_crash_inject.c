@@ -314,6 +314,95 @@ static void test_crash_during_batch_append(void)
     unlink(TEST_IMG);
 }
 
+static void make_baseline_with_delete_batch(void)
+{
+    make_baseline();
+    bfs_bio_t *bio = bio_emu_open(TEST_IMG, BLK_SIZE);
+    TEST_ASSERT(bio != NULL);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    for (uint32_t i = 0; i < 6; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "batch%u", i);
+        TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, name,
+                                           (uint8_t)strlen(name), NULL), BFS_OK);
+    }
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_bio_close(bio);
+}
+
+static void op_delete_batch(bfs_fs_t *fs)
+{
+    for (uint32_t i = 0; i < 6; i++) {
+        char name[16];
+        snprintf(name, sizeof(name), "batch%u", i);
+        (void)bfs_fs_delete_file(fs, BFS_ROOT_INO, name,
+                                 (uint8_t)strlen(name));
+    }
+    (void)bfs_fs_sync(fs);
+}
+
+static bool verify_delete_batch_after_crash(void)
+{
+    bfs_bio_t *bio = bio_emu_open(TEST_IMG, BLK_SIZE);
+    if (!bio) return false;
+    bfs_fs_t fs;
+    bool valid = bfs_fs_mount(&fs, bio) == BFS_OK;
+    if (valid) {
+        bfs_err_t first = BFS_OK;
+        for (uint32_t i = 0; i < 6; i++) {
+            char name[16];
+            uint32_t ino, type;
+            snprintf(name, sizeof(name), "batch%u", i);
+            bfs_err_t err = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, name,
+                                            (uint8_t)strlen(name), &ino, &type);
+            if (i == 0) first = err;
+            if (err != first || (err != BFS_OK && err != BFS_ERR_NOTFOUND))
+                valid = false;
+        }
+        bfs_fsck_report_t report, repaired;
+        if (valid && (bfs_fs_check(&fs, false, &report) != BFS_OK ||
+                      report.errors != 0))
+            valid = false;
+        if (valid && report.leaked_blocks > 0) {
+            if (bfs_fs_check(&fs, true, &repaired) != BFS_OK ||
+                repaired.repaired_blocks != report.leaked_blocks ||
+                bfs_fs_check(&fs, false, &report) != BFS_OK ||
+                report.errors != 0 || report.leaked_blocks != 0)
+                valid = false;
+        }
+        if (bfs_fs_unmount(&fs) != BFS_OK) valid = false;
+    }
+    bfs_bio_close(bio);
+    return valid;
+}
+
+static void test_crash_during_batch_reclaim(void)
+{
+    make_baseline_with_delete_batch();
+    uint32_t count = count_op_writes(op_delete_batch);
+    TEST_ASSERT(count > 4);
+    for (uint32_t cut = 0; cut <= count; cut++) {
+        make_baseline_with_delete_batch();
+        bfs_bio_t *bio = bio_emu_open(TEST_IMG, BLK_SIZE);
+        TEST_ASSERT(bio != NULL);
+        crashable_bio_t cb;
+        crashable_init(&cb, bio, UINT32_MAX);
+        bfs_fs_t fs;
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, &cb.base), BFS_OK);
+        cb.write_count = 0;
+        cb.writes_before_crash = cut;
+        op_delete_batch(&fs);
+        bfs_fs_abandon(&fs);
+        bfs_bio_close(bio);
+        bool valid = verify_delete_batch_after_crash();
+        if (!valid) fprintf(stderr, "batch reclaim crash cut: %u/%u\n", cut, count);
+        TEST_ASSERT(valid);
+    }
+    unlink(TEST_IMG);
+}
+
 static void test_crash_during_sync(void)
 {
     make_baseline();
@@ -355,5 +444,6 @@ TEST_SUITE_BEGIN("Crash Injection")
     TEST_RUN(test_crash_during_delete);
     TEST_RUN(test_crash_during_write);
     TEST_RUN(test_crash_during_batch_append);
+    TEST_RUN(test_crash_during_batch_reclaim);
     TEST_RUN(test_crash_during_sync);
 TEST_SUITE_END()

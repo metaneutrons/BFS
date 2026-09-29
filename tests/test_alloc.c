@@ -508,6 +508,90 @@ static void test_double_free_preserves_accounting(void)
     unlink(TEST_IMG);
 }
 
+static bool block_is_free_in_tree(bfs_freespace_t *fs, bfs_blk_t blk)
+{
+    uint32_t search = bfs_be32(blk), key, length;
+    if (bfs_btree_search_floor(&fs->tree, &search, &key, &length) != BFS_OK)
+        return false;
+    uint32_t start = bfs_be32(key);
+    return blk >= start && blk - start < bfs_be32(length);
+}
+
+static void test_sorted_batch_reclaim_single_leaf(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bfs_freespace_t *fs = make_fs(bio);
+    bfs_blk_t start = bfs_freespace_alloc(fs, 8);
+    TEST_ASSERT(start != BFS_BLK_NULL);
+    TEST_ASSERT_EQ(fs->tree.height, 1);
+    uint64_t available_before = freespace_capacity(fs);
+    bfs_blk_t blocks[] = {start, start + 1, start + 4, start + 7};
+
+    TEST_ASSERT_EQ(bfs_freespace_free_sorted_blocks(fs, blocks, 4), BFS_OK);
+    TEST_ASSERT_EQ(freespace_capacity(fs), available_before + 4);
+    for (uint32_t i = 0; i < 4; i++)
+        TEST_ASSERT(block_is_free_in_tree(fs, blocks[i]));
+    TEST_ASSERT(!block_is_free_in_tree(fs, start + 2));
+    TEST_ASSERT(!block_is_free_in_tree(fs, start + 5));
+    uint32_t key = bfs_be32(start), length;
+    TEST_ASSERT_EQ(bfs_btree_search(&fs->tree, &key, &length), BFS_OK);
+    TEST_ASSERT_EQ(bfs_be32(length), 2);
+    key = bfs_be32(start + 4);
+    TEST_ASSERT_EQ(bfs_btree_search(&fs->tree, &key, &length), BFS_OK);
+    TEST_ASSERT_EQ(bfs_be32(length), 1);
+    key = bfs_be32(start + 7);
+    TEST_ASSERT_EQ(bfs_btree_search(&fs->tree, &key, &length), BFS_OK);
+    TEST_ASSERT(bfs_be32(length) > 1);
+    key = bfs_be32(start + 8);
+    TEST_ASSERT_EQ(bfs_btree_search(&fs->tree, &key, &length), BFS_ERR_NOTFOUND);
+
+    bfs_blk_t duplicate[] = {start + 2, start + 2};
+    uint32_t free_before = fs->total_free;
+    bfs_blk_t root_before = fs->tree.root;
+    TEST_ASSERT_EQ(bfs_freespace_free_sorted_blocks(fs, duplicate, 2),
+                   BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(bfs_freespace_free_sorted_blocks(fs, blocks, 4),
+                   BFS_ERR_EXISTS);
+    TEST_ASSERT_EQ(fs->total_free, free_before);
+    TEST_ASSERT_EQ(fs->tree.root, root_before);
+
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_sorted_batch_reclaim_full_leaf_falls_back(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bfs_freespace_t *fs = make_fs(bio);
+    uint32_t capacity = bfs_btree_leaf_capacity(&fs->tree);
+    bfs_blk_t start = bfs_freespace_alloc(fs, 2u * capacity + 12u);
+    TEST_ASSERT(start != BFS_BLK_NULL);
+    for (uint32_t i = 0; i < capacity - 1; i++)
+        TEST_ASSERT_EQ(bfs_freespace_free(fs, start + 2u * i, 1), BFS_OK);
+    TEST_ASSERT_EQ(fs->tree.height, 1);
+    TEST_ASSERT_EQ(bfs_freespace_refill_reserve(fs), BFS_OK);
+    bfs_blk_t blocks[] = {
+        start + 2u * (capacity - 1u), start + 2u * capacity,
+    };
+    bfs_blk_t old_root = fs->tree.root;
+    uint32_t old_free = fs->total_free;
+    TEST_ASSERT_EQ(bfs_freespace_free_sorted_blocks(fs, blocks, 2),
+                   BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(fs->tree.root, old_root);
+    TEST_ASSERT_EQ(fs->total_free, old_free);
+    for (uint32_t i = 0; i < 2; i++)
+        TEST_ASSERT_EQ(bfs_freespace_free(fs, blocks[i], 1), BFS_OK);
+    TEST_ASSERT(block_is_free_in_tree(fs, blocks[0]));
+    TEST_ASSERT(block_is_free_in_tree(fs, blocks[1]));
+
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("Free Space Allocator")
     TEST_RUN(test_alloc_basic);
     TEST_RUN(test_alloc_multi);
@@ -519,4 +603,6 @@ TEST_SUITE_BEGIN("Free Space Allocator")
     TEST_RUN(test_self_hosting);
     TEST_RUN(test_out_of_space);
     TEST_RUN(test_double_free_preserves_accounting);
+    TEST_RUN(test_sorted_batch_reclaim_single_leaf);
+    TEST_RUN(test_sorted_batch_reclaim_full_leaf_falls_back);
 TEST_SUITE_END()

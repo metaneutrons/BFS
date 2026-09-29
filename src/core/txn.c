@@ -181,7 +181,7 @@ static bfs_err_t reclaim_block_ranges(bfs_fs_t *fs, const bfs_blk_t *blocks,
     return BFS_OK;
 }
 
-static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs)
+static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
 {
     uint32_t count = fs->pending_count;
     if (count > bfs_fs_pending_cap(fs) ||
@@ -199,9 +199,16 @@ static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs)
         }
     }
     fs->pending_count = 0;
-    bfs_err_t err = fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL
-        ? reclaim_shared_blocks(fs, blocks, count)
-        : reclaim_block_ranges(fs, blocks, count);
+    bfs_err_t err;
+    if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
+        err = reclaim_shared_blocks(fs, blocks, count);
+    } else {
+        err = allow_leaf_batch && count > 1
+            ? bfs_freespace_free_sorted_blocks(&fs->freespace, blocks, count)
+            : BFS_ERR_UNSUPPORTED;
+        if (err == BFS_ERR_UNSUPPORTED)
+            err = reclaim_block_ranges(fs, blocks, count);
+    }
     free(blocks);
     return err;
 }
@@ -228,7 +235,10 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
     int sync_iterations = 0;
     while (fs->pending_count > 0 && sync_iterations < 256) {
         sync_iterations++;
-        err = reclaim_pending_batch(fs);
+        /* A bulk root swap itself retires the preceding root. Limit batching
+         * to the initial reclaim pass; the ordinary path settles the resulting
+         * small tail without repeatedly swapping one root for another. */
+        err = reclaim_pending_batch(fs, sync_iterations == 1);
         if (err != BFS_OK) return err;
 
         err = bfs_freespace_return_reserve(&fs->freespace);

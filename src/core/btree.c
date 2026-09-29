@@ -440,6 +440,97 @@ static bfs_err_t cow_node(bfs_btree_t *tree, btree_mutation_t *mutation,
     return BFS_OK;
 }
 
+uint32_t bfs_btree_leaf_capacity(const bfs_btree_t *tree)
+{
+    if (!tree || !tree->bio || !tree->ops || !tree->ops->key_compare ||
+        tree->ops->key_size == 0 || tree->ops->key_size > BFS_MAX_KEY_SIZE ||
+        tree->ops->val_size == 0 || !bfs_block_size_valid(tree->bio->block_size))
+        return 0;
+    return leaf_max_keys(tree);
+}
+
+static bfs_err_t validate_root_leaf_replacement(bfs_btree_t *tree,
+                                                 const void *keys,
+                                                 const void *vals,
+                                                 uint32_t count)
+{
+    if (!tree || !tree->alloc || !keys || !vals ||
+        bfs_btree_leaf_capacity(tree) == 0)
+        return BFS_ERR_INVAL;
+    if (tree->height != 1 || tree->root == BFS_BLK_NULL)
+        return BFS_ERR_UNSUPPORTED;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+    if (count == 0 || count > leaf_max_keys(tree)) return BFS_ERR_INVAL;
+    const uint8_t *key_bytes = keys;
+    for (uint32_t i = 1; i < count; i++)
+        if (tree->ops->key_compare(key_bytes + (size_t)(i - 1) * tree->ops->key_size,
+                                   key_bytes + (size_t)i * tree->ops->key_size) >= 0)
+            return BFS_ERR_INVAL;
+    return BFS_OK;
+}
+
+static void build_root_leaf_replacement(bfs_btree_t *tree, uint8_t *new_buf,
+                                         const uint8_t *old_buf, const void *keys,
+                                         const void *vals, uint32_t count)
+{
+    node_init(tree, new_buf, BFS_BTNODE_LEAF);
+    hdr_of(new_buf)->num_keys = bfs_be32(count);
+    for (uint32_t i = 0; i < count; i++) {
+        memcpy(node_key(tree, new_buf, i),
+               (const uint8_t *)keys + (size_t)i * tree->ops->key_size,
+               tree->ops->key_size);
+        memcpy(leaf_val(tree, new_buf, i),
+               (const uint8_t *)vals + (size_t)i * tree->ops->val_size,
+               tree->ops->val_size);
+    }
+    hdr_of(new_buf)->right_sibling =
+        ((const bfs_btnode_hdr_t *)old_buf)->right_sibling;
+}
+
+bfs_err_t bfs_btree_replace_root_leaf(bfs_btree_t *tree, const void *keys,
+                                      const void *vals, uint32_t count)
+{
+    bfs_err_t err = validate_root_leaf_replacement(tree, keys, vals, count);
+    if (err != BFS_OK) return err;
+    tree->free_sink_err = BFS_OK;
+
+    err = mutation_headroom(tree, 1);
+    if (err != BFS_OK) return err;
+    uint8_t *old_buf = alloc_buf(tree);
+    uint8_t *new_buf = alloc_buf(tree);
+    if (!old_buf || !new_buf) {
+        free(old_buf);
+        free(new_buf);
+        return BFS_ERR_NOMEM;
+    }
+    bfs_blk_t old_root = tree->root;
+    err = node_read_at_level(tree, old_root, old_buf, BFS_BTNODE_LEAF);
+    if (err != BFS_OK) goto done;
+
+    btree_mutation_t mutation = {0};
+    build_root_leaf_replacement(tree, new_buf, old_buf, keys, vals, count);
+    bfs_blk_t new_root = mutation_alloc(tree, &mutation);
+    if (new_root == BFS_BLK_NULL) {
+        err = allocator_failure(tree);
+        goto abort_done;
+    }
+    err = node_write(tree, new_root, new_buf);
+    if (err != BFS_OK) goto abort_done;
+    err = mutation_retire(&mutation, old_root, old_buf);
+    if (err != BFS_OK) goto abort_done;
+    tree->root = new_root;
+    mutation_commit(tree, &mutation);
+    err = tree->free_sink_err;
+    goto done;
+
+abort_done:
+    mutation_abort(tree, &mutation);
+done:
+    free(old_buf);
+    free(new_buf);
+    return err;
+}
+
 /* Insert key/val into a leaf at position idx. Caller must ensure there's room. */
 static void leaf_insert_at(const bfs_btree_t *tree, uint8_t *buf,
                            uint32_t idx, const void *key, const void *val)

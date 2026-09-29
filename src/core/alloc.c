@@ -14,6 +14,7 @@
  */
 
 #include "bfs_alloc.h"
+#include <stdlib.h>
 #include <string.h>
 #ifdef BFS_PERF_PROBE
 #include "../amiga/perf_probe.h"
@@ -631,6 +632,160 @@ bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t coun
 fail:
     fs->last_error = err;
     fs->in_alloc = false;
+    return err;
+}
+
+typedef struct {
+    uint32_t *keys;
+    uint32_t *lengths;
+    uint32_t count;
+    uint32_t capacity;
+    bfs_blk_t block_count;
+    bfs_err_t error;
+} free_leaf_entries_t;
+
+static bool collect_free_leaf_entry(const void *key, const void *val, void *ctx)
+{
+    free_leaf_entries_t *entries = (free_leaf_entries_t *)ctx;
+    uint32_t start = bfs_load_be32(key);
+    uint32_t length = bfs_load_be32(val);
+    if (entries->count == entries->capacity || start == BFS_BLK_NULL ||
+        start >= entries->block_count || length == 0 ||
+        length > entries->block_count - start) {
+        entries->error = BFS_ERR_CORRUPT;
+        return false;
+    }
+    entries->keys[entries->count] = start;
+    entries->lengths[entries->count++] = length;
+    return true;
+}
+
+static bfs_err_t append_free_leaf_entry(free_leaf_entries_t *entries,
+                                        uint32_t start, uint32_t length)
+{
+    if (entries->count > 0) {
+        uint32_t prev = entries->count - 1;
+        uint64_t end = (uint64_t)entries->keys[prev] + entries->lengths[prev];
+        if (start < end) return BFS_ERR_EXISTS;
+        if (start == end) {
+            if (length > UINT32_MAX - entries->lengths[prev])
+                return BFS_ERR_CORRUPT;
+            entries->lengths[prev] += length;
+            return BFS_OK;
+        }
+    }
+    if (entries->count == entries->capacity) return BFS_ERR_UNSUPPORTED;
+    entries->keys[entries->count] = start;
+    entries->lengths[entries->count++] = length;
+    return BFS_OK;
+}
+
+static bfs_err_t validate_sorted_free_blocks(const bfs_freespace_t *fs,
+                                             const bfs_blk_t *blocks,
+                                             uint32_t count)
+{
+    if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE ||
+        count > UINT32_MAX - fs->total_free)
+        return BFS_ERR_CORRUPT;
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_blk_t blk = blocks[i];
+        if (blk == BFS_BLK_NULL || blk >= fs->tree.bio->block_count ||
+            (i > 0 && blk <= blocks[i - 1]))
+            return BFS_ERR_CORRUPT;
+        for (uint32_t j = 0; j < fs->reserve_count; j++)
+            if (fs->reserve[j] == blk) return BFS_ERR_EXISTS;
+        if (!fs->sb) continue;
+        for (uint32_t j = 0; j < BFS_EMERGENCY_POOL_SIZE; j++)
+            if (bfs_be32(fs->sb->emergency_pool[j]) == blk)
+                return BFS_ERR_UNSUPPORTED;
+    }
+    return BFS_OK;
+}
+
+static bfs_err_t merge_sorted_free_blocks(free_leaf_entries_t *old,
+                                         free_leaf_entries_t *next,
+                                         const bfs_blk_t *blocks,
+                                         uint32_t count)
+{
+    uint32_t old_index = 0, block_index = 0;
+    while (old_index < old->count || block_index < count) {
+        uint32_t start, length;
+        if (old_index < old->count &&
+            (block_index == count || old->keys[old_index] < blocks[block_index])) {
+            start = old->keys[old_index];
+            length = old->lengths[old_index++];
+        } else {
+            start = blocks[block_index++];
+            length = 1;
+        }
+        bfs_err_t err = append_free_leaf_entry(next, start, length);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
+static bfs_err_t replace_free_root_leaf(bfs_freespace_t *fs,
+                                        free_leaf_entries_t *entries,
+                                        uint32_t count)
+{
+    for (uint32_t i = 0; i < entries->count; i++) {
+        entries->keys[i] = bfs_be32(entries->keys[i]);
+        entries->lengths[i] = bfs_be32(entries->lengths[i]);
+    }
+    bfs_blk_t old_root = fs->tree.root;
+    fs->in_alloc = true;
+    bfs_err_t err = bfs_btree_replace_root_leaf(&fs->tree, entries->keys,
+                                                entries->lengths, entries->count);
+    fs->in_alloc = false;
+    if (fs->tree.root != old_root) fs->total_free += count;
+    fs->last_error = err;
+    return err;
+}
+
+/* Reclaim all post-publication blocks with one root-leaf COW where possible.
+ * The old root remains intact on allocation/write failure; deeper or overly
+ * fragmented trees keep the ordinary, range-by-range reclamation path. */
+bfs_err_t bfs_freespace_free_sorted_blocks(bfs_freespace_t *fs,
+                                           const bfs_blk_t *blocks,
+                                           uint32_t count)
+{
+    if (!fs || !fs->tree.bio || !blocks || count == 0)
+        return BFS_ERR_INVAL;
+    if (fs->tree.height != 1 || fs->tree.root == BFS_BLK_NULL)
+        return BFS_ERR_UNSUPPORTED;
+    bfs_err_t err = validate_sorted_free_blocks(fs, blocks, count);
+    if (err != BFS_OK) return err;
+
+    err = bfs_freespace_refill_reserve(fs);
+    if (err != BFS_OK) return err;
+    if (fs->tree.height != 1) return BFS_ERR_UNSUPPORTED;
+    uint32_t capacity = bfs_btree_leaf_capacity(&fs->tree);
+    if (capacity == 0)
+        return BFS_ERR_CORRUPT;
+    if ((size_t)capacity > SIZE_MAX / (4u * sizeof(uint32_t)))
+        return BFS_ERR_NOMEM;
+    uint32_t *memory = malloc((size_t)capacity * 4u * sizeof(uint32_t));
+    if (!memory) return BFS_ERR_NOMEM;
+    free_leaf_entries_t old = {
+        .keys = memory, .lengths = memory + capacity,
+        .count = 0, .capacity = capacity,
+        .block_count = fs->tree.bio->block_count, .error = BFS_OK,
+    };
+    free_leaf_entries_t next = {
+        .keys = memory + 2u * capacity,
+        .lengths = memory + 3u * capacity,
+        .count = 0, .capacity = capacity,
+        .block_count = fs->tree.bio->block_count, .error = BFS_OK,
+    };
+    err = bfs_btree_scan(&fs->tree, NULL, collect_free_leaf_entry, &old);
+    if (err != BFS_OK || old.error != BFS_OK) {
+        free(memory);
+        return err != BFS_OK ? err : old.error;
+    }
+
+    err = merge_sorted_free_blocks(&old, &next, blocks, count);
+    if (err == BFS_OK) err = replace_free_root_leaf(fs, &next, count);
+    free(memory);
     return err;
 }
 

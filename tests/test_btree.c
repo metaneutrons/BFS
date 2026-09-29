@@ -41,6 +41,26 @@ static const bfs_btree_ops_t u32_ops = {
 static void make_key(uint32_t *k, uint32_t v) { *k = bfs_be32(v); }
 static uint32_t read_key(const void *k) { return bfs_load_be32(k); }
 
+static bfs_bio_t *fail_write_target;
+static const bfs_bio_ops_t *fail_write_original_ops;
+static bool fail_next_write;
+static bfs_err_t test_read_block(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+{
+    (void)bio;
+    return fail_write_original_ops->read_block(fail_write_target, blk, buf);
+}
+static bfs_err_t test_write_block(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
+{
+    (void)bio;
+    if (fail_next_write) { fail_next_write = false; return BFS_ERR_IO; }
+    return fail_write_original_ops->write_block(fail_write_target, blk, buf);
+}
+
+static const bfs_bio_ops_t fail_write_ops = {
+    .read_block = test_read_block, .write_block = test_write_block,
+    .sync = NULL, .close = NULL
+};
+
 /* ── Test: empty tree search ───────────────────────────────── */
 
 static void test_empty_tree_search(void)
@@ -568,6 +588,91 @@ static void test_search_floor_exact_match(void)
     unlink(TEST_IMG);
 }
 
+static void test_replace_root_leaf(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops,
+                                  BFS_BLK_NULL, 1), BFS_OK);
+    uint32_t k, v;
+    make_key(&k, 1); make_key(&v, 10);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &k, &v), BFS_OK);
+    uint32_t keys[3], vals[3];
+    for (uint32_t i = 0; i < 3; i++) { make_key(&keys[i], i + 20); make_key(&vals[i], i + 200); }
+    TEST_ASSERT_EQ(bfs_btree_replace_root_leaf(&tree, keys, vals, 3), BFS_OK);
+    for (uint32_t i = 0; i < 3; i++) {
+        uint32_t got;
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &keys[i], &got), BFS_OK);
+        TEST_ASSERT_EQ(read_key(&got), i + 200);
+    }
+    TEST_ASSERT_EQ(bfs_btree_leaf_capacity(&tree), (BLK_SIZE - 28) / 8);
+    free(ba); bfs_bio_close(bio); unlink(TEST_IMG);
+}
+
+static void test_replace_root_leaf_rejects_order(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1);
+    uint32_t k, v, keys[2], vals[2], got;
+    make_key(&k, 1); make_key(&v, 2); bfs_btree_insert(&tree, &k, &v);
+    make_key(&keys[0], 5); make_key(&keys[1], 5);
+    TEST_ASSERT_EQ(bfs_btree_replace_root_leaf(&tree, keys, vals, 2), BFS_ERR_INVAL);
+    make_key(&keys[0], 6); make_key(&keys[1], 4);
+    TEST_ASSERT_EQ(bfs_btree_replace_root_leaf(&tree, keys, vals, 2), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &k, &got), BFS_OK);
+    TEST_ASSERT_EQ(read_key(&got), 2);
+    free(ba); bfs_bio_close(bio); unlink(TEST_IMG);
+}
+
+static void test_replace_root_leaf_write_failure(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1);
+    uint32_t k, v, key, val, got;
+    make_key(&k, 1); make_key(&v, 2); bfs_btree_insert(&tree, &k, &v);
+    make_key(&key, 3); make_key(&val, 4);
+    bfs_blk_t old_root = tree.root;
+    fail_write_target = bio; fail_write_original_ops = bio->ops;
+    bio->ops = &fail_write_ops; fail_next_write = true;
+    TEST_ASSERT_EQ(bfs_btree_replace_root_leaf(&tree, &key, &val, 1), BFS_ERR_IO);
+    bio->ops = fail_write_original_ops;
+    TEST_ASSERT_EQ(tree.root, old_root);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &k, &got), BFS_OK);
+    TEST_ASSERT_EQ(read_key(&got), 2);
+    free(ba); bfs_bio_close(bio); unlink(TEST_IMG);
+}
+
+static void test_replace_root_leaf_deeper_unsupported(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1);
+    for (uint32_t i = 0; i < 1000; i++) {
+        uint32_t k, v; make_key(&k, i); make_key(&v, i);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, &k, &v), BFS_OK);
+    }
+    TEST_ASSERT(tree.height > 1);
+    uint32_t key, val; make_key(&key, 2000); make_key(&val, 1);
+    bfs_blk_t root = tree.root;
+    TEST_ASSERT_EQ(bfs_btree_replace_root_leaf(&tree, &key, &val, 1), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(tree.root, root);
+    free(ba); bfs_bio_close(bio); unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_empty_tree_search);
     TEST_RUN(test_single_insert_search);
@@ -585,4 +690,8 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_search_floor_key_smaller_than_all);
     TEST_RUN(test_search_floor_key_larger_than_all);
     TEST_RUN(test_search_floor_exact_match);
+    TEST_RUN(test_replace_root_leaf);
+    TEST_RUN(test_replace_root_leaf_rejects_order);
+    TEST_RUN(test_replace_root_leaf_write_failure);
+    TEST_RUN(test_replace_root_leaf_deeper_unsupported);
 TEST_SUITE_END()

@@ -1123,6 +1123,43 @@ static void test_reserve_return_write_failures_preserve_committed_tree(void)
     unlink(TEST_IMG);
 }
 
+static void test_batch_leaf_write_failure_preserves_root(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "BatchFault", 0), BFS_OK);
+    failing_bio_t fb;
+    init_failing_bio(&fb, bio);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+    bfs_blk_t start = bfs_freespace_alloc(&fs.freespace, 8);
+    TEST_ASSERT(start != BFS_BLK_NULL);
+    TEST_ASSERT_EQ(fs.freespace.tree.height, 1);
+    bfs_blk_t blocks[] = {start, start + 2};
+    bfs_blk_t old_root = fs.freespace.tree.root;
+    uint32_t old_free = fs.freespace.total_free;
+
+    fb.writes_until_failure = 1;
+    TEST_ASSERT_EQ(bfs_freespace_free_sorted_blocks(&fs.freespace, blocks, 2),
+                   BFS_ERR_IO);
+    fb.writes_until_failure = 0;
+    TEST_ASSERT_EQ(fs.freespace.tree.root, old_root);
+    TEST_ASSERT_EQ(fs.freespace.total_free, old_free);
+    TEST_ASSERT_EQ(bfs_freespace_free_sorted_blocks(&fs.freespace, blocks, 2),
+                   BFS_OK);
+
+    bfs_fs_abandon(&fs);
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    bfs_fsck_report_t report;
+    TEST_ASSERT_EQ(bfs_fs_check(&fs, false, &report), BFS_OK);
+    TEST_ASSERT_EQ(report.errors, 0);
+    TEST_ASSERT_EQ(report.leaked_blocks, 0);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 static bool append_file_state_matches(bfs_fs_t *fs, uint32_t ino,
                                       uint64_t expected_size,
                                       bool check_extent_root,
@@ -1375,6 +1412,7 @@ TEST_SUITE_BEGIN("Hardware Failure Simulation")
     TEST_RUN(test_snapshot_delete_write_failure_recovery);
     TEST_RUN(test_allocator_refill_failure_can_retry_free);
     TEST_RUN(test_reserve_return_write_failures_preserve_committed_tree);
+    TEST_RUN(test_batch_leaf_write_failure_preserves_root);
     TEST_RUN(test_short_write_publishes_inode);
     TEST_RUN(test_append_data_write_failure_publishes_prefix);
     TEST_RUN(test_append_extent_write_failure_preserves_old_file);
