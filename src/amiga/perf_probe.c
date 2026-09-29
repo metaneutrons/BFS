@@ -46,11 +46,11 @@ void bfs_perf_probe_close(void)
 void bfs_perf_probe_reset(void)
 {
     ULONG hz = bfs_perf_probe_counters.clock_hz;
-    uint64_t pair_ticks = 0;
     memset(&bfs_perf_probe_counters, 0, sizeof(bfs_perf_probe_counters));
     bfs_perf_probe_counters.clock_hz = hz;
     bfs_perf_probe_data_depth = 0;
     if (hz != 0) {
+        uint64_t pair_ticks = 0;
         for (ULONG i = 0; i < 256; i++) {
             struct EClockVal started = {0};
             bfs_perf_probe_begin(&started);

@@ -241,158 +241,179 @@ static BOOL checked_close(BPTR handle)
     return Close(handle) != 0;
 }
 
-static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
+static const char *create_small_files(const char *drive)
 {
     char path[128];
-    struct timeval before, after;
-    BPTR handle;
-    ULONG index, pass, offset, elapsed;
-    ULONG clock_hz = 0;
-    const char *probe_phase;
-    bfs_perf_probe_snapshot_t snapshot;
-
-    if (!make_path(path, sizeof(path), drive, "perf")) return fail("path");
-    handle = CreateDir(path);
-    if (!handle) return fail("mkdir");
-    UnLock(handle);
-
-    if (deep_mode) emit("FS_DEEP_COMPARE\t4\nDRIVE\t");
-    else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
-    emit(drive);
-    emit("\n");
-
-    if (probe_enabled && !perf_reset(drive)) return fail("perf-reset-create");
-    if (!clock_time(&before)) return fail("timer-create");
+    ULONG index;
     for (index = 0; index < SMALL_COUNT; index++) {
-        if (!small_path(path, sizeof(path), drive, index)) return fail("small-path");
+        BPTR handle;
+        if (!small_path(path, sizeof(path), drive, index)) return "small-path";
         handle = Open(path, MODE_NEWFILE);
-        if (!handle) return fail("small-open-write");
+        if (!handle) return "small-open-write";
         if (Write(handle, expected, SMALL_BYTES) != SMALL_BYTES) {
             Close(handle);
-            return fail("small-write");
+            return "small-write";
         }
         {
             BOOL flushed = Flush(handle);
             BOOL closed = checked_close(handle);
-            if (!flushed || !closed) return fail("small-close");
+            if (!flushed || !closed) return "small-close";
         }
     }
-    if (!clock_time(&after) || !elapsed_us(&before, &after, &elapsed))
-        return fail("timer-create");
-    if (probe_enabled) {
-        probe_phase = capture_probe(drive, &snapshot, &clock_hz);
-        if (probe_phase) return fail(probe_phase);
-    }
-    metric("SMALL_CREATE_40_US", elapsed);
-    if (probe_enabled) emit_deep_counter_rows("SMALL_CREATE_40", &snapshot);
+    return NULL;
+}
 
-    if (probe_enabled && !perf_reset(drive)) return fail("perf-reset-lookup");
-    if (!clock_time(&before)) return fail("timer-lookup");
+static const char *lookup_small_files(const char *drive)
+{
+    char path[128];
+    ULONG index, pass;
     for (pass = 0; pass < 10; pass++) {
         for (index = 0; index < SMALL_COUNT; index++) {
-            if (!small_path(path, sizeof(path), drive, index)) return fail("small-path");
+            BPTR handle;
+            if (!small_path(path, sizeof(path), drive, index)) return "small-path";
             handle = Lock(path, SHARED_LOCK);
-            if (!handle) return fail("small-lock");
+            if (!handle) return "small-lock";
             UnLock(handle);
         }
     }
-    if (!clock_time(&after) || !elapsed_us(&before, &after, &elapsed))
-        return fail("timer-lookup");
-    if (probe_enabled) {
-        probe_phase = capture_probe(drive, &snapshot, &clock_hz);
-        if (probe_phase) return fail(probe_phase);
-    }
-    metric("LOOKUP_400_US", elapsed);
-    if (probe_enabled) emit_deep_counter_rows("LOOKUP_400", &snapshot);
+    return NULL;
+}
 
-    if (probe_enabled && !perf_reset(drive)) return fail("perf-reset-small-read");
-    if (!clock_time(&before)) return fail("timer-small-read");
+static const char *read_small_files(const char *drive)
+{
+    char path[128];
+    ULONG index;
     for (index = 0; index < SMALL_COUNT; index++) {
-        if (!small_path(path, sizeof(path), drive, index)) return fail("small-path");
+        BPTR handle;
+        if (!small_path(path, sizeof(path), drive, index)) return "small-path";
         handle = Open(path, MODE_OLDFILE);
-        if (!handle) return fail("small-open-read");
+        if (!handle) return "small-open-read";
         if (Read(handle, received, SMALL_BYTES) != SMALL_BYTES ||
             !equal_bytes(expected, received, SMALL_BYTES) ||
             Read(handle, received, 1) != 0) {
             Close(handle);
-            return fail("small-read-verify");
+            return "small-read-verify";
         }
-        if (!checked_close(handle)) return fail("small-read-close");
+        if (!checked_close(handle)) return "small-read-close";
     }
-    if (!clock_time(&after) || !elapsed_us(&before, &after, &elapsed))
-        return fail("timer-small-read");
-    if (probe_enabled) {
-        probe_phase = capture_probe(drive, &snapshot, &clock_hz);
-        if (probe_phase) return fail(probe_phase);
-    }
-    metric("SMALL_READ_40_US", elapsed);
-    if (probe_enabled) emit_deep_counter_rows("SMALL_READ_40", &snapshot);
+    return NULL;
+}
 
-    if (!make_path(path, sizeof(path), drive, "perf_big")) return fail("path");
-    if (probe_enabled && !perf_reset(drive)) return fail("perf-reset-large-write");
-    if (!clock_time(&before)) return fail("timer-large-write");
+static const char *write_large_file(const char *drive)
+{
+    char path[128];
+    ULONG offset;
+    BPTR handle;
+    if (!make_path(path, sizeof(path), drive, "perf_big")) return "path";
     handle = Open(path, MODE_NEWFILE);
-    if (!handle) return fail("large-open-write");
+    if (!handle) return "large-open-write";
     for (offset = 0; offset < LARGE_BYTES; offset += BUFFER_BYTES) {
         if (Write(handle, expected, BUFFER_BYTES) != BUFFER_BYTES) {
             Close(handle);
-            return fail("large-write");
+            return "large-write";
         }
     }
     {
         BOOL flushed = Flush(handle);
         BOOL closed = checked_close(handle);
-        if (!flushed || !closed) return fail("large-close");
+        if (!flushed || !closed) return "large-close";
     }
-    if (!clock_time(&after) || !elapsed_us(&before, &after, &elapsed))
-        return fail("timer-large-write");
-    if (probe_enabled) {
-        probe_phase = capture_probe(drive, &snapshot, &clock_hz);
-        if (probe_phase) return fail(probe_phase);
-    }
-    metric("SEQ_WRITE_8M_US", elapsed);
-    if (probe_enabled) emit_deep_counter_rows("SEQ_WRITE_8M", &snapshot);
+    return NULL;
+}
 
-    if (probe_enabled && !perf_reset(drive)) return fail("perf-reset-large-read");
-    if (!clock_time(&before)) return fail("timer-large-read");
+static const char *read_large_file(const char *drive)
+{
+    char path[128];
+    ULONG offset;
+    BPTR handle;
+    if (!make_path(path, sizeof(path), drive, "perf_big")) return "path";
     handle = Open(path, MODE_OLDFILE);
-    if (!handle) return fail("large-open-read");
+    if (!handle) return "large-open-read";
     for (offset = 0; offset < LARGE_BYTES; offset += BUFFER_BYTES) {
         if (Read(handle, received, BUFFER_BYTES) != BUFFER_BYTES ||
             !equal_bytes(expected, received, BUFFER_BYTES)) {
             Close(handle);
-            return fail("large-read-verify");
+            return "large-read-verify";
         }
     }
     {
         LONG trailing = Read(handle, received, 1);
         BOOL closed = checked_close(handle);
-        if (trailing != 0 || !closed) return fail("large-read-close");
+        if (trailing != 0 || !closed) return "large-read-close";
     }
-    if (!clock_time(&after) || !elapsed_us(&before, &after, &elapsed))
-        return fail("timer-large-read");
-    if (probe_enabled) {
-        probe_phase = capture_probe(drive, &snapshot, &clock_hz);
-        if (probe_phase) return fail(probe_phase);
-    }
-    metric("SEQ_READ_8M_US", elapsed);
-    if (probe_enabled) emit_deep_counter_rows("SEQ_READ_8M", &snapshot);
+    return NULL;
+}
 
-    if (probe_enabled && !perf_reset(drive)) return fail("perf-reset-delete");
-    if (!clock_time(&before)) return fail("timer-delete");
+static const char *delete_small_files(const char *drive)
+{
+    char path[128];
+    ULONG index;
     for (index = 0; index < SMALL_COUNT; index++) {
-        if (!small_path(path, sizeof(path), drive, index)) return fail("small-path");
-        if (!DeleteFile(path)) return fail("small-delete");
+        if (!small_path(path, sizeof(path), drive, index)) return "small-path";
+        if (!DeleteFile(path)) return "small-delete";
     }
+    return NULL;
+}
+
+typedef const char *(*workload_fn)(const char *drive);
+
+static const char *run_phase(const char *drive, const char *phase,
+                             const char *reset_error, const char *timer_error,
+                             BOOL probe_enabled, ULONG *clock_hz,
+                             workload_fn workload)
+{
+    struct timeval before, after;
+    bfs_perf_probe_snapshot_t snapshot;
+    ULONG elapsed;
+    const char *error;
+    if (probe_enabled && !perf_reset(drive)) return reset_error;
+    if (!clock_time(&before)) return timer_error;
+    error = workload(drive);
+    if (error) return error;
     if (!clock_time(&after) || !elapsed_us(&before, &after, &elapsed))
-        return fail("timer-delete");
+        return timer_error;
     if (probe_enabled) {
-        probe_phase = capture_probe(drive, &snapshot, &clock_hz);
-        if (probe_phase) return fail(probe_phase);
+        error = capture_probe(drive, &snapshot, clock_hz);
+        if (error) return error;
     }
-    metric("SMALL_DELETE_40_US", elapsed);
+    prefixed_metric(phase, "US", elapsed);
+    if (probe_enabled) emit_deep_counter_rows(phase, &snapshot);
+    return NULL;
+}
+
+static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
+{
+    char path[128];
+    BPTR handle;
+    ULONG clock_hz = 0;
+    const char *error;
+    if (!make_path(path, sizeof(path), drive, "perf")) return fail("path");
+    handle = CreateDir(path);
+    if (!handle) return fail("mkdir");
+    UnLock(handle);
+    if (deep_mode) emit("FS_DEEP_COMPARE\t4\nDRIVE\t");
+    else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
+    emit(drive);
+    emit("\n");
+    error = run_phase(drive, "SMALL_CREATE_40", "perf-reset-create", "timer-create",
+                      probe_enabled, &clock_hz, create_small_files);
+    if (error) return fail(error);
+    error = run_phase(drive, "LOOKUP_400", "perf-reset-lookup", "timer-lookup",
+                      probe_enabled, &clock_hz, lookup_small_files);
+    if (error) return fail(error);
+    error = run_phase(drive, "SMALL_READ_40", "perf-reset-small-read", "timer-small-read",
+                      probe_enabled, &clock_hz, read_small_files);
+    if (error) return fail(error);
+    error = run_phase(drive, "SEQ_WRITE_8M", "perf-reset-large-write", "timer-large-write",
+                      probe_enabled, &clock_hz, write_large_file);
+    if (error) return fail(error);
+    error = run_phase(drive, "SEQ_READ_8M", "perf-reset-large-read", "timer-large-read",
+                      probe_enabled, &clock_hz, read_large_file);
+    if (error) return fail(error);
+    error = run_phase(drive, "SMALL_DELETE_40", "perf-reset-delete", "timer-delete",
+                      probe_enabled, &clock_hz, delete_small_files);
+    if (error) return fail(error);
     if (probe_enabled) {
-        emit_deep_counter_rows("SMALL_DELETE_40", &snapshot);
         metric("CLOCK_HZ", clock_hz);
         metric("CRC_SAMPLE_STRIDE", BFS_PERF_CRC_SAMPLE_STRIDE);
     }
@@ -403,7 +424,6 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
 int main(int argc, char **argv)
 {
     int result;
-    ULONG index;
     BOOL deep_mode = argc == 3 && argv[2] && text_equal(argv[2], "deep");
     BOOL probe_enabled;
 
@@ -424,6 +444,7 @@ int main(int argc, char **argv)
         emit("FAIL\tallocation\n");
         result = 20;
     } else {
+        ULONG index;
         for (index = 0; index < BUFFER_BYTES; index++)
             expected[index] = (UBYTE)((index * 31UL + 17UL) & 0xff);
         result = run(argv[1], deep_mode, probe_enabled);

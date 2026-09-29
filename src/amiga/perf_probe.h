@@ -24,10 +24,15 @@ typedef struct bfs_perf_probe_snapshot {
     ULONG btree_node_writes;
     ULONG txn_commit_calls;
     ULONG clock_hz;
+    // cppcheck-suppress unusedStructMember
     uint64_t bio_read_ticks;
+    // cppcheck-suppress unusedStructMember
     uint64_t bio_write_ticks;
+    // cppcheck-suppress unusedStructMember
     uint64_t bio_update_ticks;
+    // cppcheck-suppress unusedStructMember
     uint64_t data_read_ticks;
+    // cppcheck-suppress unusedStructMember
     uint64_t data_write_ticks;
     ULONG free_tree_node_writes;
     ULONG dir_tree_node_writes;
@@ -39,7 +44,9 @@ typedef struct bfs_perf_probe_snapshot {
     ULONG node_crc_read_samples;
     ULONG node_crc_write_samples;
     ULONG clock_pair_ticks;
+    // cppcheck-suppress unusedStructMember
     uint64_t node_crc_read_sample_ticks;
+    // cppcheck-suppress unusedStructMember
     uint64_t node_crc_write_sample_ticks;
 } bfs_perf_probe_snapshot_t;
 

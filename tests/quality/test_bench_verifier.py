@@ -3,7 +3,7 @@
 
 from pathlib import Path
 import shutil
-import subprocess
+import subprocess  # nosec B404 - invokes only the fixed repository verifier, without a shell
 import tempfile
 import unittest
 
@@ -31,7 +31,7 @@ class BenchVerifierTests(unittest.TestCase):
         return subprocess.run(
             [str(VERIFIER), str(self.run_dir), mode],
             capture_output=True, text=True, check=False,
-        )
+        )  # nosec B603 - executable path and mode are fixed by this test
 
     def test_real_deep_compare_evidence_passes(self):
         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")

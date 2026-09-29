@@ -356,17 +356,69 @@ static const char *profile_write_phase(const char *drive, const char *path,
     return NULL;
 }
 
+static const char *read_checked_data(BPTR handle)
+{
+    ULONG offset;
+    for (offset = 0; offset < FILE_BYTES; offset += BUFFER_BYTES) {
+        if (Read(handle, received, (LONG)BUFFER_BYTES) != (LONG)BUFFER_BYTES ||
+            !equal_bytes(expected, received, BUFFER_BYTES))
+            return "read-verify";
+    }
+    if (Read(handle, received, 1) != 0) return "read-eof";
+    return NULL;
+}
+
+static const char *profile_read_phase(const char *drive, const char *path,
+                                      BOOL deep_mode, BOOL probe_enabled)
+{
+    BPTR handle = Open(path, MODE_OLDFILE);
+    struct timeval before, after;
+    unsigned long long read_us;
+    bfs_perf_probe_snapshot_t snapshot;
+    const char *error;
+    if (!handle) return "read-open";
+    if (probe_enabled && deep_mode && !perf_reset(drive)) {
+        Close(handle);
+        return "perf-reset-read";
+    }
+    if (!clock_time(&before)) {
+        Close(handle);
+        return "timer-read";
+    }
+    error = read_checked_data(handle);
+    if (error) {
+        Close(handle);
+        return error;
+    }
+    if (!clock_time(&after) || !elapsed_us(&before, &after, &read_us)) {
+        Close(handle);
+        return "timer-read";
+    }
+    if (probe_enabled && deep_mode) {
+        if (!perf_read(drive, &snapshot)) {
+            Close(handle);
+            return "perf-read-read";
+        }
+        if (snapshot.clock_hz == 0) {
+            Close(handle);
+            return "perf-clock-hz";
+        }
+    }
+    if (Close(handle) == 0) return "read-close";
+    metric("READ_VERIFY_8M_US", read_us);
+    if (probe_enabled && deep_mode) {
+        emit_deep_counter_rows("READ", &snapshot);
+        metric("CLOCK_HZ", snapshot.clock_hz);
+    }
+    return NULL;
+}
+
 static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
 {
     char path[128];
-    BPTR handle, lock;
-    struct timeval before, after;
-    unsigned long long read_us;
-    ULONG offset;
+    BPTR lock;
     const char *phase;
     bfs_perf_probe_snapshot_t snapshot;
-    BOOL read_snapshot_valid = FALSE;
-
     if (!make_path(path, sizeof(path), drive, "fsprofile.bin")) return fail("path");
     lock = Lock(path, ACCESS_READ);
     if (lock) {
@@ -374,57 +426,14 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
         return fail("fresh-exists");
     }
     if (IoErr() != ERROR_OBJECT_NOT_FOUND) return fail("fresh-check");
-
     phase = profile_write_phase(drive, path, probe_enabled, deep_mode,
                                 FALSE, &snapshot);
     if (phase) return fail(phase);
     phase = profile_write_phase(drive, path, probe_enabled, deep_mode,
                                 TRUE, &snapshot);
     if (phase) return fail(phase);
-
-    handle = Open(path, MODE_OLDFILE);
-    if (!handle) return fail("read-open");
-    if (probe_enabled && deep_mode && !perf_reset(drive)) {
-        Close(handle);
-        return fail("perf-reset-read");
-    }
-    if (!clock_time(&before)) {
-        Close(handle);
-        return fail("timer-read");
-    }
-    for (offset = 0; offset < FILE_BYTES; offset += BUFFER_BYTES) {
-        if (Read(handle, received, (LONG)BUFFER_BYTES) != (LONG)BUFFER_BYTES ||
-            !equal_bytes(expected, received, BUFFER_BYTES)) {
-            Close(handle);
-            return fail("read-verify");
-        }
-    }
-    if (Read(handle, received, 1) != 0) {
-        Close(handle);
-        return fail("read-eof");
-    }
-    if (!clock_time(&after) || !elapsed_us(&before, &after, &read_us)) {
-        Close(handle);
-        return fail("timer-read");
-    }
-    if (probe_enabled && deep_mode) {
-        if (!perf_read(drive, &snapshot)) {
-            Close(handle);
-            return fail("perf-read-read");
-        }
-        if (snapshot.clock_hz == 0) {
-            Close(handle);
-            return fail("perf-clock-hz");
-        }
-        read_snapshot_valid = TRUE;
-    }
-    if (Close(handle) == 0) return fail("read-close");
-    metric("READ_VERIFY_8M_US", read_us);
-    if (read_snapshot_valid) {
-        emit_deep_counter_rows("READ", &snapshot);
-        metric("CLOCK_HZ", snapshot.clock_hz);
-    }
-
+    phase = profile_read_phase(drive, path, deep_mode, probe_enabled);
+    if (phase) return fail(phase);
     emit("PASS\t1\n");
     return 0;
 }
