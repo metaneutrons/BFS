@@ -32,11 +32,18 @@ typedef struct bfs_bio_ops {
     /* Close and free resources. */
     void (*close)(bfs_bio_t *bio);
 
-    /* Optional: a write-through cache may remember that the resident block
-     * passed a full B-tree node CRC and structural validation. Any write,
-     * eviction or invalidation must clear that state. */
-    bool (*node_verified)(bfs_bio_t *bio, bfs_blk_t blk);
-    void (*mark_node_verified)(bfs_bio_t *bio, bfs_blk_t blk);
+    /* Optional: write a B-tree node block whose full-block CRC was just
+     * computed and installed by the B-tree engine. A caching BIO may retain
+     * the successfully written bytes with their CRC known valid. */
+    bfs_err_t (*write_node_block)(bfs_bio_t *bio, bfs_blk_t blk,
+                                  const void *buf);
+
+    /* Optional: report whether the resident block's B-tree node CRC is
+     * already known valid. This does not imply structural validation.
+     * Ordinary or failed writes, eviction and invalidation clear the state;
+     * a successful trusted node write may set it. */
+    bool (*node_crc_valid)(bfs_bio_t *bio, bfs_blk_t blk);
+    void (*mark_node_crc_valid)(bfs_bio_t *bio, bfs_blk_t blk);
 } bfs_bio_ops_t;
 
 /* Base block device — all implementations embed this as first member */
@@ -76,6 +83,17 @@ static inline bfs_err_t bfs_bio_write(bfs_bio_t *bio, bfs_blk_t blk, const void 
     return bio->ops->write_block(bio, blk, buf);
 }
 
+/* Write a B-tree node block. Backends without this optional operation retain
+ * the ordinary BIO write behavior. */
+static inline bfs_err_t bfs_bio_write_node(bfs_bio_t *bio, bfs_blk_t blk,
+                                           const void *buf) {
+    if (!bio || !bio->ops || !buf || blk >= bio->block_count)
+        return BFS_ERR_INVAL;
+    if (bio->ops->write_node_block)
+        return bio->ops->write_node_block(bio, blk, buf);
+    return bfs_bio_write(bio, blk, buf);
+}
+
 static inline bfs_err_t bfs_bio_sync(bfs_bio_t *bio) {
     if (!bio || !bio->ops || !bio->ops->sync)
         return BFS_ERR_INVAL;
@@ -86,14 +104,14 @@ static inline void bfs_bio_close(bfs_bio_t *bio) {
     if (bio && bio->ops && bio->ops->close) bio->ops->close(bio);
 }
 
-static inline bool bfs_bio_node_verified(bfs_bio_t *bio, bfs_blk_t blk) {
-    return bio && bio->ops && bio->ops->node_verified &&
-           bio->ops->node_verified(bio, blk);
+static inline bool bfs_bio_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk) {
+    return bio && bio->ops && bio->ops->node_crc_valid &&
+           bio->ops->node_crc_valid(bio, blk);
 }
 
-static inline void bfs_bio_mark_node_verified(bfs_bio_t *bio, bfs_blk_t blk) {
-    if (bio && bio->ops && bio->ops->mark_node_verified)
-        bio->ops->mark_node_verified(bio, blk);
+static inline void bfs_bio_mark_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk) {
+    if (bio && bio->ops && bio->ops->mark_node_crc_valid)
+        bio->ops->mark_node_crc_valid(bio, blk);
 }
 
 #endif /* BFS_BIO_H */

@@ -74,7 +74,7 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     if (bfs_be32(hdr->magic) != BFS_NODE_MAGIC)
         return BFS_ERR_CORRUPT;
-    if (!bfs_bio_node_verified(tree->bio, blk)) {
+    if (!bfs_bio_node_crc_valid(tree->bio, blk)) {
 #ifdef BFS_PERF_PROBE
         struct EClockVal crc_started = {0};
         ULONG crc_call = ++bfs_perf_probe_counters.node_crc_read_calls;
@@ -122,7 +122,7 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
             }
         }
     }
-    bfs_bio_mark_node_verified(tree->bio, blk);
+    bfs_bio_mark_node_crc_valid(tree->bio, blk);
     return BFS_OK;
 }
 
@@ -159,7 +159,7 @@ static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf
     else
         bfs_perf_probe_counters.other_tree_node_writes++;
 #endif
-    return bfs_bio_write(tree->bio, blk, buf);
+    return bfs_bio_write_node(tree->bio, blk, buf);
 }
 
 static bfs_err_t node_read_at_level(const bfs_btree_t *tree, bfs_blk_t blk,

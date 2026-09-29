@@ -4,8 +4,7 @@
 | uint32_t bfs_crc32(uint32_t initial, const void *data, size_t len)
 |
 | IEEE 802.3 reflected polynomial (0xEDB88320).
-| Uses table lookup, 4x unrolled inner loop.
-| ~2-3x faster than GCC -Os C version on 68020.
+| Uses a slicing-by-4 lookup for independent table accesses per 4-byte block.
 
         .text
         .even
@@ -17,67 +16,67 @@
 |  12(sp) = len     (size_t / uint32_t)
 
 _bfs_crc32:
-        movem.l d2-d4/a2,-(sp)         | save registers
-        | Adjust stack offsets: +16 for saved regs
-        move.l  20(sp),d0               | d0 = initial
-        move.l  24(sp),a0               | a0 = data pointer
-        move.l  28(sp),d2               | d2 = len
+        movem.l d2-d4/a2-a4,-(sp)       | save callee-saved registers
+        | Adjust stack offsets: +24 for saved regs
+        move.l  28(sp),d0               | d0 = initial
+        move.l  32(sp),a0               | a0 = data pointer
+        move.l  36(sp),d2               | d2 = len
 
         not.l   d0                      | crc = ~initial
-        lea     crc32_table_68k(pc),a1  | a1 = table base
+        lea     crc32_table_68k(pc),a1  | a1 = T0
+        lea     0x400(a1),a2            | a2 = T1
+        lea     0x800(a1),a3            | a3 = T2
+        lea     0xC00(a1),a4            | a4 = T3
 
-        | Handle len == 0
+        | Handle zero length before reading data.
         tst.l   d2
-        beq.s   .Ldone
+        beq     .Ldone
 
-        | Process 4 bytes at a time (unrolled)
-        move.l  d2,d3
-        lsr.l   #2,d3                   | d3 = len / 4
-        beq.s   .Ltail                  | less than 4 bytes
+        | Process complete 4-byte blocks; d2 remains the byte count.
+        cmpi.l  #4,d2
+        bcs.s   .Ltail
 
 .Lloop4:
-        | Byte 0
-        moveq   #0,d1
-        move.b  (a0)+,d1
-        eor.b   d0,d1
-        lsr.l   #8,d0
-        lsl.w   #2,d1
-        move.l  (a1,d1.w),d4
-        eor.l   d4,d0
+        | crc' = T3[(crc ^ b0) & 0xff]
+        |      ^ T2[((crc >> 8) ^ b1) & 0xff]
+        |      ^ T1[((crc >> 16) ^ b2) & 0xff]
+        |      ^ T0[((crc >> 24) ^ b3) & 0xff]
+        | Fold one possibly unaligned big-endian load into little-endian order.
+        move.l  (a0)+,d1
+        rol.w   #8,d1
+        swap    d1
+        rol.w   #8,d1
+        eor.l   d0,d1
 
-        | Byte 1
-        moveq   #0,d1
-        move.b  (a0)+,d1
-        eor.b   d0,d1
-        lsr.l   #8,d0
-        lsl.w   #2,d1
-        move.l  (a1,d1.w),d4
-        eor.l   d4,d0
+        moveq   #0,d3
+        move.b  d1,d3
+        move.l  (a4,d3.w*4),d4
 
-        | Byte 2
-        moveq   #0,d1
-        move.b  (a0)+,d1
-        eor.b   d0,d1
-        lsr.l   #8,d0
-        lsl.w   #2,d1
-        move.l  (a1,d1.w),d4
-        eor.l   d4,d0
+        move.w  d1,d3
+        lsr.w   #8,d3
+        move.l  (a3,d3.w*4),d3
+        eor.l   d3,d4
 
-        | Byte 3
-        moveq   #0,d1
-        move.b  (a0)+,d1
-        eor.b   d0,d1
-        lsr.l   #8,d0
-        lsl.w   #2,d1
-        move.l  (a1,d1.w),d4
-        eor.l   d4,d0
+        move.l  d1,d3
+        swap    d3
+        andi.w  #0x00FF,d3
+        move.l  (a2,d3.w*4),d3
+        eor.l   d3,d4
 
-        subq.l  #1,d3
-        bne.s   .Lloop4
+        move.l  d1,d3
+        swap    d3
+        lsr.w   #8,d3
+        move.l  (a1,d3.w*4),d3
+        eor.l   d3,d4
+
+        move.l  d4,d0
+        subq.l  #4,d2
+        cmpi.l  #4,d2
+        bcc.s   .Lloop4
 
 .Ltail:
-        | Process remaining 0-3 bytes
-        andi.l  #3,d2                   | d2 = len & 3
+        | Process remaining 0-3 bytes with the base table.
+        tst.l   d2
         beq.s   .Ldone
 
 .Lloop1:
@@ -94,7 +93,7 @@ _bfs_crc32:
 
 .Ldone:
         not.l   d0                      | return ~crc
-        movem.l (sp)+,d2-d4/a2          | restore registers
+        movem.l (sp)+,d2-d4/a2-a4       | restore registers
         rts
 
 | ── CRC32 lookup table (IEEE 802.3, polynomial 0xEDB88320) ──
@@ -164,3 +163,203 @@ crc32_table_68k:
         .long 0xBAD03605, 0xCDD70693, 0x54DE5729, 0x23D967BF
         .long 0xB3667A2E, 0xC4614AB8, 0x5D681B02, 0x2A6F2B94
         .long 0xB40BBE37, 0xC30C8EA1, 0x5A05DF1B, 0x2D02EF8D
+
+| Slicing tables T1, T2 and T3, derived by advancing T0 through zero bytes.
+| The lookup order is T0, T1, T2, T3 so the bases above are 0x400 bytes apart.
+crc32_table_68k_t1:
+        .long 0x00000000, 0x191B3141, 0x32366282, 0x2B2D53C3
+        .long 0x646CC504, 0x7D77F445, 0x565AA786, 0x4F4196C7
+        .long 0xC8D98A08, 0xD1C2BB49, 0xFAEFE88A, 0xE3F4D9CB
+        .long 0xACB54F0C, 0xB5AE7E4D, 0x9E832D8E, 0x87981CCF
+        .long 0x4AC21251, 0x53D92310, 0x78F470D3, 0x61EF4192
+        .long 0x2EAED755, 0x37B5E614, 0x1C98B5D7, 0x05838496
+        .long 0x821B9859, 0x9B00A918, 0xB02DFADB, 0xA936CB9A
+        .long 0xE6775D5D, 0xFF6C6C1C, 0xD4413FDF, 0xCD5A0E9E
+        .long 0x958424A2, 0x8C9F15E3, 0xA7B24620, 0xBEA97761
+        .long 0xF1E8E1A6, 0xE8F3D0E7, 0xC3DE8324, 0xDAC5B265
+        .long 0x5D5DAEAA, 0x44469FEB, 0x6F6BCC28, 0x7670FD69
+        .long 0x39316BAE, 0x202A5AEF, 0x0B07092C, 0x121C386D
+        .long 0xDF4636F3, 0xC65D07B2, 0xED705471, 0xF46B6530
+        .long 0xBB2AF3F7, 0xA231C2B6, 0x891C9175, 0x9007A034
+        .long 0x179FBCFB, 0x0E848DBA, 0x25A9DE79, 0x3CB2EF38
+        .long 0x73F379FF, 0x6AE848BE, 0x41C51B7D, 0x58DE2A3C
+        .long 0xF0794F05, 0xE9627E44, 0xC24F2D87, 0xDB541CC6
+        .long 0x94158A01, 0x8D0EBB40, 0xA623E883, 0xBF38D9C2
+        .long 0x38A0C50D, 0x21BBF44C, 0x0A96A78F, 0x138D96CE
+        .long 0x5CCC0009, 0x45D73148, 0x6EFA628B, 0x77E153CA
+        .long 0xBABB5D54, 0xA3A06C15, 0x888D3FD6, 0x91960E97
+        .long 0xDED79850, 0xC7CCA911, 0xECE1FAD2, 0xF5FACB93
+        .long 0x7262D75C, 0x6B79E61D, 0x4054B5DE, 0x594F849F
+        .long 0x160E1258, 0x0F152319, 0x243870DA, 0x3D23419B
+        .long 0x65FD6BA7, 0x7CE65AE6, 0x57CB0925, 0x4ED03864
+        .long 0x0191AEA3, 0x188A9FE2, 0x33A7CC21, 0x2ABCFD60
+        .long 0xAD24E1AF, 0xB43FD0EE, 0x9F12832D, 0x8609B26C
+        .long 0xC94824AB, 0xD05315EA, 0xFB7E4629, 0xE2657768
+        .long 0x2F3F79F6, 0x362448B7, 0x1D091B74, 0x04122A35
+        .long 0x4B53BCF2, 0x52488DB3, 0x7965DE70, 0x607EEF31
+        .long 0xE7E6F3FE, 0xFEFDC2BF, 0xD5D0917C, 0xCCCBA03D
+        .long 0x838A36FA, 0x9A9107BB, 0xB1BC5478, 0xA8A76539
+        .long 0x3B83984B, 0x2298A90A, 0x09B5FAC9, 0x10AECB88
+        .long 0x5FEF5D4F, 0x46F46C0E, 0x6DD93FCD, 0x74C20E8C
+        .long 0xF35A1243, 0xEA412302, 0xC16C70C1, 0xD8774180
+        .long 0x9736D747, 0x8E2DE606, 0xA500B5C5, 0xBC1B8484
+        .long 0x71418A1A, 0x685ABB5B, 0x4377E898, 0x5A6CD9D9
+        .long 0x152D4F1E, 0x0C367E5F, 0x271B2D9C, 0x3E001CDD
+        .long 0xB9980012, 0xA0833153, 0x8BAE6290, 0x92B553D1
+        .long 0xDDF4C516, 0xC4EFF457, 0xEFC2A794, 0xF6D996D5
+        .long 0xAE07BCE9, 0xB71C8DA8, 0x9C31DE6B, 0x852AEF2A
+        .long 0xCA6B79ED, 0xD37048AC, 0xF85D1B6F, 0xE1462A2E
+        .long 0x66DE36E1, 0x7FC507A0, 0x54E85463, 0x4DF36522
+        .long 0x02B2F3E5, 0x1BA9C2A4, 0x30849167, 0x299FA026
+        .long 0xE4C5AEB8, 0xFDDE9FF9, 0xD6F3CC3A, 0xCFE8FD7B
+        .long 0x80A96BBC, 0x99B25AFD, 0xB29F093E, 0xAB84387F
+        .long 0x2C1C24B0, 0x350715F1, 0x1E2A4632, 0x07317773
+        .long 0x4870E1B4, 0x516BD0F5, 0x7A468336, 0x635DB277
+        .long 0xCBFAD74E, 0xD2E1E60F, 0xF9CCB5CC, 0xE0D7848D
+        .long 0xAF96124A, 0xB68D230B, 0x9DA070C8, 0x84BB4189
+        .long 0x03235D46, 0x1A386C07, 0x31153FC4, 0x280E0E85
+        .long 0x674F9842, 0x7E54A903, 0x5579FAC0, 0x4C62CB81
+        .long 0x8138C51F, 0x9823F45E, 0xB30EA79D, 0xAA1596DC
+        .long 0xE554001B, 0xFC4F315A, 0xD7626299, 0xCE7953D8
+        .long 0x49E14F17, 0x50FA7E56, 0x7BD72D95, 0x62CC1CD4
+        .long 0x2D8D8A13, 0x3496BB52, 0x1FBBE891, 0x06A0D9D0
+        .long 0x5E7EF3EC, 0x4765C2AD, 0x6C48916E, 0x7553A02F
+        .long 0x3A1236E8, 0x230907A9, 0x0824546A, 0x113F652B
+        .long 0x96A779E4, 0x8FBC48A5, 0xA4911B66, 0xBD8A2A27
+        .long 0xF2CBBCE0, 0xEBD08DA1, 0xC0FDDE62, 0xD9E6EF23
+        .long 0x14BCE1BD, 0x0DA7D0FC, 0x268A833F, 0x3F91B27E
+        .long 0x70D024B9, 0x69CB15F8, 0x42E6463B, 0x5BFD777A
+        .long 0xDC656BB5, 0xC57E5AF4, 0xEE530937, 0xF7483876
+        .long 0xB809AEB1, 0xA1129FF0, 0x8A3FCC33, 0x9324FD72
+
+crc32_table_68k_t2:
+        .long 0x00000000, 0x01C26A37, 0x0384D46E, 0x0246BE59
+        .long 0x0709A8DC, 0x06CBC2EB, 0x048D7CB2, 0x054F1685
+        .long 0x0E1351B8, 0x0FD13B8F, 0x0D9785D6, 0x0C55EFE1
+        .long 0x091AF964, 0x08D89353, 0x0A9E2D0A, 0x0B5C473D
+        .long 0x1C26A370, 0x1DE4C947, 0x1FA2771E, 0x1E601D29
+        .long 0x1B2F0BAC, 0x1AED619B, 0x18ABDFC2, 0x1969B5F5
+        .long 0x1235F2C8, 0x13F798FF, 0x11B126A6, 0x10734C91
+        .long 0x153C5A14, 0x14FE3023, 0x16B88E7A, 0x177AE44D
+        .long 0x384D46E0, 0x398F2CD7, 0x3BC9928E, 0x3A0BF8B9
+        .long 0x3F44EE3C, 0x3E86840B, 0x3CC03A52, 0x3D025065
+        .long 0x365E1758, 0x379C7D6F, 0x35DAC336, 0x3418A901
+        .long 0x3157BF84, 0x3095D5B3, 0x32D36BEA, 0x331101DD
+        .long 0x246BE590, 0x25A98FA7, 0x27EF31FE, 0x262D5BC9
+        .long 0x23624D4C, 0x22A0277B, 0x20E69922, 0x2124F315
+        .long 0x2A78B428, 0x2BBADE1F, 0x29FC6046, 0x283E0A71
+        .long 0x2D711CF4, 0x2CB376C3, 0x2EF5C89A, 0x2F37A2AD
+        .long 0x709A8DC0, 0x7158E7F7, 0x731E59AE, 0x72DC3399
+        .long 0x7793251C, 0x76514F2B, 0x7417F172, 0x75D59B45
+        .long 0x7E89DC78, 0x7F4BB64F, 0x7D0D0816, 0x7CCF6221
+        .long 0x798074A4, 0x78421E93, 0x7A04A0CA, 0x7BC6CAFD
+        .long 0x6CBC2EB0, 0x6D7E4487, 0x6F38FADE, 0x6EFA90E9
+        .long 0x6BB5866C, 0x6A77EC5B, 0x68315202, 0x69F33835
+        .long 0x62AF7F08, 0x636D153F, 0x612BAB66, 0x60E9C151
+        .long 0x65A6D7D4, 0x6464BDE3, 0x662203BA, 0x67E0698D
+        .long 0x48D7CB20, 0x4915A117, 0x4B531F4E, 0x4A917579
+        .long 0x4FDE63FC, 0x4E1C09CB, 0x4C5AB792, 0x4D98DDA5
+        .long 0x46C49A98, 0x4706F0AF, 0x45404EF6, 0x448224C1
+        .long 0x41CD3244, 0x400F5873, 0x4249E62A, 0x438B8C1D
+        .long 0x54F16850, 0x55330267, 0x5775BC3E, 0x56B7D609
+        .long 0x53F8C08C, 0x523AAABB, 0x507C14E2, 0x51BE7ED5
+        .long 0x5AE239E8, 0x5B2053DF, 0x5966ED86, 0x58A487B1
+        .long 0x5DEB9134, 0x5C29FB03, 0x5E6F455A, 0x5FAD2F6D
+        .long 0xE1351B80, 0xE0F771B7, 0xE2B1CFEE, 0xE373A5D9
+        .long 0xE63CB35C, 0xE7FED96B, 0xE5B86732, 0xE47A0D05
+        .long 0xEF264A38, 0xEEE4200F, 0xECA29E56, 0xED60F461
+        .long 0xE82FE2E4, 0xE9ED88D3, 0xEBAB368A, 0xEA695CBD
+        .long 0xFD13B8F0, 0xFCD1D2C7, 0xFE976C9E, 0xFF5506A9
+        .long 0xFA1A102C, 0xFBD87A1B, 0xF99EC442, 0xF85CAE75
+        .long 0xF300E948, 0xF2C2837F, 0xF0843D26, 0xF1465711
+        .long 0xF4094194, 0xF5CB2BA3, 0xF78D95FA, 0xF64FFFCD
+        .long 0xD9785D60, 0xD8BA3757, 0xDAFC890E, 0xDB3EE339
+        .long 0xDE71F5BC, 0xDFB39F8B, 0xDDF521D2, 0xDC374BE5
+        .long 0xD76B0CD8, 0xD6A966EF, 0xD4EFD8B6, 0xD52DB281
+        .long 0xD062A404, 0xD1A0CE33, 0xD3E6706A, 0xD2241A5D
+        .long 0xC55EFE10, 0xC49C9427, 0xC6DA2A7E, 0xC7184049
+        .long 0xC25756CC, 0xC3953CFB, 0xC1D382A2, 0xC011E895
+        .long 0xCB4DAFA8, 0xCA8FC59F, 0xC8C97BC6, 0xC90B11F1
+        .long 0xCC440774, 0xCD866D43, 0xCFC0D31A, 0xCE02B92D
+        .long 0x91AF9640, 0x906DFC77, 0x922B422E, 0x93E92819
+        .long 0x96A63E9C, 0x976454AB, 0x9522EAF2, 0x94E080C5
+        .long 0x9FBCC7F8, 0x9E7EADCF, 0x9C381396, 0x9DFA79A1
+        .long 0x98B56F24, 0x99770513, 0x9B31BB4A, 0x9AF3D17D
+        .long 0x8D893530, 0x8C4B5F07, 0x8E0DE15E, 0x8FCF8B69
+        .long 0x8A809DEC, 0x8B42F7DB, 0x89044982, 0x88C623B5
+        .long 0x839A6488, 0x82580EBF, 0x801EB0E6, 0x81DCDAD1
+        .long 0x8493CC54, 0x8551A663, 0x8717183A, 0x86D5720D
+        .long 0xA9E2D0A0, 0xA820BA97, 0xAA6604CE, 0xABA46EF9
+        .long 0xAEEB787C, 0xAF29124B, 0xAD6FAC12, 0xACADC625
+        .long 0xA7F18118, 0xA633EB2F, 0xA4755576, 0xA5B73F41
+        .long 0xA0F829C4, 0xA13A43F3, 0xA37CFDAA, 0xA2BE979D
+        .long 0xB5C473D0, 0xB40619E7, 0xB640A7BE, 0xB782CD89
+        .long 0xB2CDDB0C, 0xB30FB13B, 0xB1490F62, 0xB08B6555
+        .long 0xBBD72268, 0xBA15485F, 0xB853F606, 0xB9919C31
+        .long 0xBCDE8AB4, 0xBD1CE083, 0xBF5A5EDA, 0xBE9834ED
+
+crc32_table_68k_t3:
+        .long 0x00000000, 0xB8BC6765, 0xAA09C88B, 0x12B5AFEE
+        .long 0x8F629757, 0x37DEF032, 0x256B5FDC, 0x9DD738B9
+        .long 0xC5B428EF, 0x7D084F8A, 0x6FBDE064, 0xD7018701
+        .long 0x4AD6BFB8, 0xF26AD8DD, 0xE0DF7733, 0x58631056
+        .long 0x5019579F, 0xE8A530FA, 0xFA109F14, 0x42ACF871
+        .long 0xDF7BC0C8, 0x67C7A7AD, 0x75720843, 0xCDCE6F26
+        .long 0x95AD7F70, 0x2D111815, 0x3FA4B7FB, 0x8718D09E
+        .long 0x1ACFE827, 0xA2738F42, 0xB0C620AC, 0x087A47C9
+        .long 0xA032AF3E, 0x188EC85B, 0x0A3B67B5, 0xB28700D0
+        .long 0x2F503869, 0x97EC5F0C, 0x8559F0E2, 0x3DE59787
+        .long 0x658687D1, 0xDD3AE0B4, 0xCF8F4F5A, 0x7733283F
+        .long 0xEAE41086, 0x525877E3, 0x40EDD80D, 0xF851BF68
+        .long 0xF02BF8A1, 0x48979FC4, 0x5A22302A, 0xE29E574F
+        .long 0x7F496FF6, 0xC7F50893, 0xD540A77D, 0x6DFCC018
+        .long 0x359FD04E, 0x8D23B72B, 0x9F9618C5, 0x272A7FA0
+        .long 0xBAFD4719, 0x0241207C, 0x10F48F92, 0xA848E8F7
+        .long 0x9B14583D, 0x23A83F58, 0x311D90B6, 0x89A1F7D3
+        .long 0x1476CF6A, 0xACCAA80F, 0xBE7F07E1, 0x06C36084
+        .long 0x5EA070D2, 0xE61C17B7, 0xF4A9B859, 0x4C15DF3C
+        .long 0xD1C2E785, 0x697E80E0, 0x7BCB2F0E, 0xC377486B
+        .long 0xCB0D0FA2, 0x73B168C7, 0x6104C729, 0xD9B8A04C
+        .long 0x446F98F5, 0xFCD3FF90, 0xEE66507E, 0x56DA371B
+        .long 0x0EB9274D, 0xB6054028, 0xA4B0EFC6, 0x1C0C88A3
+        .long 0x81DBB01A, 0x3967D77F, 0x2BD27891, 0x936E1FF4
+        .long 0x3B26F703, 0x839A9066, 0x912F3F88, 0x299358ED
+        .long 0xB4446054, 0x0CF80731, 0x1E4DA8DF, 0xA6F1CFBA
+        .long 0xFE92DFEC, 0x462EB889, 0x549B1767, 0xEC277002
+        .long 0x71F048BB, 0xC94C2FDE, 0xDBF98030, 0x6345E755
+        .long 0x6B3FA09C, 0xD383C7F9, 0xC1366817, 0x798A0F72
+        .long 0xE45D37CB, 0x5CE150AE, 0x4E54FF40, 0xF6E89825
+        .long 0xAE8B8873, 0x1637EF16, 0x048240F8, 0xBC3E279D
+        .long 0x21E91F24, 0x99557841, 0x8BE0D7AF, 0x335CB0CA
+        .long 0xED59B63B, 0x55E5D15E, 0x47507EB0, 0xFFEC19D5
+        .long 0x623B216C, 0xDA874609, 0xC832E9E7, 0x708E8E82
+        .long 0x28ED9ED4, 0x9051F9B1, 0x82E4565F, 0x3A58313A
+        .long 0xA78F0983, 0x1F336EE6, 0x0D86C108, 0xB53AA66D
+        .long 0xBD40E1A4, 0x05FC86C1, 0x1749292F, 0xAFF54E4A
+        .long 0x322276F3, 0x8A9E1196, 0x982BBE78, 0x2097D91D
+        .long 0x78F4C94B, 0xC048AE2E, 0xD2FD01C0, 0x6A4166A5
+        .long 0xF7965E1C, 0x4F2A3979, 0x5D9F9697, 0xE523F1F2
+        .long 0x4D6B1905, 0xF5D77E60, 0xE762D18E, 0x5FDEB6EB
+        .long 0xC2098E52, 0x7AB5E937, 0x680046D9, 0xD0BC21BC
+        .long 0x88DF31EA, 0x3063568F, 0x22D6F961, 0x9A6A9E04
+        .long 0x07BDA6BD, 0xBF01C1D8, 0xADB46E36, 0x15080953
+        .long 0x1D724E9A, 0xA5CE29FF, 0xB77B8611, 0x0FC7E174
+        .long 0x9210D9CD, 0x2AACBEA8, 0x38191146, 0x80A57623
+        .long 0xD8C66675, 0x607A0110, 0x72CFAEFE, 0xCA73C99B
+        .long 0x57A4F122, 0xEF189647, 0xFDAD39A9, 0x45115ECC
+        .long 0x764DEE06, 0xCEF18963, 0xDC44268D, 0x64F841E8
+        .long 0xF92F7951, 0x41931E34, 0x5326B1DA, 0xEB9AD6BF
+        .long 0xB3F9C6E9, 0x0B45A18C, 0x19F00E62, 0xA14C6907
+        .long 0x3C9B51BE, 0x842736DB, 0x96929935, 0x2E2EFE50
+        .long 0x2654B999, 0x9EE8DEFC, 0x8C5D7112, 0x34E11677
+        .long 0xA9362ECE, 0x118A49AB, 0x033FE645, 0xBB838120
+        .long 0xE3E09176, 0x5B5CF613, 0x49E959FD, 0xF1553E98
+        .long 0x6C820621, 0xD43E6144, 0xC68BCEAA, 0x7E37A9CF
+        .long 0xD67F4138, 0x6EC3265D, 0x7C7689B3, 0xC4CAEED6
+        .long 0x591DD66F, 0xE1A1B10A, 0xF3141EE4, 0x4BA87981
+        .long 0x13CB69D7, 0xAB770EB2, 0xB9C2A15C, 0x017EC639
+        .long 0x9CA9FE80, 0x241599E5, 0x36A0360B, 0x8E1C516E
+        .long 0x866616A7, 0x3EDA71C2, 0x2C6FDE2C, 0x94D3B949
+        .long 0x090481F0, 0xB1B8E695, 0xA30D497B, 0x1BB12E1E
+        .long 0x43D23E48, 0xFB6E592D, 0xE9DBF6C3, 0x516791A6
+        .long 0xCCB0A91F, 0x740CCE7A, 0x66B96194, 0xDE0506F1

@@ -52,15 +52,11 @@ if [ -e "$COMPLETION" ] || [ -e "$CFG" ] || [ -e "$EMULATOR_LOG" ]; then
 fi
 
 PID=
-TIMER_PID=
 # Called indirectly by the EXIT trap below (SC2317 on older ShellCheck).
 # shellcheck disable=SC2329,SC2317
 cleanup() {
     if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
         kill "$PID" 2>/dev/null
-    fi
-    if [ -n "$TIMER_PID" ] && kill "$TIMER_PID" 2>/dev/null; then
-        if wait "$TIMER_PID" 2>/dev/null; then :; fi
     fi
 }
 trap cleanup EXIT
@@ -94,28 +90,19 @@ echo ""
 
 FSEMU_AUDIO_DRIVER=null fs-uae "$CFG" >"$EMULATOR_LOG" 2>&1 &
 PID=$!
-(
-    sleep "$TIMEOUT"
-    if kill -0 "$PID" 2>/dev/null; then
-        kill "$PID" 2>/dev/null
-    fi
-) &
-TIMER_PID=$!
 
 # Wait for a marker written only after both checked workload runs completed.
 for _ in $(seq 1 "$TIMEOUT"); do
     sleep 1
     if [ -f "$COMPLETION" ]; then
         sleep 1
-        if kill "$PID" 2>/dev/null; then :; fi
         break
     fi
     if ! kill -0 "$PID" 2>/dev/null; then break; fi
 done
-if kill "$TIMER_PID" 2>/dev/null; then
-    if wait "$TIMER_PID" 2>/dev/null; then :; fi
+if kill -0 "$PID" 2>/dev/null; then
+    if kill "$PID" 2>/dev/null; then :; fi
 fi
-TIMER_PID=
 if wait "$PID" 2>/dev/null; then :; fi
 PID=
 trap - EXIT

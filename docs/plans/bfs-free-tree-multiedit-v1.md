@@ -1,6 +1,7 @@
 # Free-tree multi-edit plan v1
 
-Status: increment 1 locally qualified; increment 2 planned (2026-09-29).
+Status: increment 1 locally qualified; increment 2 requires a separate
+allocation/reclaim design and is not implemented (2026-09-29).
 
 ## Problem and baseline
 
@@ -63,6 +64,18 @@ point remains in place.
 This increment requires a separate review before implementation. In
 particular, it must prove that a bulk COW does not create an endless
 root-retirement cycle or silently exchange a leak for apparent throughput.
+
+The verified-node write-retention experiment did not reduce free-tree writes:
+the checked create, 8 MiB write and delete phases still wrote 3,029, 1,089
+and 2,660 free-tree nodes. A height-two reclaim-only leaf batch could help
+deletes, but cannot improve creates or sequential writes, which allocate
+blocks before post-publication reclaim. Before changing the general B-tree
+engine, split these free-tree writes by allocation, reserve refill/return and
+pending-free settlement. The allocation side needs a bounded ownership model
+for consecutive draws; the reclaim side needs one for sorted multi-leaf
+changes. Neither may overwrite an old-root-reachable node. The previous
+current-transaction node-reuse prototype failed the pending-free fault tests,
+so that shortcut is excluded.
 
 ## Qualification gates
 

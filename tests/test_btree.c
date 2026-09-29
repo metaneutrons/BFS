@@ -4,6 +4,7 @@
 
 #include "test_harness.h"
 #include "bfs_btree.h"
+#include "bfs_btree_internal.h"
 #include "bfs_cache.h"
 #include "block_device_emu.h"
 #include <unistd.h>
@@ -99,6 +100,7 @@ static void test_single_insert_search(void)
     make_key(&key, 100);
     make_key(&val, 999);
     TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT(!bfs_bio_node_crc_valid(bio, tree.root));
 
     TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &result), BFS_OK);
     TEST_ASSERT_EQ(read_key(&result), 999);
@@ -681,6 +683,7 @@ static void test_cached_node_crc_revalidation(void)
     TEST_ASSERT(bio != NULL);
     bfs_cache_t cache;
     TEST_ASSERT_EQ(bfs_cache_init(&cache, bio, 1), BFS_OK);
+    bfs_cache_set_node_write_retention(&cache, true);
     bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
     bfs_btree_t tree;
     TEST_ASSERT_EQ(bfs_btree_init(&tree, &cache.bio, &ba->base, &u32_ops,
@@ -688,23 +691,47 @@ static void test_cached_node_crc_revalidation(void)
     uint32_t key, val, found;
     make_key(&key, 10); make_key(&val, 20);
     TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
-    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, tree.root));
+    TEST_ASSERT(bfs_bio_node_crc_valid(&cache.bio, tree.root));
     TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_OK);
-    TEST_ASSERT(bfs_bio_node_verified(&cache.bio, tree.root));
+    TEST_ASSERT(bfs_bio_node_crc_valid(&cache.bio, tree.root));
 
     uint8_t good[BLK_SIZE], bad[BLK_SIZE];
     TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, tree.root, good), BFS_OK);
     memcpy(bad, good, BLK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    bfs_btnode_hdr_t *bad_hdr = (bfs_btnode_hdr_t *)bad;
+    bad_hdr->num_keys = bfs_be32(leaf_max_keys(&tree) + 1);
+    bad_hdr->crc32 = 0;
+    bad_hdr->crc32 = bfs_be32(node_compute_crc(&tree, bad));
+    TEST_ASSERT_EQ(bfs_bio_write_node(&cache.bio, tree.root, bad), BFS_OK);
+    TEST_ASSERT(bfs_bio_node_crc_valid(&cache.bio, tree.root));
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(bfs_bio_write_node(&cache.bio, tree.root, good), BFS_OK);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_OK);
+    TEST_ASSERT(bfs_bio_node_crc_valid(&cache.bio, tree.root));
+
+    /* A hot cache does not observe out-of-band media changes. Invalidation
+     * forces a fresh read and CRC check. */
+    memcpy(bad, good, BLK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    bad[BLK_SIZE - 1] ^= 1;
+    TEST_ASSERT_EQ(bfs_bio_write(bio, tree.root, bad), BFS_OK);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_OK);
+    bfs_cache_invalidate(&cache);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(bfs_bio_write(bio, tree.root, good), BFS_OK);
+    bfs_cache_invalidate(&cache);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_OK);
+
+    memcpy(bad, good, BLK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     bad[BLK_SIZE - 1] ^= 1;
     TEST_ASSERT_EQ(bfs_bio_write(&cache.bio, tree.root, bad), BFS_OK);
-    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, tree.root));
+    TEST_ASSERT(!bfs_bio_node_crc_valid(&cache.bio, tree.root));
     TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_ERR_CORRUPT);
     TEST_ASSERT_EQ(bfs_bio_write(&cache.bio, tree.root, good), BFS_OK);
     TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_OK);
-    TEST_ASSERT(bfs_bio_node_verified(&cache.bio, tree.root));
+    TEST_ASSERT(bfs_bio_node_crc_valid(&cache.bio, tree.root));
 
     TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, tree.root + 1, bad), BFS_OK);
-    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, tree.root));
+    TEST_ASSERT(!bfs_bio_node_crc_valid(&cache.bio, tree.root));
     good[BLK_SIZE - 1] ^= 1;
     TEST_ASSERT_EQ(bfs_bio_write(bio, tree.root, good), BFS_OK);
     TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_ERR_CORRUPT);

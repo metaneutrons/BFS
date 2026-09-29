@@ -582,6 +582,15 @@ static void ReportFormatError(struct bfs_handler *h, struct MsgPort *reply_port)
     CloseLibrary((struct Library *)IntuitionBase);
 }
 
+static bfs_err_t InitNodeCache(struct bfs_handler *h, amiga_bio_t *ab)
+{
+    bfs_err_t err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
+                                   h->dosenvec->de_NumBuffers);
+    if (err == BFS_OK)
+        bfs_cache_set_node_write_retention(&h->cache, true);
+    return err;
+}
+
 static bool TryRemountMedia(struct bfs_handler *h)
 {
     /* A snapshot root is immutable and is selected by the startup record.
@@ -599,8 +608,7 @@ static bool TryRemountMedia(struct bfs_handler *h)
     SetMountError(h, err, &sb);
     if (err != BFS_OK) return false;
 
-    err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
-                         h->dosenvec->de_NumBuffers);
+    err = InitNodeCache(h, ab);
     h->mount_error = err;
     if (err != BFS_OK) return false;
 
@@ -2514,8 +2522,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         ab->base.block_size = proposed.base.block_size;
         ab->base.block_count = proposed.base.block_count;
         bfs_cache_destroy(&h->cache);
-        err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
-                             h->dosenvec->de_NumBuffers);
+        err = InitNodeCache(h, ab);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
         err = bfs_fs_format(&h->cache.bio, volname, 0);
@@ -2885,8 +2892,7 @@ void EntryPoint(void)
     bfs_superblock_t sb;
     bfs_err_t mount_err = bfs_amiga_bio_probe_superblock((amiga_bio_t *)(h + 1), &sb);
     if (mount_err == BFS_OK) {
-        mount_err = bfs_cache_init(&h->cache, (bfs_bio_t *)(h + 1),
-                                   h->dosenvec->de_NumBuffers);
+        mount_err = InitNodeCache(h, (amiga_bio_t *)(h + 1));
         if (mount_err == BFS_OK) {
             mount_err = snapshot_startup ? bfs_fs_mount_readonly(&h->fs, &h->cache.bio)
                                          : bfs_fs_mount(&h->fs, &h->cache.bio);

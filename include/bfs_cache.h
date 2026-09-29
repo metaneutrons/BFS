@@ -25,7 +25,7 @@ typedef struct bfs_cache_slot {
     bfs_blk_t blk;         /* cached block number (UINT32_MAX = empty) */
     uint32_t  age;          /* LRU counter (higher = more recent) */
     uint8_t  *data;         /* block data */
-    bool      node_verified; /* current bytes passed B-tree CRC and structure */
+    bool      node_crc_valid; /* cached node bytes have a valid CRC */
 } bfs_cache_slot_t;
 
 typedef struct bfs_cache {
@@ -34,10 +34,15 @@ typedef struct bfs_cache {
     bfs_cache_slot_t  *slots;   /* dynamically allocated slot array */
     uint32_t           num_slots;
     uint32_t           clock;   /* LRU clock */
+    bool               retain_written_nodes;
 } bfs_cache_t;
 
 /* Initialize cache with num_slots buffers. Use 0 for default (8). */
 bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots);
+
+/* Optionally retain B-tree nodes after successful node writes. Disabled by
+ * default so ordinary write-through cache behavior remains unchanged. */
+void bfs_cache_set_node_write_retention(bfs_cache_t *cache, bool enabled);
 
 /* Destroy cache (free buffers). */
 void bfs_cache_destroy(bfs_cache_t *cache);
