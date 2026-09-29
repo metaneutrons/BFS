@@ -252,7 +252,7 @@ amiga:
 amiga-perf-probe-handler:
 	@mkdir -p $(BUILD_AMIGA)
 	$(AMIGA_CC) $(AMIGA_CFLAGS) -DBFS_PERF_PROBE=1 -o $(BUILD_AMIGA)/bfshandler-probe \
-		$(AMIGA_SRCS) \
+		$(AMIGA_SRCS) src/amiga/perf_probe.c \
 		-nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 
 amiga-stresstest:
@@ -354,6 +354,7 @@ emulator-setup:
 amiga-fs-compare-bench:
 	@mkdir -p $(BUILD_AMIGA)
 	$(AMIGA_CC) -std=c99 $(AMIGA_WARNINGS) -noixemul -m68020 -O2 \
+		-Isrc/amiga \
 		-I$(AMIGA_PREFIX)/ndk-include \
 		-B$(AMIGA_PREFIX)/libnix/lib/ \
 		-L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib \

@@ -179,8 +179,8 @@ static BOOL perf_read(const char *drive, bfs_perf_probe_snapshot_t *snapshot)
            snapshot->size == (ULONG)sizeof(*snapshot);
 }
 
-static void emit_counter_rows(const char *prefix,
-                              const bfs_perf_probe_snapshot_t *snapshot)
+static void emit_internal_counter_rows(const char *prefix,
+                                      const bfs_perf_probe_snapshot_t *snapshot)
 {
     if (text_equal(prefix, "FRESH")) {
         metric("FRESH_BIO_READS", snapshot->bio_read_calls);
@@ -195,6 +195,40 @@ static void emit_counter_rows(const char *prefix,
         metric("OVERWRITE_FREESPACE_ALLOCS", snapshot->freespace_alloc_calls);
         metric("OVERWRITE_EXTENT_MAPS", snapshot->extent_map_calls);
     }
+}
+
+static void prefixed_metric(const char *prefix, const char *suffix,
+                            unsigned long long value)
+{
+    char name[48];
+    ULONG prefix_length = text_length(prefix);
+    ULONG suffix_length = text_length(suffix);
+
+    if (prefix_length + suffix_length + 2 > sizeof(name)) return;
+    copy_bytes(name, prefix, prefix_length);
+    name[prefix_length] = '_';
+    copy_bytes(name + prefix_length + 1, suffix, suffix_length);
+    name[prefix_length + suffix_length + 1] = '\0';
+    metric(name, value);
+}
+
+static void emit_deep_counter_rows(const char *prefix,
+                                  const bfs_perf_probe_snapshot_t *snapshot)
+{
+    prefixed_metric(prefix, "BIO_READS", snapshot->bio_read_calls);
+    prefixed_metric(prefix, "BIO_WRITES", snapshot->bio_write_calls);
+    prefixed_metric(prefix, "BIO_UPDATES", snapshot->bio_update_calls);
+    prefixed_metric(prefix, "DATA_READS", snapshot->data_read_calls);
+    prefixed_metric(prefix, "DATA_WRITES", snapshot->data_write_calls);
+    prefixed_metric(prefix, "NODE_WRITES", snapshot->btree_node_writes);
+    prefixed_metric(prefix, "TXN_COMMITS", snapshot->txn_commit_calls);
+    prefixed_metric(prefix, "FREESPACE_ALLOCS", snapshot->freespace_alloc_calls);
+    prefixed_metric(prefix, "EXTENT_MAPS", snapshot->extent_map_calls);
+    prefixed_metric(prefix, "READ_TICKS", (unsigned long long)snapshot->bio_read_ticks);
+    prefixed_metric(prefix, "WRITE_TICKS", (unsigned long long)snapshot->bio_write_ticks);
+    prefixed_metric(prefix, "UPDATE_TICKS", (unsigned long long)snapshot->bio_update_ticks);
+    prefixed_metric(prefix, "DATA_READ_TICKS", (unsigned long long)snapshot->data_read_ticks);
+    prefixed_metric(prefix, "DATA_WRITE_TICKS", (unsigned long long)snapshot->data_write_ticks);
 }
 
 static BOOL timed_writes(BPTR handle, unsigned long long *duration,
@@ -288,7 +322,8 @@ static BOOL write_pass(BPTR handle, const char *write_metric,
 }
 
 static const char *profile_write_phase(const char *drive, const char *path,
-                                       BOOL internal_mode, BOOL overwrite,
+                                       BOOL probe_enabled, BOOL deep_mode,
+                                       BOOL overwrite,
                                        bfs_perf_probe_snapshot_t *snapshot)
 {
     BPTR handle = Open(path, overwrite ? MODE_READWRITE : MODE_NEWFILE);
@@ -299,7 +334,7 @@ static const char *profile_write_phase(const char *drive, const char *path,
         Close(handle);
         return "overwrite-seek";
     }
-    if (internal_mode && !perf_reset(drive)) {
+    if (probe_enabled && !perf_reset(drive)) {
         Close(handle);
         return overwrite ? "perf-reset-overwrite" : "perf-reset-fresh";
     }
@@ -308,15 +343,20 @@ static const char *profile_write_phase(const char *drive, const char *path,
                     overwrite ? "OVERWRITE_FLUSH_US" : "FRESH_FLUSH_US",
                     overwrite ? "OVERWRITE_CLOSE_US" : "FRESH_CLOSE_US",
                     &failure_phase)) return failure_phase;
-    if (internal_mode) {
+    if (probe_enabled) {
         if (!perf_read(drive, snapshot))
             return overwrite ? "perf-read-overwrite" : "perf-read-fresh";
-        emit_counter_rows(overwrite ? "OVERWRITE" : "FRESH", snapshot);
+        if (deep_mode && snapshot->clock_hz == 0)
+            return "perf-clock-hz";
+        if (deep_mode)
+            emit_deep_counter_rows(overwrite ? "OVERWRITE" : "FRESH", snapshot);
+        else
+            emit_internal_counter_rows(overwrite ? "OVERWRITE" : "FRESH", snapshot);
     }
     return NULL;
 }
 
-static int run(const char *drive, BOOL internal_mode)
+static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
 {
     char path[128];
     BPTR handle, lock;
@@ -325,6 +365,7 @@ static int run(const char *drive, BOOL internal_mode)
     ULONG offset;
     const char *phase;
     bfs_perf_probe_snapshot_t snapshot;
+    BOOL read_snapshot_valid = FALSE;
 
     if (!make_path(path, sizeof(path), drive, "fsprofile.bin")) return fail("path");
     lock = Lock(path, ACCESS_READ);
@@ -334,13 +375,19 @@ static int run(const char *drive, BOOL internal_mode)
     }
     if (IoErr() != ERROR_OBJECT_NOT_FOUND) return fail("fresh-check");
 
-    phase = profile_write_phase(drive, path, internal_mode, FALSE, &snapshot);
+    phase = profile_write_phase(drive, path, probe_enabled, deep_mode,
+                                FALSE, &snapshot);
     if (phase) return fail(phase);
-    phase = profile_write_phase(drive, path, internal_mode, TRUE, &snapshot);
+    phase = profile_write_phase(drive, path, probe_enabled, deep_mode,
+                                TRUE, &snapshot);
     if (phase) return fail(phase);
 
     handle = Open(path, MODE_OLDFILE);
     if (!handle) return fail("read-open");
+    if (probe_enabled && deep_mode && !perf_reset(drive)) {
+        Close(handle);
+        return fail("perf-reset-read");
+    }
     if (!clock_time(&before)) {
         Close(handle);
         return fail("timer-read");
@@ -360,8 +407,23 @@ static int run(const char *drive, BOOL internal_mode)
         Close(handle);
         return fail("timer-read");
     }
+    if (probe_enabled && deep_mode) {
+        if (!perf_read(drive, &snapshot)) {
+            Close(handle);
+            return fail("perf-read-read");
+        }
+        if (snapshot.clock_hz == 0) {
+            Close(handle);
+            return fail("perf-clock-hz");
+        }
+        read_snapshot_valid = TRUE;
+    }
     if (Close(handle) == 0) return fail("read-close");
     metric("READ_VERIFY_8M_US", read_us);
+    if (read_snapshot_valid) {
+        emit_deep_counter_rows("READ", &snapshot);
+        metric("CLOCK_HZ", snapshot.clock_hz);
+    }
 
     emit("PASS\t1\n");
     return 0;
@@ -371,13 +433,21 @@ int main(int argc, char **argv)
 {
     int result;
     BOOL internal_mode = FALSE;
+    BOOL deep_mode = FALSE;
+    BOOL probe_enabled;
 
     if (argc == 3 && argv[2] && text_equal(argv[2], "internal"))
         internal_mode = TRUE;
+    if (argc == 3 && argv[2] && text_equal(argv[2], "deep"))
+        deep_mode = TRUE;
     if (internal_mode) emit("FS_INTERNAL_PROFILE\t1\n");
+    else if (deep_mode) emit("FS_DEEP_PROFILE\t1\n");
     else emit("FS_PROFILE_BENCH\t1\n");
-    if ((argc != 2 && !internal_mode) || !argv[1] || !*argv[1]) return fail("usage");
+    if ((argc != 2 && !internal_mode && !deep_mode) ||
+        !argv[1] || !*argv[1]) return fail("usage");
     if (!valid_drive(argv[1])) return fail("drive");
+    probe_enabled = internal_mode ||
+                    (deep_mode && text_equal(argv[1], "DH1:"));
     emit("DRIVE\t");
     emit(argv[1]);
     emit("\n");
@@ -394,7 +464,7 @@ int main(int argc, char **argv)
         ULONG index;
         for (index = 0; index < BUFFER_BYTES; index++)
             expected[index] = (UBYTE)((index * 31UL + 17UL) & 0xff);
-        result = run(argv[1], internal_mode);
+        result = run(argv[1], deep_mode, probe_enabled);
     }
     if (received) FreeVec(received);
     if (expected) FreeVec(expected);

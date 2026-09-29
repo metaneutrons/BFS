@@ -25,6 +25,10 @@
 #include "bfs_crc32.h"
 #include <string.h>
 #include <stdlib.h>
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#include "bfs_fs.h"
+#endif
 
 #define MAX_TREE_DEPTH BFS_BTREE_MAX_DEPTH
 
@@ -70,7 +74,21 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     if (bfs_be32(hdr->magic) != BFS_NODE_MAGIC)
         return BFS_ERR_CORRUPT;
+#ifdef BFS_PERF_PROBE
+    struct EClockVal crc_started = {0};
+    ULONG crc_call = ++bfs_perf_probe_counters.node_crc_read_calls;
+    BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
+    if (sample_crc) bfs_perf_probe_begin(&crc_started);
+    uint32_t computed_crc = node_compute_crc(tree, buf);
+    if (sample_crc) {
+        bfs_perf_probe_counters.node_crc_read_samples++;
+        bfs_perf_probe_counters.node_crc_read_sample_ticks +=
+            bfs_perf_probe_elapsed(&crc_started);
+    }
+    if (bfs_be32(hdr->crc32) != computed_crc)
+#else
     if (bfs_be32(hdr->crc32) != node_compute_crc(tree, buf))
+#endif
         return BFS_ERR_CORRUPT;
 
     /* Validate structural header fields read from disk before any accessor uses
@@ -113,7 +131,31 @@ static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf
     hdr->magic = bfs_be32(BFS_NODE_MAGIC);
     hdr->txn_id = bfs_be64(bfs_btree_txn_id(tree));
     hdr->crc32 = 0;
+#ifdef BFS_PERF_PROBE
+    struct EClockVal crc_started = {0};
+    ULONG crc_call = ++bfs_perf_probe_counters.node_crc_write_calls;
+    BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
+    if (sample_crc) bfs_perf_probe_begin(&crc_started);
+#endif
     hdr->crc32 = bfs_be32(node_compute_crc(tree, buf));
+#ifdef BFS_PERF_PROBE
+    if (sample_crc) {
+        bfs_perf_probe_counters.node_crc_write_samples++;
+        bfs_perf_probe_counters.node_crc_write_sample_ticks +=
+            bfs_perf_probe_elapsed(&crc_started);
+    }
+    bfs_perf_probe_counters.btree_node_writes++;
+    if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->freespace.tree)
+        bfs_perf_probe_counters.free_tree_node_writes++;
+    else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->dir_tree.tree)
+        bfs_perf_probe_counters.dir_tree_node_writes++;
+    else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->inode_tree)
+        bfs_perf_probe_counters.inode_tree_node_writes++;
+    else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->refcount.tree)
+        bfs_perf_probe_counters.refcount_tree_node_writes++;
+    else
+        bfs_perf_probe_counters.other_tree_node_writes++;
+#endif
     return bfs_bio_write(tree->bio, blk, buf);
 }
 

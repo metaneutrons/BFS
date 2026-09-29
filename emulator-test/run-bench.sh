@@ -18,7 +18,13 @@ case "$BENCH_MODE" in
     internal)
         RESULT_SUFFIX=internal.tsv
         ;;
-    *) echo "ERROR: BFS_BENCH_MODE must be compare, profile, or internal" >&2; exit 2 ;;
+    deep)
+        RESULT_SUFFIX=deep.tsv
+        ;;
+    deep-compare)
+        RESULT_SUFFIX=deep-compare.tsv
+        ;;
+    *) echo "ERROR: BFS_BENCH_MODE must be compare, profile, internal, deep, or deep-compare" >&2; exit 2 ;;
 esac
 
 [[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {

@@ -181,9 +181,6 @@ _Static_assert(offsetof(bfs_open_file_t, file) == 0,
 /* Amiga library bases — set globally for proto headers */
 struct ExecBase *SysBase;
 struct DosLibrary *DOSBase;
-#ifdef BFS_PERF_PROBE
-bfs_perf_probe_snapshot_t bfs_perf_probe_counters;
-#endif
 
 static ULONG DiskChangeHandler(register struct bfs_handler *h __asm("a1"))
 {
@@ -1307,11 +1304,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
 #ifdef BFS_PERF_PROBE
     case BFS_ACTION_PERF_RESET:
-        bfs_perf_probe_counters.bio_read_calls = 0;
-        bfs_perf_probe_counters.bio_write_calls = 0;
-        bfs_perf_probe_counters.bio_update_calls = 0;
-        bfs_perf_probe_counters.freespace_alloc_calls = 0;
-        bfs_perf_probe_counters.extent_map_calls = 0;
+        bfs_perf_probe_reset();
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -2812,6 +2805,9 @@ void EntryPoint(void)
     }
 
     h->SysBase = SysBase;
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_fs = &h->fs;
+#endif
     DOSBase = (struct DosLibrary *)OpenLibrary("dos.library", 37);
     h->DOSBase = DOSBase;
     if (!DOSBase) {
@@ -2847,6 +2843,9 @@ void EntryPoint(void)
         pkt->dp_Res2 = ERROR_NO_FREE_STORE;
         goto fail_startup;
     }
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_init(h->devport);
+#endif
     h->request = (struct IOExtTD *)CreateIORequest(h->devport, sizeof(struct IOExtTD));
     if (!h->request) {
         pkt->dp_Res1 = DOSFALSE;
@@ -3025,6 +3024,9 @@ void EntryPoint(void)
         RemoveVolumeNode(h);
     }
     bfs_cache_destroy(&h->cache);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_close();
+#endif
     CloseDevice((struct IORequest *)h->request);
     DeleteIORequest((struct IORequest *)h->request);
     DeleteMsgPort(h->devport);
@@ -3045,6 +3047,9 @@ fail_startup:
         else RemoveVolumeNode(h);
         if (h->fs.mounted) bfs_fs_abandon(&h->fs);
         bfs_cache_destroy(&h->cache);
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_close();
+#endif
         if (device_open) CloseDevice((struct IORequest *)h->request);
         if (h->request) DeleteIORequest((struct IORequest *)h->request);
         if (h->devport) DeleteMsgPort(h->devport);

@@ -104,6 +104,31 @@ The normal `make amiga` handler is unaffected; never ship the debug handler as a
 release artifact. Validate retained output with
 `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" internal`.
 
+For paired API timings plus BFS-only I/O and timer counters, build
+`make amiga-perf-probe-handler amiga-fs-profile-bench`, set
+`BFS_BENCH_MODE=deep`, and use another fresh run directory. The builder selects
+`build/amiga/bfshandler-probe` for BFS by default; set `BFS_BENCH_HANDLER_FILE` to
+override it. Deep mode measures fresh write, same-file overwrite, and checked read on
+both BFS and PFS3. It reports device and data I/O counts, metadata and transaction
+counts, free-space and extent-map counts, elapsed timer ticks, and clock frequency for
+BFS only. Validate retained output with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" deep`.
+
+For the six-phase BFS/PFS3 comparison with per-phase BFS probe counters, build
+`make amiga-perf-probe-handler amiga-fs-compare-bench`, set
+`BFS_BENCH_MODE=deep-compare`, and use another fresh run directory. The builder selects
+`build/amiga/bfshandler-probe` for BFS by default; set `BFS_BENCH_HANDLER_FILE` to
+override it. Both filesystems run the existing checked compare workload; BFS also
+reports I/O counts and ticks after each phase. Validate retained output with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" deep-compare`.
+The v4 schema also attributes B-tree writes to the live free-space, directory,
+inode and refcount trees (remaining writes are reported as other), counts all
+B-tree CRC calls, and times every 64th CRC call. `CLOCK_PAIR_TICKS` is the
+integer mean of 256 empty timer pairs calibrated at each phase reset. Sampled
+CRC ticks are not a full CPU profile: extrapolate the mean sample duration to
+all calls, and treat the result as an estimate. Only the disposable probe
+handler contains these counters.
+
 ## Troubleshooting
 
 - **AROS ROM missing:** run `make emulator-setup` and retry.

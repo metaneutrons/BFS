@@ -30,8 +30,8 @@ case "$BENCH_ORDER" in
     *) echo "ERROR: BFS_BENCH_ORDER must be bfs-first or pfs3-first" >&2; exit 2 ;;
 esac
 case "$BENCH_MODE" in
-    compare|profile|internal) ;;
-    *) echo "ERROR: BFS_BENCH_MODE must be compare, profile, or internal" >&2; exit 2 ;;
+    compare|profile|internal|deep|deep-compare) ;;
+    *) echo "ERROR: BFS_BENCH_MODE must be compare, profile, internal, deep, or deep-compare" >&2; exit 2 ;;
 esac
 if [ "$BENCH_MODE" = internal ]; then
     GUEST_TOOL=fs-profile-bench
@@ -43,6 +43,18 @@ elif [ "$BENCH_MODE" = profile ]; then
     GUEST_ARGS=
     RESULT_SUFFIX=profile.tsv
     COMPLETION_MARKER=BFS-PFS3-PROFILE-COMPLETE
+elif [ "$BENCH_MODE" = deep ]; then
+    GUEST_TOOL=fs-profile-bench
+    GUEST_ARGS=deep
+    RESULT_SUFFIX=deep.tsv
+    COMPLETION_MARKER=BFS-PFS3-DEEP-COMPLETE
+    HANDLER="${BFS_BENCH_HANDLER_FILE:-$PROJECT_DIR/build/amiga/bfshandler-probe}"
+elif [ "$BENCH_MODE" = deep-compare ]; then
+    GUEST_TOOL=fs-compare-bench
+    GUEST_ARGS=deep
+    RESULT_SUFFIX=deep-compare.tsv
+    COMPLETION_MARKER=BFS-PFS3-DEEP-COMPARE-COMPLETE
+    HANDLER="${BFS_BENCH_HANDLER_FILE:-$PROJECT_DIR/build/amiga/bfshandler-probe}"
 else
     GUEST_TOOL=fs-compare-bench
     GUEST_ARGS=
@@ -55,7 +67,14 @@ fi
 [ -f "$PFS3" ] || { echo "ERROR: pfs3aio not found: $PFS3 (set BFS_PFS3_HANDLER)"; exit 1; }
 [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
 command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
-[ -f "$HANDLER" ] || { echo "ERROR: handler not found: $HANDLER"; exit 1; }
+[ -f "$HANDLER" ] || {
+    if [ "$BENCH_MODE" = deep ] || [ "$BENCH_MODE" = deep-compare ]; then
+        echo "ERROR: BFS probe handler not found: $HANDLER (run 'make amiga-perf-probe-handler' or set BFS_BENCH_HANDLER_FILE)" >&2
+    else
+        echo "ERROR: handler not found: $HANDLER" >&2
+    fi
+    exit 1
+}
 [ -f "$PROJECT_DIR/build/amiga/$GUEST_TOOL" ] || { echo "ERROR: run 'make amiga-$GUEST_TOOL' first"; exit 1; }
 [ -f "$PROJECT_DIR/build/host/bfs" ] || { echo "ERROR: run 'make build/host/bfs' first"; exit 1; }
 

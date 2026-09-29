@@ -22,6 +22,9 @@
 #include "bfs_fs.h"
 #include <string.h>
 #include <stdlib.h>
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 bfs_err_t bfs_txn_begin(bfs_txn_t *txn, bfs_bio_t *bio)
 {
@@ -252,6 +255,9 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
     if (!fs || !fs->mounted || !fs->bio || !fs->txn.active)
         return BFS_ERR_INVAL;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.txn_commit_calls++;
+#endif
     /* An ordered-data flush has not modified commit state, so it can be retried. */
     if (fs->options & BFS_OPT_DATA_ORDERED) {
         bfs_err_t err = bfs_bio_sync(fs->bio);

@@ -10,6 +10,36 @@
 #include "bfs_refcount.h"
 #include <string.h>
 #include <stdlib.h>
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
+
+/* Only the disposable profiler marks file payload I/O. The production build
+ * compiles these wrappers to the ordinary BIO calls. */
+static bfs_err_t file_data_bio_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+{
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_data_depth++;
+#endif
+    bfs_err_t err = bfs_bio_read(bio, blk, buf);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_data_depth--;
+#endif
+    return err;
+}
+
+static bfs_err_t file_data_bio_write(bfs_bio_t *bio, bfs_blk_t blk,
+                                     const void *buf)
+{
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_data_depth++;
+#endif
+    bfs_err_t err = bfs_bio_write(bio, blk, buf);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_data_depth--;
+#endif
+    return err;
+}
 
 static bfs_err_t file_handle_error(const bfs_file_t *f)
 {
@@ -133,7 +163,7 @@ static int32_t file_finish_write(bfs_file_t *f, uint32_t total, bfs_err_t error)
 static bfs_err_t file_read_checked_block(bfs_file_t *f, uint32_t file_block,
                                          bfs_blk_t disk_block, uint8_t *buffer)
 {
-    bfs_err_t err = bfs_bio_read(f->fs->bio, disk_block, buffer);
+    bfs_err_t err = file_data_bio_read(f->fs->bio, disk_block, buffer);
     if (err != BFS_OK || !f->extents.data_checksums) return err;
     bfs_extent_val_t value;
     err = bfs_extent_lookup_val(&f->extents, file_block, &value);
@@ -276,7 +306,7 @@ static bfs_err_t file_write_allocated_run(bfs_file_t *f, const uint8_t *input,
         /* The one-block scratch buffer is DMA-safe; the caller's input need
          * not be. Capacity is checked before allocating the run. */
         memcpy(fs->scratch, input + (size_t)initialized * bs, bs); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
-        write_error = bfs_bio_write(fs->bio, start + initialized, fs->scratch);
+        write_error = file_data_bio_write(fs->bio, start + initialized, fs->scratch);
         if (write_error != BFS_OK) break;
     }
 
@@ -422,7 +452,7 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
         uint32_t crc = f->extents.data_checksums ? bfs_crc32(0, blk_buf, bs) : 0;
 
         if (new_mapping) {
-            err = bfs_bio_write(f->fs->bio, disk_blk, blk_buf);
+            err = file_data_bio_write(f->fs->bio, disk_blk, blk_buf);
             if (err == BFS_OK)
                 err = bfs_extent_map_block(&f->extents, file_blk, disk_blk, crc);
             if (err != BFS_OK) {
@@ -447,7 +477,7 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
                 return file_finish_write(f, total,
                                          file_alloc_error(&f->fs->freespace));
 
-            err = bfs_bio_write(f->fs->bio, new_blk, blk_buf);
+            err = file_data_bio_write(f->fs->bio, new_blk, blk_buf);
             if (err != BFS_OK) {
                 bfs_err_t cleanup_err = bfs_freespace_free(&f->fs->freespace, new_blk, 1);
                 if (cleanup_err != BFS_OK) f->fs->recovery_error = cleanup_err;
@@ -472,7 +502,7 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
             }
             disk_blk = new_blk;
         } else {
-            err = bfs_bio_write(f->fs->bio, disk_blk, blk_buf);
+            err = file_data_bio_write(f->fs->bio, disk_blk, blk_buf);
             if (err != BFS_OK)
                 return file_finish_write(f, total, err);
         }
