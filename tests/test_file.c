@@ -13,13 +13,18 @@
 
 static bfs_fs_t g_fs;
 
-static bfs_fs_t *setup(void)
+static bfs_fs_t *setup_with_options(uint32_t options)
 {
     unlink(TEST_IMG);
     bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
-    bfs_fs_format(bio, "FileTest", 0);
+    bfs_fs_format(bio, "FileTest", options);
     bfs_fs_mount(&g_fs, bio);
     return &g_fs;
+}
+
+static bfs_fs_t *setup(void)
+{
+    return setup_with_options(0);
 }
 
 static void teardown(bfs_fs_t *fs)
@@ -251,6 +256,121 @@ static void test_append_uses_current_end_of_file(void)
     teardown(fs);
 }
 
+static void test_batch_append_single_contiguous_extent(void)
+{
+    enum { APPEND_BLOCKS = 4 };
+    bfs_fs_t *fs = setup();
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "batch", 5, &ino), BFS_OK);
+
+    uint8_t data[APPEND_BLOCKS * BLK_SIZE];
+    uint8_t actual[sizeof(data)];
+    for (uint32_t i = 0; i < sizeof(data); i++)
+        data[i] = (uint8_t)((i / BLK_SIZE) * 37u + (i % BLK_SIZE) * 13u);
+
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_append(&file, data, sizeof(data)), (int32_t)sizeof(data));
+    TEST_ASSERT_EQ(file.size, sizeof(data));
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+
+    bfs_bio_t *bio = fs->bio;
+    TEST_ASSERT_EQ(bfs_fs_unmount(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mount(fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(file.size, sizeof(data));
+    TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)), (int32_t)sizeof(actual));
+    TEST_ASSERT_MEM_EQ(actual, data, sizeof(data));
+
+    bfs_extent_val_t extent;
+    TEST_ASSERT_EQ(bfs_extent_lookup_val(&file.extents, 0, &extent), BFS_OK);
+    bfs_blk_t first_disk_block = bfs_be32(extent.disk_block);
+    TEST_ASSERT_EQ(bfs_be32(extent.length), APPEND_BLOCKS);
+    for (uint32_t block = 0; block < APPEND_BLOCKS; block++) {
+        TEST_ASSERT_EQ(bfs_extent_lookup_val(&file.extents, block, &extent), BFS_OK);
+        TEST_ASSERT_EQ(bfs_be32(extent.disk_block), first_disk_block);
+        TEST_ASSERT_EQ(bfs_be32(extent.length), APPEND_BLOCKS);
+        bfs_blk_t mapped_block;
+        TEST_ASSERT_EQ(bfs_extent_lookup(&file.extents, block, &mapped_block), BFS_OK);
+        TEST_ASSERT_EQ(mapped_block, first_disk_block + block);
+    }
+
+    teardown(fs);
+}
+
+static void test_append_unaligned_eof_multiblock(void)
+{
+    enum { PREFIX_SIZE = 29, APPEND_SIZE = 3 * BLK_SIZE + 71 };
+    bfs_fs_t *fs = setup();
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "unaligned", 9, &ino), BFS_OK);
+
+    uint8_t prefix[PREFIX_SIZE];
+    uint8_t appended[APPEND_SIZE];
+    uint8_t expected[PREFIX_SIZE + APPEND_SIZE];
+    uint8_t actual[sizeof(expected)];
+    for (uint32_t i = 0; i < sizeof(prefix); i++)
+        prefix[i] = (uint8_t)(i * 7u + 0x40u);
+    for (uint32_t i = 0; i < sizeof(appended); i++)
+        appended[i] = (uint8_t)(i * 11u + (i / BLK_SIZE) * 29u + 3u);
+    memcpy(expected, prefix, sizeof(prefix));
+    memcpy(expected + sizeof(prefix), appended, sizeof(appended));
+
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&file, prefix, sizeof(prefix)), PREFIX_SIZE);
+    TEST_ASSERT_EQ(bfs_file_append(&file, appended, sizeof(appended)), APPEND_SIZE);
+    TEST_ASSERT_EQ(file.size, sizeof(expected));
+    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_SET), 0);
+    TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)), (int32_t)sizeof(actual));
+    TEST_ASSERT_MEM_EQ(actual, expected, sizeof(expected));
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+
+    bfs_bio_t *bio = fs->bio;
+    TEST_ASSERT_EQ(bfs_fs_unmount(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mount(fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(file.size, sizeof(expected));
+    TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)), (int32_t)sizeof(actual));
+    TEST_ASSERT_MEM_EQ(actual, expected, sizeof(expected));
+    teardown(fs);
+}
+
+static void test_checksum_append_uses_per_block_extents(void)
+{
+    enum { APPEND_BLOCKS = 3 };
+    bfs_fs_t *fs = setup_with_options(BFS_OPT_DATA_CHECKSUMS);
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, BFS_ROOT_INO, "checked", 7, &ino), BFS_OK);
+
+    uint8_t data[APPEND_BLOCKS * BLK_SIZE];
+    uint8_t actual[sizeof(data)];
+    for (uint32_t i = 0; i < sizeof(data); i++)
+        data[i] = (uint8_t)((i / BLK_SIZE) * 53u + (i % BLK_SIZE) * 17u);
+
+    bfs_file_t file;
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_append(&file, data, sizeof(data)), (int32_t)sizeof(data));
+    TEST_ASSERT_EQ(file.size, sizeof(data));
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+
+    bfs_bio_t *bio = fs->bio;
+    TEST_ASSERT_EQ(bfs_fs_unmount(fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mount(fs, bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&file, fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(file.size, sizeof(data));
+    TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)), (int32_t)sizeof(actual));
+    TEST_ASSERT_MEM_EQ(actual, data, sizeof(data));
+
+    for (uint32_t block = 0; block < APPEND_BLOCKS; block++) {
+        bfs_extent_val_t extent;
+        TEST_ASSERT_EQ(bfs_extent_lookup_val(&file.extents, block, &extent), BFS_OK);
+        TEST_ASSERT_EQ(bfs_be32(extent.length), 1);
+    }
+
+    teardown(fs);
+}
+
 static void test_unlinked_open_file_lifetime_and_mount_recovery(void)
 {
     bfs_fs_t *fs = setup();
@@ -298,5 +418,8 @@ TEST_SUITE_BEGIN("File I/O")
     TEST_RUN(test_truncate_regrow_zeroes_tail);
     TEST_RUN(test_shared_handles_refresh_inode_state);
     TEST_RUN(test_append_uses_current_end_of_file);
+    TEST_RUN(test_batch_append_single_contiguous_extent);
+    TEST_RUN(test_append_unaligned_eof_multiblock);
+    TEST_RUN(test_checksum_append_uses_per_block_extents);
     TEST_RUN(test_unlinked_open_file_lifetime_and_mount_recovery);
 TEST_SUITE_END()

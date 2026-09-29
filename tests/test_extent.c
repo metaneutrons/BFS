@@ -5,6 +5,7 @@
 #include "test_harness.h"
 #include "bfs_extent.h"
 #include "block_device_emu.h"
+#include <string.h>
 #include <unistd.h>
 
 #define TEST_IMG "test_extent.img"
@@ -48,6 +49,35 @@ static void test_single_extent(void)
     /* Beyond extent should fail */
     bfs_blk_t result;
     TEST_ASSERT_EQ(bfs_extent_lookup(&et, 10, &result), BFS_ERR_NOTFOUND);
+
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_map_initialized_run(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bfs_freespace_t *fs = make_fs(bio);
+
+    bfs_extent_tree_t et;
+    TEST_ASSERT_EQ(bfs_extent_init(&et, bio, fs, BFS_BLK_NULL, 1), BFS_OK);
+    bfs_blk_t start = bfs_freespace_alloc(fs, 4);
+    TEST_ASSERT(start != BFS_BLK_NULL);
+    uint8_t data[BLK_SIZE];
+    memset(data, 0x5a, sizeof(data));
+    for (uint32_t i = 0; i < 4; i++)
+        TEST_ASSERT_EQ(bfs_bio_write(bio, start + i, data), BFS_OK);
+
+    TEST_ASSERT_EQ(bfs_extent_map_run(&et, 0, start, 4), BFS_OK);
+    bfs_extent_val_t value;
+    TEST_ASSERT_EQ(bfs_extent_lookup_val(&et, 2, &value), BFS_OK);
+    TEST_ASSERT_EQ(bfs_be32(value.length), 4);
+    TEST_ASSERT_EQ(bfs_be32(value.disk_block), start);
+    TEST_ASSERT_EQ(bfs_extent_map_run(&et, UINT32_MAX, start, 4), BFS_ERR_INVAL);
+    et.data_checksums = true;
+    TEST_ASSERT_EQ(bfs_extent_map_run(&et, 4, start, 2), BFS_ERR_INVAL);
 
     bfs_bio_close(bio);
     unlink(TEST_IMG);
@@ -205,6 +235,7 @@ static void test_large_file(void)
 
 TEST_SUITE_BEGIN("Extent Tree")
     TEST_RUN(test_single_extent);
+    TEST_RUN(test_map_initialized_run);
     TEST_RUN(test_fragmented_file);
     TEST_RUN(test_truncate);
     TEST_RUN(test_truncate_all);

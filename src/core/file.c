@@ -205,6 +205,118 @@ static bfs_err_t file_alloc_error(const bfs_freespace_t *fs)
     return fs->last_error == BFS_OK ? BFS_ERR_NOSPC : fs->last_error;
 }
 
+/* Bound a run to keep short-write recovery local to one modest allocation.
+ * The AmigaOS benchmark issues 64 KiB writes (16 blocks at 4 KiB). */
+#define BFS_WRITE_RUN_BLOCKS 16u
+
+static bfs_err_t file_prepare_new_run(bfs_file_t *f, uint32_t len,
+                                      uint32_t file_block, uint32_t *run_count)
+{
+    bfs_fs_t *fs = f->fs;
+    const uint32_t bs = fs->bio->block_size;
+    *run_count = 0;
+
+    if (f->extents.data_checksums || fs->has_snapshots ||
+        f->offset != f->size || f->offset % bs != 0 || len / bs < 2)
+        return BFS_OK;
+
+    uint32_t count = len / bs;
+    if (count > BFS_WRITE_RUN_BLOCKS) count = BFS_WRITE_RUN_BLOCKS;
+    uint64_t addressable = (max_file_size_for_block_size(bs) - f->offset) / bs;
+    if (count > addressable) count = (uint32_t)addressable;
+    if (count < 2 || count - 1 > UINT32_MAX - file_block)
+        return BFS_OK;
+
+    bfs_blk_t existing;
+    bfs_err_t err = bfs_extent_lookup(&f->extents, file_block, &existing);
+    if (err == BFS_OK) return BFS_OK;
+    if (err != BFS_ERR_NOTFOUND) return err;
+
+    uint64_t available = data_alloc_available(fs);
+    if (available <= fs->freespace.global_reserve ||
+        available - fs->freespace.global_reserve < count)
+        return BFS_OK;
+
+    /* Allocation, a possible suffix cleanup, and extent insertion can each
+     * COW metadata. Commit earlier file progress before starting the run if
+     * its worst-case deferred frees would exceed the queue. */
+    const uint32_t reserve = 4u * BFS_BTREE_MAX_OP_FREES;
+    if (reserve > bfs_fs_pending_cap(fs)) return BFS_OK;
+    if (fs->pending_count + reserve > bfs_fs_pending_cap(fs)) {
+        err = file_flush_and_sync(f);
+        if (err != BFS_OK) return err;
+    }
+
+    *run_count = count;
+    return BFS_OK;
+}
+
+static bfs_err_t file_release_unmapped_run(bfs_fs_t *fs, bfs_blk_t start,
+                                           uint32_t count)
+{
+    bfs_err_t err = bfs_freespace_free(&fs->freespace, start, count);
+    if (err != BFS_OK) fs->recovery_error = err;
+    return err;
+}
+
+static bfs_err_t file_write_allocated_run(bfs_file_t *f, const uint8_t *input,
+                                          uint32_t file_block, bfs_blk_t start,
+                                          uint32_t count, uint32_t *written)
+{
+    bfs_fs_t *fs = f->fs;
+    const uint32_t bs = fs->bio->block_size;
+    uint32_t initialized = 0;
+    bfs_err_t write_error = BFS_OK;
+    for (; initialized < count; initialized++) {
+        memcpy(fs->scratch, input + (size_t)initialized * bs, bs);
+        write_error = bfs_bio_write(fs->bio, start + initialized, fs->scratch);
+        if (write_error != BFS_OK) break;
+    }
+
+    if (initialized < count) {
+        bfs_err_t err = file_release_unmapped_run(fs, start + initialized,
+                                                   count - initialized);
+        if (err != BFS_OK) return err;
+    }
+    if (initialized == 0) return write_error;
+
+    bfs_err_t err = bfs_extent_map_run(&f->extents, file_block, start, initialized);
+    if (err != BFS_OK) {
+        if (f->extents.tree.free_sink_err == BFS_OK)
+            (void)file_release_unmapped_run(fs, start, initialized);
+        return err;
+    }
+
+    *written = initialized * bs;
+    return write_error;
+}
+
+static bfs_err_t file_write_new_run(bfs_file_t *f, const uint8_t *input,
+                                    uint32_t len, uint32_t file_block,
+                                    uint32_t *written, bool *handled)
+{
+    *written = 0;
+    *handled = false;
+    uint32_t count;
+    bfs_err_t err = file_prepare_new_run(f, len, file_block, &count);
+    if (err != BFS_OK) {
+        *handled = true;
+        return err;
+    }
+    if (count == 0) return BFS_OK;
+
+    bfs_fs_t *fs = f->fs;
+    bfs_blk_t start = bfs_freespace_alloc(&fs->freespace, count);
+    if (start == BFS_BLK_NULL) {
+        err = file_alloc_error(&fs->freespace);
+        if (err == BFS_ERR_NOSPC) return BFS_OK;
+        *handled = true;
+        return err;
+    }
+    *handled = true;
+    return file_write_allocated_run(f, input, file_block, start, count, written);
+}
+
 int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
 {
     bfs_err_t handle_err = file_handle_error(f);
@@ -232,6 +344,19 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
         uint32_t file_blk;
         bfs_err_t err = file_block_for_offset(f->fs, f->offset, &file_blk);
         if (err != BFS_OK) return file_finish_write(f, total, err);
+
+        uint32_t run_written;
+        bool run_handled;
+        err = file_write_new_run(f, in, len, file_blk, &run_written, &run_handled);
+        if (run_handled) {
+            in += run_written;
+            f->offset += run_written;
+            total += run_written;
+            len -= run_written;
+            if (f->offset > f->size) f->size = f->offset;
+            if (err != BFS_OK) return file_finish_write(f, total, err);
+            continue;
+        }
 
         uint32_t blk_off = (uint32_t)(f->offset % bs);
         uint32_t chunk = bs - blk_off;

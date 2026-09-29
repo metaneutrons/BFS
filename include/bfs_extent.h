@@ -52,6 +52,13 @@ bfs_err_t bfs_extent_append(bfs_extent_tree_t *et, uint32_t file_block,
 bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
                                bfs_blk_t disk_block, uint32_t crc);
 
+/* Insert an already allocated, initialized contiguous run. The on-disk extent
+ * format has only one data CRC per record, so this is restricted to volumes
+ * without data checksums. Ownership passes on success; after a failed insert,
+ * free_sink_err must be checked before the caller reclaims the run. */
+bfs_err_t bfs_extent_map_run(bfs_extent_tree_t *et, uint32_t file_block,
+                             bfs_blk_t disk_block, uint32_t count);
+
 /* Truncate at from_block, shortening an extent that straddles the boundary and
  * freeing all following extents. The batch form returns BFS_ERR_AGAIN when the
  * caller must commit/drain deferred frees before retrying. max_ops must be > 0. */

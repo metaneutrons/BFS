@@ -160,6 +160,19 @@ bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
     return extent_insert_raw(et, file_block, disk_block, 1, crc);
 }
 
+bfs_err_t bfs_extent_map_run(bfs_extent_tree_t *et, uint32_t file_block,
+                             bfs_blk_t disk_block, uint32_t count)
+{
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.extent_map_calls++;
+#endif
+    if (!et || et->data_checksums || count == 0 ||
+        count - 1 > UINT32_MAX - file_block ||
+        !extent_range_valid(et, disk_block, count))
+        return BFS_ERR_INVAL;
+    return extent_insert_raw(et, file_block, disk_block, count, 0);
+}
+
 static bfs_err_t extent_rollback_remap(bfs_extent_tree_t *et, uint32_t file_block,
                                       uint32_t found_key,
                                       const bfs_extent_val_t *found_val,
