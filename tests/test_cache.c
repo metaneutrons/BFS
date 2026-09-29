@@ -191,6 +191,40 @@ static void test_io_errors(void)
     bfs_cache_destroy(&cache);
 }
 
+static void test_verified_node_lifecycle(void)
+{
+    memory_bio_t memory;
+    bfs_cache_t cache;
+    uint8_t buffer[BLOCK_SIZE];
+    memory_init(&memory);
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 1), BFS_OK);
+    TEST_ASSERT(!bfs_bio_node_verified(&memory.bio, 3));
+    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, 3));
+    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 3, buffer), BFS_OK);
+    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, 3));
+    bfs_bio_mark_node_verified(&cache.bio, 3);
+    TEST_ASSERT(bfs_bio_node_verified(&cache.bio, 3));
+    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 3, buffer), BFS_OK);
+    TEST_ASSERT(bfs_bio_node_verified(&cache.bio, 3));
+
+    TEST_ASSERT_EQ(bfs_bio_write(&cache.bio, 3, buffer), BFS_OK);
+    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, 3));
+    bfs_bio_mark_node_verified(&cache.bio, 3);
+    memory.fail_write = 1;
+    TEST_ASSERT_EQ(bfs_bio_write(&cache.bio, 3, buffer), BFS_ERR_IO);
+    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, 3));
+    memory.fail_write = 0;
+
+    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 3, buffer), BFS_OK);
+    bfs_bio_mark_node_verified(&cache.bio, 3);
+    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 4, buffer), BFS_OK);
+    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, 3));
+    bfs_bio_mark_node_verified(&cache.bio, 4);
+    bfs_cache_invalidate(&cache);
+    TEST_ASSERT(!bfs_bio_node_verified(&cache.bio, 4));
+    bfs_cache_destroy(&cache);
+}
+
 TEST_SUITE_BEGIN("Block Cache")
     TEST_RUN(test_defaults_and_limits);
     TEST_RUN(test_invalid_initialization);
@@ -198,4 +232,5 @@ TEST_SUITE_BEGIN("Block Cache")
     TEST_RUN(test_lru_eviction);
     TEST_RUN(test_write_through);
     TEST_RUN(test_io_errors);
+    TEST_RUN(test_verified_node_lifecycle);
 TEST_SUITE_END()

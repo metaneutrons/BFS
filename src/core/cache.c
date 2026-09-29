@@ -36,6 +36,7 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
     memcpy(c->slots[victim].data, buf, bio->block_size);
     c->slots[victim].blk = blk;
     c->slots[victim].age = ++c->clock;
+    c->slots[victim].node_verified = false;
 
     return BFS_OK;
 }
@@ -46,13 +47,23 @@ static bfs_err_t cache_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
 
     /* Write-through: always write to device */
     bfs_err_t err = bfs_bio_write(c->dev, blk, buf);
-    if (err != BFS_OK) return err;
+    if (err != BFS_OK) {
+        /* A failed write may have reached media partially. Drop any cached
+         * copy rather than retaining a validated view of uncertain contents. */
+        for (uint32_t i = 0; i < c->num_slots; i++)
+            if (c->slots[i].blk == blk) {
+                c->slots[i].blk = UINT32_MAX;
+                c->slots[i].node_verified = false;
+            }
+        return err;
+    }
 
     /* Update cache if block is cached (keeps cache coherent) */
     for (uint32_t i = 0; i < c->num_slots; i++) {
         if (c->slots[i].blk == blk) {
             memcpy(c->slots[i].data, buf, bio->block_size);
             c->slots[i].age = ++c->clock;
+            c->slots[i].node_verified = false;
             return BFS_OK;
         }
     }
@@ -71,11 +82,31 @@ static void cache_close(bfs_bio_t *bio)
     (void)bio; /* cache doesn't own the device */
 }
 
+static bool cache_node_verified(bfs_bio_t *bio, bfs_blk_t blk)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    for (uint32_t i = 0; i < c->num_slots; i++)
+        if (c->slots[i].blk == blk) return c->slots[i].node_verified;
+    return false;
+}
+
+static void cache_mark_node_verified(bfs_bio_t *bio, bfs_blk_t blk)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    for (uint32_t i = 0; i < c->num_slots; i++)
+        if (c->slots[i].blk == blk) {
+            c->slots[i].node_verified = true;
+            return;
+        }
+}
+
 static const bfs_bio_ops_t cache_ops = {
     .read_block  = cache_read,
     .write_block = cache_write,
     .sync        = cache_sync,
     .close       = cache_close,
+    .node_verified = cache_node_verified,
+    .mark_node_verified = cache_mark_node_verified,
 };
 
 /* ── Public API ────────────────────────────────────────────── */
@@ -104,6 +135,7 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
     for (uint32_t i = 0; i < num_slots; i++) {
         cache->slots[i].blk = UINT32_MAX;
         cache->slots[i].age = 0;
+        cache->slots[i].node_verified = false;
         cache->slots[i].data = malloc(dev->block_size);
         if (!cache->slots[i].data) {
             for (uint32_t j = 0; j < i; j++) free(cache->slots[j].data);
@@ -132,7 +164,9 @@ void bfs_cache_destroy(bfs_cache_t *cache)
 void bfs_cache_invalidate(bfs_cache_t *cache)
 {
     if (!cache || !cache->slots) return;
-    for (uint32_t i = 0; i < cache->num_slots; i++)
+    for (uint32_t i = 0; i < cache->num_slots; i++) {
         cache->slots[i].blk = UINT32_MAX;
+        cache->slots[i].node_verified = false;
+    }
     cache->clock = 0;
 }

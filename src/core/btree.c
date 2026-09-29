@@ -74,22 +74,24 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     if (bfs_be32(hdr->magic) != BFS_NODE_MAGIC)
         return BFS_ERR_CORRUPT;
+    if (!bfs_bio_node_verified(tree->bio, blk)) {
 #ifdef BFS_PERF_PROBE
-    struct EClockVal crc_started = {0};
-    ULONG crc_call = ++bfs_perf_probe_counters.node_crc_read_calls;
-    BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
-    if (sample_crc) bfs_perf_probe_begin(&crc_started);
-    uint32_t computed_crc = node_compute_crc(tree, buf);
-    if (sample_crc) {
-        bfs_perf_probe_counters.node_crc_read_samples++;
-        bfs_perf_probe_counters.node_crc_read_sample_ticks +=
-            bfs_perf_probe_elapsed(&crc_started);
-    }
-    if (bfs_be32(hdr->crc32) != computed_crc)
+        struct EClockVal crc_started = {0};
+        ULONG crc_call = ++bfs_perf_probe_counters.node_crc_read_calls;
+        BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
+        if (sample_crc) bfs_perf_probe_begin(&crc_started);
+        uint32_t computed_crc = node_compute_crc(tree, buf);
+        if (sample_crc) {
+            bfs_perf_probe_counters.node_crc_read_samples++;
+            bfs_perf_probe_counters.node_crc_read_sample_ticks +=
+                bfs_perf_probe_elapsed(&crc_started);
+        }
+        if (bfs_be32(hdr->crc32) != computed_crc) return BFS_ERR_CORRUPT;
 #else
-    if (bfs_be32(hdr->crc32) != node_compute_crc(tree, buf))
+        if (bfs_be32(hdr->crc32) != node_compute_crc(tree, buf))
+            return BFS_ERR_CORRUPT;
 #endif
-        return BFS_ERR_CORRUPT;
+    }
 
     /* Validate structural header fields read from disk before any accessor uses
      * num_keys to index into the fixed-size block buffer. The CRC only catches
@@ -120,6 +122,7 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
             }
         }
     }
+    bfs_bio_mark_node_verified(tree->bio, blk);
     return BFS_OK;
 }
 

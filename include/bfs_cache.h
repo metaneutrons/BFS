@@ -25,6 +25,7 @@ typedef struct bfs_cache_slot {
     bfs_blk_t blk;         /* cached block number (UINT32_MAX = empty) */
     uint32_t  age;          /* LRU counter (higher = more recent) */
     uint8_t  *data;         /* block data */
+    bool      node_verified; /* current bytes passed B-tree CRC and structure */
 } bfs_cache_slot_t;
 
 typedef struct bfs_cache {

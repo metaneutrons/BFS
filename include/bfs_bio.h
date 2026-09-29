@@ -31,6 +31,12 @@ typedef struct bfs_bio_ops {
 
     /* Close and free resources. */
     void (*close)(bfs_bio_t *bio);
+
+    /* Optional: a write-through cache may remember that the resident block
+     * passed a full B-tree node CRC and structural validation. Any write,
+     * eviction or invalidation must clear that state. */
+    bool (*node_verified)(bfs_bio_t *bio, bfs_blk_t blk);
+    void (*mark_node_verified)(bfs_bio_t *bio, bfs_blk_t blk);
 } bfs_bio_ops_t;
 
 /* Base block device — all implementations embed this as first member */
@@ -78,6 +84,16 @@ static inline bfs_err_t bfs_bio_sync(bfs_bio_t *bio) {
 
 static inline void bfs_bio_close(bfs_bio_t *bio) {
     if (bio && bio->ops && bio->ops->close) bio->ops->close(bio);
+}
+
+static inline bool bfs_bio_node_verified(bfs_bio_t *bio, bfs_blk_t blk) {
+    return bio && bio->ops && bio->ops->node_verified &&
+           bio->ops->node_verified(bio, blk);
+}
+
+static inline void bfs_bio_mark_node_verified(bfs_bio_t *bio, bfs_blk_t blk) {
+    if (bio && bio->ops && bio->ops->mark_node_verified)
+        bio->ops->mark_node_verified(bio, blk);
 }
 
 #endif /* BFS_BIO_H */
