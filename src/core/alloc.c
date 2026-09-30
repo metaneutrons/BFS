@@ -22,6 +22,7 @@
 
 #define BFS_ALLOC_RESERVE_MIN 16u
 #define BFS_ALLOC_RESERVE_DEPTH_MARGIN 4u
+#define BFS_ALLOC_METADATA_REUSE_WARMUP 8u
 
 /* A reserve must cover a free-space-tree COW path, its possible ancestor
  * splits, and a small amount of compound-operation headroom. Replenishing to
@@ -65,6 +66,97 @@ static bool overlap_scan_cb(const void *key, const void *val, void *ctx)
 
 /* ── Single-block allocator interface (for B+tree COW) ─────── */
 
+static bool reserve_block_is_emergency(const bfs_freespace_t *fs, bfs_blk_t blk);
+static bfs_err_t validate_free_stock_range(const bfs_freespace_t *fs,
+                                            bfs_blk_t start, uint32_t count,
+                                            uint32_t ignore_reserve);
+static bfs_err_t validate_free_tree_absence(bfs_freespace_t *fs,
+                                            bfs_blk_t start, uint32_t count);
+
+static bool metadata_context_enabled(const bfs_freespace_t *fs)
+{
+    return fs->tree.bio && fs->mounted_state && *fs->mounted_state &&
+           fs->snapshot_state && !*fs->snapshot_state && fs->sb &&
+           fs->committed_sb && fs->tree.height == 1 &&
+           fs->tree.root != BFS_BLK_NULL &&
+           !(bfs_be32(fs->sb->options) & BFS_OPT_SNAPSHOTS) &&
+           bfs_btree_txn_id(&fs->tree) == bfs_be64(fs->sb->txn_id) &&
+           bfs_be64(fs->sb->txn_id) > bfs_be64(fs->committed_sb->txn_id);
+}
+
+static bool metadata_reuse_enabled(const bfs_freespace_t *fs)
+{
+    return metadata_context_enabled(fs) &&
+           fs->metadata_reuse_txn == bfs_btree_txn_id(&fs->tree) &&
+           fs->metadata_requests >= BFS_ALLOC_METADATA_REUSE_WARMUP;
+}
+
+static bool metadata_block_protected(const bfs_freespace_t *fs, bfs_blk_t blk)
+{
+    return blk < bfs_data_start_block(fs->tree.bio->block_size) ||
+           blk >= fs->tree.bio->block_count || blk == fs->tree.root ||
+           blk == bfs_be32(fs->committed_sb->free_tree_root) ||
+           blk == bfs_be32(fs->committed_sb->dir_tree_root) ||
+           blk == bfs_be32(fs->committed_sb->inode_tree_root) ||
+           blk == bfs_be32(fs->committed_sb->refcount_tree_root) ||
+           blk == bfs_be32(fs->committed_sb->snapshot_tree_root);
+}
+
+static bfs_err_t validate_metadata_stock(const bfs_freespace_t *fs)
+{
+    if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE ||
+        bfs_be32(fs->sb->emergency_count) > BFS_EMERGENCY_POOL_SIZE)
+        return BFS_ERR_CORRUPT;
+    for (uint32_t i = 0; i < fs->reserve_count; i++) {
+        bfs_blk_t blk = fs->reserve[i];
+        if (metadata_block_protected(fs, blk)) return BFS_ERR_CORRUPT;
+        bfs_err_t err = validate_free_stock_range(fs, blk, 1, i);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
+/* Only a suffix spare may circulate through top-level metadata COW. Keeping
+ * the entire existing prefix target avoids spending recursive COW headroom. */
+static bfs_err_t take_metadata_spare(bfs_freespace_t *fs, bfs_blk_t *out)
+{
+    *out = BFS_BLK_NULL;
+    if (!metadata_reuse_enabled(fs)) return BFS_ERR_UNSUPPORTED;
+    uint32_t floor = reserve_refill_target(fs);
+    if (fs->reserve_count <= floor) return BFS_ERR_UNSUPPORTED;
+    bfs_err_t err = validate_metadata_stock(fs);
+    if (err != BFS_OK) return err;
+    for (uint32_t i = fs->reserve_count; i > floor; i--) {
+        uint32_t index = i - 1;
+        bfs_blk_t blk = fs->reserve[index];
+        if (reserve_block_is_emergency(fs, blk)) continue;
+        err = validate_free_tree_absence(fs, blk, 1);
+        if (err != BFS_OK) return err;
+        fs->reserve_count--;
+        fs->reserve[index] = fs->reserve[fs->reserve_count];
+        *out = blk;
+        return BFS_OK;
+    }
+    return BFS_ERR_UNSUPPORTED;
+}
+
+static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk)
+{
+    if (!metadata_reuse_enabled(fs)) return BFS_ERR_UNSUPPORTED;
+    if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE) return BFS_ERR_CORRUPT;
+    if (fs->reserve_count == BFS_ALLOC_RESERVE_SIZE ||
+        reserve_block_is_emergency(fs, blk))
+        return BFS_ERR_UNSUPPORTED;
+    bfs_err_t err = validate_metadata_stock(fs);
+    if (err != BFS_OK) return err;
+    if (metadata_block_protected(fs, blk)) return BFS_ERR_CORRUPT;
+    err = validate_free_stock_range(fs, blk, 1, UINT32_MAX);
+    if (err == BFS_OK) err = validate_free_tree_absence(fs, blk, 1);
+    if (err != BFS_OK) return err;
+    fs->reserve[fs->reserve_count++] = blk;
+    return BFS_OK;
+}
+
 static bfs_blk_t iface_alloc(bfs_allocator_t *a)
 {
     if (!a || !a->ctx) return BFS_BLK_NULL;
@@ -107,6 +199,29 @@ no_space:
         return BFS_BLK_NULL;
     }
 
+    /* A suffix spare helps sustained COW, but changing short transactions'
+     * allocation layout increased their settlement traffic in qualification.
+     * Count only mounted top-level metadata requests, saturate at the bounded
+     * warmup, and start over at every live transaction ID. */
+    if (metadata_context_enabled(fs)) {
+        uint64_t live = bfs_btree_txn_id(&fs->tree);
+        if (fs->metadata_reuse_txn != live) {
+            fs->metadata_reuse_txn = live;
+            fs->metadata_requests = 0;
+        }
+        if (fs->metadata_requests < BFS_ALLOC_METADATA_REUSE_WARMUP)
+            fs->metadata_requests++;
+    }
+    bfs_blk_t spare;
+    bfs_err_t err = take_metadata_spare(fs, &spare);
+    if (err == BFS_OK) {
+        fs->last_error = BFS_OK;
+        return spare;
+    }
+    if (err != BFS_ERR_UNSUPPORTED) {
+        fs->last_error = err;
+        return BFS_BLK_NULL;
+    }
     return bfs_freespace_alloc(fs, 1);
 }
 
@@ -127,6 +242,11 @@ static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
         return BFS_ERR_NOSPC;
     }
 
+    bfs_err_t err = stash_metadata_spare(fs, blk);
+    if (err != BFS_ERR_UNSUPPORTED) {
+        fs->last_error = err;
+        return err;
+    }
     return bfs_freespace_free(fs, blk, 1);
 }
 
@@ -498,6 +618,48 @@ static bfs_err_t return_to_emergency_pool(bfs_freespace_t *fs, bfs_blk_t blk,
     return BFS_OK;
 }
 
+static bfs_err_t validate_free_stock_range(const bfs_freespace_t *fs,
+                                            bfs_blk_t start, uint32_t count,
+                                            uint32_t ignore_reserve)
+{
+    if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE) return BFS_ERR_CORRUPT;
+    bfs_blk_t end = start + count;
+    for (uint32_t i = 0; i < fs->reserve_count; i++) {
+        if (i != ignore_reserve && fs->reserve[i] >= start && fs->reserve[i] < end)
+            return BFS_ERR_EXISTS;
+    }
+    if (fs->sb) {
+        uint32_t ec = bfs_be32(fs->sb->emergency_count);
+        if (ec > BFS_EMERGENCY_POOL_SIZE) return BFS_ERR_CORRUPT;
+        for (uint32_t i = 0; i < ec; i++) {
+            bfs_blk_t blk = bfs_be32(fs->sb->emergency_pool[i]);
+            if (blk >= start && blk < end) return BFS_ERR_EXISTS;
+        }
+    }
+    return BFS_OK;
+}
+
+static bfs_err_t validate_free_tree_absence(bfs_freespace_t *fs,
+                                            bfs_blk_t start, uint32_t count)
+{
+    uint32_t pred_search = bfs_be32(start), pred_key = 0, pred_len_be = 0;
+    bfs_err_t err = bfs_btree_search_floor(&fs->tree, &pred_search,
+                                           &pred_key, &pred_len_be);
+    if (err != BFS_OK && err != BFS_ERR_NOTFOUND) return err;
+    if (err == BFS_OK) {
+        uint32_t pk = bfs_be32(pred_key), pl = bfs_be32(pred_len_be);
+        if (pl == 0 || pk == BFS_BLK_NULL || pk >= fs->tree.bio->block_count ||
+            pl > fs->tree.bio->block_count - pk)
+            return BFS_ERR_CORRUPT;
+        if (pk <= start && pl > start - pk) return BFS_ERR_EXISTS;
+    }
+    overlap_scan_ctx_t overlap = { .end = start + count, .overlap = false };
+    uint32_t key = bfs_be32(start);
+    err = bfs_btree_scan(&fs->tree, &key, overlap_scan_cb, &overlap);
+    if (err != BFS_OK) return err;
+    return overlap.overlap ? BFS_ERR_EXISTS : BFS_OK;
+}
+
 bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count)
 {
     if (!fs || !fs->tree.bio || count == 0 || start == BFS_BLK_NULL ||
@@ -517,18 +679,8 @@ bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t coun
 
     /* Reserve and active emergency-pool blocks are free but deliberately absent
      * from the free tree. Reject ranges that would add either a second time. */
-    for (uint32_t i = 0; i < fs->reserve_count; i++) {
-        if (fs->reserve[i] >= start && fs->reserve[i] < end)
-            return BFS_ERR_EXISTS;
-    }
-    if (fs->sb) {
-        uint32_t ec = bfs_be32(fs->sb->emergency_count);
-        if (ec > BFS_EMERGENCY_POOL_SIZE) return BFS_ERR_CORRUPT;
-        for (uint32_t i = 0; i < ec; i++) {
-            bfs_blk_t blk = bfs_be32(fs->sb->emergency_pool[i]);
-            if (blk >= start && blk < end) return BFS_ERR_EXISTS;
-        }
-    }
+    bfs_err_t stock_err = validate_free_stock_range(fs, start, count, UINT32_MAX);
+    if (stock_err != BFS_OK) return stock_err;
     if (count > UINT32_MAX - fs->total_free) return BFS_ERR_CORRUPT;
 
     bfs_err_t refill_err = bfs_freespace_refill_reserve(fs);
@@ -538,36 +690,8 @@ bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t coun
     }
     fs->in_alloc = true;
 
-    uint32_t pred_search = bfs_be32(start);
-    uint32_t pred_key = 0, pred_len_be = 0;
-    bfs_err_t err = bfs_btree_search_floor(&fs->tree, &pred_search,
-                                           &pred_key, &pred_len_be);
-    if (err != BFS_OK && err != BFS_ERR_NOTFOUND) goto fail;
-    if (err == BFS_OK) {
-        uint32_t pk = bfs_be32(pred_key);
-        uint32_t pl = bfs_be32(pred_len_be);
-        if (pl == 0 || pk == BFS_BLK_NULL || pk >= fs->tree.bio->block_count ||
-            pl > fs->tree.bio->block_count - pk) {
-            err = BFS_ERR_CORRUPT;
-            goto fail;
-        }
-        if (pk <= start && pl > start - pk) {
-            err = BFS_ERR_EXISTS;
-            goto fail;
-        }
-    }
-
-    overlap_scan_ctx_t oc = { .end = end, .overlap = false };
-    uint32_t overlap_key = bfs_be32(start);
-    bfs_err_t scan_err = bfs_btree_scan(&fs->tree, &overlap_key, overlap_scan_cb, &oc);
-    if (scan_err != BFS_OK) {
-        err = scan_err;
-        goto fail;
-    }
-    if (oc.overlap) {
-        err = BFS_ERR_EXISTS;
-        goto fail;
-    }
+    bfs_err_t err = validate_free_tree_absence(fs, start, count);
+    if (err != BFS_OK) goto fail;
 
     bool have_left = false;
     uint32_t left_key = 0, left_len = 0;

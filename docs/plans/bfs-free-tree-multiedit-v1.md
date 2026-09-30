@@ -165,7 +165,10 @@ are separate mechanisms; none establishes the overall 5× target.
 
 ## UR: unpublished metadata reserve reuse
 
-This next bounded allocation experiment depends on the qualified root-retirement
+Status: implemented and locally qualified; the overall 5× target is not met.
+See [the retained and rejected revisions](../qualification/bfs-metadata-reuse-performance-2026-09-30.md).
+
+This bounded allocation experiment depends on the qualified root-retirement
 fold; it is not general multi-edit or permission to overwrite a live node.
 The latest diagnostic contains 546 allocation-body and 286 other Free-Tree
 writes in the 8 MiB phase. The proposal reduces short-lived metadata scratch
@@ -180,11 +183,28 @@ spare naturally; no spare is assumed in a new/one-operation transaction or
 low space. The recursion floor is not spent.
 
 Initial eligibility: mounted allocator with working/committed superblocks and
-a height-one Free-Tree. Older nodes retain deferred retirement and snapshot
-handling. All historical emergency slots, including inactive ones, are excluded
+a height-one Free-Tree, with the live tree ID equal to the newer working
+superblock ID. Explicit pointers to the owning filesystem's mounted and runtime
+snapshot state distinguish mounted work from format/standalone use. Both the
+snapshot option bit and runtime state (including snapshot creation on an
+optionless volume) disable reuse. Older nodes retain deferred retirement and
+snapshot handling. All historical emergency slots, including inactive ones, are excluded
 from ordinary reuse; their established return path remains. In-allocation
 recursion and the public data/multi-block allocator stay unchanged.
 Unsupported shape, absent spare or full stock take the existing path.
+
+The unbounded prototype reduced large-write Free-Tree traffic, but its repeated
+normal comparison increased mean create/delete time by 8.4%/6.9% and increased
+their Free-Tree writes. It is not accepted. The bounded revision starts reuse
+only after eight top-level metadata allocation requests in the same live
+transaction. Its volatile counter saturates and resets on a changed live ID;
+ineligible contexts do not count. This is an experimentally selected
+amortization policy, not a safety requirement or an optimality claim. Short
+transactions use the original interface path before warmup; earlier warmed
+transactions may still affect later free-space fragmentation and settlement. Ownership,
+stock validation and the whole recursion floor still apply after warmup.
+Qualification must include actual warmed mounted fault cuts, not only short
+namespace operations that now exercise the legacy path in both format modes.
 
 Acceptance criteria before retaining the experiment:
 
@@ -193,6 +213,9 @@ Acceptance criteria before retaining the experiment:
   logic. Never select a live Free-Tree root or committed-root-reachable metadata.
   The allocator's deallocation contract must establish caller ownership for
   current-tag retirements and unpublished abort/compaction scratch.
+  Ownership is supplied by that existing caller contract, not inferred from
+  node bytes: abort scratch may be unwritten or partially written. This
+  experiment does not change the B-tree's pre-existing tag retirement rule.
 - **UR-2 accounting:** stash changes reserve count, not Free-Tree total; pop
   consumes one entry. Publication and reserve return retain one representation
   per block. Full-floor, low-space, historical-pool and capacity boundaries

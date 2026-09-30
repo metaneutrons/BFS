@@ -792,14 +792,41 @@ static void test_failed_extent_rollback_marks_ownership_uncertain(void)
     unlink(TEST_IMG);
 }
 
-static void test_delete_write_failures_preserve_comment(void)
+static bool hwfail_fsck_clean(bfs_bio_t *bio, const char *operation,
+                              uint32_t format_options, uint32_t fail_at)
 {
-    unsigned post_mutation_failures = 0;
+    bfs_fs_t check_fs;
+    bfs_err_t mount_err = bfs_fs_mount_readonly(&check_fs, bio);
+    bfs_fsck_report_t report = {0};
+    bfs_err_t check_err = mount_err;
+    bfs_err_t unmount_err = BFS_OK;
+    if (mount_err == BFS_OK) {
+        check_err = bfs_fs_check(&check_fs, false, &report);
+        unmount_err = bfs_fs_unmount(&check_fs);
+    }
+    if (mount_err != BFS_OK || check_err != BFS_OK || report.errors != 0 ||
+        report.warnings != 0 || report.leaked_blocks != 0 || unmount_err != BFS_OK) {
+        fprintf(stderr,
+                "  fsck defect: operation=%s options=0x%08x cut=%u "
+                "mount=%d check=%d errors=%u warnings=%u leaks=%u unmount=%d\n",
+                operation, format_options, fail_at, mount_err, check_err,
+                report.errors, report.warnings, report.leaked_blocks, unmount_err);
+        return false;
+    }
+    return true;
+}
+
+static void run_delete_write_failures(uint32_t format_options,
+                                      unsigned *post_mutation_failures,
+                                      unsigned *injected_io_failures,
+                                      unsigned *successes,
+                                      unsigned *fsck_failures)
+{
     for (uint32_t fail_at = 1; fail_at <= 16; fail_at++) {
         unlink(TEST_IMG);
         bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
         TEST_ASSERT(bio != NULL);
-        TEST_ASSERT_EQ(bfs_fs_format(bio, "DeleteFault", 0), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "DeleteFault", format_options), BFS_OK);
         failing_bio_t fb;
         init_failing_bio(&fb, bio);
         bfs_fs_t fs;
@@ -810,14 +837,22 @@ static void test_delete_write_failures_preserve_comment(void)
         TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
         fb.writes_until_failure = fail_at;
         bfs_err_t err = bfs_fs_delete_file(&fs, BFS_ROOT_INO, "file", 4);
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        TEST_ASSERT((err == BFS_OK) == (fb.failed_writes == 0));
+        if (err == BFS_OK) TEST_ASSERT(fb.writes_until_failure > 0);
         /* The operation consumes the countdown through fail_write. */
         // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
-        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            TEST_ASSERT(fb.failed_writes > 0);
+            (*injected_io_failures)++;
+        } else {
+            (*successes)++;
+        }
         if (fs.recovery_error != BFS_OK) {
             /* COW retirement can fail after the working directory root moves.
              * Never commit that uncertain root; recover the old committed view. */
-            post_mutation_failures++;
+            (*post_mutation_failures)++;
             TEST_ASSERT_EQ(fs.recovery_error, BFS_ERR_IO);
             TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
             bfs_fs_abandon(&fs);
@@ -834,20 +869,48 @@ static void test_delete_write_failures_preserve_comment(void)
             TEST_ASSERT_MEM_EQ(comment, "keep", 5);
         }
         TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        if (!hwfail_fsck_clean(bio, "delete", format_options, fail_at))
+            (*fsck_failures)++;
         bfs_bio_close(bio);
     }
-    TEST_ASSERT(post_mutation_failures > 0);
-    unlink(TEST_IMG);
 }
 
-static void test_rmdir_write_failures_preserve_committed_directory(void)
+static void test_delete_write_failures_preserve_comment(void)
 {
-    unsigned recovery_failures = 0;
+    const uint32_t format_options[] = { 0, BFS_OPT_SNAPSHOTS };
+    unsigned fsck_failures = 0;
+    for (uint32_t mode = 0; mode < sizeof(format_options) / sizeof(format_options[0]);
+         mode++) {
+        unsigned post_mutation_failures = 0;
+        unsigned injected_io_failures = 0;
+        unsigned successes = 0;
+        int failures_before = test_fail_count;
+        run_delete_write_failures(format_options[mode], &post_mutation_failures,
+                                  &injected_io_failures, &successes, &fsck_failures);
+        if (test_fail_count != failures_before) {
+            unlink(TEST_IMG);
+            return;
+        }
+        TEST_ASSERT(injected_io_failures > 0);
+        TEST_ASSERT(successes > 0);
+        if (format_options[mode] == BFS_OPT_SNAPSHOTS)
+            TEST_ASSERT(post_mutation_failures > 0);
+    }
+    unlink(TEST_IMG);
+    TEST_ASSERT(fsck_failures == 0);
+}
+
+static void run_rmdir_write_failures(uint32_t format_options,
+                                     unsigned *recovery_failures,
+                                     unsigned *injected_io_failures,
+                                     unsigned *successes,
+                                     unsigned *fsck_failures)
+{
     for (uint32_t fail_at = 1; fail_at <= 32; fail_at++) {
         unlink(TEST_IMG);
         bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
         TEST_ASSERT(bio != NULL);
-        TEST_ASSERT_EQ(bfs_fs_format(bio, "RmdirFault", 0), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "RmdirFault", format_options), BFS_OK);
         failing_bio_t fb;
         init_failing_bio(&fb, bio);
         bfs_fs_t fs;
@@ -858,12 +921,20 @@ static void test_rmdir_write_failures_preserve_committed_directory(void)
         TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
         fb.writes_until_failure = fail_at;
         bfs_err_t err = bfs_fs_rmdir(&fs, BFS_ROOT_INO, "dir", 3);
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        TEST_ASSERT((err == BFS_OK) == (fb.failed_writes == 0));
+        if (err == BFS_OK) TEST_ASSERT(fb.writes_until_failure > 0);
         // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
-        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            TEST_ASSERT(fb.failed_writes > 0);
+            (*injected_io_failures)++;
+        } else {
+            (*successes)++;
+        }
         if (err == BFS_ERR_IO) {
             if (fs.recovery_error != BFS_OK) {
-                recovery_failures++;
+                (*recovery_failures)++;
                 TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
                 bfs_fs_abandon(&fs);
             } else {
@@ -878,20 +949,48 @@ static void test_rmdir_write_failures_preserve_committed_directory(void)
             TEST_ASSERT_MEM_EQ(comment, "keep", 5);
         }
         TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        if (!hwfail_fsck_clean(bio, "rmdir", format_options, fail_at))
+            (*fsck_failures)++;
         bfs_bio_close(bio);
     }
-    TEST_ASSERT(recovery_failures > 0);
-    unlink(TEST_IMG);
 }
 
-static void test_rename_write_failures_preserve_committed_paths(void)
+static void test_rmdir_write_failures_preserve_committed_directory(void)
 {
-    unsigned recovery_failures = 0;
+    const uint32_t format_options[] = { 0, BFS_OPT_SNAPSHOTS };
+    unsigned fsck_failures = 0;
+    for (uint32_t mode = 0; mode < sizeof(format_options) / sizeof(format_options[0]);
+         mode++) {
+        unsigned recovery_failures = 0;
+        unsigned injected_io_failures = 0;
+        unsigned successes = 0;
+        int failures_before = test_fail_count;
+        run_rmdir_write_failures(format_options[mode], &recovery_failures,
+                                 &injected_io_failures, &successes, &fsck_failures);
+        if (test_fail_count != failures_before) {
+            unlink(TEST_IMG);
+            return;
+        }
+        TEST_ASSERT(injected_io_failures > 0);
+        TEST_ASSERT(successes > 0);
+        if (format_options[mode] == BFS_OPT_SNAPSHOTS)
+            TEST_ASSERT(recovery_failures > 0);
+    }
+    unlink(TEST_IMG);
+    TEST_ASSERT(fsck_failures == 0);
+}
+
+static void run_rename_write_failures(uint32_t format_options,
+                                      unsigned *recovery_failures,
+                                      unsigned *injected_io_failures,
+                                      unsigned *successes,
+                                      unsigned *fsck_failures)
+{
     for (uint32_t fail_at = 1; fail_at <= 32; fail_at++) {
         unlink(TEST_IMG);
         bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
         TEST_ASSERT(bio != NULL);
-        TEST_ASSERT_EQ(bfs_fs_format(bio, "RenameFault", 0), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "RenameFault", format_options), BFS_OK);
         failing_bio_t fb;
         init_failing_bio(&fb, bio);
         bfs_fs_t fs;
@@ -903,12 +1002,20 @@ static void test_rename_write_failures_preserve_committed_paths(void)
         TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
         fb.writes_until_failure = fail_at;
         bfs_err_t err = bfs_fs_rename(&fs, src, "child", 5, dst, "moved", 5);
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        TEST_ASSERT((err == BFS_OK) == (fb.failed_writes == 0));
+        if (err == BFS_OK) TEST_ASSERT(fb.writes_until_failure > 0);
         // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
-        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            TEST_ASSERT(fb.failed_writes > 0);
+            (*injected_io_failures)++;
+        } else {
+            (*successes)++;
+        }
         if (err == BFS_ERR_IO) {
             if (fs.recovery_error != BFS_OK) {
-                recovery_failures++;
+                (*recovery_failures)++;
                 TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
                 bfs_fs_abandon(&fs);
             } else {
@@ -925,20 +1032,48 @@ static void test_rename_write_failures_preserve_committed_paths(void)
             TEST_ASSERT_EQ(parent, src);
         }
         TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        if (!hwfail_fsck_clean(bio, "rename", format_options, fail_at))
+            (*fsck_failures)++;
         bfs_bio_close(bio);
     }
-    TEST_ASSERT(recovery_failures > 0);
-    unlink(TEST_IMG);
 }
 
-static void test_mkdir_write_failures_preserve_committed_tree(void)
+static void test_rename_write_failures_preserve_committed_paths(void)
 {
-    unsigned recovery_failures = 0;
+    const uint32_t format_options[] = { 0, BFS_OPT_SNAPSHOTS };
+    unsigned fsck_failures = 0;
+    for (uint32_t mode = 0; mode < sizeof(format_options) / sizeof(format_options[0]);
+         mode++) {
+        unsigned recovery_failures = 0;
+        unsigned injected_io_failures = 0;
+        unsigned successes = 0;
+        int failures_before = test_fail_count;
+        run_rename_write_failures(format_options[mode], &recovery_failures,
+                                  &injected_io_failures, &successes, &fsck_failures);
+        if (test_fail_count != failures_before) {
+            unlink(TEST_IMG);
+            return;
+        }
+        TEST_ASSERT(injected_io_failures > 0);
+        TEST_ASSERT(successes > 0);
+        if (format_options[mode] == BFS_OPT_SNAPSHOTS)
+            TEST_ASSERT(recovery_failures > 0);
+    }
+    unlink(TEST_IMG);
+    TEST_ASSERT(fsck_failures == 0);
+}
+
+static void run_mkdir_write_failures(uint32_t format_options,
+                                     unsigned *recovery_failures,
+                                     unsigned *injected_io_failures,
+                                     unsigned *successes,
+                                     unsigned *fsck_failures)
+{
     for (uint32_t fail_at = 1; fail_at <= 24; fail_at++) {
         unlink(TEST_IMG);
         bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
         TEST_ASSERT(bio != NULL);
-        TEST_ASSERT_EQ(bfs_fs_format(bio, "MkdirFault", 0), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "MkdirFault", format_options), BFS_OK);
         failing_bio_t fb;
         init_failing_bio(&fb, bio);
         bfs_fs_t fs;
@@ -947,12 +1082,20 @@ static void test_mkdir_write_failures_preserve_committed_tree(void)
         fb.writes_until_failure = fail_at;
         uint32_t ino;
         bfs_err_t err = bfs_fs_mkdir(&fs, BFS_ROOT_INO, "newdir", 6, &ino);
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        TEST_ASSERT((err == BFS_OK) == (fb.failed_writes == 0));
+        if (err == BFS_OK) TEST_ASSERT(fb.writes_until_failure > 0);
         // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
-        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            TEST_ASSERT(fb.failed_writes > 0);
+            (*injected_io_failures)++;
+        } else {
+            (*successes)++;
+        }
         if (err == BFS_ERR_IO) {
             if (fs.recovery_error != BFS_OK) {
-                recovery_failures++;
+                (*recovery_failures)++;
                 TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
                 bfs_fs_abandon(&fs);
             } else {
@@ -963,20 +1106,48 @@ static void test_mkdir_write_failures_preserve_committed_tree(void)
                                           "newdir", 6, NULL, NULL), BFS_ERR_NOTFOUND);
         }
         TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        if (!hwfail_fsck_clean(bio, "mkdir", format_options, fail_at))
+            (*fsck_failures)++;
         bfs_bio_close(bio);
     }
-    TEST_ASSERT(recovery_failures > 0);
-    unlink(TEST_IMG);
 }
 
-static void test_comment_write_failures_preserve_committed_value(void)
+static void test_mkdir_write_failures_preserve_committed_tree(void)
 {
-    unsigned recovery_failures = 0;
+    const uint32_t format_options[] = { 0, BFS_OPT_SNAPSHOTS };
+    unsigned fsck_failures = 0;
+    for (uint32_t mode = 0; mode < sizeof(format_options) / sizeof(format_options[0]);
+         mode++) {
+        unsigned recovery_failures = 0;
+        unsigned injected_io_failures = 0;
+        unsigned successes = 0;
+        int failures_before = test_fail_count;
+        run_mkdir_write_failures(format_options[mode], &recovery_failures,
+                                 &injected_io_failures, &successes, &fsck_failures);
+        if (test_fail_count != failures_before) {
+            unlink(TEST_IMG);
+            return;
+        }
+        TEST_ASSERT(injected_io_failures > 0);
+        TEST_ASSERT(successes > 0);
+        if (format_options[mode] == BFS_OPT_SNAPSHOTS)
+            TEST_ASSERT(recovery_failures > 0);
+    }
+    unlink(TEST_IMG);
+    TEST_ASSERT(fsck_failures == 0);
+}
+
+static void run_comment_write_failures(uint32_t format_options,
+                                       unsigned *recovery_failures,
+                                       unsigned *injected_io_failures,
+                                       unsigned *successes,
+                                       unsigned *fsck_failures)
+{
     for (uint32_t fail_at = 1; fail_at <= 24; fail_at++) {
         unlink(TEST_IMG);
         bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
         TEST_ASSERT(bio != NULL);
-        TEST_ASSERT_EQ(bfs_fs_format(bio, "CommentFault", 0), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "CommentFault", format_options), BFS_OK);
         failing_bio_t fb;
         init_failing_bio(&fb, bio);
         bfs_fs_t fs;
@@ -987,12 +1158,20 @@ static void test_comment_write_failures_preserve_committed_value(void)
         TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
         fb.writes_until_failure = fail_at;
         bfs_err_t err = bfs_fs_set_comment(&fs, ino, "new", 3);
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        TEST_ASSERT((err == BFS_OK) == (fb.failed_writes == 0));
+        if (err == BFS_OK) TEST_ASSERT(fb.writes_until_failure > 0);
         // cppcheck-suppress redundantAssignment
         fb.writes_until_failure = 0;
-        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        if (err == BFS_ERR_IO) {
+            TEST_ASSERT(fb.failed_writes > 0);
+            (*injected_io_failures)++;
+        } else {
+            (*successes)++;
+        }
         if (err == BFS_ERR_IO) {
             if (fs.recovery_error != BFS_OK) {
-                recovery_failures++;
+                (*recovery_failures)++;
                 TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_ERR_IO);
                 bfs_fs_abandon(&fs);
             } else {
@@ -1005,10 +1184,35 @@ static void test_comment_write_failures_preserve_committed_value(void)
             TEST_ASSERT_MEM_EQ(comment, "old", 4);
         }
         TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        if (!hwfail_fsck_clean(bio, "comment", format_options, fail_at))
+            (*fsck_failures)++;
         bfs_bio_close(bio);
     }
-    TEST_ASSERT(recovery_failures > 0);
+}
+
+static void test_comment_write_failures_preserve_committed_value(void)
+{
+    const uint32_t format_options[] = { 0, BFS_OPT_SNAPSHOTS };
+    unsigned fsck_failures = 0;
+    for (uint32_t mode = 0; mode < sizeof(format_options) / sizeof(format_options[0]);
+         mode++) {
+        unsigned recovery_failures = 0;
+        unsigned injected_io_failures = 0;
+        unsigned successes = 0;
+        int failures_before = test_fail_count;
+        run_comment_write_failures(format_options[mode], &recovery_failures,
+                                   &injected_io_failures, &successes, &fsck_failures);
+        if (test_fail_count != failures_before) {
+            unlink(TEST_IMG);
+            return;
+        }
+        TEST_ASSERT(injected_io_failures > 0);
+        TEST_ASSERT(successes > 0);
+        if (format_options[mode] == BFS_OPT_SNAPSHOTS)
+            TEST_ASSERT(recovery_failures > 0);
+    }
     unlink(TEST_IMG);
+    TEST_ASSERT(fsck_failures == 0);
 }
 
 static void test_snapshot_delete_write_failure_recovery(void)

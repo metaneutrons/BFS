@@ -29,6 +29,9 @@
  * later replaced by the free-space-tree allocator. */
 typedef struct bfs_allocator {
     bfs_blk_t (*alloc)(struct bfs_allocator *a);
+    /* Return caller-owned, immediately reclaimable storage, including unwritten
+     * or partially written abort scratch. Older/shared nodes must be deferred
+     * by their owner instead; the allocator cannot infer ownership from bytes. */
     bfs_err_t (*dealloc)(struct bfs_allocator *a, bfs_blk_t blk);
     /* Explains a BFS_BLK_NULL allocation result. Optional allocators default to
      * BFS_ERR_NOSPC when this callback is absent. */

@@ -35,6 +35,11 @@ typedef struct bfs_freespace {
      * Points to the live superblock within the transaction manager. */
     bfs_superblock_t *sb;
     const bfs_superblock_t *committed_sb; /* last published roots, if mounted */
+    /* Wired only by mounted filesystem setup; format/standalone remain NULL. */
+    const bool *mounted_state;
+    const bool *snapshot_state; /* includes in-progress snapshot creation */
+    uint64_t metadata_reuse_txn; /* volatile warmup; never persisted */
+    uint32_t metadata_requests;
 } bfs_freespace_t;
 
 /* Initialize the free space allocator. free_tree_root is the root of
