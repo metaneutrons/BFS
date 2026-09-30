@@ -1,0 +1,15 @@
+[fs-uae]
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 8192
+cpu = 68040
+uae_cpu_speed = max
+uae_cpu_24bit_addressing = false
+kickstart_file = /Users/fabian/Documents/fswb/kickstart/A1200.47.102.rom
+hard_drive_0 = /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-functions/run.hIS2iZ/system
+hard_drive_0_label = System
+hard_drive_0_priority = 0
+floppy_speed = 0
+window_hidden = 1
+automatic_input_grab = 0
+audio_driver = null

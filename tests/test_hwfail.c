@@ -1275,11 +1275,62 @@ static bool setup_fragmented_reserve_batch(failing_bio_t *fb, bfs_bio_t **bio_ou
         return false;
 
     uint32_t extent_count = 0;
-    return freespace->tree.height == 1 && freespace->reserve_count >= 3 &&
-           reserve_return_run_count(freespace) > 1 &&
-           reserve_return_layout_valid(fs, &extent_count) &&
-           extent_count + freespace->reserve_count <
-               bfs_btree_leaf_capacity(&freespace->tree);
+    bool fixture_valid =
+        freespace->tree.height == 1 && freespace->reserve_count >= 3 &&
+        reserve_return_run_count(freespace) > 1 &&
+        reserve_return_layout_valid(fs, &extent_count) &&
+        extent_count + freespace->reserve_count <
+            bfs_btree_leaf_capacity(&freespace->tree);
+    /* Keep the existing batch tests on the unsupported-fast-path fallback. */
+    freespace->committed_sb = NULL;
+    return fixture_valid;
+}
+
+static bool setup_reserve_root_fold_fixture(failing_bio_t *fb,
+                                             bfs_bio_t **bio_out,
+                                             bfs_fs_t *fs)
+{
+    if (!setup_fragmented_reserve_batch(fb, bio_out, fs)) return false;
+    fs->freespace.committed_sb = &fs->txn.sb;
+    return fs->freespace.tree.height == 1 &&
+           fs->freespace.tree.root !=
+               bfs_be32(fs->txn.sb.free_tree_root);
+}
+
+static bool setup_emergency_root_fold_fixture(failing_bio_t *fb,
+                                               bfs_bio_t **bio_out,
+                                               bfs_fs_t *fs)
+{
+    if (!setup_reserve_root_fold_fixture(fb, bio_out, fs)) return false;
+    bfs_blk_t root = fs->freespace.tree.root;
+    if (reserve_return_is_active_emergency_slot(fs, root)) return false;
+    if (!reserve_return_is_emergency_slot(fs, root)) {
+        uint32_t emergency_count = bfs_be32(fs->txn.sb_new.emergency_count);
+        if (emergency_count == 0 ||
+            fs->freespace.reserve_count >= BFS_ALLOC_RESERVE_SIZE)
+            return false;
+        bfs_blk_t emergency_root = bfs_be32(
+            fs->txn.sb_new.emergency_pool[emergency_count - 1]);
+        /* Copy the valid current leaf into an active emergency slot, then
+         * transfer the former root block to the ordinary reserve. This gives
+         * the fold a deterministic emergency-origin root fixture. */
+        uint8_t root_image[BLK_SIZE];
+        if (bfs_bio_read(*bio_out, root, root_image) != BFS_OK ||
+            bfs_bio_write(*bio_out, emergency_root, root_image) != BFS_OK)
+            return false;
+        fs->txn.sb_new.emergency_count = bfs_be32(emergency_count - 1);
+        fs->freespace.tree.root = emergency_root;
+        fs->freespace.reserve[fs->freespace.reserve_count++] = root;
+        root = emergency_root;
+    }
+
+    uint64_t root_txn;
+    return fs->freespace.tree.height == 1 &&
+        reserve_return_is_emergency_slot(fs, root) &&
+        !reserve_return_is_active_emergency_slot(fs, root) &&
+        bfs_btree_root_leaf_txn_id(&fs->freespace.tree, &root_txn) == BFS_OK &&
+        root_txn == bfs_btree_txn_id(&fs->freespace.tree) &&
+        fs->freespace.reserve_count > 0;
 }
 
 static bool setup_mixed_fragmented_reserve_batch(failing_bio_t *fb,
@@ -1352,6 +1403,378 @@ static bool reserve_return_matches_snapshot(
            (!snapshot->pending_count ||
             bfs_fs_pending_items(fs)[0] == snapshot->pending_first) &&
            fs->freespace.global_reserve == snapshot->global_reserve;
+}
+
+typedef struct {
+    bfs_blk_t block;
+    uint32_t occurrences;
+} reserve_return_free_count_t;
+
+static bool reserve_return_count_free_block(const void *key, const void *value,
+                                             void *context)
+{
+    reserve_return_free_count_t *count =
+        (reserve_return_free_count_t *)context;
+    bfs_blk_t start = bfs_load_be32(key);
+    uint32_t length = bfs_load_be32(value);
+    if (count->block >= start && count->block - start < length)
+        count->occurrences++;
+    return true;
+}
+
+static uint32_t reserve_return_free_occurrences(bfs_fs_t *fs, bfs_blk_t block)
+{
+    reserve_return_free_count_t count = { .block = block, .occurrences = 0 };
+    if (bfs_btree_scan(&fs->freespace.tree, NULL,
+                       reserve_return_count_free_block, &count) != BFS_OK)
+        return UINT32_MAX;
+    return count.occurrences;
+}
+
+typedef struct {
+    bfs_blk_t block;
+    bool found;
+} reserve_return_first_free_t;
+
+static bool reserve_return_get_first_free(const void *key, const void *value,
+                                          void *context)
+{
+    (void)value;
+    reserve_return_first_free_t *first =
+        (reserve_return_first_free_t *)context;
+    first->block = bfs_load_be32(key);
+    first->found = true;
+    return false;
+}
+
+static bfs_blk_t reserve_return_first_free_block(bfs_fs_t *fs)
+{
+    reserve_return_first_free_t first = {
+        .block = BFS_BLK_NULL,
+        .found = false,
+    };
+    if (bfs_btree_scan(&fs->freespace.tree, NULL,
+                       reserve_return_get_first_free, &first) != BFS_OK ||
+        !first.found)
+        return BFS_BLK_NULL;
+    return first.block;
+}
+
+static bool reserve_return_is_alias_candidate(bfs_fs_t *fs, bfs_blk_t block)
+{
+    if (block == BFS_BLK_NULL || block == fs->freespace.tree.root ||
+        reserve_return_free_occurrences(fs, block) != 1 ||
+        reserve_return_is_active_emergency_slot(fs, block))
+        return false;
+    for (uint32_t i = 0; i < fs->freespace.reserve_count; i++)
+        if (fs->freespace.reserve[i] == block) return false;
+    for (uint32_t i = 0; i < fs->pending_count; i++)
+        if (bfs_fs_pending_items(fs)[i] == block) return false;
+    return true;
+}
+
+static uint32_t reserve_return_ordinary_count(const bfs_fs_t *fs)
+{
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < fs->freespace.reserve_count; i++)
+        if (!reserve_return_is_emergency_slot(fs,
+                fs->freespace.reserve[i]))
+            count++;
+    return count;
+}
+
+static void test_reserve_return_root_fold_reactivates_emergency_root(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_emergency_root_fold_fixture(&fb, &bio, &fs));
+
+    bfs_blk_t old_root = fs.freespace.tree.root;
+    uint32_t ordinary_count = reserve_return_ordinary_count(&fs);
+    uint64_t available_before = reserve_return_accounting(&fs);
+    reserve_return_snapshot_t before = reserve_return_capture(&fs);
+    TEST_ASSERT_EQ(before.pending_count, 1);
+    TEST_ASSERT(ordinary_count > 0);
+    TEST_ASSERT_EQ(ordinary_count, before.reserve_count);
+    fb.writes_until_failure = UINT32_MAX;
+
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    uint32_t writes_observed = UINT32_MAX - fb.writes_until_failure;
+    TEST_ASSERT_EQ(writes_observed, 1);
+    TEST_ASSERT_EQ(fb.failed_writes, 0);
+    TEST_ASSERT(fs.freespace.tree.root != old_root);
+    TEST_ASSERT(reserve_return_is_active_emergency_slot(&fs, old_root));
+    TEST_ASSERT(reserve_return_is_emergency_slot(&fs, fs.freespace.tree.root));
+    TEST_ASSERT(!reserve_return_is_active_emergency_slot(
+        &fs, fs.freespace.tree.root));
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT_EQ(fs.pending_count, before.pending_count);
+    TEST_ASSERT_EQ(bfs_fs_pending_items(&fs)[0], before.pending_first);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_root_fold_returns_ordinary_root(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_reserve_root_fold_fixture(&fb, &bio, &fs));
+
+    bfs_blk_t prior_root = fs.freespace.tree.root;
+    bfs_blk_t allocated = bfs_freespace_alloc(&fs.freespace, 1);
+    TEST_ASSERT(allocated != BFS_BLK_NULL);
+    bfs_blk_t old_root = fs.freespace.tree.root;
+    TEST_ASSERT(old_root != prior_root);
+    TEST_ASSERT(!reserve_return_is_emergency_slot(&fs, old_root));
+    uint32_t ordinary_count = reserve_return_ordinary_count(&fs);
+    TEST_ASSERT(ordinary_count > 0);
+    uint32_t old_free = fs.freespace.total_free;
+    uint64_t available_before = reserve_return_accounting(&fs);
+    reserve_return_snapshot_t before = reserve_return_capture(&fs);
+    TEST_ASSERT_EQ(before.pending_count, 1);
+    fb.writes_until_failure = UINT32_MAX;
+
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    uint32_t writes_observed = UINT32_MAX - fb.writes_until_failure;
+    TEST_ASSERT_EQ(writes_observed, 1);
+    TEST_ASSERT_EQ(fb.failed_writes, 0);
+    TEST_ASSERT(fs.freespace.tree.root != old_root);
+    TEST_ASSERT_EQ(fs.freespace.total_free, old_free + ordinary_count + 1);
+    TEST_ASSERT_EQ(reserve_return_free_occurrences(&fs, old_root), 1);
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT_EQ(fs.pending_count, before.pending_count);
+    TEST_ASSERT_EQ(bfs_fs_pending_items(&fs)[0], before.pending_first);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_root_fold_first_write_failure_restores(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_reserve_root_fold_fixture(&fb, &bio, &fs));
+
+    reserve_return_snapshot_t before = reserve_return_capture(&fs);
+    TEST_ASSERT_EQ(before.pending_count, 1);
+    uint64_t available_before = reserve_return_accounting(&fs);
+    fb.writes_until_failure = 1;
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_ERR_IO);
+    TEST_ASSERT_EQ(fb.failed_writes, 1);
+    TEST_ASSERT_EQ(fb.writes_until_failure, 0);
+    TEST_ASSERT(reserve_return_matches_snapshot(&fs, &before));
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    fb.writes_until_failure = UINT32_MAX;
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    uint32_t writes_observed = UINT32_MAX - fb.writes_until_failure;
+    TEST_ASSERT_EQ(writes_observed, 1);
+    TEST_ASSERT(fs.freespace.tree.root != before.root);
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(bfs_be32(fs.txn.sb_new.emergency_count),
+                   before.emergency_count - 1);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_root_fold_without_emergency_scratch_falls_back(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_emergency_root_fold_fixture(&fb, &bio, &fs));
+    TEST_ASSERT(reserve_return_ordinary_count(&fs) ==
+                fs.freespace.reserve_count);
+    fs.txn.sb_new.emergency_count = bfs_be32(0);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    reserve_return_snapshot_t before = reserve_return_capture(&fs);
+    TEST_ASSERT_EQ(before.pending_count, 1);
+    uint64_t available_before = reserve_return_accounting(&fs);
+    fb.writes_until_failure = UINT32_MAX;
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    uint32_t writes_observed = UINT32_MAX - fb.writes_until_failure;
+    TEST_ASSERT_EQ(writes_observed, 1);
+    TEST_ASSERT(fs.freespace.tree.root != before.root);
+    TEST_ASSERT(!reserve_return_is_emergency_slot(&fs,
+                                                  fs.freespace.tree.root));
+    TEST_ASSERT(reserve_return_is_active_emergency_slot(&fs, before.root));
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT_EQ(fs.pending_count, before.pending_count);
+    TEST_ASSERT_EQ(bfs_fs_pending_items(&fs)[0], before.pending_first);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_root_fold_rejects_future_root(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_reserve_root_fold_fixture(&fb, &bio, &fs));
+
+    reserve_return_snapshot_t before = reserve_return_capture(&fs);
+    TEST_ASSERT_EQ(before.pending_count, 1);
+    uint64_t available_before = reserve_return_accounting(&fs);
+    uint64_t root_txn = 0;
+    TEST_ASSERT_EQ(bfs_btree_root_leaf_txn_id(&fs.freespace.tree, &root_txn),
+                   BFS_OK);
+    TEST_ASSERT(root_txn > 0);
+    /* This published root has a future transaction tag. The tag check must
+     * run before the published-root eligibility check. */
+    fs.txn.sb.free_tree_root = bfs_be32(fs.freespace.tree.root);
+    uint64_t saved_live_txn = fs.live_txn_id;
+    fs.live_txn_id = root_txn - 1;
+    TEST_ASSERT(root_txn > bfs_btree_txn_id(&fs.freespace.tree));
+
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(fb.failed_writes, 0);
+    TEST_ASSERT(reserve_return_matches_snapshot(&fs, &before));
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+    fs.live_txn_id = saved_live_txn;
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_root_fold_rejects_committed_root(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_reserve_root_fold_fixture(&fb, &bio, &fs));
+
+    bfs_blk_t old_root = fs.freespace.tree.root;
+    bfs_superblock_t claimed_committed = fs.txn.sb;
+    claimed_committed.free_tree_root = bfs_be32(old_root);
+    fs.freespace.committed_sb = &claimed_committed;
+    reserve_return_snapshot_t before = reserve_return_capture(&fs);
+    TEST_ASSERT_EQ(before.pending_count, 1);
+    uint64_t available_before = reserve_return_accounting(&fs);
+    fb.writes_until_failure = UINT32_MAX;
+
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    uint32_t writes_observed = UINT32_MAX - fb.writes_until_failure;
+    TEST_ASSERT(writes_observed > 1);
+    TEST_ASSERT(fs.freespace.tree.root != old_root);
+    TEST_ASSERT_EQ(reserve_return_free_occurrences(&fs, old_root), 1);
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT_EQ(fs.pending_count, before.pending_count);
+    TEST_ASSERT_EQ(bfs_fs_pending_items(&fs)[0], before.pending_first);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_fold_falls_back_for_inactive_pool_alias(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_reserve_root_fold_fixture(&fb, &bio, &fs));
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_blk_t alias = reserve_return_first_free_block(&fs);
+    TEST_ASSERT(reserve_return_is_alias_candidate(&fs, alias));
+    uint32_t emergency_count = bfs_be32(fs.txn.sb_new.emergency_count);
+    TEST_ASSERT(emergency_count > 0);
+    uint32_t inactive_slot;
+    if (emergency_count == BFS_EMERGENCY_POOL_SIZE) {
+        inactive_slot = emergency_count - 1;
+        fs.txn.sb_new.emergency_count = bfs_be32(emergency_count - 1);
+    } else {
+        inactive_slot = emergency_count;
+    }
+    fs.txn.sb_new.emergency_pool[inactive_slot] = bfs_be32(alias);
+    TEST_ASSERT(!reserve_return_is_active_emergency_slot(&fs, alias));
+    TEST_ASSERT_EQ(reserve_return_free_occurrences(&fs, alias), 1);
+
+    uint64_t available_before = reserve_return_accounting(&fs);
+    reserve_return_snapshot_t before = reserve_return_capture(&fs);
+    TEST_ASSERT_EQ(before.pending_count, 1);
+    fb.writes_until_failure = UINT32_MAX;
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    uint32_t writes_observed = UINT32_MAX - fb.writes_until_failure;
+    TEST_ASSERT(writes_observed > 0);
+    TEST_ASSERT(fs.freespace.tree.root != before.root);
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT_EQ(reserve_return_free_occurrences(&fs, alias), 1);
+    TEST_ASSERT_EQ(bfs_be32(fs.txn.sb_new.emergency_pool[inactive_slot]), alias);
+    TEST_ASSERT(!reserve_return_is_active_emergency_slot(&fs, alias));
+    TEST_ASSERT_EQ(fs.pending_count, before.pending_count);
+    TEST_ASSERT_EQ(bfs_fs_pending_items(&fs)[0], before.pending_first);
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_fold_rejects_active_pool_alias(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_reserve_root_fold_fixture(&fb, &bio, &fs));
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_blk_t alias = reserve_return_first_free_block(&fs);
+    TEST_ASSERT(reserve_return_is_alias_candidate(&fs, alias));
+    uint32_t emergency_count = bfs_be32(fs.txn.sb_new.emergency_count);
+    TEST_ASSERT(emergency_count > 0);
+    /* The fold takes its scratch block from the last active pool slot. */
+    uint32_t selected_scratch_slot = emergency_count - 1;
+    fs.txn.sb_new.emergency_pool[selected_scratch_slot] = bfs_be32(alias);
+    TEST_ASSERT(reserve_return_is_active_emergency_slot(&fs, alias));
+    TEST_ASSERT_EQ(reserve_return_free_occurrences(&fs, alias), 1);
+
+    reserve_return_snapshot_t before = reserve_return_capture(&fs);
+    TEST_ASSERT_EQ(before.pending_count, 1);
+    uint64_t available_before = reserve_return_accounting(&fs);
+    fb.writes_until_failure = UINT32_MAX;
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_ERR_CORRUPT);
+    TEST_ASSERT_EQ(UINT32_MAX - fb.writes_until_failure, 0);
+    TEST_ASSERT_EQ(fb.failed_writes, 0);
+    TEST_ASSERT(reserve_return_matches_snapshot(&fs, &before));
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT_EQ(reserve_return_free_occurrences(&fs, alias), 1);
+    TEST_ASSERT(reserve_return_is_active_emergency_slot(&fs, alias));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
 }
 
 static void test_reserve_return_mixed_batch_reactivates_emergency_slot(void)
@@ -1900,6 +2323,14 @@ TEST_SUITE_BEGIN("Hardware Failure Simulation")
     TEST_RUN(test_comment_write_failures_preserve_committed_value);
     TEST_RUN(test_snapshot_delete_write_failure_recovery);
     TEST_RUN(test_allocator_refill_failure_can_retry_free);
+    TEST_RUN(test_reserve_return_root_fold_reactivates_emergency_root);
+    TEST_RUN(test_reserve_return_root_fold_returns_ordinary_root);
+    TEST_RUN(test_reserve_return_root_fold_first_write_failure_restores);
+    TEST_RUN(test_reserve_return_root_fold_without_emergency_scratch_falls_back);
+    TEST_RUN(test_reserve_return_root_fold_rejects_future_root);
+    TEST_RUN(test_reserve_return_root_fold_rejects_committed_root);
+    TEST_RUN(test_reserve_return_fold_falls_back_for_inactive_pool_alias);
+    TEST_RUN(test_reserve_return_fold_rejects_active_pool_alias);
     TEST_RUN(test_reserve_return_batch_fragmented_accounting);
     TEST_RUN(test_reserve_return_batch_first_write_failure_is_retryable);
     TEST_RUN(test_reserve_return_batch_later_write_failure_keeps_ownership);

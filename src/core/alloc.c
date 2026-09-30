@@ -744,9 +744,37 @@ static bfs_err_t merge_sorted_free_blocks(free_leaf_entries_t *old,
     return BFS_OK;
 }
 
+static bfs_err_t validate_free_leaf_pool_separation(const bfs_freespace_t *fs,
+                                                    const free_leaf_entries_t *old)
+{
+    uint32_t active = bfs_be32(fs->sb->emergency_count);
+    bool inactive_alias = false;
+    for (uint32_t i = 0; i < old->count; i++) {
+        if (fs->tree.root >= old->keys[i] &&
+            fs->tree.root - old->keys[i] < old->lengths[i])
+            return BFS_ERR_CORRUPT;
+        for (uint32_t j = 0; j < fs->reserve_count; j++) {
+            bfs_blk_t blk = fs->reserve[j];
+            if (blk >= old->keys[i] && blk - old->keys[i] < old->lengths[i])
+                return BFS_ERR_CORRUPT;
+        }
+        for (uint32_t j = 0; j < BFS_EMERGENCY_POOL_SIZE; j++) {
+            bfs_blk_t blk = bfs_be32(fs->sb->emergency_pool[j]);
+            if (blk >= old->keys[i] && blk - old->keys[i] < old->lengths[i]) {
+                /* Ordinary range reclamation may legitimately put an inactive
+                 * pool-origin block in the free tree. Keep the legacy path
+                 * rather than transferring emergency ownership in that state. */
+                if (j < active) return BFS_ERR_CORRUPT;
+                inactive_alias = true;
+            }
+        }
+    }
+    return inactive_alias ? BFS_ERR_UNSUPPORTED : BFS_OK;
+}
+
 static bfs_err_t replace_free_root_leaf(bfs_freespace_t *fs,
                                         free_leaf_entries_t *entries,
-                                        uint32_t count)
+                                        uint32_t count, bool take_current_root)
 {
     for (uint32_t i = 0; i < entries->count; i++) {
         entries->keys[i] = bfs_be32(entries->keys[i]);
@@ -754,8 +782,11 @@ static bfs_err_t replace_free_root_leaf(bfs_freespace_t *fs,
     }
     bfs_blk_t old_root = fs->tree.root;
     fs->in_alloc = true;
-    bfs_err_t err = bfs_btree_replace_root_leaf(&fs->tree, entries->keys,
-                                                entries->lengths, entries->count);
+    bfs_err_t err = take_current_root
+        ? bfs_btree_replace_owned_root_leaf(&fs->tree, old_root, entries->keys,
+                                            entries->lengths, entries->count)
+        : bfs_btree_replace_root_leaf(&fs->tree, entries->keys,
+                                       entries->lengths, entries->count);
     fs->in_alloc = false;
     if (fs->tree.root != old_root) fs->total_free += count;
     fs->last_error = err;
@@ -765,9 +796,9 @@ static bfs_err_t replace_free_root_leaf(bfs_freespace_t *fs,
 /* Reclaim all post-publication blocks with one root-leaf COW where possible.
  * The old root remains intact on allocation/write failure; deeper or overly
  * fragmented trees keep the ordinary, range-by-range reclamation path. */
-bfs_err_t bfs_freespace_free_sorted_blocks(bfs_freespace_t *fs,
-                                           const bfs_blk_t *blocks,
-                                           uint32_t count)
+static bfs_err_t free_sorted_blocks(bfs_freespace_t *fs,
+                                    const bfs_blk_t *blocks,
+                                    uint32_t count, bool take_current_root)
 {
     if (!fs || !fs->tree.bio || !blocks || count == 0)
         return BFS_ERR_INVAL;
@@ -803,10 +834,19 @@ bfs_err_t bfs_freespace_free_sorted_blocks(bfs_freespace_t *fs,
         return err != BFS_OK ? err : old.error;
     }
 
-    err = merge_sorted_free_blocks(&old, &next, blocks, count);
-    if (err == BFS_OK) err = replace_free_root_leaf(fs, &next, count);
+    if (take_current_root) err = validate_free_leaf_pool_separation(fs, &old);
+    if (err == BFS_OK) err = merge_sorted_free_blocks(&old, &next, blocks, count);
+    if (err == BFS_OK)
+        err = replace_free_root_leaf(fs, &next, count, take_current_root);
     free(memory);
     return err;
+}
+
+bfs_err_t bfs_freespace_free_sorted_blocks(bfs_freespace_t *fs,
+                                           const bfs_blk_t *blocks,
+                                           uint32_t count)
+{
+    return free_sorted_blocks(fs, blocks, count, false);
 }
 
 /* ── Reserve pool management ───────────────────────────────── */
@@ -865,6 +905,185 @@ static bool reserve_block_is_emergency(const bfs_freespace_t *fs, bfs_blk_t blk)
     return false;
 }
 
+static void sort_reserve_blocks(bfs_blk_t *blocks, uint32_t count)
+{
+    for (uint32_t i = 1; i < count; i++) {
+        bfs_blk_t value = blocks[i];
+        uint32_t j = i;
+        while (j > 0 && blocks[j - 1] > value) {
+            blocks[j] = blocks[j - 1];
+            j--;
+        }
+        blocks[j] = value;
+    }
+}
+
+typedef struct {
+    bfs_blk_t original[BFS_ALLOC_RESERVE_SIZE];
+    bfs_blk_t retained[BFS_ALLOC_RESERVE_SIZE];
+    bfs_blk_t blocks[BFS_ALLOC_RESERVE_SIZE + 1];
+    uint32_t emergency_pool[BFS_EMERGENCY_POOL_SIZE];
+    uint32_t original_count;
+    uint32_t retained_count;
+    uint32_t block_count;
+    uint32_t emergency_count;
+    bfs_blk_t old_root;
+    bool scratch_from_pool;
+    bool root_is_emergency;
+} reserve_root_fold_t;
+
+static bfs_err_t validate_fold_pools(const bfs_freespace_t *fs)
+{
+    uint32_t ec = bfs_be32(fs->sb->emergency_count);
+    if (ec > BFS_EMERGENCY_POOL_SIZE) return BFS_ERR_CORRUPT;
+    for (uint32_t i = 0; i < BFS_EMERGENCY_POOL_SIZE; i++) {
+        bfs_blk_t blk = bfs_be32(fs->sb->emergency_pool[i]);
+        if (blk == BFS_BLK_NULL && i >= ec) continue;
+        if (blk == BFS_BLK_NULL || blk >= fs->tree.bio->block_count ||
+            (i < ec && blk == fs->tree.root)) return BFS_ERR_CORRUPT;
+        for (uint32_t j = 0; j < i; j++)
+            if (bfs_be32(fs->sb->emergency_pool[j]) == blk)
+                return BFS_ERR_CORRUPT;
+    }
+    for (uint32_t i = 0; i < fs->reserve_count; i++) {
+        bfs_blk_t blk = fs->reserve[i];
+        if (blk == BFS_BLK_NULL || blk >= fs->tree.bio->block_count ||
+            blk == fs->tree.root) return BFS_ERR_CORRUPT;
+        for (uint32_t j = 0; j < i; j++)
+            if (fs->reserve[j] == blk) return BFS_ERR_CORRUPT;
+        for (uint32_t j = 0; j < ec; j++)
+            if (bfs_be32(fs->sb->emergency_pool[j]) == blk)
+                return BFS_ERR_CORRUPT;
+    }
+    return BFS_OK;
+}
+
+static bfs_err_t prepare_reserve_root_fold(const bfs_freespace_t *fs,
+                                           reserve_root_fold_t *batch)
+{
+    bfs_err_t err = validate_fold_pools(fs);
+    if (err != BFS_OK) return err;
+    batch->original_count = fs->reserve_count;
+    batch->old_root = fs->tree.root;
+    batch->emergency_count = bfs_be32(fs->sb->emergency_count);
+    memcpy(batch->original, fs->reserve,
+           batch->original_count * sizeof(*batch->original));
+    memcpy(batch->emergency_pool, fs->sb->emergency_pool,
+           sizeof(batch->emergency_pool));
+    for (uint32_t i = 0; i < batch->original_count; i++) {
+        bfs_blk_t blk = batch->original[i];
+        if (reserve_block_is_emergency(fs, blk))
+            batch->retained[batch->retained_count++] = blk;
+        else
+            batch->blocks[batch->block_count++] = blk;
+    }
+    if (batch->block_count == 0) return BFS_ERR_UNSUPPORTED;
+    if (batch->retained_count == 0) {
+        if (batch->emergency_count == 0) return BFS_ERR_UNSUPPORTED;
+        batch->retained[batch->retained_count++] = bfs_be32(
+            batch->emergency_pool[batch->emergency_count - 1]);
+        batch->scratch_from_pool = true;
+    }
+    batch->root_is_emergency = reserve_block_is_emergency(fs, batch->old_root);
+    if (!batch->root_is_emergency)
+        batch->blocks[batch->block_count++] = batch->old_root;
+    sort_reserve_blocks(batch->blocks, batch->block_count);
+    return BFS_OK;
+}
+
+static bfs_err_t restore_failed_reserve_root_fold(bfs_freespace_t *fs,
+                                                  const reserve_root_fold_t *batch,
+                                                  bfs_err_t err)
+{
+    uint32_t expected_ec = batch->emergency_count - batch->scratch_from_pool;
+    if (fs->tree.root != batch->old_root ||
+        fs->reserve_count != batch->retained_count ||
+        memcmp(fs->reserve, batch->retained,
+               batch->retained_count * sizeof(*batch->retained)) != 0 ||
+        bfs_be32(fs->sb->emergency_count) != expected_ec ||
+        memcmp(fs->sb->emergency_pool, batch->emergency_pool,
+               sizeof(batch->emergency_pool)) != 0)
+        return err == BFS_ERR_UNSUPPORTED ? BFS_ERR_CORRUPT : err;
+    memcpy(fs->reserve, batch->original,
+           batch->original_count * sizeof(*batch->original));
+    fs->reserve_count = batch->original_count;
+    fs->sb->emergency_count = bfs_be32(batch->emergency_count);
+    return err;
+}
+
+static bfs_err_t return_fold_emergency_block(bfs_freespace_t *fs, bfs_blk_t blk)
+{
+    bool handled;
+    bfs_err_t err = return_to_emergency_pool(fs, blk, &handled);
+    if (err == BFS_OK && handled) return BFS_OK;
+    /* After a swap, retain the unreturned owner's block rather than restoring
+     * candidates already represented by the new leaf. */
+    if (fs->reserve_count < BFS_ALLOC_RESERVE_SIZE)
+        fs->reserve[fs->reserve_count++] = blk;
+    return err != BFS_OK ? err : BFS_ERR_CORRUPT;
+}
+
+static bfs_err_t apply_reserve_root_fold(bfs_freespace_t *fs,
+                                         const reserve_root_fold_t *batch)
+{
+    memcpy(fs->reserve, batch->retained,
+           batch->retained_count * sizeof(*batch->retained));
+    fs->reserve_count = batch->retained_count;
+    if (batch->scratch_from_pool)
+        fs->sb->emergency_count = bfs_be32(batch->emergency_count - 1);
+#ifdef BFS_PERF_PROBE
+    ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+        BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN);
+    ULONG node_writes_before =
+        bfs_perf_probe_counters.free_tree_reserve_return_node_writes;
+#endif
+    bfs_err_t err = free_sorted_blocks(fs, batch->blocks, batch->block_count, true);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_free_tree_phase_leave(previous_phase);
+    if (err == BFS_OK)
+        bfs_perf_probe_reserve_return_batch(batch->block_count,
+            bfs_perf_probe_counters.free_tree_reserve_return_node_writes -
+                node_writes_before);
+#endif
+    if (err != BFS_OK) return restore_failed_reserve_root_fold(fs, batch, err);
+    if (batch->root_is_emergency) {
+        err = return_fold_emergency_block(fs, batch->old_root);
+        if (err != BFS_OK) return err;
+    }
+    while (fs->reserve_count > 0) {
+        bfs_blk_t blk = fs->reserve[--fs->reserve_count];
+        err = return_fold_emergency_block(fs, blk);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
+/* The root is unshared and unpublished only under both proofs below. Its
+ * ownership can then be folded into the new leaf/pool without another COW. */
+static bfs_err_t try_reserve_root_fold(bfs_freespace_t *fs, bool *applied)
+{
+    *applied = false;
+    if (!fs->sb || !fs->committed_sb || fs->reserve_count == 0 ||
+        fs->tree.height != 1 || fs->tree.root == BFS_BLK_NULL)
+        return BFS_OK;
+    uint64_t root_txn;
+    bfs_err_t err = bfs_btree_root_leaf_txn_id(&fs->tree, &root_txn);
+    if (err != BFS_OK) return err == BFS_ERR_UNSUPPORTED ? BFS_OK : err;
+    uint64_t live_txn = bfs_btree_txn_id(&fs->tree);
+    if (root_txn > live_txn) return BFS_ERR_CORRUPT;
+    if (root_txn != live_txn ||
+        fs->tree.root == bfs_be32(fs->committed_sb->free_tree_root))
+        return BFS_OK;
+    reserve_root_fold_t batch = {0};
+    err = prepare_reserve_root_fold(fs, &batch);
+    if (err == BFS_ERR_UNSUPPORTED) return BFS_OK;
+    if (err != BFS_OK) return err;
+    err = apply_reserve_root_fold(fs, &batch);
+    if (err == BFS_ERR_UNSUPPORTED) return BFS_OK;
+    if (err == BFS_OK) *applied = true;
+    return err;
+}
+
 typedef struct {
     bfs_blk_t original[BFS_ALLOC_RESERVE_SIZE];
     bfs_blk_t retained[BFS_ALLOC_RESERVE_SIZE];
@@ -904,15 +1123,7 @@ static bool prepare_reserve_leaf_batch(const bfs_freespace_t *fs,
      * behind them as the private root's COW scratch allocation. */
     batch->retained[batch->retained_count++] =
         batch->blocks[--batch->block_count];
-    for (uint32_t i = 1; i < batch->block_count; i++) {
-        bfs_blk_t value = batch->blocks[i];
-        uint32_t j = i;
-        while (j > 0 && batch->blocks[j - 1] > value) {
-            batch->blocks[j] = batch->blocks[j - 1];
-            j--;
-        }
-        batch->blocks[j] = value;
-    }
+    sort_reserve_blocks(batch->blocks, batch->block_count);
     return true;
 }
 
@@ -1003,7 +1214,10 @@ static bfs_err_t return_reserve(bfs_freespace_t *fs, bool allow_mixed)
         return BFS_ERR_INVAL;
     uint32_t saved_global_reserve = fs->global_reserve;
     fs->global_reserve = UINT32_MAX;
-    bfs_err_t batch_err = return_reserve_root_leaf_batch(fs, allow_mixed);
+    bool folded;
+    bfs_err_t batch_err = try_reserve_root_fold(fs, &folded);
+    if (batch_err == BFS_OK && !folded)
+        batch_err = return_reserve_root_leaf_batch(fs, allow_mixed);
     if (batch_err != BFS_OK) {
         fs->global_reserve = saved_global_reserve;
         fs->last_error = batch_err;

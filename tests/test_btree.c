@@ -46,6 +46,7 @@ static uint32_t read_key(const void *k) { return bfs_load_be32(k); }
 static bfs_bio_t *fail_write_target;
 static const bfs_bio_ops_t *fail_write_original_ops;
 static bool fail_next_write;
+static uint32_t observed_write_calls;
 static bfs_err_t test_read_block(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
 {
     (void)bio;
@@ -54,6 +55,7 @@ static bfs_err_t test_read_block(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
 static bfs_err_t test_write_block(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
 {
     (void)bio;
+    observed_write_calls++;
     if (fail_next_write) { fail_next_write = false; return BFS_ERR_IO; }
     return fail_write_original_ops->write_block(fail_write_target, blk, buf);
 }
@@ -62,6 +64,132 @@ static const bfs_bio_ops_t fail_write_ops = {
     .read_block = test_read_block, .write_block = test_write_block,
     .sync = NULL, .close = NULL
 };
+
+#define TRACKED_BLOCK_MAX 16
+typedef struct {
+    bfs_allocator_t iface;
+    bfs_allocator_t *wrapped;
+    bfs_blk_t allocated[TRACKED_BLOCK_MAX];
+    uint32_t alloc_count;
+    bfs_blk_t deallocated[TRACKED_BLOCK_MAX];
+    uint32_t dealloc_count;
+} tracked_allocator_t;
+
+static bfs_blk_t tracked_alloc(bfs_allocator_t *allocator)
+{
+    tracked_allocator_t *tracked = allocator->ctx;
+    bfs_blk_t blk = tracked->wrapped->alloc(tracked->wrapped);
+    if (tracked->alloc_count < TRACKED_BLOCK_MAX)
+        tracked->allocated[tracked->alloc_count] = blk;
+    tracked->alloc_count++;
+    return blk;
+}
+
+static bfs_err_t tracked_dealloc(bfs_allocator_t *allocator, bfs_blk_t blk)
+{
+    tracked_allocator_t *tracked = allocator->ctx;
+    if (tracked->dealloc_count < TRACKED_BLOCK_MAX)
+        tracked->deallocated[tracked->dealloc_count] = blk;
+    tracked->dealloc_count++;
+    return tracked->wrapped->dealloc(tracked->wrapped, blk);
+}
+
+static bfs_err_t tracked_allocator_error(bfs_allocator_t *allocator)
+{
+    tracked_allocator_t *tracked = allocator->ctx;
+    return tracked->wrapped->error
+        ? tracked->wrapped->error(tracked->wrapped) : BFS_ERR_NOSPC;
+}
+
+static void tracked_allocator_init(tracked_allocator_t *tracked,
+                                   bfs_allocator_t *wrapped)
+{
+    memset(tracked, 0, sizeof(*tracked));
+    tracked->wrapped = wrapped;
+    tracked->iface.alloc = tracked_alloc;
+    tracked->iface.dealloc = tracked_dealloc;
+    tracked->iface.error = tracked_allocator_error;
+    tracked->iface.ctx = tracked;
+}
+
+static void tracked_allocator_reset(tracked_allocator_t *tracked)
+{
+    tracked->alloc_count = 0;
+    tracked->dealloc_count = 0;
+}
+
+static bool tracked_has_block(const bfs_blk_t *blocks, uint32_t count,
+                              bfs_blk_t target)
+{
+    uint32_t limit = count < TRACKED_BLOCK_MAX ? count : TRACKED_BLOCK_MAX;
+    for (uint32_t i = 0; i < limit; i++)
+        if (blocks[i] == target) return true;
+    return false;
+}
+
+typedef struct {
+    bfs_blk_t deferred[TRACKED_BLOCK_MAX];
+    uint32_t defer_count;
+    uint32_t available;
+} test_free_sink_t;
+
+static bfs_err_t test_defer_free(void *ctx, bfs_blk_t blk)
+{
+    test_free_sink_t *sink = ctx;
+    if (sink->defer_count < TRACKED_BLOCK_MAX)
+        sink->deferred[sink->defer_count] = blk;
+    sink->defer_count++;
+    return BFS_OK;
+}
+
+static uint32_t test_free_headroom(void *ctx)
+{
+    return ((test_free_sink_t *)ctx)->available;
+}
+
+static bool open_owned_root_fixture(bfs_bio_t **bio_out,
+                                    bootstrap_alloc_t **ba_out,
+                                    bfs_btree_t *tree,
+                                    tracked_allocator_t *tracked,
+                                    uint64_t txn_id)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    if (!bio) return false;
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    if (!ba) {
+        bfs_bio_close(bio);
+        unlink(TEST_IMG);
+        return false;
+    }
+    tracked_allocator_init(tracked, &ba->base);
+    if (bfs_btree_init(tree, bio, &tracked->iface, &u32_ops,
+                       BFS_BLK_NULL, txn_id) != BFS_OK) {
+        free(ba);
+        bfs_bio_close(bio);
+        unlink(TEST_IMG);
+        return false;
+    }
+    uint32_t key, val;
+    make_key(&key, 1);
+    make_key(&val, 10);
+    if (bfs_btree_insert(tree, &key, &val) != BFS_OK) {
+        free(ba);
+        bfs_bio_close(bio);
+        unlink(TEST_IMG);
+        return false;
+    }
+    *bio_out = bio;
+    *ba_out = ba;
+    return true;
+}
+
+static void close_owned_root_fixture(bfs_bio_t *bio, bootstrap_alloc_t *ba)
+{
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
 
 /* ── Test: empty tree search ───────────────────────────────── */
 
@@ -591,6 +719,237 @@ static void test_search_floor_exact_match(void)
     unlink(TEST_IMG);
 }
 
+static bool owned_rejects_noncurrent_root(uint64_t root_txn, uint64_t live_txn)
+{
+    bfs_bio_t *bio = NULL;
+    bootstrap_alloc_t *ba = NULL;
+    bfs_btree_t tree;
+    tracked_allocator_t tracked;
+    if (!open_owned_root_fixture(&bio, &ba, &tree, &tracked, root_txn))
+        return false;
+
+    const bfs_blk_t old_root = tree.root;
+    uint8_t before[BLK_SIZE], after[BLK_SIZE];
+    uint64_t actual_txn = UINT64_MAX;
+    bool ok = bfs_bio_read(bio, old_root, before) == BFS_OK &&
+              bfs_btree_root_leaf_txn_id(&tree, &actual_txn) == BFS_OK &&
+              actual_txn == root_txn;
+    tree.txn_id_fallback = live_txn;
+    tracked_allocator_reset(&tracked);
+    fail_write_target = bio;
+    fail_write_original_ops = bio->ops;
+    observed_write_calls = 0;
+    fail_next_write = false;
+    bio->ops = &fail_write_ops;
+    uint32_t key, val;
+    make_key(&key, 20);
+    make_key(&val, 200);
+    bfs_err_t err = bfs_btree_replace_owned_root_leaf(
+        &tree, old_root, &key, &val, 1);
+    bio->ops = fail_write_original_ops;
+
+    ok = ok && err == BFS_ERR_UNSUPPORTED && tree.root == old_root &&
+         tracked.alloc_count == 0 && observed_write_calls == 0 &&
+         bfs_bio_read(bio, old_root, after) == BFS_OK &&
+         memcmp(before, after, sizeof(before)) == 0;
+    close_owned_root_fixture(bio, ba);
+    return ok;
+}
+
+static void test_owned_root_leaf_transfer(void)
+{
+    bfs_bio_t *bio = NULL;
+    bootstrap_alloc_t *ba = NULL;
+    bfs_btree_t tree;
+    tracked_allocator_t tracked;
+    TEST_ASSERT(open_owned_root_fixture(&bio, &ba, &tree, &tracked, 31));
+
+    const bfs_blk_t old_root = tree.root;
+    uint8_t old_bytes[BLK_SIZE], after_bytes[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, old_root, old_bytes), BFS_OK);
+    uint64_t root_txn = 0;
+    TEST_ASSERT_EQ(bfs_btree_root_leaf_txn_id(&tree, &root_txn), BFS_OK);
+    TEST_ASSERT_EQ(root_txn, bfs_btree_txn_id(&tree));
+
+    test_free_sink_t sink = {.available = 4};
+    tree.free_sink = (bfs_free_sink_t){
+        .ctx = &sink,
+        .defer = test_defer_free,
+        .headroom = test_free_headroom,
+        .capacity = 4,
+    };
+    tracked_allocator_reset(&tracked);
+    uint32_t keys[3], vals[3];
+    for (uint32_t i = 0; i < 3; i++) {
+        make_key(&keys[i], i + 20);
+        make_key(&vals[i], i + 200);
+    }
+    TEST_ASSERT_EQ(bfs_btree_replace_owned_root_leaf(
+                       &tree, old_root, keys, vals, 3), BFS_OK);
+
+    TEST_ASSERT(tree.root != old_root);
+    TEST_ASSERT_EQ(tracked.alloc_count, 1);
+    TEST_ASSERT_EQ(tracked.dealloc_count, 0);
+    TEST_ASSERT(!tracked_has_block(tracked.deallocated, tracked.dealloc_count,
+                                   old_root));
+    TEST_ASSERT_EQ(sink.defer_count, 0);
+    TEST_ASSERT_EQ(bfs_bio_read(bio, old_root, after_bytes), BFS_OK);
+    TEST_ASSERT_MEM_EQ(old_bytes, after_bytes, sizeof(old_bytes));
+    for (uint32_t i = 0; i < 3; i++) {
+        uint32_t got;
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &keys[i], &got), BFS_OK);
+        TEST_ASSERT_EQ(read_key(&got), i + 200);
+    }
+    uint32_t old_key, got;
+    make_key(&old_key, 1);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &old_key, &got), BFS_ERR_NOTFOUND);
+    close_owned_root_fixture(bio, ba);
+}
+
+static void test_owned_root_leaf_rejects_committed_root(void)
+{
+    TEST_ASSERT(owned_rejects_noncurrent_root(31, 32));
+}
+
+static void test_owned_root_leaf_rejects_future_root(void)
+{
+    TEST_ASSERT(owned_rejects_noncurrent_root(33, 32));
+}
+
+static void test_owned_root_leaf_rejects_mismatched_root(void)
+{
+    bfs_bio_t *bio = NULL;
+    bootstrap_alloc_t *ba = NULL;
+    bfs_btree_t tree;
+    tracked_allocator_t tracked;
+    TEST_ASSERT(open_owned_root_fixture(&bio, &ba, &tree, &tracked, 32));
+
+    const bfs_blk_t old_root = tree.root;
+    uint8_t before[BLK_SIZE], after[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, old_root, before), BFS_OK);
+    tracked_allocator_reset(&tracked);
+    fail_write_target = bio;
+    fail_write_original_ops = bio->ops;
+    observed_write_calls = 0;
+    fail_next_write = false;
+    bio->ops = &fail_write_ops;
+    uint32_t key, val;
+    make_key(&key, 20);
+    make_key(&val, 200);
+    bfs_err_t err = bfs_btree_replace_owned_root_leaf(
+        &tree, old_root + 1, &key, &val, 1);
+    bio->ops = fail_write_original_ops;
+
+    TEST_ASSERT_EQ(err, BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT_EQ(tree.root, old_root);
+    TEST_ASSERT_EQ(tracked.alloc_count, 0);
+    TEST_ASSERT_EQ(observed_write_calls, 0);
+    TEST_ASSERT_EQ(bfs_bio_read(bio, old_root, after), BFS_OK);
+    TEST_ASSERT_MEM_EQ(before, after, sizeof(before));
+    close_owned_root_fixture(bio, ba);
+}
+
+static void test_owned_root_leaf_write_failure_returns_scratch(void)
+{
+    bfs_bio_t *bio = NULL;
+    bootstrap_alloc_t *ba = NULL;
+    bfs_btree_t tree;
+    tracked_allocator_t tracked;
+    TEST_ASSERT(open_owned_root_fixture(&bio, &ba, &tree, &tracked, 32));
+
+    const bfs_blk_t old_root = tree.root;
+    uint8_t before[BLK_SIZE], after[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, old_root, before), BFS_OK);
+    test_free_sink_t sink = {.available = 4};
+    tree.free_sink = (bfs_free_sink_t){
+        .ctx = &sink,
+        .defer = test_defer_free,
+        .headroom = test_free_headroom,
+        .capacity = 4,
+    };
+    tracked_allocator_reset(&tracked);
+    fail_write_target = bio;
+    fail_write_original_ops = bio->ops;
+    observed_write_calls = 0;
+    fail_next_write = true;
+    bio->ops = &fail_write_ops;
+    uint32_t key, val;
+    make_key(&key, 20);
+    make_key(&val, 200);
+    bfs_err_t err = bfs_btree_replace_owned_root_leaf(
+        &tree, old_root, &key, &val, 1);
+    bio->ops = fail_write_original_ops;
+    fail_next_write = false;
+
+    TEST_ASSERT_EQ(err, BFS_ERR_IO);
+    TEST_ASSERT_EQ(observed_write_calls, 1);
+    TEST_ASSERT_EQ(tree.root, old_root);
+    TEST_ASSERT_EQ(tracked.alloc_count, 1);
+    TEST_ASSERT_EQ(tracked.dealloc_count, 1);
+    TEST_ASSERT_EQ(tracked.deallocated[0], tracked.allocated[0]);
+    TEST_ASSERT(tracked.allocated[0] != old_root);
+    TEST_ASSERT(!tracked_has_block(tracked.deallocated, tracked.dealloc_count,
+                                   old_root));
+    TEST_ASSERT_EQ(sink.defer_count, 0);
+    TEST_ASSERT_EQ(bfs_bio_read(bio, old_root, after), BFS_OK);
+    TEST_ASSERT_MEM_EQ(before, after, sizeof(before));
+    close_owned_root_fixture(bio, ba);
+}
+
+static void test_owned_root_leaf_bypasses_full_pending_headroom(void)
+{
+    bfs_bio_t *bio = NULL;
+    bootstrap_alloc_t *ba = NULL;
+    bfs_btree_t tree;
+    tracked_allocator_t tracked;
+    TEST_ASSERT(open_owned_root_fixture(&bio, &ba, &tree, &tracked, 32));
+
+    const bfs_blk_t old_root = tree.root;
+    uint8_t old_bytes[BLK_SIZE], after_bytes[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, old_root, old_bytes), BFS_OK);
+    test_free_sink_t sink = {.available = 0};
+    tree.free_sink = (bfs_free_sink_t){
+        .ctx = &sink,
+        .defer = test_defer_free,
+        .headroom = test_free_headroom,
+        .capacity = 1,
+    };
+    tracked_allocator_reset(&tracked);
+    fail_write_target = bio;
+    fail_write_original_ops = bio->ops;
+    observed_write_calls = 0;
+    fail_next_write = false;
+    bio->ops = &fail_write_ops;
+    uint32_t keys[2], vals[2];
+    make_key(&keys[0], 20);
+    make_key(&keys[1], 21);
+    make_key(&vals[0], 200);
+    make_key(&vals[1], 210);
+
+    TEST_ASSERT_EQ(bfs_btree_replace_root_leaf(&tree, keys, vals, 2),
+                   BFS_ERR_AGAIN);
+    TEST_ASSERT_EQ(tree.root, old_root);
+    TEST_ASSERT_EQ(tracked.alloc_count, 0);
+    TEST_ASSERT_EQ(observed_write_calls, 0);
+    TEST_ASSERT_EQ(bfs_btree_replace_owned_root_leaf(
+                       &tree, old_root, keys, vals, 2), BFS_OK);
+    bio->ops = fail_write_original_ops;
+
+    TEST_ASSERT(tree.root != old_root);
+    TEST_ASSERT_EQ(tracked.alloc_count, 1);
+    TEST_ASSERT_EQ(tracked.dealloc_count, 0);
+    TEST_ASSERT_EQ(observed_write_calls, 1);
+    TEST_ASSERT_EQ(sink.defer_count, 0);
+    TEST_ASSERT_EQ(bfs_bio_read(bio, old_root, after_bytes), BFS_OK);
+    TEST_ASSERT_MEM_EQ(old_bytes, after_bytes, sizeof(old_bytes));
+    for (uint32_t i = 0; i < 2; i++) {
+        uint32_t got;
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &keys[i], &got), BFS_OK);
+        TEST_ASSERT_EQ(read_key(&got), 200 + i * 10);
+    }
+    close_owned_root_fixture(bio, ba);
+}
+
 static void test_replace_root_leaf(void)
 {
     unlink(TEST_IMG);
@@ -756,6 +1115,12 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_search_floor_key_smaller_than_all);
     TEST_RUN(test_search_floor_key_larger_than_all);
     TEST_RUN(test_search_floor_exact_match);
+    TEST_RUN(test_owned_root_leaf_transfer);
+    TEST_RUN(test_owned_root_leaf_rejects_committed_root);
+    TEST_RUN(test_owned_root_leaf_rejects_future_root);
+    TEST_RUN(test_owned_root_leaf_rejects_mismatched_root);
+    TEST_RUN(test_owned_root_leaf_write_failure_returns_scratch);
+    TEST_RUN(test_owned_root_leaf_bypasses_full_pending_headroom);
     TEST_RUN(test_replace_root_leaf);
     TEST_RUN(test_replace_root_leaf_rejects_order);
     TEST_RUN(test_replace_root_leaf_write_failure);

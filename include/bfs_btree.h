@@ -136,6 +136,16 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val);
 bfs_err_t bfs_btree_replace_root_leaf(bfs_btree_t *tree, const void *keys,
                                       const void *vals, uint32_t count);
 
+/* Read the transaction id of a valid height-one root leaf. */
+bfs_err_t bfs_btree_root_leaf_txn_id(bfs_btree_t *tree, uint64_t *txn_id_out);
+
+/* Replace the expected current root leaf without reclaiming it. On success,
+ * ownership of the old root block passes to the caller. */
+bfs_err_t bfs_btree_replace_owned_root_leaf(bfs_btree_t *tree,
+                                            bfs_blk_t expected_root,
+                                            const void *keys, const void *vals,
+                                            uint32_t count);
+
 /* Maximum entries that fit in one leaf, or zero for an invalid tree. */
 uint32_t bfs_btree_leaf_capacity(const bfs_btree_t *tree);
 

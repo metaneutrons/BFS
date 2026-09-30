@@ -34,6 +34,7 @@ typedef struct bfs_freespace {
     /* Emergency pool: last-resort blocks when reserve is empty during COW.
      * Points to the live superblock within the transaction manager. */
     bfs_superblock_t *sb;
+    const bfs_superblock_t *committed_sb; /* last published roots, if mounted */
 } bfs_freespace_t;
 
 /* Initialize the free space allocator. free_tree_root is the root of

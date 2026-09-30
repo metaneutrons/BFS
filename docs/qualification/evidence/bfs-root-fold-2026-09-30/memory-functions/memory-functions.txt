@@ -1,0 +1,8 @@
+small_memcpy_cases=8512
+small_memset_cases=4256
+large_memcpy_cases=13
+large_memset_cases=13
+large_memcpy_bytes=28972230
+large_memset_bytes=28972230
+failures=0
+MEMORY-FUNCTIONS-PASS

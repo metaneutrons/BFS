@@ -102,6 +102,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     fs.freespace.tree.txn_id_ptr = &fs.live_txn_id;
     fs.freespace.tree.free_sink = bfs_fs_free_sink(&fs);
     fs.freespace.sb = &fs.txn.sb_new;
+    fs.freespace.committed_sb = &fs.txn.sb;
 
     uint32_t epool_count = BFS_EMERGENCY_POOL_SIZE;
     if (epool_count > data_blocks / 4) epool_count = data_blocks / 4;
@@ -236,6 +237,7 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
     fs->freespace.total_free = bfs_be32(sb->free_blocks);
     fs->freespace.global_reserve = bfs_be32(sb->global_reserve);
     fs->freespace.sb = &fs->txn.sb_new;
+    fs->freespace.committed_sb = &fs->txn.sb;
     err = fs_open_namespace_trees(fs);
     if (err != BFS_OK) return err;
     err = fs_open_refcount_tree(fs);

@@ -101,6 +101,62 @@ iterations). The change was removed. A future allocation-side optimization
 must prove not only block ownership, but also termination of the
 publish/reclaim fixed point under repeated commits.
 
+## Next bounded experiment: fold an unpublished root's retirement
+
+Status: implemented and locally qualified; the 5× target remains unmet. See
+[the result and retained evidence](../qualification/bfs-root-fold-performance-2026-09-30.md).
+The mixed-reserve
+increment still executes over 800 ordinary return runs per small-file phase.
+The candidate below targets that tail directly; it does not introduce a dirty
+cache or weaken synchronous operation-error reporting.
+
+On a height-one Free-Tree, use a different emergency-origin block for the
+replacement root. Return all ordinary reserve blocks together. If the old
+root is an ordinary, unpublished node, include that block once in the same
+merged free leaf rather than appending it to the reserve after COW. If it is
+an unpublished emergency-origin node, return it directly to its pool slot
+after the root swap. Either case removes the recursive ordinary-root tail.
+
+Required proof boundaries:
+
+- Eligibility requires a validated leaf's node transaction ID to equal the
+  live ID exactly, and its block to differ from the last published Free-Tree
+  root. Future tags are not accepted by a `>=` shortcut. Committed roots keep
+  the ordinary deferred-retirement path. Snapshots do not share the Free-Tree.
+- A bounded B-tree replacement primitive transfers the old current root's
+  ownership to the caller only after a successful different-block write and
+  root swap. It neither deallocates nor defers that old root. The caller must
+  account for it exactly once in the free leaf or emergency pool. The normal
+  replacement API keeps its existing retirement behavior.
+- Scratch selection considers all emergency slots. Prefer a retired slot
+  already held in reserve; otherwise take one active slot and stage it as
+  reserve scratch. Never select the old root or another live owner. If none
+  is available, or the merged leaf does not fit, use the qualified fallback.
+- Snapshot the original reserve and emergency state. Before-swap failure must
+  restore them exactly after verifying the allocator returned the scratch;
+  after-swap state must never be restored as though the batch had not applied.
+- Successful accounting adds ordinary reserve blocks plus the old root only
+  when the latter is ordinary. Emergency blocks stay out of free extents.
+  The pending queue must be unchanged by the transferred-current-root step.
+- Existing multi-block range reclamation can leave an inactive pool-origin
+  block in an ordinary free extent. Such unrelated stale-slot aliases make
+  the fold unsupported, not corrupt. Active-slot, current-root and staged
+  reserve aliases remain corruption; scan all extents before choosing the
+  fallback so an inactive alias cannot conceal a later live-owner alias.
+- Post-publication use is conditional on that same current-root proof. It
+  must eliminate a tail rather than produce another retired committed root.
+  The 256-pass limit and recovery-required error propagation remain unchanged.
+
+Test gates include ordinary and emergency old-root ownership, committed and
+future-tag rejection, no-headroom current-root transfer, exact read/write
+failure rollback, absent-scratch/capacity fallback, small-cap pending storms,
+snapshots, remount/fsck and every crash cut around the replacement/publication.
+Keep the experiment only if checked counters and idle normal comparisons
+show a material improvement. A second possible reduction is exact CRC-state
+advancement over canonically zeroed unused write bytes; full-block read CRC
+validation and format compatibility would remain unchanged. It is separate
+from this ownership experiment and is not implemented here.
+
 ## Qualification gates
 
 - Allocator and B-tree tests: adjacency, gaps, overlap, duplicate input,
