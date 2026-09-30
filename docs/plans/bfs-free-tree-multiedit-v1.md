@@ -39,7 +39,9 @@ could damage the working root before its replacement is publishable.
 
 1. A committed root must never reference an overwritten or prematurely reused
    block. Old tree nodes remain deferred until after the first superblock
-   publication.
+   publication on the established path. The proposed SF exception below may
+   represent them as free in a sealed, unpublished replacement only when no
+   allocation can consume them before successful publication and sync.
 2. A batch owns its newly allocated nodes until its complete replacement root
    is written. On allocation or write failure, the old root remains readable;
    partial post-publication reclaim is recovery-required, not retryable in the
@@ -283,6 +285,141 @@ Proof boundaries and gates:
 - Require complete normal/sanitizer/check gates, independent review and fresh
   normal-handler comparisons in both orders. An estimated 128 fewer Free-Tree
   writes is an upper bound, not a latency promise or overall 5× acceptance.
+
+## SF: sealed pre-publication settlement
+
+Design accepted after independent source-contract review; not implemented or
+qualified. Main integration accepts the narrow eligibility and freeze proof,
+not a performance forecast. AR still records 120
+superblock publications and 80 post-publication reclaim passes per 40 small
+operations. SF targets that cycle rather than weakening the handler's commit
+frequency or synchronous failure reporting. Design acceptance, implementation
+and measured qualification are separate gates. No CI/GitHub/hardware work is
+authorized by this proposal.
+
+### Ownership and eligibility
+
+At the serialized full-filesystem commit boundary, prepare one replacement
+Free-Tree leaf containing existing free extents plus all eligible deferred
+retirements, ordinary reserve stock and the old unpublished current root.
+Use a **different**, proven free emergency-origin block for COW scratch.
+The old committed tree remains intact. The replacement is not an allocation
+source until its matching superblock write-and-sync succeeds.
+
+The first scope requires all of:
+
+- SF-E1: mounted, writable, active transaction, no recovery error, exact
+  mounted-owner and committed/working superblock wiring. Hold the filesystem
+  write lock; format and standalone allocators are excluded.
+- SF-E2: both snapshot option and runtime state clear; no working or committed
+  snapshot/refcount roots. Creation/deletion transitions therefore retain the
+  ordinary refcount-aware path, even when the option bit is clear.
+- SF-E3: a validated height-one Free-Tree whose root transaction equals the
+  exact live ID, live ID equals the working SB ID and exceeds the committed
+  SB ID, and root differs from every committed tree root. Older/future roots
+  are not silently treated as current. No general B-tree multi-edit.
+- SF-E4: the entire normalized leaf plus the candidate set fits one leaf;
+  one safe different scratch block is available without refill. Deeper/full
+  leaves and unavailable scratch decline **before** staging or writes.
+
+Validate sorted/distinct pending input and deduplicate across pending, reserve
+and current root. A duplicate is corruption, not a request to count once and
+hide an ownership error. Reject blocks already in free extents, reserved
+superblock storage, active pool stock or current directory/inode/refcount/
+snapshot roots. A pending block may legitimately be an **old committed** root:
+that is the purpose of deferred retirement, not a reason to reject the batch.
+The current unpublished free root is transferred only through the existing
+owned-root B-tree API after its exact ownership checks.
+
+Every historical emergency slot, not merely the active prefix, determines
+pool provenance. Retired pool-origin candidates return only to the working
+pool; ordinary candidates enter only the replacement leaf. Validate the full
+pool, reserve and leaf separation. An inactive historical slot already
+represented by an ordinary free extent is a preflight fallback, not an
+automatic pool reactivation. Choose scratch from proven free working pool
+stock; it must not be any live/committed tree root, candidate or leaf extent.
+Removing scratch and reactivating candidates must produce one disjoint final
+pool state, with exact count/permutation accounting and no hidden allocator
+callbacks. Do not infer ownership from candidate block contents.
+
+### Prepare, seal, publish
+
+1. At the existing commit safe point, snapshot the complete reserve, working
+   emergency pool, root, free accounting/roving and pending list/count. Build
+   and validate the complete candidate leaf and final pool state in memory.
+   Reuse the established extent codec, overlap/adjacency validation and
+   ownership API; do not introduce another Free-Tree layout implementation.
+2. Stage **only** the one private scratch allocation. No reserve refill,
+   normal retirement callback or queue draining is allowed in this COW.
+   The owned-root API transfers the old root; the batch owns its disposition.
+   A failed/partial scratch write leaves the old root readable and restores
+   exact stock/pool/pending/accounting. A mismatch during rollback is a hard
+   recovery error, never permission to try the ordinary path.
+3. After the root swap, install the planned pool/accounting and seal the
+   working allocation state. Keep pending ownership recorded, but prohibit
+   **all** allocation, tree writes, refcount edits, reserve return/refill and
+   pending processing until publication succeeds. This prohibition includes
+   the temporarily free old committed nodes in the new leaf and pool.
+4. Gather the matching roots/accounting and call the unchanged
+   `bfs_txn_write_sb`, which writes the older SB slot and syncs. Its raw SB
+   read-modify-write and heap-buffer allocation are not filesystem-block
+   allocation. Existing ordered-data preflush and final sync remain intact.
+5. Only after that write-and-sync returns success, clear the included pending
+   queue, advance the live ID and release the allocation freeze. Skip the
+   ordinary publish/reclaim/publish loop because this batch has no retirement
+   tail. If a later final sync fails, preserve the new committed identity and
+   existing recovery-error behavior; do not claim the old commit is selected.
+
+There is no fallback after staging, an I/O attempt or a root change, even for
+`BFS_ERR_UNSUPPORTED`. A post-seal SB read/write/sync error leaves the owner
+recovery-latched, with no block reuse or further mutation. Remount may select
+the old or fully valid new state depending on the fault's persisted effects.
+Neither branch may contain a block that was reused before successful sync.
+Unsupported preflight contexts retain today's complete commit path unchanged.
+Accounting in the working leaf is not a statement of durable availability;
+the allocation freeze is part of its safety proof.
+
+### Acceptance gates and rollout
+
+- SF-D1: independent source-contract/design review of both ownership branches,
+  exact scratch and rollback state, no hidden refill/retirement, and the
+  complete no-allocation window. Resolve findings before implementation.
+- SF-T1: a naturally reached mounted fast-path witness proves one final leaf
+  write and one SB publication, empty pending/reserve and disjoint final pool,
+  unchanged old committed node bytes before publication, then read-only
+  remount, all file/namespace data and strict fsck with zero errors/warnings/
+  leaks. Repeated create/write/delete/overwrite commits must converge.
+- SF-T2: exact preflight fallback oracles for snapshots (including optionless
+  creation/deletion transitions), deeper/full leaves, older/future roots,
+  missing scratch and inactive pool aliases. Negative duplicate/overlap/root/
+  bounds cases must fail before any write. Exercise all 32 historical slots,
+  ordinary/current/pending mixed provenance and exhausted active pool cases.
+- SF-T3: cut every actual read/write/flush in the mounted fast-path commit,
+  including a partial scratch write and partial primary/backup SB writes.
+  Record exact injected indices and successful cuts beyond the operation.
+  Before swap, require exact pool/stock/pending/root rollback. After a
+  post-seal failure, require sticky owner recovery and zero further
+  allocations/writes.
+  Abandon failed working state; remount old/new and run full data plus strict
+  fsck oracles. A buffered persistence model must additionally drop writes
+  not covered by successful sync, rather than treating RAM visibility as
+  durable storage. Keep real power/controller/media qualification separate.
+- SF-T4: focused and full normal/ASan/UBSan suites, local checks, snapshot and
+  existing pending/crash campaigns, independent implementation/test review,
+  normal/probe m68k builds. Linux and Amiga use this same core logic; CLI and
+  handler commit/error boundaries remain unchanged.
+- SF-P1: normal-handler comparisons on fresh equal images in both orders,
+  all outliers and unchanged verifier/data oracles retained. Diagnostic
+  counts must show the publication/reclaim reduction; normal times must
+  establish useful benefit without an established material regression. The
+  overall criterion remains ≤5× in every checked phase, not one fewer SB or
+  a mean improvement. No dirty cache or write-back durability tradeoff.
+
+First implement only this eligibility gate, with legacy fallback for every
+unsupported shape. Future wider snapshot/deeper-tree support requires a new
+proof, not an expanded predicate. Source rollback needs no volume migration:
+the existing format and full commit path are unchanged. On failure, abandon/
+remount as already required; never clear recovery merely to continue measuring.
 
 ## Qualification gates
 
