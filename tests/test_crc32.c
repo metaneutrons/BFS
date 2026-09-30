@@ -318,6 +318,26 @@ static void test_crc32_zero_append_independent_high_powers(void)
     }
 }
 
+static void test_crc32_zero_append_all_nibble_states(void)
+{
+    uint32_t powers[32][32];
+    crc32_test_build_zero_powers(powers);
+
+    /* Each lookup table entry is observed independently through the public
+     * API: complement the initial CRC to set one nibble of the linear state.
+     * The oracle derives its matrices from the polynomial at runtime. */
+    for (unsigned power = 0; power < 32; power++) {
+        uint32_t length = (uint32_t)1u << power;
+        for (unsigned nibble = 0; nibble < 8; nibble++) {
+            for (uint32_t value = 0; value < 16; value++) {
+                uint32_t initial = ~(value << (4u * nibble));
+                TEST_ASSERT_EQ(bfs_crc32_zeros(initial, length),
+                               crc32_test_zero_oracle(initial, length, powers));
+            }
+        }
+    }
+}
+
 TEST_SUITE_BEGIN("CRC32")
     TEST_RUN(test_crc32_empty);
     TEST_RUN(test_crc32_check_value);
@@ -330,4 +350,5 @@ TEST_SUITE_BEGIN("CRC32")
     TEST_RUN(test_crc32_zero_append_chaining);
     TEST_RUN(test_crc32_zero_append_large_lengths);
     TEST_RUN(test_crc32_zero_append_independent_high_powers);
+    TEST_RUN(test_crc32_zero_append_all_nibble_states);
 TEST_SUITE_END()
