@@ -126,6 +126,38 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
     return BFS_OK;
 }
 
+/* Unused slots have no semantic meaning, but remain covered by the on-disk
+ * full-block CRC. Canonicalize them on writes and advance the exact CRC state
+ * over their zero bytes; reads still hash every byte, including legacy padding. */
+static bfs_err_t node_compute_write_crc(const bfs_btree_t *tree, uint8_t *buf,
+                                         uint32_t *crc_out)
+{
+    uint32_t count = num_keys(buf);
+    uint16_t level = node_level(buf);
+    bool leaf = level == BFS_BTNODE_LEAF;
+    uint32_t capacity = leaf ? leaf_max_keys(tree) : internal_max_keys(tree);
+    if (level >= MAX_TREE_DEPTH || count > capacity) return BFS_ERR_CORRUPT;
+    uint32_t prefix_end = (uint8_t *)node_key(tree, buf, count) - buf;
+    uint8_t *values = leaf ? leaf_val(tree, buf, 0)
+                          : internal_child_ptr(tree, buf, 0);
+    uint32_t values_start = values - buf;
+    uint32_t values_length = leaf ? count * tree->ops->val_size
+                                  : (count + 1u) * sizeof(uint32_t);
+    uint32_t block_size = tree->bio->block_size;
+    if (prefix_end > values_start || values_start > block_size ||
+        values_length > block_size - values_start)
+        return BFS_ERR_CORRUPT;
+    uint32_t gap = values_start - prefix_end;
+    uint32_t tail = block_size - values_start - values_length;
+    memset(buf + prefix_end, 0, gap);
+    memset(buf + values_start + values_length, 0, tail);
+    uint32_t crc = bfs_crc32(0, buf, prefix_end);
+    crc = bfs_crc32_zeros(crc, gap);
+    crc = bfs_crc32(crc, buf + values_start, values_length);
+    *crc_out = bfs_crc32_zeros(crc, tail);
+    return BFS_OK;
+}
+
 static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
 {
     if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
@@ -140,7 +172,10 @@ static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf
     BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
     if (sample_crc) bfs_perf_probe_begin(&crc_started);
 #endif
-    hdr->crc32 = bfs_be32(node_compute_crc(tree, buf));
+    uint32_t crc;
+    bfs_err_t crc_err = node_compute_write_crc(tree, buf, &crc);
+    if (crc_err != BFS_OK) return crc_err;
+    hdr->crc32 = bfs_be32(crc);
 #ifdef BFS_PERF_PROBE
     if (sample_crc) {
         bfs_perf_probe_counters.node_crc_write_samples++;

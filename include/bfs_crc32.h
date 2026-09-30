@@ -12,4 +12,7 @@
  * or chain calls by passing previous result as initial. */
 uint32_t bfs_crc32(uint32_t initial, const void *data, size_t len);
 
+/* Append length zero bytes to a CRC without materializing the zero buffer. */
+uint32_t bfs_crc32_zeros(uint32_t initial, uint32_t length);
+
 #endif /* BFS_CRC32_H */
