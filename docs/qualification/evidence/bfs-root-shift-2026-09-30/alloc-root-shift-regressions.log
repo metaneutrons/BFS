@@ -1,0 +1,104 @@
+=== Free Space Allocator ===
+  test_alloc_basic                                   OK
+  test_alloc_multi                                   OK
+  test_free_realloc                                  OK
+  test_merge_right                                   OK
+  test_alloc_free_cycles                             OK
+  test_reserve_refill_return_cycles                  OK
+  test_reserve_cycles_preserve_tree_mutations        OK
+  test_self_hosting                                  OK
+  test_out_of_space                                  OK
+  test_double_free_preserves_accounting              OK
+  test_sorted_batch_reclaim_single_leaf              OK
+  test_sorted_batch_reclaim_full_leaf_falls_back     OK
+
+12 passed, 0 failed
+=== Extent Tree ===
+  test_single_extent                                 OK
+  test_map_initialized_run                           OK
+  test_fragmented_file                               OK
+  test_truncate                                      OK
+  test_truncate_all                                  OK
+  test_truncate_inside_extent                        OK
+  test_large_file                                    OK
+
+7 passed, 0 failed
+=== Pending-Free Queue (#41) ===
+  test_small_cap_delete_storm_no_leak                OK
+  test_small_cap_delete_storm_snapshots              OK
+  test_compaction_mass_free_no_leak                  OK
+  test_overflow_is_loud_not_silent                   OK
+
+4 passed, 0 failed
+=== Hardware Failure Simulation ===
+  test_torn_write_superblock                         OK
+  test_torn_write_btree_node                         OK
+  test_read_error_during_lookup                      OK
+  test_read_error_during_scan                        OK
+  test_alloc_failure_during_split                    OK
+  test_double_free                                   OK
+  test_scan_after_insert_before_cursor               OK
+  test_max_tree_depth                                OK
+  test_both_superblocks_torn                         OK
+  test_format_dirty_partition                        OK
+  test_extent_read_error_is_not_a_sparse_hole        OK
+  test_delete_inode_read_error_preserves_entry       OK
+  test_delete_extent_read_error_preserves_entry      OK
+  test_snapshot_refcount_read_error_blocks_overwrite OK
+  test_ordered_sync_error_propagates                 OK
+  test_failed_cow_write_preserves_tree               OK
+  test_mount_propagates_superblock_io_error          OK
+  test_recovery_invalidates_open_handles             OK
+  test_failed_recovery_blocks_operations             OK
+  test_persistent_delete_failure_requires_remount    OK
+  test_failed_extent_rollback_marks_ownership_uncertain OK
+  test_delete_write_failures_preserve_comment        OK
+  test_rmdir_write_failures_preserve_committed_directory OK
+  test_rename_write_failures_preserve_committed_paths OK
+  test_mkdir_write_failures_preserve_committed_tree  OK
+  test_comment_write_failures_preserve_committed_value OK
+  test_snapshot_delete_write_failure_recovery        OK
+  test_allocator_refill_failure_can_retry_free       OK
+  test_reserve_return_root_fold_reactivates_emergency_root OK
+  test_reserve_return_root_fold_returns_ordinary_root OK
+  test_reserve_return_root_fold_first_write_failure_restores OK
+  test_reserve_return_root_fold_without_emergency_scratch_falls_back OK
+  test_reserve_return_root_fold_rejects_future_root  OK
+  test_reserve_return_root_fold_rejects_committed_root OK
+  test_reserve_return_fold_falls_back_for_inactive_pool_alias OK
+  test_reserve_return_fold_rejects_active_pool_alias OK
+  test_reserve_return_batch_fragmented_accounting    OK
+  test_reserve_return_batch_first_write_failure_is_retryable OK
+  test_reserve_return_batch_later_write_failure_keeps_ownership OK
+  test_reserve_return_mixed_batch_reactivates_emergency_slot OK
+  test_reserve_return_mixed_batch_first_write_failure_restores OK
+  test_reserve_return_mixed_batch_second_write_failure_keeps_ownership OK
+  test_reserve_return_write_failures_preserve_committed_tree OK
+  test_batch_leaf_write_failure_preserves_root       OK
+  test_short_write_publishes_inode                   OK
+  test_append_data_write_failure_publishes_prefix    OK
+  test_append_extent_write_failure_preserves_old_file OK
+
+47 passed, 0 failed
+=== Mounted metadata free-block reuse ===
+  test_dealloc_stashes_without_free_tree_mutation    OK
+  test_alloc_pops_stashed_suffix_above_height_one_floor OK
+  test_alloc_never_spends_the_height_one_floor       OK
+  test_allocator_skips_inactive_historical_emergency_slots OK
+  test_duplicate_and_reserve_blocks_are_rejected_unchanged OK
+  test_free_tree_overlap_is_rejected_unchanged       OK
+  test_live_and_committed_roots_are_never_stashed    OK
+  test_active_emergency_return_does_not_enter_ordinary_stock OK
+  test_inactive_historical_emergency_dealloc_stays_out_of_reserve OK
+  test_validation_read_failure_does_not_stash_or_pop OK
+  test_write_fault_does_not_affect_write_free_metadata_stash OK
+  test_btree_partial_write_abort_restores_owned_spare OK
+  test_short_transactions_keep_legacy_and_warmup_saturates OK
+  test_metadata_warmup_resets_at_a_new_live_id       OK
+  test_ineligible_contexts_and_full_stock_use_legacy_free_path OK
+  test_deeper_free_tree_uses_legacy_free_path        OK
+  test_mounted_append_overwrite_commits_and_remount  OK
+  test_mounted_warmed_append_write_failure_cuts_preserve_commit OK
+  test_snapshot_keeps_old_data_across_overwrite_and_remount OK
+
+19 passed, 0 failed

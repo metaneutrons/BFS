@@ -38,6 +38,8 @@ typedef struct bfs_freespace {
     /* Wired only by mounted filesystem setup; format/standalone remain NULL. */
     const bool *mounted_state;
     const bool *snapshot_state; /* includes in-progress snapshot creation */
+    const bool *readonly_state;
+    bfs_err_t *recovery_state; /* sticky mounted-owner ownership error */
     uint64_t metadata_reuse_txn; /* volatile warmup; never persisted */
     uint32_t metadata_requests;
 } bfs_freespace_t;
@@ -52,7 +54,10 @@ bfs_err_t bfs_freespace_init(bfs_freespace_t *fs, bfs_bio_t *bio,
 bfs_err_t bfs_freespace_add(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count);
 
 /* Allocate count contiguous blocks. Returns the starting block number,
- * or BFS_BLK_NULL on failure. Uses first-fit with roving pointer. */
+ * or BFS_BLK_NULL on failure. Uses first-fit with roving pointer. Mounted
+ * read-only/recovery-latched owners reject allocation before any mutation.
+ * A nonzero tree.free_sink_err means ownership is uncertain: standalone
+ * callers must abandon/recover rather than publish or retry that live state. */
 bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count);
 
 /* Free count blocks starting at start. Merges with adjacent free extents. */

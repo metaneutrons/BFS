@@ -240,6 +240,8 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
     fs->freespace.committed_sb = &fs->txn.sb;
     fs->freespace.mounted_state = &fs->mounted;
     fs->freespace.snapshot_state = &fs->has_snapshots;
+    fs->freespace.readonly_state = &fs->read_only;
+    fs->freespace.recovery_state = &fs->recovery_error;
     err = fs_open_namespace_trees(fs);
     if (err != BFS_OK) return err;
     err = fs_open_refcount_tree(fs);

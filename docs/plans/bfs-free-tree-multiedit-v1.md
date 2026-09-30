@@ -237,6 +237,53 @@ No format or CLI change is planned. A source rollback and rebuild need no
 volume migration. This plan authorizes no CI, GitHub mutation or hardware
 qualification.
 
+## AR: atomic first-fit root-leaf allocation
+
+Status: implemented and locally qualified as a bounded structural increment.
+The [19-run qualification](../qualification/bfs-root-shift-performance-2026-09-30.md)
+confirms 128 fewer Free-Tree writes; the overall 5× target remains unmet.
+Eight normal candidate samples do not establish a precise latency guarantee
+or general absence of regressions. Before this change the UR diagnostic had
+264 allocation-body Free-Tree writes for 128 data runs: most partial runs
+deleted an extent and inserted its shifted remainder separately.
+
+Keep the existing first-fit scan and roving placement. Only for count > 1,
+a height-one Free-Tree and a selected extent strictly longer than the request,
+collect the validated complete leaf, shift that one entry's start/length and
+use the existing normal `bfs_btree_replace_root_leaf` API. Entry count and data
+placement are unchanged. Exact fits and deeper trees keep the legacy path;
+single-block highest-tail allocation is untouched. This is not general
+multi-edit and does not reclaim a committed node before publication.
+
+Proof boundaries and gates:
+
+- Validate all collected extent bounds/non-overlap and the exact selected
+  key/length. Preserve all unrelated entries and sorted order. Existing leaf
+  capacity bounds the temporary arrays. No mutation before validation finishes.
+- The normal B-tree API preflights one deferred-retirement slot and owns one
+  different COW scratch root. A valid serialized writable mounted allocator
+  has a reserve slot for current-root retirement after scratch consumption;
+  older roots retain ordinary deferred retirement. No owned-root transfer API.
+- Read/allocation/write/headroom errors before root swap leave the selected
+  extent and its accounting unchanged, apart from existing reserve-refill
+  effects before selection. Never fall back after a mutation or I/O error.
+- Detect actual root change independently of the API return code. Once changed,
+  subtract the requested count and advance roving exactly once, including a
+  post-swap retirement error. Never pretend that interval remains free.
+- Wire the mounted owner's read-only and recovery state into the allocator.
+  Allocation on a read-only owner must fail before refill or any write. If
+  retirement/abort cleanup makes ownership uncertain, latch the owner's
+  recovery error so a later raw extent call, sync or mutation cannot erase it
+  through a B-tree operation's local error reset. Standalone callers must
+  abandon/recover on the documented ownership error, not publish that state.
+- Tests must establish one-write partial allocation, exact first-fit placement,
+  unrelated entries/accounting, current/older retirement, scratch/read/partial-
+  write/headroom errors, after-swap failure latching, read-only rejection,
+  exact-fit/deeper fallbacks, full mounted data/remount/fsck and convergence.
+- Require complete normal/sanitizer/check gates, independent review and fresh
+  normal-handler comparisons in both orders. An estimated 128 fewer Free-Tree
+  writes is an upper bound, not a latency promise or overall 5× acceptance.
+
 ## Qualification gates
 
 - Allocator and B-tree tests: adjacency, gaps, overlap, duplicate input,
