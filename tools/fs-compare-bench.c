@@ -264,6 +264,22 @@ static void emit_deep_counter_rows(const char *phase,
     prefixed_metric(phase, "SEALED_COMMITS", snapshot->sealed_commits);
     prefixed_metric(phase, "SEALED_METADATA_FENCES",
                     snapshot->sealed_metadata_fences);
+    prefixed_metric(phase, "BTREE_MALLOC_CALLS", snapshot->btree_malloc_calls);
+    prefixed_metric(phase, "BTREE_MALLOC_SAMPLES", snapshot->btree_malloc_samples);
+    prefixed_metric(phase, "BTREE_MALLOC_SAMPLE_TICKS",
+                    (unsigned long long)snapshot->btree_malloc_sample_ticks);
+    prefixed_metric(phase, "BTREE_FREE_CALLS", snapshot->btree_free_calls);
+    prefixed_metric(phase, "BTREE_FREE_SAMPLES", snapshot->btree_free_samples);
+    prefixed_metric(phase, "BTREE_FREE_SAMPLE_TICKS",
+                    (unsigned long long)snapshot->btree_free_sample_ticks);
+    prefixed_metric(phase, "IFACE_ALLOC_CALLS", snapshot->iface_alloc_calls);
+    prefixed_metric(phase, "IFACE_ALLOC_SAMPLES", snapshot->iface_alloc_samples);
+    prefixed_metric(phase, "IFACE_ALLOC_SAMPLE_TICKS",
+                    (unsigned long long)snapshot->iface_alloc_sample_ticks);
+    prefixed_metric(phase, "FREESPACE_ALLOC_SAMPLES",
+                    snapshot->freespace_alloc_samples);
+    prefixed_metric(phase, "FREESPACE_ALLOC_SAMPLE_TICKS",
+                    (unsigned long long)snapshot->freespace_alloc_sample_ticks);
 }
 
 static BOOL make_path(char *path, ULONG capacity, const char *drive, const char *suffix)
@@ -444,7 +460,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     handle = CreateDir(path);
     if (!handle) return fail("mkdir");
     UnLock(handle);
-    if (deep_mode) emit("FS_DEEP_COMPARE\t9\nDRIVE\t");
+    if (deep_mode) emit("FS_DEEP_COMPARE\t10\nDRIVE\t");
     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
     emit(drive);
     emit("\n");
@@ -469,6 +485,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     if (probe_enabled) {
         metric("CLOCK_HZ", clock_hz);
         metric("CRC_SAMPLE_STRIDE", BFS_PERF_CRC_SAMPLE_STRIDE);
+        metric("CPU_SAMPLE_STRIDE", BFS_PERF_CPU_SAMPLE_STRIDE);
     }
     emit("PASS\t1\n");
     return 0;

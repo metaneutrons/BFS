@@ -282,6 +282,58 @@ class BenchVerifierTests(unittest.TestCase):
                     updates[phase + "_" + metric] = 0
         self.set_metrics(bfs, updates)
 
+    def upgrade_deep_compare_to_v10(self, zero_cpu_counters=False):
+        self.upgrade_deep_compare_to_v9()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii").splitlines()
+        self.assertEqual(original[0], "FS_DEEP_COMPARE\t9")
+        phases = (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        )
+        counter_names = (
+            "BTREE_MALLOC_CALLS", "BTREE_MALLOC_SAMPLES",
+            "BTREE_MALLOC_SAMPLE_TICKS", "BTREE_FREE_CALLS",
+            "BTREE_FREE_SAMPLES", "BTREE_FREE_SAMPLE_TICKS",
+            "IFACE_ALLOC_CALLS", "IFACE_ALLOC_SAMPLES",
+            "IFACE_ALLOC_SAMPLE_TICKS", "FREESPACE_ALLOC_SAMPLES",
+            "FREESPACE_ALLOC_SAMPLE_TICKS",
+        )
+        phase_values = {
+            phase: {
+                name: int(value)
+                for row in original
+                if row.startswith(phase + "_") and "\t" in row
+                for name, value in [row.split("\t")]
+            }
+            for phase in phases
+        }
+        upgraded = ["FS_DEEP_COMPARE\t10"]
+        for line in original[1:]:
+            upgraded.append(line)
+            if "_SEALED_METADATA_FENCES\t" not in line:
+                continue
+            phase = line.split("\t", 1)[0][:-len("_SEALED_METADATA_FENCES")]
+            freespace_samples = phase_values[phase][phase + "_FREESPACE_ALLOCS"]
+            if zero_cpu_counters:
+                values = (0, 0, 0, 0, 0, 0, 0, 0, 0,
+                          freespace_samples, 0)
+            else:
+                values = (128, 128, 901, 96, 96, 702, 33, 33, 403,
+                          freespace_samples, 1 if freespace_samples else 0)
+            upgraded.extend(
+                f"{phase}_{name}\t{value}"
+                for name, value in zip(counter_names, values)
+            )
+        upgraded.insert(upgraded.index("PASS\t1"), "CPU_SAMPLE_STRIDE\t1")
+        bfs.write_text("\n".join(upgraded) + "\n", encoding="ascii")
+
+        pfs3 = self.results / "pfs3.deep-compare.tsv"
+        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
+        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t9")
+        pfs_lines[0] = "FS_DEEP_COMPARE\t10"
+        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
+
     def upgrade_raw_deep_compare_v8_to_v9(self):
         source = ROOT / "docs/qualification/evidence/bfs-sealed-settlement-2026-10-01/baseline-deep"
         for name in (
@@ -431,6 +483,22 @@ class BenchVerifierTests(unittest.TestCase):
         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
         result = self.verify("deep-compare")
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_real_cpu_attribution_and_control_evidence_passes(self):
+        evidence = ROOT / "docs/qualification/evidence/bfs-cpu-attribution-2026-10-01"
+        for run in (
+            "cpu-control-bfs-first", "cpu-control-pfs3-first",
+            "cpu-attribution-pfs3-first", "cpu-attribution-bfs-first",
+            "cpu-attribution-repeat-bfs-first", "cpu-attribution-repeat-pfs3-first",
+        ):
+            with self.subTest(run=run):
+                for name in (
+                    "complete.txt", "info-after-format.txt",
+                    "bfs.deep-compare.tsv", "pfs3.deep-compare.tsv",
+                ):
+                    shutil.copyfile(evidence / run / name, self.results / name)
+                result = self.verify("deep-compare")
+                self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_deep_compare_v5_bucket_sums_pass_for_all_phases(self):
         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
@@ -689,6 +757,193 @@ class BenchVerifierTests(unittest.TestCase):
         self.assertEqual(upgraded_pfs3, ["FS_DEEP_COMPARE\t9", *original_pfs3[1:]])
         result = self.verify("deep-compare")
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v10_accepts_cpu_probe_metrics(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v10()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        self.assertIn("CPU_SAMPLE_STRIDE\t1", contents)
+        for phase in (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        ):
+            for category, calls in (
+                ("BTREE_MALLOC", 128), ("BTREE_FREE", 96),
+                ("IFACE_ALLOC", 33),
+            ):
+                self.assertEqual(
+                    self.metric_value(contents, phase + "_" + category + "_CALLS"),
+                    calls,
+                )
+                self.assertEqual(
+                    self.metric_value(contents, phase + "_" + category + "_SAMPLES"),
+                    calls,
+                )
+            self.assertEqual(
+                self.metric_value(contents, phase + "_FREESPACE_ALLOC_SAMPLES"),
+                self.metric_value(contents, phase + "_FREESPACE_ALLOCS"),
+            )
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v10_accepts_v9_upgrade_with_compatible_zero_counters(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v10(zero_cpu_counters=True)
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        for phase in (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        ):
+            for metric in (
+                "BTREE_MALLOC_CALLS", "BTREE_MALLOC_SAMPLES",
+                "BTREE_MALLOC_SAMPLE_TICKS", "BTREE_FREE_CALLS",
+                "BTREE_FREE_SAMPLES", "BTREE_FREE_SAMPLE_TICKS",
+                "IFACE_ALLOC_CALLS", "IFACE_ALLOC_SAMPLES",
+                "IFACE_ALLOC_SAMPLE_TICKS", "FREESPACE_ALLOC_SAMPLE_TICKS",
+            ):
+                self.assertEqual(self.metric_value(contents, phase + "_" + metric), 0)
+            self.assertEqual(
+                self.metric_value(contents, phase + "_FREESPACE_ALLOC_SAMPLES"),
+                self.metric_value(contents, phase + "_FREESPACE_ALLOCS"),
+            )
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v10_rejects_missing_malformed_and_duplicate_cpu_rows(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v10()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        target = "SMALL_CREATE_40_BTREE_MALLOC_CALLS\t128"
+        missing_row = "SMALL_CREATE_40_BTREE_FREE_SAMPLE_TICKS\t702"
+        malformed_row = "SMALL_CREATE_40_IFACE_ALLOC_SAMPLE_TICKS\t403"
+        cases = (
+            ("missing CPU counter", original.replace(missing_row + "\n", "", 1)),
+            ("malformed CPU counter", original.replace(malformed_row,
+                                                        malformed_row.rsplit("\t", 1)[0] + "\tbad", 1)),
+            ("duplicate CPU counter", original.replace(
+                "PASS\t1\n", target + "\nPASS\t1\n", 1,
+            )),
+        )
+        for label, mutated in cases:
+            with self.subTest(counter=label):
+                bfs.write_text(mutated, encoding="ascii")
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v10_rejects_cpu_sample_mismatches(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v10()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        freespace_samples = self.metric_value(
+            original, "SMALL_CREATE_40_FREESPACE_ALLOC_SAMPLES",
+        )
+        self.assertGreater(freespace_samples, 0)
+        cases = (
+            ("BTREE_MALLOC samples", {
+                "SMALL_CREATE_40_BTREE_MALLOC_SAMPLES": 127,
+            }),
+            ("BTREE_FREE samples", {
+                "SMALL_CREATE_40_BTREE_FREE_SAMPLES": 95,
+            }),
+            ("IFACE_ALLOC samples", {
+                "SMALL_CREATE_40_IFACE_ALLOC_SAMPLES": 32,
+            }),
+            ("FREESPACE_ALLOC samples", {
+                "SMALL_CREATE_40_FREESPACE_ALLOC_SAMPLES": freespace_samples - 1,
+            }),
+            ("ticks without a sample", {
+                "SMALL_CREATE_40_BTREE_MALLOC_CALLS": 0,
+                "SMALL_CREATE_40_BTREE_MALLOC_SAMPLES": 0,
+                "SMALL_CREATE_40_BTREE_MALLOC_SAMPLE_TICKS": 1,
+            }),
+            ("BTREE_FREE ticks without a sample", {
+                "SMALL_CREATE_40_BTREE_FREE_CALLS": 0,
+                "SMALL_CREATE_40_BTREE_FREE_SAMPLES": 0,
+                "SMALL_CREATE_40_BTREE_FREE_SAMPLE_TICKS": 1,
+            }),
+            ("IFACE_ALLOC ticks without a sample", {
+                "SMALL_CREATE_40_IFACE_ALLOC_CALLS": 0,
+                "SMALL_CREATE_40_IFACE_ALLOC_SAMPLES": 0,
+                "SMALL_CREATE_40_IFACE_ALLOC_SAMPLE_TICKS": 1,
+            }),
+            ("FREESPACE_ALLOC ticks without a sample", {
+                "SMALL_CREATE_40_FREESPACE_ALLOCS": 0,
+                "SMALL_CREATE_40_FREESPACE_ALLOC_SAMPLES": 0,
+                "SMALL_CREATE_40_FREESPACE_ALLOC_SAMPLE_TICKS": 1,
+            }),
+            ("CPU sample stride", {
+                "CPU_SAMPLE_STRIDE": 2,
+            }),
+        )
+        for label, updates in cases:
+            with self.subTest(metric=label):
+                bfs.write_text(original, encoding="ascii")
+                self.set_metrics(bfs, updates)
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v10_rejects_reserve_batch_and_sealed_accounting_errors(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v10()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        reserve_writes = self.metric_value(
+            original, phase + "_FREE_TREE_RESERVE_RETURN_NODE_WRITES",
+        )
+        run_writes = self.metric_value(
+            original, phase + "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES",
+        )
+        batch_writes = self.metric_value(
+            original, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
+        )
+        txn_commits = self.metric_value(original, phase + "_TXN_COMMITS")
+        passes = self.metric_value(
+            original, phase + "_POST_PUBLISH_RECLAIM_PASSES",
+        )
+        return_calls = self.metric_value(
+            original, phase + "_FREE_TREE_RESERVE_RETURN_CALLS",
+        )
+        sealed_commits = self.metric_value(
+            original, phase + "_SEALED_COMMITS",
+        )
+        publications = self.metric_value(
+            original, phase + "_SUPERBLOCK_PUBLICATIONS",
+        )
+        metadata_fences = self.metric_value(
+            original, phase + "_SEALED_METADATA_FENCES",
+        )
+        batch_calls = self.metric_value(
+            original, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+        )
+        bio_updates = self.metric_value(original, phase + "_BIO_UPDATES")
+        self.assertEqual(run_writes + batch_writes, reserve_writes)
+        cases = (
+            ("run and batch writes do not sum", {
+                phase + "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES": run_writes + 1,
+            }),
+            ("sealed return identity", {
+                phase + "_FREE_TREE_RESERVE_RETURN_CALLS": return_calls + 1,
+                **self.skip_count_updates(phase, return_calls + 1, batch_calls),
+            }),
+            ("sealed publication identity", {
+                phase + "_SUPERBLOCK_PUBLICATIONS": publications + 1,
+                phase + "_BIO_UPDATES": bio_updates + 1,
+            }),
+            ("sealed fence identity", {
+                phase + "_SEALED_METADATA_FENCES": metadata_fences + 1,
+                phase + "_BIO_UPDATES": bio_updates + 1,
+            }),
+        )
+        self.assertEqual(return_calls + sealed_commits, txn_commits + passes)
+        self.assertEqual(publications, txn_commits + passes)
+        for label, updates in cases:
+            with self.subTest(invariant=label):
+                bfs.write_text(original, encoding="ascii")
+                self.set_metrics(bfs, updates)
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
 
     def test_deep_compare_v9_accepts_mixed_sealed_and_legacy_commits(self):
         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")

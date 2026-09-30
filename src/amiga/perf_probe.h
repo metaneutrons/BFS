@@ -4,12 +4,14 @@
 
 #include <exec/types.h>
 #include <devices/timer.h>
+#include <stddef.h>
 #include <stdint.h>
 
 #define BFS_ACTION_PERF_RESET 3010
 #define BFS_ACTION_PERF_READ  3011
-#define BFS_PERF_PROBE_VERSION 10
+#define BFS_PERF_PROBE_VERSION 11
 #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
+#define BFS_PERF_CPU_SAMPLE_STRIDE 1u
 
 typedef struct bfs_perf_probe_snapshot {
     ULONG version;
@@ -75,6 +77,23 @@ typedef struct bfs_perf_probe_snapshot {
     ULONG free_tree_reserve_return_skip_capacity;
     ULONG sealed_commits;
     ULONG sealed_metadata_fences;
+    /* Direct btree.c malloc/free requests, excluding unrelated core heap use. */
+    ULONG btree_malloc_calls;
+    ULONG btree_malloc_samples;
+    // cppcheck-suppress unusedStructMember
+    uint64_t btree_malloc_sample_ticks;
+    ULONG btree_free_calls;
+    ULONG btree_free_samples;
+    // cppcheck-suppress unusedStructMember
+    uint64_t btree_free_sample_ticks;
+    /* Interface allocation requests made outside the recursive in_alloc path. */
+    ULONG iface_alloc_calls;
+    ULONG iface_alloc_samples;
+    // cppcheck-suppress unusedStructMember
+    uint64_t iface_alloc_sample_ticks;
+    ULONG freespace_alloc_samples;
+    // cppcheck-suppress unusedStructMember
+    uint64_t freespace_alloc_sample_ticks;
 } bfs_perf_probe_snapshot_t;
 
 #ifdef BFS_PERF_PROBE
@@ -106,6 +125,8 @@ void bfs_perf_probe_free_tree_phase_leave(ULONG previous_phase);
 void bfs_perf_probe_reserve_return_call(void);
 void bfs_perf_probe_reserve_return_run(ULONG blocks, ULONG node_writes);
 void bfs_perf_probe_reserve_return_batch(ULONG blocks, ULONG node_writes);
+void *bfs_perf_probe_btree_malloc(size_t size);
+void bfs_perf_probe_btree_free(void *ptr);
 void bfs_perf_probe_begin(struct EClockVal *start);
 uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start);
 void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,

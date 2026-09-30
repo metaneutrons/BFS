@@ -7,6 +7,8 @@ mode=${2:-compare}
 header_version=1
 fixed_metric_name=
 fixed_metric_value=
+fixed_metric_name2=
+fixed_metric_value2=
 case "$mode" in
     compare)
         marker_text=BFS-PFS3-COMPLETE
@@ -60,6 +62,7 @@ case "$mode" in
         deep_compare_counters_v7=("${deep_compare_counters_v6[@]}" FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES FREE_TREE_RESERVE_RETURN_BATCH_CALLS FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES)
         deep_compare_counters_v8=("${deep_compare_counters_v7[@]}" FREE_TREE_RESERVE_RETURN_SKIP_SHAPE FREE_TREE_RESERVE_RETURN_SKIP_SMALL FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY)
         deep_compare_counters_v9=("${deep_compare_counters_v8[@]}" SEALED_COMMITS SEALED_METADATA_FENCES)
+        deep_compare_counters_v10=("${deep_compare_counters_v9[@]}" BTREE_MALLOC_CALLS BTREE_MALLOC_SAMPLES BTREE_MALLOC_SAMPLE_TICKS BTREE_FREE_CALLS BTREE_FREE_SAMPLES BTREE_FREE_SAMPLE_TICKS IFACE_ALLOC_CALLS IFACE_ALLOC_SAMPLES IFACE_ALLOC_SAMPLE_TICKS FREESPACE_ALLOC_SAMPLES FREESPACE_ALLOC_SAMPLE_TICKS)
         deep_compare_bfs_metrics=
         deep_compare_pfs3_metrics=
         positive_metric_names=
@@ -98,7 +101,7 @@ for filesystem in "${filesystems[@]}"; do
             exit 1
         fi
         if [[ "$filesystem" == bfs ]]; then
-            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 && "$observed_version" != 7 && "$observed_version" != 8 && "$observed_version" != 9 ]]; then
+            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 && "$observed_version" != 7 && "$observed_version" != 8 && "$observed_version" != 9 && "$observed_version" != 10 ]]; then
                 printf 'ERROR: unsupported deep-compare schema version %s\n' "$observed_version" >&2
                 exit 1
             fi
@@ -113,8 +116,10 @@ for filesystem in "${filesystems[@]}"; do
                 deep_compare_counters=("${deep_compare_counters_v7[@]}")
             elif [[ "$header_version" == 8 ]]; then
                 deep_compare_counters=("${deep_compare_counters_v8[@]}")
-            else
+            elif [[ "$header_version" == 9 ]]; then
                 deep_compare_counters=("${deep_compare_counters_v9[@]}")
+            else
+                deep_compare_counters=("${deep_compare_counters_v10[@]}")
             fi
             deep_compare_bfs_metrics=
             for deep_phase in "${deep_compare_phases[@]}"; do
@@ -126,6 +131,12 @@ for filesystem in "${filesystems[@]}"; do
             done
             deep_compare_bfs_metrics+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
             positive_metric_names+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
+            if [[ "$header_version" == 10 ]]; then
+                deep_compare_bfs_metrics+=" CPU_SAMPLE_STRIDE"
+                positive_metric_names+=" CPU_SAMPLE_STRIDE"
+                fixed_metric_name2=CPU_SAMPLE_STRIDE
+                fixed_metric_value2=1
+            fi
         elif [[ "$observed_version" != "$header_version" ]]; then
             printf 'ERROR: mixed deep-compare schema versions\n' >&2
             exit 1
@@ -142,7 +153,7 @@ for filesystem in "${filesystems[@]}"; do
     else
         positive_metric_names=
     fi
-    awk -F '\t' -v drive="$drive" -v header="$header" -v header_version="$header_version" -v metric_names="$metrics" -v metric_count="$metric_count" -v value_pattern="$value_pattern" -v positive_metric_names="${positive_metric_names:-}" -v fixed_metric_name="$fixed_metric_name" -v fixed_metric_value="$fixed_metric_value" -v phases="${deep_compare_phases[*]:-}" '
+    awk -F '\t' -v drive="$drive" -v header="$header" -v header_version="$header_version" -v metric_names="$metrics" -v metric_count="$metric_count" -v value_pattern="$value_pattern" -v positive_metric_names="${positive_metric_names:-}" -v fixed_metric_name="$fixed_metric_name" -v fixed_metric_value="$fixed_metric_value" -v fixed_metric_name2="$fixed_metric_name2" -v fixed_metric_value2="$fixed_metric_value2" -v phases="${deep_compare_phases[*]:-}" '
         BEGIN {
             split(metric_names, names, " ")
             positive_count = split(positive_metric_names, positive_names, " ")
@@ -155,13 +166,14 @@ for filesystem in "${filesystems[@]}"; do
             for (i = 1; i <= positive_count; i++)
                 if ($1 == positive_names[i] && $2 !~ /^[1-9][0-9]*$/) exit 1
             if ($1 == fixed_metric_name && $2 != fixed_metric_value) exit 1
+            if ($1 == fixed_metric_name2 && $2 != fixed_metric_value2) exit 1
             next
         }
         NR == metric_count + 3 { if (NF != 2 || $1 != "PASS" || $2 != "1") exit 1; next }
         { exit 1 }
         END {
             if (NR != metric_count + 3) exit 1
-            if ((header_version == 5 || header_version == 6 || header_version == 7 || header_version == 8 || header_version == 9) && drive == "DH1:") {
+            if ((header_version == 5 || header_version == 6 || header_version == 7 || header_version == 8 || header_version == 9 || header_version == 10) && drive == "DH1:") {
                 phase_count = split(phases, phase_names, " ")
                 for (phase_index = 1; phase_index <= phase_count; phase_index++) {
                     phase = phase_names[phase_index]
@@ -169,7 +181,7 @@ for filesystem in "${filesystems[@]}"; do
                     if (bucket_sum != metric_values[phase "_FREE_TREE_NODE_WRITES"]) exit 1
                 }
             }
-            if ((header_version == 6 || header_version == 7 || header_version == 8 || header_version == 9) && drive == "DH1:") {
+            if ((header_version == 6 || header_version == 7 || header_version == 8 || header_version == 9 || header_version == 10) && drive == "DH1:") {
                 for (phase_index = 1; phase_index <= phase_count; phase_index++) {
                     phase = phase_names[phase_index]
                     runs = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUNS"]
@@ -181,7 +193,7 @@ for filesystem in "${filesystems[@]}"; do
                     max_run = metric_values[phase "_FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS"]
                     max_run_writes = metric_values[phase "_FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN"]
                     reserve_writes = metric_values[phase "_FREE_TREE_RESERVE_RETURN_NODE_WRITES"]
-                    if (header_version == 7 || header_version == 8 || header_version == 9) {
+                    if (header_version == 7 || header_version == 8 || header_version == 9 || header_version == 10) {
                         run_node_writes = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES"]
                         batch_calls = metric_values[phase "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS"]
                         batch_blocks = metric_values[phase "_FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS"]
@@ -207,21 +219,21 @@ for filesystem in "${filesystems[@]}"; do
                         if (max_run >= 8 && eight_plus == 0) exit 1
                         if (max_run_writes > reserve_writes) exit 1
                     }
-                    if (header_version == 7 || header_version == 8 || header_version == 9) {
+                    if (header_version == 7 || header_version == 8 || header_version == 9 || header_version == 10) {
                         if (run_node_writes + batch_node_writes != reserve_writes) exit 1
                         if (runs == 0 && run_node_writes != 0) exit 1
                         if (max_run_writes > run_node_writes) exit 1
                         if (batch_calls > return_calls || batch_blocks < batch_calls) exit 1
                         if (batch_calls == 0 && (batch_blocks != 0 || batch_node_writes != 0)) exit 1
                     }
-                    if (header_version == 8 || header_version == 9) {
+                    if (header_version == 8 || header_version == 9 || header_version == 10) {
                         skip_shape = metric_values[phase "_FREE_TREE_RESERVE_RETURN_SKIP_SHAPE"]
                         skip_small = metric_values[phase "_FREE_TREE_RESERVE_RETURN_SKIP_SMALL"]
                         skip_emergency = metric_values[phase "_FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY"]
                         skip_capacity = metric_values[phase "_FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY"]
                         if (batch_calls + skip_shape + skip_small + skip_emergency + skip_capacity != return_calls) exit 1
                     }
-                    if (header_version == 9) {
+                    if (header_version == 9 || header_version == 10) {
                         sealed_commits = metric_values[phase "_SEALED_COMMITS"]
                         metadata_fences = metric_values[phase "_SEALED_METADATA_FENCES"]
                         bio_updates = metric_values[phase "_BIO_UPDATES"]
@@ -236,6 +248,29 @@ for filesystem in "${filesystems[@]}"; do
                     if (passes > txn_commits * 256 || max_passes > 256 || max_passes > passes) exit 1
                     if ((passes == 0 && max_passes != 0) || (passes > 0 && max_passes == 0)) exit 1
                     if (publications != txn_commits + passes) exit 1
+                    if (header_version == 10) {
+                        cpu_stride = metric_values["CPU_SAMPLE_STRIDE"]
+                        malloc_calls = metric_values[phase "_BTREE_MALLOC_CALLS"]
+                        malloc_samples = metric_values[phase "_BTREE_MALLOC_SAMPLES"]
+                        malloc_ticks = metric_values[phase "_BTREE_MALLOC_SAMPLE_TICKS"]
+                        free_calls = metric_values[phase "_BTREE_FREE_CALLS"]
+                        free_samples = metric_values[phase "_BTREE_FREE_SAMPLES"]
+                        free_ticks = metric_values[phase "_BTREE_FREE_SAMPLE_TICKS"]
+                        iface_calls = metric_values[phase "_IFACE_ALLOC_CALLS"]
+                        iface_samples = metric_values[phase "_IFACE_ALLOC_SAMPLES"]
+                        iface_ticks = metric_values[phase "_IFACE_ALLOC_SAMPLE_TICKS"]
+                        freespace_calls = metric_values[phase "_FREESPACE_ALLOCS"]
+                        freespace_samples = metric_values[phase "_FREESPACE_ALLOC_SAMPLES"]
+                        freespace_ticks = metric_values[phase "_FREESPACE_ALLOC_SAMPLE_TICKS"]
+                        if (malloc_samples != int(malloc_calls / cpu_stride) ||
+                            free_samples != int(free_calls / cpu_stride) ||
+                            iface_samples != int(iface_calls / cpu_stride) ||
+                            freespace_samples != int(freespace_calls / cpu_stride)) exit 1
+                        if ((malloc_samples == 0 && malloc_ticks != 0) ||
+                            (free_samples == 0 && free_ticks != 0) ||
+                            (iface_samples == 0 && iface_ticks != 0) ||
+                            (freespace_samples == 0 && freespace_ticks != 0)) exit 1
+                    }
                 }
             }
         }

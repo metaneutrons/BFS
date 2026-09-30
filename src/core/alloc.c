@@ -167,7 +167,11 @@ static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk)
     return BFS_OK;
 }
 
+#ifdef BFS_PERF_PROBE
+static bfs_blk_t iface_alloc_work(bfs_allocator_t *a)
+#else
 static bfs_blk_t iface_alloc(bfs_allocator_t *a)
+#endif
 {
     if (!a || !a->ctx) return BFS_BLK_NULL;
     bfs_freespace_t *fs = (bfs_freespace_t *)a->ctx;
@@ -239,6 +243,25 @@ no_space:
     }
     return bfs_freespace_alloc(fs, 1);
 }
+
+#ifdef BFS_PERF_PROBE
+/* Recursive reserve/emergency callbacks are part of the outer allocator
+ * interval, not separate samples. Ordinary metadata requests are inclusive
+ * of their FreeTree/B-tree/heap/device work, including failures. */
+static bfs_blk_t iface_alloc(bfs_allocator_t *a)
+{
+    if (!a || !a->ctx || ((bfs_freespace_t *)a->ctx)->in_alloc)
+        return iface_alloc_work(a);
+    struct EClockVal started = {0};
+    bfs_perf_probe_counters.iface_alloc_calls++;
+    bfs_perf_probe_begin(&started);
+    bfs_blk_t result = iface_alloc_work(a);
+    uint64_t ticks = bfs_perf_probe_elapsed(&started);
+    bfs_perf_probe_counters.iface_alloc_samples++;
+    bfs_perf_probe_counters.iface_alloc_sample_ticks += ticks;
+    return result;
+}
+#endif
 
 static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
 {
@@ -452,11 +475,12 @@ static bfs_err_t alloc_partial_root_leaf(bfs_freespace_t *fs,
                                           bfs_blk_t start, uint32_t length,
                                           uint32_t count);
 
-bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
-{
 #ifdef BFS_PERF_PROBE
-    bfs_perf_probe_counters.freespace_alloc_calls++;
+static bfs_blk_t freespace_alloc_work(bfs_freespace_t *fs, uint32_t count)
+#else
+bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
 #endif
+{
     if (!fs || !fs->tree.bio || count == 0) return BFS_BLK_NULL;
     fs->last_error = BFS_OK;
     bfs_err_t owner_err = allocator_owner_error(fs);
@@ -623,6 +647,22 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
 
     return result;
 }
+
+#ifdef BFS_PERF_PROBE
+/* Public extent withdrawals, including invalid/error returns. A metadata
+ * iface sample may contain this interval; these totals are not additive. */
+bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_counters.freespace_alloc_calls++;
+    bfs_perf_probe_begin(&started);
+    bfs_blk_t result = freespace_alloc_work(fs, count);
+    uint64_t ticks = bfs_perf_probe_elapsed(&started);
+    bfs_perf_probe_counters.freespace_alloc_samples++;
+    bfs_perf_probe_counters.freespace_alloc_sample_ticks += ticks;
+    return result;
+}
+#endif
 
 /* ── Free ──────────────────────────────────────────────────── */
 

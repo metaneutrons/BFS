@@ -5,6 +5,7 @@
 #include <proto/exec.h>
 #include <proto/timer.h>
 #include <string.h>
+#include <stdlib.h>
 
 #include "perf_probe.h"
 
@@ -125,6 +126,33 @@ uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start)
     (void)ReadEClock(&end);
     return (((uint64_t)end.ev_hi << 32) | end.ev_lo) -
            (((uint64_t)start->ev_hi << 32) | start->ev_lo);
+}
+
+/* Direct B-tree buffer heap calls only. These diagnostic intervals include
+ * the underlying allocator, but not caller-side buffer copies/initialization.
+ * They may lie inside the inclusive allocation scopes; never add them to
+ * those scopes as if they were disjoint elapsed time. */
+void *bfs_perf_probe_btree_malloc(size_t size)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_counters.btree_malloc_calls++;
+    bfs_perf_probe_begin(&started);
+    void *result = malloc(size);
+    uint64_t ticks = bfs_perf_probe_elapsed(&started);
+    bfs_perf_probe_counters.btree_malloc_samples++;
+    bfs_perf_probe_counters.btree_malloc_sample_ticks += ticks;
+    return result;
+}
+
+void bfs_perf_probe_btree_free(void *pointer)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_counters.btree_free_calls++;
+    bfs_perf_probe_begin(&started);
+    free(pointer);
+    uint64_t ticks = bfs_perf_probe_elapsed(&started);
+    bfs_perf_probe_counters.btree_free_samples++;
+    bfs_perf_probe_counters.btree_free_sample_ticks += ticks;
 }
 
 void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,

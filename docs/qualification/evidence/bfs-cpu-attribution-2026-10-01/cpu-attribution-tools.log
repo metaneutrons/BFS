@@ -1,0 +1,11 @@
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -noixemul -m68020 -O2 \
+		-Isrc/amiga \
+		-I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include \
+		-B/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/ \
+		-L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib \
+		-o build/amiga-cpu-attribution/fs-compare-bench tools/fs-compare-bench.c -lamiga
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -noixemul -m68020 -O2 \
+		-Isrc/amiga -I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include \
+		-B/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/ \
+		-L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib \
+		-o build/amiga-cpu-attribution/fs-profile-bench tools/fs-profile-bench.c -lamiga

@@ -28,6 +28,10 @@
 #ifdef BFS_PERF_PROBE
 #include "perf_probe.h"
 #include "bfs_fs.h"
+/* Instrument only this translation unit's direct heap calls. Production
+ * preprocessing and the shared allocation/ownership logic are unchanged. */
+#define malloc(size) bfs_perf_probe_btree_malloc(size)
+#define free(pointer) bfs_perf_probe_btree_free(pointer)
 #endif
 
 #define MAX_TREE_DEPTH BFS_BTREE_MAX_DEPTH
