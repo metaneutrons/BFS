@@ -262,7 +262,10 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
                 post_publish_reclaim_passes;
 #endif
 
-        err = bfs_freespace_return_reserve(&fs->freespace);
+        /* Mixed ordinary/emergency batches are useful before publication,
+         * but can perpetually create another retired ordinary root here.
+         * Keep the established settlement path for this fixed-point tail. */
+        err = bfs_freespace_settle_reserve(&fs->freespace);
         if (err != BFS_OK) return err;
 
         /* Final commit of free tree changes */

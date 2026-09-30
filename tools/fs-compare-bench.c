@@ -253,6 +253,14 @@ static void emit_deep_counter_rows(const char *phase,
                     snapshot->free_tree_reserve_return_batch_blocks);
     prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
                     snapshot->free_tree_reserve_return_batch_node_writes);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
+                    snapshot->free_tree_reserve_return_skip_shape);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
+                    snapshot->free_tree_reserve_return_skip_small);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
+                    snapshot->free_tree_reserve_return_skip_emergency);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
+                    snapshot->free_tree_reserve_return_skip_capacity);
 }
 
 static BOOL make_path(char *path, ULONG capacity, const char *drive, const char *suffix)
@@ -433,7 +441,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     handle = CreateDir(path);
     if (!handle) return fail("mkdir");
     UnLock(handle);
-    if (deep_mode) emit("FS_DEEP_COMPARE\t7\nDRIVE\t");
+    if (deep_mode) emit("FS_DEEP_COMPARE\t8\nDRIVE\t");
     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
     emit(drive);
     emit("\n");

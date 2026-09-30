@@ -69,4 +69,8 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs);
 /* Return unused reserve blocks to the free tree (called at transaction commit). */
 bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs);
 
+/* Post-publication settlement retains the established emergency-slot return
+ * path: a mixed batch can keep retiring one ordinary root indefinitely. */
+bfs_err_t bfs_freespace_settle_reserve(bfs_freespace_t *fs);
+
 #endif /* BFS_ALLOC_H */

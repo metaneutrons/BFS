@@ -865,73 +865,136 @@ static bool reserve_block_is_emergency(const bfs_freespace_t *fs, bfs_blk_t blk)
     return false;
 }
 
+typedef struct {
+    bfs_blk_t original[BFS_ALLOC_RESERVE_SIZE];
+    bfs_blk_t retained[BFS_ALLOC_RESERVE_SIZE];
+    bfs_blk_t blocks[BFS_ALLOC_RESERVE_SIZE];
+    uint32_t original_count;
+    uint32_t retained_count;
+    uint32_t block_count;
+} reserve_leaf_batch_t;
+
 static bool prepare_reserve_leaf_batch(const bfs_freespace_t *fs,
-                                       bfs_blk_t *blocks)
+                                       reserve_leaf_batch_t *batch,
+                                       bool allow_mixed)
 {
-    for (uint32_t i = 0; i < fs->reserve_count; i++)
-        if (reserve_block_is_emergency(fs, fs->reserve[i])) return false;
-    for (uint32_t i = 0; i + 1 < fs->reserve_count; i++)
-        blocks[i] = fs->reserve[i];
-    for (uint32_t i = 1; i + 1 < fs->reserve_count; i++) {
-        bfs_blk_t value = blocks[i];
+    batch->original_count = fs->reserve_count;
+    memcpy(batch->original, fs->reserve,
+           batch->original_count * sizeof(*batch->original));
+    for (uint32_t i = 0; i < batch->original_count; i++) {
+        bfs_blk_t blk = batch->original[i];
+        if (reserve_block_is_emergency(fs, blk)) {
+            if (!allow_mixed) {
+#ifdef BFS_PERF_PROBE
+                bfs_perf_probe_counters.free_tree_reserve_return_skip_emergency++;
+#endif
+                return false;
+            }
+            batch->retained[batch->retained_count++] = blk;
+        } else
+            batch->blocks[batch->block_count++] = blk;
+    }
+    if (batch->block_count < 3) {
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_counters.free_tree_reserve_return_skip_emergency++;
+#endif
+        return false;
+    }
+    /* Emergency slots stay out of the Free-Tree. Keep one ordinary block
+     * behind them as the private root's COW scratch allocation. */
+    batch->retained[batch->retained_count++] =
+        batch->blocks[--batch->block_count];
+    for (uint32_t i = 1; i < batch->block_count; i++) {
+        bfs_blk_t value = batch->blocks[i];
         uint32_t j = i;
-        while (j > 0 && blocks[j - 1] > value) {
-            blocks[j] = blocks[j - 1];
+        while (j > 0 && batch->blocks[j - 1] > value) {
+            batch->blocks[j] = batch->blocks[j - 1];
             j--;
         }
-        blocks[j] = value;
+        batch->blocks[j] = value;
     }
     return true;
 }
 
-/* Return a height-one reserve with one private leaf replacement. Keep one
- * block outside the batch for the replacement root. Unsupported shapes fall
- * back before changing ownership; other errors abort the commit. */
-static bfs_err_t return_reserve_root_leaf_batch(bfs_freespace_t *fs)
+static bool reserve_leaf_batch_shape_available(const bfs_freespace_t *fs)
 {
-    if (fs->tree.height != 1 || fs->tree.root == BFS_BLK_NULL ||
-        fs->reserve_count < 3)
-        return BFS_OK;
+    if (fs->tree.height != 1 || fs->tree.root == BFS_BLK_NULL) {
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_counters.free_tree_reserve_return_skip_shape++;
+#endif
+        return false;
+    }
+    if (fs->reserve_count < 3) {
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_counters.free_tree_reserve_return_skip_small++;
+#endif
+        return false;
+    }
+    return true;
+}
 
-    uint32_t original_count = fs->reserve_count;
-    bfs_blk_t original[BFS_ALLOC_RESERVE_SIZE];
-    bfs_blk_t blocks[BFS_ALLOC_RESERVE_SIZE - 1];
-    memcpy(original, fs->reserve, original_count * sizeof(*original));
-    bfs_blk_t scratch = original[original_count - 1];
-    if (!prepare_reserve_leaf_batch(fs, blocks)) return BFS_OK;
-
-    fs->reserve[0] = scratch;
-    fs->reserve_count = 1;
-    bfs_blk_t old_root = fs->tree.root;
+static bfs_err_t apply_reserve_leaf_batch(bfs_freespace_t *fs,
+                                          const reserve_leaf_batch_t *batch)
+{
+    memcpy(fs->reserve, batch->retained,
+           batch->retained_count * sizeof(*batch->retained));
+    fs->reserve_count = batch->retained_count;
 #ifdef BFS_PERF_PROBE
     ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
         BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN);
     ULONG node_writes_before =
         bfs_perf_probe_counters.free_tree_reserve_return_node_writes;
 #endif
-    bfs_err_t err = bfs_freespace_free_sorted_blocks(fs, blocks,
-                                                      original_count - 1);
+    bfs_err_t err = bfs_freespace_free_sorted_blocks(fs, batch->blocks,
+                                                      batch->block_count);
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_free_tree_phase_leave(previous_phase);
     if (err == BFS_OK) {
         ULONG node_writes =
             bfs_perf_probe_counters.free_tree_reserve_return_node_writes -
             node_writes_before;
-        bfs_perf_probe_reserve_return_batch(original_count - 1, node_writes);
+        bfs_perf_probe_reserve_return_batch(batch->block_count, node_writes);
     }
 #endif
-    if (err == BFS_OK) return BFS_OK;
+    return err;
+}
+
+static bfs_err_t restore_failed_reserve_leaf_batch(bfs_freespace_t *fs,
+                                                   const reserve_leaf_batch_t *batch,
+                                                   bfs_blk_t old_root,
+                                                   bfs_err_t err)
+{
     /* A failed write leaves the old root intact and mutation_abort returns
      * the replacement block to the reserve. Do not conceal a partial swap. */
-    if (fs->tree.root != old_root || fs->reserve_count != 1 ||
-        fs->reserve[0] != scratch)
+    if (fs->tree.root != old_root || fs->reserve_count != batch->retained_count ||
+        memcmp(fs->reserve, batch->retained,
+               batch->retained_count * sizeof(*batch->retained)) != 0)
         return err == BFS_ERR_UNSUPPORTED ? BFS_ERR_CORRUPT : err;
-    memcpy(fs->reserve, original, original_count * sizeof(*original));
-    fs->reserve_count = original_count;
+    memcpy(fs->reserve, batch->original,
+           batch->original_count * sizeof(*batch->original));
+    fs->reserve_count = batch->original_count;
+#ifdef BFS_PERF_PROBE
+    if (err == BFS_ERR_UNSUPPORTED)
+        bfs_perf_probe_counters.free_tree_reserve_return_skip_capacity++;
+#endif
     return err == BFS_ERR_UNSUPPORTED ? BFS_OK : err;
 }
 
-bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
+/* Return ordinary reserve blocks with one private root-leaf replacement.
+ * Emergency-slot blocks retain their existing single-block return path. */
+static bfs_err_t return_reserve_root_leaf_batch(bfs_freespace_t *fs,
+                                                bool allow_mixed)
+{
+    if (!reserve_leaf_batch_shape_available(fs)) return BFS_OK;
+    reserve_leaf_batch_t batch = {0};
+    if (!prepare_reserve_leaf_batch(fs, &batch, allow_mixed)) return BFS_OK;
+    bfs_blk_t old_root = fs->tree.root;
+    bfs_err_t err = apply_reserve_leaf_batch(fs, &batch);
+    return err == BFS_OK ? BFS_OK
+        : restore_failed_reserve_leaf_batch(fs, &batch, old_root, err);
+}
+
+static bfs_err_t return_reserve(bfs_freespace_t *fs, bool allow_mixed)
 {
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_reserve_return_call();
@@ -940,7 +1003,7 @@ bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
         return BFS_ERR_INVAL;
     uint32_t saved_global_reserve = fs->global_reserve;
     fs->global_reserve = UINT32_MAX;
-    bfs_err_t batch_err = return_reserve_root_leaf_batch(fs);
+    bfs_err_t batch_err = return_reserve_root_leaf_batch(fs, allow_mixed);
     if (batch_err != BFS_OK) {
         fs->global_reserve = saved_global_reserve;
         fs->last_error = batch_err;
@@ -992,6 +1055,16 @@ bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
     }
     fs->global_reserve = saved_global_reserve;
     return BFS_OK;
+}
+
+bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
+{
+    return return_reserve(fs, true);
+}
+
+bfs_err_t bfs_freespace_settle_reserve(bfs_freespace_t *fs)
+{
+    return return_reserve(fs, false);
 }
 
 /* ── Accessor ──────────────────────────────────────────────── */

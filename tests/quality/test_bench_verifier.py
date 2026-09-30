@@ -164,6 +164,59 @@ class BenchVerifierTests(unittest.TestCase):
         pfs_lines[0] = "FS_DEEP_COMPARE\t7"
         pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
 
+    def upgrade_deep_compare_to_v8(self):
+        self.upgrade_deep_compare_to_v7()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii").splitlines()
+        self.assertEqual(original[0], "FS_DEEP_COMPARE\t7")
+        phases = (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        )
+        phase_values = {
+            phase: {
+                name: int(value)
+                for row in original
+                if row.startswith(phase + "_") and "\t" in row
+                for name, value in [row.split("\t")]
+            }
+            for phase in phases
+        }
+        skip_metrics = (
+            "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
+            "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
+            "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
+            "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
+        )
+        upgraded = ["FS_DEEP_COMPARE\t8"]
+        for line in original[1:]:
+            name, value = line.split("\t")
+            upgraded.append(line)
+            if not name.endswith("_FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES"):
+                continue
+            phase = name[:-len("_FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES")]
+            batch_calls = phase_values[phase][
+                phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS"
+            ]
+            return_calls = phase_values[phase][
+                phase + "_FREE_TREE_RESERVE_RETURN_CALLS"
+            ]
+            skipped_calls = return_calls - batch_calls
+            self.assertGreaterEqual(skipped_calls, 0)
+            skip_counts = [0] * len(skip_metrics)
+            for skip_index in range(skipped_calls):
+                skip_counts[(phases.index(phase) + skip_index) % len(skip_metrics)] += 1
+            upgraded.extend(
+                f"{phase}_{metric}\t{count}"
+                for metric, count in zip(skip_metrics, skip_counts)
+            )
+        bfs.write_text("\n".join(upgraded) + "\n", encoding="ascii")
+        pfs3 = self.results / "pfs3.deep-compare.tsv"
+        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
+        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t7")
+        pfs_lines[0] = "FS_DEEP_COMPARE\t8"
+        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
+
     def verify(self, mode):
         return subprocess.run(
             [str(VERIFIER), str(self.run_dir), mode],
@@ -314,6 +367,51 @@ class BenchVerifierTests(unittest.TestCase):
             with self.subTest(metric=old):
                 self.assertIn(old, original)
                 bfs.write_text(original.replace(old, new, 1), encoding="ascii")
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v8_accepts_reserve_return_classification(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v8()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        skip_metrics = (
+            "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
+            "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
+            "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
+            "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
+        )
+        self.assertTrue(all(
+            sum(self.metric_value(contents, phase + "_" + metric)
+                for phase in (
+                    "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+                    "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+                )) > 0
+            for metric in skip_metrics
+        ))
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v8_rejects_classification_and_write_sum_violations(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v8()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        skip_metric = phase + "_FREE_TREE_RESERVE_RETURN_SKIP_SHAPE"
+        return_metric = phase + "_FREE_TREE_RESERVE_RETURN_CALLS"
+        run_metric = phase + "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES"
+        cases = (
+            (skip_metric, self.metric_value(original, skip_metric) + 1),
+            (return_metric, self.metric_value(original, return_metric) + 1),
+            (run_metric, self.metric_value(original, run_metric) + 1),
+        )
+        for metric, changed_value in cases:
+            with self.subTest(metric=metric):
+                old_value = self.metric_value(original, metric)
+                mutated = original.replace(
+                    f"{metric}\t{old_value}", f"{metric}\t{changed_value}", 1,
+                )
+                bfs.write_text(mutated, encoding="ascii")
                 self.assertNotEqual(self.verify("deep-compare").returncode, 0)
 
     @staticmethod

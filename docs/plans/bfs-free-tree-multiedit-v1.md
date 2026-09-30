@@ -11,6 +11,14 @@ found over 96% singleton reserve-return runs in both small-file phases and
 roughly three post-publication reclaim passes per commit. A design must reduce
 this cycle without breaking its termination or old-root ownership rules.
 
+The [mixed-reserve increment](../qualification/bfs-mixed-reserve-performance-2026-09-30.md)
+is locally qualified before the first publication only. Enabling it throughout
+post-publication settlement failed the existing 256-pass convergence checks;
+that prototype was rejected. The retained change reduces small-file Free-Tree
+writes further, but still leaves measured ratios of 98×/161× for create/delete
+and 31× for the 8 MiB write. The acceptance target is at most 5× PFS3 in every
+checked phase with unchanged guarantees, not a percentage improvement.
+
 ## Problem and baseline
 
 The qualified A1200/FS-UAE comparison after the reserve quickwins still records
