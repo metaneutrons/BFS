@@ -17,8 +17,6 @@
 #include <string.h>
 #include <stdlib.h>
 
-static uint64_t get_backup_offset(const bfs_superblock_t *sb);
-
 /* Raw byte-offset I/O for superblock access (before block_size is known) */
 static bfs_err_t bio_read_raw(bfs_bio_t *bio, uint64_t byte_offset, void *buf, uint32_t len)
 {
@@ -106,7 +104,7 @@ bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
 
     bfs_blk_t block_count = bfs_be32(sb->block_count);
     uint64_t device_bytes = (uint64_t)block_count * bs;
-    uint64_t backup_offset = get_backup_offset(sb);
+    uint64_t backup_offset = bfs_sb_backup_offset(sb);
     if (block_count == 0 || backup_offset > device_bytes ||
         BFS_SB_SIZE > device_bytes - backup_offset ||
         (backup_offset % BFS_SB_SIZE) != 0)
@@ -220,18 +218,11 @@ static bfs_err_t read_sb_at(bfs_bio_t *bio, uint64_t byte_offset, bfs_superblock
     return BFS_OK;
 }
 
-/* Get backup superblock offset from a superblock */
-static uint64_t get_backup_offset(const bfs_superblock_t *sb)
-{
-    return ((uint64_t)bfs_be32(sb->sb_backup_offset_hi) << 32) |
-           bfs_be32(sb->sb_backup_offset_lo);
-}
-
 static bool sb_matches_device(const bfs_superblock_t *sb, const bfs_bio_t *bio)
 {
     return bfs_be32(sb->block_size) == bio->block_size &&
            bfs_be32(sb->block_count) == bio->block_count &&
-           get_backup_offset(sb) ==
+           bfs_sb_backup_offset(sb) ==
                bfs_default_backup_offset(bio->block_count, bio->block_size);
 }
 
@@ -254,7 +245,7 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
     bfs_err_t e_b = BFS_OK;
     uint64_t b_off = 0;
     if (v_a) {
-        b_off = get_backup_offset(&sb_a);
+        b_off = bfs_sb_backup_offset(&sb_a);
     }
     if (b_off == 0) {
         /* Fallback: try partition midpoint */
@@ -323,7 +314,7 @@ bfs_err_t bfs_sb_write(bfs_bio_t *bio, bfs_superblock_t *sb)
     bfs_err_t check = bfs_sb_validate(sb);
     if (check != BFS_OK) return check;
 
-    uint64_t backup_off = get_backup_offset(sb);
+    uint64_t backup_off = bfs_sb_backup_offset(sb);
 
     /* Read both to determine which is older */
     bfs_superblock_t sb_a, sb_b;

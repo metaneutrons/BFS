@@ -1,0 +1,3 @@
+SB-only failed publication: sync=2 new_sb=1 graph_data_fsck=1
+SB-only failed publication: sync=1 new_sb=1 graph_data_fsck=0
+negative exit=1 (expected 1)

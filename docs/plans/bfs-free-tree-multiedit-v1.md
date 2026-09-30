@@ -288,9 +288,11 @@ Proof boundaries and gates:
 
 ## SF: sealed pre-publication settlement
 
-Design accepted after independent source-contract review; not implemented or
-qualified. Main integration accepts the narrow eligibility and freeze proof,
-not a performance forecast. AR still records 120
+Implemented and locally tested as a bounded checkpoint; the overall performance
+target and absence of a large-write regression are not established. See the
+[normal timings, ownership proof and retained evidence](../qualification/bfs-sealed-settlement-performance-2026-10-01.md).
+Main integration accepts the narrow eligibility and freeze proof, not a
+performance forecast. AR recorded 120
 superblock publications and 80 post-publication reclaim passes per 40 small
 operations. SF targets that cycle rather than weakening the handler's commit
 frequency or synchronous failure reporting. Design acceptance, implementation
@@ -360,7 +362,11 @@ callbacks. Do not infer ownership from candidate block contents.
    **all** allocation, tree writes, refcount edits, reserve return/refill and
    pending processing until publication succeeds. This prohibition includes
    the temporarily free old committed nodes in the new leaf and pool.
-4. Gather the matching roots/accounting and call the unchanged
+4. While still frozen, successfully sync the complete COW graph and new leaf
+   **before** writing any matching SB. A failed flush may persist only the SB;
+   an all-or-none failed-flush assumption is not sufficient. If this metadata
+   fence fails, keep ownership frozen and recovery-latched; no new SB write.
+   Gather the matching roots/accounting and call the unchanged
    `bfs_txn_write_sb`, which writes the older SB slot and syncs. Its raw SB
    read-modify-write and heap-buffer allocation are not filesystem-block
    allocation. Existing ordered-data preflush and final sync remain intact.
@@ -375,6 +381,9 @@ There is no fallback after staging, an I/O attempt or a root change, even for
 recovery-latched, with no block reuse or further mutation. Remount may select
 the old or fully valid new state depending on the fault's persisted effects.
 Neither branch may contain a block that was reused before successful sync.
+An ordinary writable remount of a readable but not yet durable SB must also
+sync before exposing allocation or mount-time recovery. The existing explicit
+reload already has this barrier; read-only mounts remain entirely non-mutating.
 Unsupported preflight contexts retain today's complete commit path unchanged.
 Accounting in the working leaf is not a statement of durable availability;
 the allocation freeze is part of its safety proof.
@@ -403,7 +412,10 @@ the allocation freeze is part of its safety proof.
   Abandon failed working state; remount old/new and run full data plus strict
   fsck oracles. A buffered persistence model must additionally drop writes
   not covered by successful sync, rather than treating RAM visibility as
-  durable storage. Keep real power/controller/media qualification separate.
+  durable storage. Include failed flushes persisting only SB blocks and a
+  subset of non-SB blocks, plus same-BIO writable remount without a power cut
+  and failure of its mount barrier. Keep real power/controller/media
+  qualification separate.
 - SF-T4: focused and full normal/ASan/UBSan suites, local checks, snapshot and
   existing pending/crash campaigns, independent implementation/test review,
   normal/probe m68k builds. Linux and Amiga use this same core logic; CLI and

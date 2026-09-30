@@ -213,8 +213,7 @@ static void scan(check_state_t *state)
     bfs_fs_t *fs = state->fs;
     const bfs_superblock_t *superblock = &fs->txn.sb;
     uint32_t data_start = bfs_data_start_block(fs->bio->block_size);
-    uint64_t backup_offset = ((uint64_t)bfs_be32(superblock->sb_backup_offset_hi) << 32) |
-                             bfs_be32(superblock->sb_backup_offset_lo);
+    uint64_t backup_offset = bfs_sb_backup_offset(superblock);
     uint64_t backup_block = backup_offset / fs->bio->block_size;
 
     mark_range(state, 0, data_start, 2, false);

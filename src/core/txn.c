@@ -5,8 +5,8 @@
  * COW transaction model:
  *   txn_begin   → snapshot superblock, start tracking changes
  *   (mutations  → all COW'd, tree roots updated in the working copy)
- *   txn_commit  → the single filesystem commit boundary: return reserve, gather
- *                 tree roots, write the superblock, drain the COW pending-frees
+ *   txn_commit  → seal eligible free-leaf settlement, gather matching roots,
+ *                 publish+sync; otherwise use the established reclaim loop
  *   txn_abort   → discard working copy, revert to snapshot
  *
  * bfs_txn_write_sb is the low-level "make the working superblock durable"
@@ -147,9 +147,9 @@ static bool preserve_pending_tail(bfs_fs_t *fs, const bfs_blk_t *items,
 }
 
 /* The single transaction-commit boundary for a mounted filesystem: flush data
- * (data=ordered), return the reserve pool, gather the current tree roots into
- * the working superblock and write it, then drain the COW pending-free queue
- * (refcount-aware) and re-commit the free tree. Every caller that needs to make
+ * (data=ordered), seal eligible settlement without reuse until publication,
+ * or return reserve and publish before refcount-aware pending reclamation.
+ * Every caller that needs to make
  * filesystem state durable — file/snapshot/namespace mid-op, sync, unmount —
  * goes through here. */
 static bfs_err_t reclaim_shared_blocks(bfs_fs_t *fs, const bfs_blk_t *blocks,
@@ -218,8 +218,22 @@ static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
 
 static bfs_err_t txn_commit_working(bfs_fs_t *fs)
 {
-    bfs_err_t err = bfs_freespace_return_reserve(&fs->freespace);
+    bool sealed = false;
+    bfs_err_t err = bfs_freespace_seal_commit(fs, &sealed);
     if (err != BFS_OK) return err;
+    if (!sealed) {
+        err = bfs_freespace_return_reserve(&fs->freespace);
+        if (err != BFS_OK) return err;
+    } else {
+        /* Durable graph before publish: an unsuccessful later flush may
+         * persist only the new SB. It must never expose a missing leaf or
+         * COW/data node. Keep allocation frozen across both barriers. */
+        err = bfs_bio_sync(fs->bio);
+        if (err != BFS_OK) return err;
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_counters.sealed_metadata_fences++;
+#endif
+    }
 
     /* Update superblock with current tree roots */
     bfs_txn_set_dir_root(&fs->txn, fs->dir_tree.tree.root);
@@ -233,6 +247,18 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
     err = bfs_txn_write_sb(&fs->txn);
     if (err != BFS_OK) return err;
     update_tree_txns(fs);
+
+    if (sealed) {
+        /* The replacement cannot be consumed before write_sb's successful
+         * sync. Only now are included retirements durably free. No callbacks
+         * or filesystem allocation occurred in the sealed interval. */
+        fs->pending_count = 0;
+        fs->freespace.allocation_frozen = false;
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_counters.sealed_commits++;
+#endif
+        return bfs_bio_sync(fs->bio);
+    }
 
     /* Process pending frees: Use a local buffer to avoid overwriting while processing */
     int sync_iterations = 0;
@@ -289,6 +315,8 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
     if (!fs || !fs->mounted || !fs->bio || !fs->txn.active)
         return BFS_ERR_INVAL;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_counters.txn_commit_calls++;
 #endif

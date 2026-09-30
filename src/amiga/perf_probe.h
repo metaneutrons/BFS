@@ -8,7 +8,7 @@
 
 #define BFS_ACTION_PERF_RESET 3010
 #define BFS_ACTION_PERF_READ  3011
-#define BFS_PERF_PROBE_VERSION 9
+#define BFS_PERF_PROBE_VERSION 10
 #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
 
 typedef struct bfs_perf_probe_snapshot {
@@ -73,6 +73,8 @@ typedef struct bfs_perf_probe_snapshot {
     ULONG free_tree_reserve_return_skip_small;
     ULONG free_tree_reserve_return_skip_emergency;
     ULONG free_tree_reserve_return_skip_capacity;
+    ULONG sealed_commits;
+    ULONG sealed_metadata_fences;
 } bfs_perf_probe_snapshot_t;
 
 #ifdef BFS_PERF_PROBE

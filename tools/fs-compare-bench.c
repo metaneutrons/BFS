@@ -261,6 +261,9 @@ static void emit_deep_counter_rows(const char *phase,
                     snapshot->free_tree_reserve_return_skip_emergency);
     prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
                     snapshot->free_tree_reserve_return_skip_capacity);
+    prefixed_metric(phase, "SEALED_COMMITS", snapshot->sealed_commits);
+    prefixed_metric(phase, "SEALED_METADATA_FENCES",
+                    snapshot->sealed_metadata_fences);
 }
 
 static BOOL make_path(char *path, ULONG capacity, const char *drive, const char *suffix)
@@ -441,7 +444,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     handle = CreateDir(path);
     if (!handle) return fail("mkdir");
     UnLock(handle);
-    if (deep_mode) emit("FS_DEEP_COMPARE\t8\nDRIVE\t");
+    if (deep_mode) emit("FS_DEEP_COMPARE\t9\nDRIVE\t");
     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
     emit(drive);
     emit("\n");

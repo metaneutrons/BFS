@@ -1,0 +1,19 @@
+baseline-bfs-first
+PASS: requested mounted-volume workload outputs are complete and data-checked
+baseline-pfs3-first
+PASS: requested mounted-volume workload outputs are complete and data-checked
+candidate-bfs-first
+PASS: requested mounted-volume workload outputs are complete and data-checked
+candidate-pfs3-first
+PASS: requested mounted-volume workload outputs are complete and data-checked
+repeat-baseline-bfs-first
+PASS: requested mounted-volume workload outputs are complete and data-checked
+repeat-baseline-pfs3-first
+PASS: requested mounted-volume workload outputs are complete and data-checked
+repeat-candidate-bfs-first
+PASS: requested mounted-volume workload outputs are complete and data-checked
+repeat-candidate-pfs3-first
+PASS: requested mounted-volume workload outputs are complete and data-checked
+PASS: requested mounted-volume workload outputs are complete and data-checked
+ERROR: invalid or incomplete bfs workload output
+EXPECTED REJECTION: old schema8 candidate diagnostic

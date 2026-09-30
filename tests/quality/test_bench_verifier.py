@@ -217,6 +217,210 @@ class BenchVerifierTests(unittest.TestCase):
         pfs_lines[0] = "FS_DEEP_COMPARE\t8"
         pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
 
+    def upgrade_deep_compare_to_v9(self):
+        self.upgrade_deep_compare_to_v8()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii").splitlines()
+        self.assertEqual(original[0], "FS_DEEP_COMPARE\t8")
+        upgraded = ["FS_DEEP_COMPARE\t9"]
+        for line in original[1:]:
+            upgraded.append(line)
+            name, _ = line.split("\t")
+            suffix = "_FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY"
+            if not name.endswith(suffix):
+                continue
+            phase = name[:-len(suffix)]
+            upgraded.extend((
+                f"{phase}_SEALED_COMMITS\t0",
+                f"{phase}_SEALED_METADATA_FENCES\t0",
+            ))
+        bfs.write_text("\n".join(upgraded) + "\n", encoding="ascii")
+        pfs3 = self.results / "pfs3.deep-compare.tsv"
+        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
+        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t8")
+        pfs_lines[0] = "FS_DEEP_COMPARE\t9"
+        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
+
+        contents = bfs.read_text(encoding="ascii")
+        phases = (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        )
+        zero_txn_return_metrics = (
+            "FREE_TREE_RESERVE_RETURN_CALLS",
+            "FREE_TREE_RESERVE_RETURN_RUNS",
+            "FREE_TREE_RESERVE_RETURN_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK",
+            "FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN",
+            "FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES",
+            "FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+            "FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
+            "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
+            "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
+            "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
+            "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
+        )
+        updates = {}
+        for phase in phases:
+            txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
+            passes = self.metric_value(
+                contents, phase + "_POST_PUBLISH_RECLAIM_PASSES",
+            )
+            return_calls = txn_commits + passes
+            batch_calls = self.metric_value(
+                contents, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+            )
+            updates[phase + "_FREE_TREE_RESERVE_RETURN_CALLS"] = return_calls
+            updates.update(self.skip_count_updates(phase, return_calls, batch_calls))
+            if return_calls == 0:
+                for metric in zero_txn_return_metrics:
+                    updates[phase + "_" + metric] = 0
+        self.set_metrics(bfs, updates)
+
+    def upgrade_raw_deep_compare_v8_to_v9(self):
+        source = ROOT / "docs/qualification/evidence/bfs-sealed-settlement-2026-10-01/baseline-deep"
+        for name in (
+            "complete.txt", "info-after-format.txt",
+            "bfs.deep-compare.tsv", "pfs3.deep-compare.tsv",
+        ):
+            shutil.copyfile(source / name, self.results / name)
+
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original_bfs = bfs.read_text(encoding="ascii").splitlines()
+        self.assertEqual(original_bfs[0], "FS_DEEP_COMPARE\t8")
+        upgraded_bfs = ["FS_DEEP_COMPARE\t9"]
+        for line in original_bfs[1:]:
+            upgraded_bfs.append(line)
+            name, _ = line.split("\t")
+            suffix = "_FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY"
+            if name.endswith(suffix):
+                phase = name[:-len(suffix)]
+                upgraded_bfs.extend((
+                    f"{phase}_SEALED_COMMITS\t0",
+                    f"{phase}_SEALED_METADATA_FENCES\t0",
+                ))
+        bfs.write_text("\n".join(upgraded_bfs) + "\n", encoding="ascii")
+
+        pfs3 = self.results / "pfs3.deep-compare.tsv"
+        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
+        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t8")
+        pfs_lines[0] = "FS_DEEP_COMPARE\t9"
+        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
+
+    def upgrade_deep_compare_to_v9_all_sealed(self):
+        self.upgrade_deep_compare_to_v9()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        phases = (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        )
+        return_metrics = (
+            "FREE_TREE_RESERVE_RETURN_CALLS",
+            "FREE_TREE_RESERVE_RETURN_RUNS",
+            "FREE_TREE_RESERVE_RETURN_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK",
+            "FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN",
+            "FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES",
+            "FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+            "FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS",
+            "FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
+            "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
+            "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
+            "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
+            "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
+        )
+        updates = {}
+        for phase in phases:
+            txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
+            reserve_writes = self.metric_value(
+                contents, phase + "_FREE_TREE_RESERVE_RETURN_NODE_WRITES",
+            )
+            other_writes = self.metric_value(
+                contents, phase + "_FREE_TREE_OTHER_NODE_WRITES",
+            )
+            updates[phase + "_SEALED_COMMITS"] = txn_commits
+            updates[phase + "_SEALED_METADATA_FENCES"] = txn_commits
+            updates[phase + "_POST_PUBLISH_RECLAIM_PASSES"] = 0
+            updates[phase + "_MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT"] = 0
+            updates[phase + "_SUPERBLOCK_PUBLICATIONS"] = txn_commits
+            updates[phase + "_FREE_TREE_RESERVE_RETURN_NODE_WRITES"] = 0
+            updates[phase + "_FREE_TREE_OTHER_NODE_WRITES"] = (
+                other_writes + reserve_writes
+            )
+            for metric in return_metrics:
+                updates[phase + "_" + metric] = 0
+        self.set_metrics(bfs, updates)
+
+    def upgrade_deep_compare_to_v9_mixed(self):
+        self.upgrade_deep_compare_to_v9()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
+        sealed_commits = txn_commits // 2
+        passes = self.metric_value(
+            contents, phase + "_POST_PUBLISH_RECLAIM_PASSES",
+        )
+        return_calls = txn_commits - sealed_commits + passes
+        batch_calls = self.metric_value(
+            contents, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+        )
+        self.assertGreater(sealed_commits, 0)
+        self.assertGreater(return_calls, 0)
+        self.assertGreaterEqual(return_calls, batch_calls)
+        updates = {
+            phase + "_SEALED_COMMITS": sealed_commits,
+            phase + "_SEALED_METADATA_FENCES": sealed_commits,
+            phase + "_FREE_TREE_RESERVE_RETURN_CALLS": return_calls,
+        }
+        updates.update(self.skip_count_updates(phase, return_calls, batch_calls))
+        self.set_metrics(bfs, updates)
+
+    def skip_count_updates(self, phase, return_calls, batch_calls):
+        skip_metrics = (
+            "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
+            "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
+            "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
+            "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
+        )
+        skipped_calls = return_calls - batch_calls
+        self.assertGreaterEqual(skipped_calls, 0)
+        phases = (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        )
+        counts = [0] * len(skip_metrics)
+        for skip_index in range(skipped_calls):
+            counts[(phases.index(phase) + skip_index) % len(skip_metrics)] += 1
+        return {
+            phase + "_" + metric: count
+            for metric, count in zip(skip_metrics, counts)
+        }
+
+    @staticmethod
+    def set_metrics(path, updates):
+        remaining = dict(updates)
+        lines = path.read_text(encoding="ascii").splitlines()
+        for index, line in enumerate(lines):
+            if "\t" not in line:
+                continue
+            name, _ = line.split("\t")
+            if name in remaining:
+                lines[index] = f"{name}\t{remaining.pop(name)}"
+        if remaining:
+            raise AssertionError(f"metrics not found: {sorted(remaining)}")
+        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
     def verify(self, mode):
         return subprocess.run(
             [str(VERIFIER), str(self.run_dir), mode],
@@ -413,6 +617,300 @@ class BenchVerifierTests(unittest.TestCase):
                 )
                 bfs.write_text(mutated, encoding="ascii")
                 self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v8_still_rejects_low_return_calls(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v8()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
+        return_calls = txn_commits - 1
+        batch_calls = self.metric_value(
+            contents, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+        )
+        self.assertGreater(txn_commits, 1)
+        updates = {
+            phase + "_FREE_TREE_RESERVE_RETURN_CALLS": return_calls,
+        }
+        updates.update(self.skip_count_updates(phase, return_calls, batch_calls))
+        self.set_metrics(bfs, updates)
+        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v9_accepts_all_sealed_commits_without_returns(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v9_all_sealed()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        for phase in (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        ):
+            txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
+            self.assertEqual(
+                self.metric_value(contents, phase + "_SEALED_COMMITS"),
+                txn_commits,
+            )
+            self.assertEqual(
+                self.metric_value(contents, phase + "_SEALED_METADATA_FENCES"),
+                txn_commits,
+            )
+            self.assertEqual(
+                self.metric_value(
+                    contents, phase + "_FREE_TREE_RESERVE_RETURN_CALLS",
+                ),
+                0,
+            )
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v9_accepts_raw_baseline_with_only_seal_rows_added(self):
+        source = ROOT / "docs/qualification/evidence/bfs-sealed-settlement-2026-10-01/baseline-deep"
+        original_bfs = (source / "bfs.deep-compare.tsv").read_text(
+            encoding="ascii",
+        ).splitlines()
+        original_pfs3 = (source / "pfs3.deep-compare.tsv").read_text(
+            encoding="ascii",
+        ).splitlines()
+        self.upgrade_raw_deep_compare_v8_to_v9()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        pfs3 = self.results / "pfs3.deep-compare.tsv"
+        upgraded_bfs = bfs.read_text(encoding="ascii").splitlines()
+        upgraded_pfs3 = pfs3.read_text(encoding="ascii").splitlines()
+
+        self.assertEqual(upgraded_bfs[0], "FS_DEEP_COMPARE\t9")
+        self.assertEqual(
+            [line for line in upgraded_bfs if "_SEALED_" not in line],
+            ["FS_DEEP_COMPARE\t9", *original_bfs[1:]],
+        )
+        self.assertEqual(
+            sum("_SEALED_" in line for line in upgraded_bfs), 12,
+        )
+        self.assertEqual(upgraded_pfs3, ["FS_DEEP_COMPARE\t9", *original_pfs3[1:]])
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v9_accepts_mixed_sealed_and_legacy_commits(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v9_mixed()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
+        sealed_commits = self.metric_value(contents, phase + "_SEALED_COMMITS")
+        return_calls = self.metric_value(
+            contents, phase + "_FREE_TREE_RESERVE_RETURN_CALLS",
+        )
+        passes = self.metric_value(
+            contents, phase + "_POST_PUBLISH_RECLAIM_PASSES",
+        )
+        publications = self.metric_value(
+            contents, phase + "_SUPERBLOCK_PUBLICATIONS",
+        )
+        self.assertGreater(sealed_commits, 0)
+        self.assertLess(sealed_commits, txn_commits)
+        self.assertEqual(return_calls + sealed_commits, txn_commits + passes)
+        self.assertEqual(txn_commits + passes, publications)
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v9_rejects_missing_malformed_and_duplicate_counters(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v9()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        sealed_row = f"{phase}_SEALED_COMMITS\t0"
+        cases = (
+            ("omitted sealed counter", lambda lines: [
+                line for line in lines if line != sealed_row
+            ]),
+            ("malformed metadata fence", lambda lines: [
+                line.replace(f"{phase}_SEALED_METADATA_FENCES\t0",
+                             f"{phase}_SEALED_METADATA_FENCES\tbad")
+                for line in lines
+            ]),
+            ("duplicate sealed counter", lambda lines: lines[:-1] + [
+                sealed_row, lines[-1],
+            ]),
+        )
+        for label, mutate in cases:
+            with self.subTest(counter=label):
+                mutated = mutate(original.splitlines())
+                bfs.write_text("\n".join(mutated) + "\n", encoding="ascii")
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v9_rejects_seal_and_accounting_invariant_violations(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v9()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        txn_commits = self.metric_value(original, phase + "_TXN_COMMITS")
+        return_calls = self.metric_value(
+            original, phase + "_FREE_TREE_RESERVE_RETURN_CALLS",
+        )
+        passes = self.metric_value(
+            original, phase + "_POST_PUBLISH_RECLAIM_PASSES",
+        )
+        free_tree_writes = self.metric_value(
+            original, phase + "_FREE_TREE_NODE_WRITES",
+        )
+        cases = (
+            ("sealed exceeds transactions", {
+                phase + "_SEALED_COMMITS": txn_commits + 1,
+                phase + "_SEALED_METADATA_FENCES": txn_commits + 1,
+            }),
+            ("missing metadata fence", {
+                phase + "_SEALED_COMMITS": 1,
+                phase + "_SEALED_METADATA_FENCES": 0,
+            }),
+            ("insufficient BIO updates", {
+                phase + "_BIO_UPDATES": 0,
+            }),
+            ("bad existing bucket", {
+                phase + "_FREE_TREE_OTHER_NODE_WRITES":
+                    self.metric_value(original,
+                                      phase + "_FREE_TREE_OTHER_NODE_WRITES") + 1,
+            }),
+            ("bad existing skip sum", {
+                phase + "_FREE_TREE_RESERVE_RETURN_SKIP_SHAPE":
+                    self.metric_value(
+                        original,
+                        phase + "_FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
+                    ) + 1,
+            }),
+            ("bad existing publication count", {
+                phase + "_SUPERBLOCK_PUBLICATIONS": txn_commits,
+            }),
+            ("missing per-pass return accounting", {
+                phase + "_FREE_TREE_RESERVE_RETURN_CALLS": txn_commits,
+                **self.skip_count_updates(
+                    phase, txn_commits,
+                    self.metric_value(
+                        original,
+                        phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+                    ),
+                ),
+            }),
+            ("excess per-pass return accounting", {
+                phase + "_FREE_TREE_RESERVE_RETURN_CALLS":
+                    txn_commits + passes + 1,
+                **self.skip_count_updates(
+                    phase, txn_commits + passes + 1,
+                    self.metric_value(
+                        original,
+                        phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+                    ),
+                ),
+            }),
+        )
+        self.assertGreater(return_calls, 0)
+        self.assertGreater(free_tree_writes, txn_commits)
+        for label, updates in cases:
+            with self.subTest(invariant=label):
+                bfs.write_text(original, encoding="ascii")
+                self.set_metrics(bfs, updates)
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v9_all_sealed()
+        contents = bfs.read_text(encoding="ascii")
+        self.assertEqual(
+            self.metric_value(contents, phase + "_FREE_TREE_RESERVE_RETURN_CALLS"),
+            0,
+        )
+        self.set_metrics(bfs, {
+            phase + "_SEALED_COMMITS": 0,
+            phase + "_SEALED_METADATA_FENCES": 0,
+        })
+        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v9_rejects_inconsistent_return_batch_accounting(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v9()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        values = {
+            name: self.metric_value(original, phase + "_" + name)
+            for name in (
+                "TXN_COMMITS",
+                "FREE_TREE_RESERVE_RETURN_CALLS",
+                "FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES",
+                "FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+                "FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS",
+                "FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
+                "FREE_TREE_RESERVE_RETURN_NODE_WRITES",
+            )
+        }
+        cases = (
+            ("run and batch node writes do not sum to reserve writes", {
+                phase + "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES":
+                    values["FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES"] + 1,
+            }),
+            ("batch calls exceed return calls", {
+                phase + "_FREE_TREE_RESERVE_RETURN_CALLS":
+                    values["FREE_TREE_RESERVE_RETURN_BATCH_CALLS"] - 1,
+            }),
+            ("batch blocks are fewer than batch calls", {
+                phase + "_FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS":
+                    values["FREE_TREE_RESERVE_RETURN_BATCH_CALLS"] - 1,
+            }),
+        )
+        self.assertGreater(values["FREE_TREE_RESERVE_RETURN_BATCH_CALLS"], 0)
+        self.assertGreater(values["FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES"], 0)
+        for label, updates in cases:
+            with self.subTest(invariant=label):
+                bfs.write_text(original, encoding="ascii")
+                self.set_metrics(bfs, updates)
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+        # Keep the aggregate node-write total and skip-call sum valid while
+        # making the forbidden zero-call/nonzero-total state explicit.
+        batch_node_writes = 1
+        reserve_writes = values["FREE_TREE_RESERVE_RETURN_NODE_WRITES"]
+        updates = {
+            phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS": 0,
+            phase + "_FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS": 0,
+            phase + "_FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES": batch_node_writes,
+            phase + "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES":
+                reserve_writes - batch_node_writes,
+        }
+        updates.update(self.skip_count_updates(
+            phase, values["FREE_TREE_RESERVE_RETURN_CALLS"], 0,
+        ))
+        bfs.write_text(original, encoding="ascii")
+        self.set_metrics(bfs, updates)
+        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v9_bounds_reclaim_passes_by_unsealed_commits(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v9()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        phase = "SMALL_CREATE_40"
+        txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
+        sealed_commits = 1
+        batch_calls = self.metric_value(
+            contents, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+        )
+        self.assertGreater(sealed_commits, 0)
+        passes = (txn_commits - sealed_commits) * 256 + 1
+        return_calls = txn_commits - sealed_commits + passes
+        self.assertGreater(return_calls, batch_calls)
+        publications = txn_commits + passes
+        self.set_metrics(bfs, {
+            phase + "_SEALED_COMMITS": sealed_commits,
+            phase + "_SEALED_METADATA_FENCES": sealed_commits,
+            phase + "_FREE_TREE_RESERVE_RETURN_CALLS": return_calls,
+            **self.skip_count_updates(phase, return_calls, batch_calls),
+            phase + "_POST_PUBLISH_RECLAIM_PASSES": passes,
+            phase + "_MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT": 256,
+            phase + "_SUPERBLOCK_PUBLICATIONS": publications,
+            phase + "_BIO_UPDATES": publications + sealed_commits + txn_commits,
+        })
+        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
 
     @staticmethod
     def metric_value(contents, metric_name):

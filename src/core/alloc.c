@@ -14,6 +14,7 @@
  */
 
 #include "bfs_alloc.h"
+#include "bfs_fs.h"
 #include <stdlib.h>
 #include <string.h>
 #ifdef BFS_PERF_PROBE
@@ -78,6 +79,7 @@ static bfs_err_t allocator_owner_error(const bfs_freespace_t *fs)
     if (fs->readonly_state && *fs->readonly_state) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_state && *fs->recovery_state != BFS_OK)
         return *fs->recovery_state;
+    if (fs->allocation_frozen) return BFS_ERR_AGAIN;
     return BFS_OK;
 }
 
@@ -242,6 +244,8 @@ static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
 {
     if (!a || !a->ctx) return BFS_ERR_INVAL;
     bfs_freespace_t *fs = (bfs_freespace_t *)a->ctx;
+    bfs_err_t owner_err = allocator_owner_error(fs);
+    if (owner_err != BFS_OK) return owner_err;
     if (!fs->tree.bio || blk == BFS_BLK_NULL ||
         blk >= fs->tree.bio->block_count)
         return BFS_ERR_INVAL;
@@ -297,6 +301,8 @@ bfs_err_t bfs_freespace_init(bfs_freespace_t *fs, bfs_bio_t *bio,
 
 bfs_err_t bfs_freespace_add(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count)
 {
+    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
+    if (owner_err != BFS_OK) return owner_err;
     if (!fs || !fs->tree.bio || count == 0 || start == BFS_BLK_NULL ||
         start >= fs->tree.bio->block_count ||
         count > fs->tree.bio->block_count - start)
@@ -695,6 +701,8 @@ static bfs_err_t validate_free_tree_absence(bfs_freespace_t *fs,
 
 bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count)
 {
+    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
+    if (owner_err != BFS_OK) return owner_err;
     if (!fs || !fs->tree.bio || count == 0 || start == BFS_BLK_NULL ||
         start >= fs->tree.bio->block_count ||
         count > fs->tree.bio->block_count - start)
@@ -947,7 +955,7 @@ static bfs_err_t validate_sorted_free_blocks(const bfs_freespace_t *fs,
     return BFS_OK;
 }
 
-static bfs_err_t merge_sorted_free_blocks(free_leaf_entries_t *old,
+static bfs_err_t merge_sorted_free_blocks(const free_leaf_entries_t *old,
                                          free_leaf_entries_t *next,
                                          const bfs_blk_t *blocks,
                                          uint32_t count)
@@ -1022,6 +1030,8 @@ static bfs_err_t free_sorted_blocks(bfs_freespace_t *fs,
                                     const bfs_blk_t *blocks,
                                     uint32_t count, bool take_current_root)
 {
+    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
+    if (owner_err != BFS_OK) return owner_err;
     if (!fs || !fs->tree.bio || !blocks || count == 0)
         return BFS_ERR_INVAL;
     if (fs->tree.height != 1 || fs->tree.root == BFS_BLK_NULL)
@@ -1075,6 +1085,8 @@ bfs_err_t bfs_freespace_free_sorted_blocks(bfs_freespace_t *fs,
 
 bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
 {
+    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
+    if (owner_err != BFS_OK) return owner_err;
     if (!fs || !fs->tree.bio || fs->reserve_count > BFS_ALLOC_RESERVE_SIZE)
         return BFS_ERR_INVAL;
     if (fs->global_reserve == UINT32_MAX)
@@ -1211,6 +1223,259 @@ static bfs_err_t prepare_reserve_root_fold(const bfs_freespace_t *fs,
         batch->blocks[batch->block_count++] = batch->old_root;
     sort_reserve_blocks(batch->blocks, batch->block_count);
     return BFS_OK;
+}
+
+static bool seal_block_is_sb_root(const bfs_superblock_t *sb, bfs_blk_t blk)
+{
+    return blk == bfs_be32(sb->dir_tree_root) ||
+           blk == bfs_be32(sb->extent_tree_root) ||
+           blk == bfs_be32(sb->inode_tree_root) ||
+           blk == bfs_be32(sb->free_tree_root) ||
+           blk == bfs_be32(sb->refcount_tree_root) ||
+           blk == bfs_be32(sb->snapshot_tree_root);
+}
+
+static bool seal_block_is_current_root(const bfs_fs_t *owner, bfs_blk_t blk)
+{
+    return blk == owner->dir_tree.tree.root || blk == owner->inode_tree.root ||
+           blk == bfs_be32(owner->txn.sb_new.extent_tree_root) ||
+           blk == owner->refcount.tree.root ||
+           blk == bfs_be32(owner->txn.sb_new.snapshot_tree_root);
+}
+
+static bool seal_leaf_contains(const free_leaf_entries_t *leaf, bfs_blk_t blk)
+{
+    for (uint32_t i = 0; i < leaf->count; i++)
+        if (blk >= leaf->keys[i] && blk - leaf->keys[i] < leaf->lengths[i])
+            return true;
+    return false;
+}
+
+static bool seal_block_reserved(const bfs_fs_t *owner, bfs_blk_t blk)
+{
+    uint32_t bs = owner->bio->block_size;
+    return blk < bfs_data_start_block(bs) || blk >= owner->bio->block_count ||
+           blk == bfs_sb_backup_offset(&owner->txn.sb_new) / bs ||
+           blk == bfs_sb_backup_offset(&owner->txn.sb) / bs;
+}
+
+/* Only this mounted owner can authorize pre-publication reclamation. The
+ * ordinary allocator API must never infer this permission from a LIVE tag. */
+static bool seal_context_available(const bfs_fs_t *owner)
+{
+    const bfs_freespace_t *fs = &owner->freespace;
+    return owner->mounted && owner->txn.active && !owner->read_only &&
+           !owner->has_snapshots && !(owner->options & BFS_OPT_SNAPSHOTS) &&
+           !(bfs_be32(owner->txn.sb_new.options) & BFS_OPT_SNAPSHOTS) &&
+           !(bfs_be32(owner->txn.sb.options) & BFS_OPT_SNAPSHOTS) &&
+           owner->txn.sb_new.snapshot_tree_root == 0 &&
+           owner->txn.sb_new.refcount_tree_root == 0 &&
+           owner->txn.sb.snapshot_tree_root == 0 &&
+           owner->txn.sb.refcount_tree_root == 0 &&
+           owner->txn.sb_new.extent_tree_root == 0 &&
+           owner->txn.sb.extent_tree_root == 0 &&
+           owner->refcount.tree.root == BFS_BLK_NULL &&
+           fs->mounted_state == &owner->mounted &&
+           fs->snapshot_state == &owner->has_snapshots &&
+           fs->readonly_state == &owner->read_only &&
+           fs->recovery_state == &owner->recovery_error &&
+           fs->sb == &owner->txn.sb_new && fs->committed_sb == &owner->txn.sb &&
+           fs->tree.bio == owner->bio && owner->txn.bio == owner->bio &&
+           fs->tree.alloc == &fs->iface && fs->iface.ctx == fs &&
+           fs->iface.alloc == iface_alloc && fs->iface.dealloc == iface_free &&
+           fs->iface.error == iface_error &&
+           fs->tree.free_sink.ctx == owner &&
+           fs->tree.txn_id_ptr == &owner->live_txn_id && !fs->in_alloc &&
+           fs->tree.height == 1 && fs->tree.root != BFS_BLK_NULL &&
+           owner->live_txn_id == bfs_txn_id(&owner->txn) &&
+           owner->live_txn_id > bfs_be64(owner->txn.sb.txn_id) &&
+           !seal_block_is_sb_root(&owner->txn.sb, fs->tree.root);
+}
+
+/* No callbacks, refill or mutation in preflight. Old committed roots are valid
+ * pending inputs; they remain unavailable while the replacement is sealed. */
+static bfs_err_t prepare_seal_leaf(bfs_fs_t *owner,
+                                   const free_leaf_entries_t *old,
+                                   bfs_blk_t *blocks, uint32_t count,
+                                   free_leaf_entries_t *next,
+                                   bfs_superblock_t *planned)
+{
+    bfs_freespace_t *fs = &owner->freespace;
+    bfs_err_t err;
+    uint64_t sum = 0;
+    for (uint32_t i = 0; i < old->count; i++) {
+        if (old->keys[i] < bfs_data_start_block(owner->bio->block_size) ||
+            (i > 0 && old->keys[i] < old->keys[i - 1] + old->lengths[i - 1]))
+            return BFS_ERR_CORRUPT;
+        sum += old->lengths[i];
+    }
+    if (sum != fs->total_free) return BFS_ERR_CORRUPT;
+    if (seal_leaf_contains(old, (bfs_blk_t)(bfs_sb_backup_offset(fs->sb) /
+                                           owner->bio->block_size)) ||
+        seal_leaf_contains(old, (bfs_blk_t)(bfs_sb_backup_offset(fs->committed_sb) /
+                                           owner->bio->block_size)))
+        return BFS_ERR_CORRUPT;
+    const bfs_blk_t roots[] = {
+        owner->dir_tree.tree.root, owner->inode_tree.root,
+        owner->refcount.tree.root, bfs_be32(owner->txn.sb_new.snapshot_tree_root),
+        bfs_be32(owner->txn.sb.dir_tree_root),
+        bfs_be32(owner->txn.sb.inode_tree_root),
+        bfs_be32(owner->txn.sb.free_tree_root),
+        bfs_be32(owner->txn.sb.refcount_tree_root),
+        bfs_be32(owner->txn.sb.snapshot_tree_root),
+    };
+    for (uint32_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++)
+        if (roots[i] != BFS_BLK_NULL && seal_leaf_contains(old, roots[i]))
+            return BFS_ERR_CORRUPT;
+    uint32_t ec = bfs_be32(fs->sb->emergency_count);
+    for (uint32_t i = 0; i < BFS_EMERGENCY_POOL_SIZE; i++) {
+        bfs_blk_t blk = bfs_be32(fs->sb->emergency_pool[i]);
+        if (blk != BFS_BLK_NULL && seal_block_reserved(owner, blk))
+            return BFS_ERR_CORRUPT;
+        if (i < ec && (seal_block_is_current_root(owner, blk) ||
+                       seal_block_is_sb_root(&owner->txn.sb, blk)))
+            return BFS_ERR_CORRUPT;
+    }
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_blk_t blk = blocks[i];
+        if (seal_block_reserved(owner, blk) || (i > 0 && blk == blocks[i - 1]) ||
+            seal_block_is_current_root(owner, blk) || seal_leaf_contains(old, blk))
+            return BFS_ERR_CORRUPT;
+        for (uint32_t j = 0; j < ec; j++)
+            if (bfs_be32(fs->sb->emergency_pool[j]) == blk)
+                return BFS_ERR_CORRUPT;
+    }
+    err = validate_free_leaf_pool_separation(fs, old);
+    if (err != BFS_OK) return err;
+    /* Scratch was removed only in the local plan, never from the live pool. */
+    planned->emergency_count = bfs_be32(ec - 1);
+    bfs_freespace_t pool_view = {0};
+    pool_view.sb = planned;
+    uint32_t ordinary_count = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_blk_t blk = blocks[i];
+        bool handled;
+        err = return_to_emergency_pool(&pool_view, blk, &handled);
+        if (err != BFS_OK) return err;
+        if (!handled) blocks[ordinary_count++] = blk;
+    }
+    if (ordinary_count > UINT32_MAX - fs->total_free)
+        return BFS_ERR_CORRUPT;
+    /* Filtered ordinary input retains its sorted order. */
+    err = merge_sorted_free_blocks(old, next,
+                                   blocks, ordinary_count);
+    if (err != BFS_OK) return err;
+    return next->count == 0 ? BFS_ERR_UNSUPPORTED : BFS_OK;
+}
+
+bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
+{
+    if (!owner || !sealed || !owner->bio) return BFS_ERR_INVAL;
+    *sealed = false;
+    bfs_freespace_t *fs = &owner->freespace;
+    bfs_err_t err = allocator_owner_error(fs);
+    if (err != BFS_OK) return err;
+    if (!seal_context_available(owner)) return BFS_OK;
+    if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE ||
+        owner->pending_count > bfs_fs_pending_cap(owner)) return BFS_ERR_CORRUPT;
+    if (fs->tree.free_sink_err != BFS_OK) return fs->tree.free_sink_err;
+    uint64_t root_txn;
+    err = bfs_btree_root_leaf_txn_id(&fs->tree, &root_txn);
+    if (err != BFS_OK) return err;
+    if (root_txn > owner->live_txn_id) return BFS_ERR_CORRUPT;
+    if (root_txn != owner->live_txn_id) return BFS_OK;
+    err = validate_fold_pools(fs);
+    if (err != BFS_OK) return err;
+    uint32_t ec = bfs_be32(fs->sb->emergency_count);
+    if (ec == 0) return BFS_OK;
+    bfs_blk_t scratch = bfs_be32(fs->sb->emergency_pool[ec - 1]);
+    for (uint32_t i = 0; i < fs->reserve_count; i++)
+        if (seal_block_is_sb_root(&owner->txn.sb, fs->reserve[i]))
+            return BFS_ERR_CORRUPT;
+    uint32_t capacity = bfs_btree_leaf_capacity(&fs->tree);
+    uint64_t count64 = (uint64_t)owner->pending_count + fs->reserve_count + 1;
+    uint64_t words64 = count64 + owner->pending_count + 4u * (uint64_t)capacity;
+    if (capacity == 0 || count64 > UINT32_MAX) return BFS_ERR_CORRUPT;
+    if (words64 > SIZE_MAX / sizeof(uint32_t)) return BFS_ERR_NOMEM;
+    uint32_t *memory = malloc((size_t)words64 * sizeof(*memory));
+    if (!memory) return BFS_ERR_NOMEM;
+    uint32_t count = (uint32_t)count64, pending_count = owner->pending_count;
+    bfs_blk_t *blocks = memory, *pending = memory + count;
+    uint32_t *entries = pending + pending_count;
+    free_leaf_entries_t old = {
+        .keys = entries, .lengths = entries + capacity, .capacity = capacity,
+        .block_count = owner->bio->block_count, .error = BFS_OK,
+    };
+    free_leaf_entries_t next = {
+        .keys = entries + 2u * capacity, .lengths = entries + 3u * capacity,
+        .capacity = capacity, .block_count = owner->bio->block_count, .error = BFS_OK,
+    };
+    memcpy(pending, bfs_fs_pending_items(owner), pending_count * sizeof(*pending));
+    memcpy(blocks, pending, pending_count * sizeof(*blocks));
+    memcpy(blocks + pending_count, fs->reserve, fs->reserve_count * sizeof(*blocks));
+    blocks[count - 1] = fs->tree.root;
+    sort_reserve_blocks(blocks, count);
+    err = bfs_btree_scan(&fs->tree, NULL, collect_free_leaf_entry, &old);
+    if (err == BFS_OK) err = old.error;
+    if (err != BFS_OK) goto done;
+    bfs_superblock_t original_sb = *fs->sb, planned = original_sb;
+    err = prepare_seal_leaf(owner, &old, blocks, count, &next, &planned);
+    if (err == BFS_ERR_UNSUPPORTED) { err = BFS_OK; goto done; }
+    if (err != BFS_OK) goto done;
+    uint64_t added = 0;
+    for (uint32_t i = 0; i < next.count; i++) added += next.lengths[i];
+    if (added > UINT32_MAX || added < fs->total_free) {
+        err = BFS_ERR_CORRUPT;
+        goto done;
+    }
+    bfs_blk_t original_reserve[BFS_ALLOC_RESERVE_SIZE];
+    memcpy(original_reserve, fs->reserve, sizeof(original_reserve));
+    uint32_t original_count = fs->reserve_count;
+    bfs_blk_t old_root = fs->tree.root, original_roving = fs->roving;
+    uint32_t original_free = fs->total_free;
+    /* No ordinary fallback is permitted beyond this point, including an
+     * UNSUPPORTED returned by the ownership API or block device. */
+    fs->sb->emergency_count = bfs_be32(ec - 1);
+    fs->reserve[0] = scratch;
+    fs->reserve_count = 1;
+    encode_free_leaf_entries(&next);
+    fs->in_alloc = true;
+    err = bfs_btree_replace_owned_root_leaf(&fs->tree, old_root,
+                                            next.keys, next.lengths, next.count);
+    fs->in_alloc = false;
+    bfs_superblock_t staged = original_sb;
+    staged.emergency_count = bfs_be32(ec - 1);
+    bool unchanged = memcmp(fs->sb, &staged, sizeof(staged)) == 0 &&
+        owner->pending_count == pending_count &&
+        memcmp(bfs_fs_pending_items(owner), pending,
+               pending_count * sizeof(*pending)) == 0 &&
+        fs->total_free == original_free && fs->roving == original_roving;
+    if (err != BFS_OK) {
+        if (fs->tree.root == old_root && unchanged && fs->reserve_count == 1 &&
+            fs->reserve[0] == scratch) {
+            memcpy(fs->reserve, original_reserve, sizeof(original_reserve));
+            fs->reserve_count = original_count;
+            *fs->sb = original_sb;
+        } else {
+            fs->allocation_frozen = true;
+            err = BFS_ERR_CORRUPT;
+        }
+        goto done;
+    }
+    fs->allocation_frozen = true;
+    if (!unchanged || fs->tree.root != scratch || fs->reserve_count != 0) {
+        err = BFS_ERR_CORRUPT;
+        goto done;
+    }
+    memcpy(fs->sb->emergency_pool, planned.emergency_pool,
+           sizeof(planned.emergency_pool));
+    fs->sb->emergency_count = planned.emergency_count;
+    fs->total_free = (uint32_t)added;
+    *sealed = true;
+done:
+    free(memory);
+    fs->last_error = err;
+    return err;
 }
 
 static bfs_err_t restore_failed_reserve_root_fold(bfs_freespace_t *fs,
@@ -1429,6 +1694,8 @@ static bfs_err_t return_reserve_root_leaf_batch(bfs_freespace_t *fs,
 
 static bfs_err_t return_reserve(bfs_freespace_t *fs, bool allow_mixed)
 {
+    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
+    if (owner_err != BFS_OK) return owner_err;
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_reserve_return_call();
 #endif

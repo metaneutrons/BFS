@@ -27,6 +27,7 @@ typedef struct bfs_freespace {
     uint32_t total_free;            /* total free blocks (accounting) */
     uint32_t global_reserve;        /* blocks reserved for metadata (not data) */
     bool in_alloc;                  /* recursion guard */
+    bool allocation_frozen;         /* sealed leaf: no reuse until SB sync */
     /* Read by iface_error in alloc.c, outside header-only analysis. */
     // cppcheck-suppress unusedStructMember
     bfs_err_t last_error;           /* reason the last allocation returned NULL */
@@ -83,5 +84,12 @@ bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs);
 /* Post-publication settlement retains the established emergency-slot return
  * path: a mixed batch can keep retiring one ordinary root indefinitely. */
 bfs_err_t bfs_freespace_settle_reserve(bfs_freespace_t *fs);
+
+struct bfs_fs;
+/* Mounted commit only, under the filesystem write lock. BFS_OK/false declines
+ * before staging; every other error forbids ordinary fallback. On true, pending
+ * ownership remains recorded and allocation is frozen until successful SB sync.
+ * The caller must latch any error and abandon/recover that working state. */
+bfs_err_t bfs_freespace_seal_commit(struct bfs_fs *owner, bool *sealed);
 
 #endif /* BFS_ALLOC_H */

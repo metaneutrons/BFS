@@ -37,9 +37,7 @@ static bool extent_range_valid(const bfs_extent_tree_t *et, bfs_blk_t disk,
 
     bfs_blk_t end = disk + len;
     if (et->fs->sb) {
-        uint64_t backup_offset =
-            ((uint64_t)bfs_be32(et->fs->sb->sb_backup_offset_hi) << 32) |
-            bfs_be32(et->fs->sb->sb_backup_offset_lo);
+        uint64_t backup_offset = bfs_sb_backup_offset(et->fs->sb);
         bfs_blk_t backup = (bfs_blk_t)(backup_offset / bio->block_size);
         if (backup >= disk && backup < end)
             return false;

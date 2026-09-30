@@ -1,0 +1,15 @@
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -fno-omit-frame-pointer -fsanitize=address,undefined -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host-sf-convergence-san/test_txn_sealed_convergence tests/test_txn_sealed_convergence.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+==62353==AddressSanitizer: detect_leaks is not supported on this platform.
+=== Sealed transaction natural convergence ===
+  test_convergence_1024                              OK
+  test_convergence_4096                              OK
+
+2 passed, 0 failed
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -fno-omit-frame-pointer -fsanitize=address,undefined -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host-sf-convergence-san/test_txn_sealed_convergence tests/test_txn_sealed_convergence.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+=== Sealed transaction natural convergence ===
+  test_convergence_1024                                  1024-byte blocks: 36/36 commits witnessed; each had one frozen metadata fence, one SB write+sync, pending retained, zero non-SB frozen writes
+OK
+  test_convergence_4096                                  4096-byte blocks: 36/36 commits witnessed; each had one frozen metadata fence, one SB write+sync, pending retained, zero non-SB frozen writes
+OK
+
+2 passed, 0 failed

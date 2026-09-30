@@ -45,8 +45,10 @@ void bfs_txn_set_inode_root(bfs_txn_t *txn, bfs_blk_t root);
 /* Low-level: write the working superblock (the durable-commit primitive). */
 bfs_err_t bfs_txn_write_sb(bfs_txn_t *txn);
 
-/* The single full-filesystem transaction-commit boundary (defined in txn.c):
- * return reserve, gather tree roots, write the superblock, drain pending frees. */
+/* The single full-filesystem commit boundary (defined in txn.c): seal eligible
+ * settlement and publish, otherwise use the established pending-reclaim loop.
+ * Internal callers require the write lock or exclusive lifecycle/serialized
+ * handler ownership. Public bfs_fs_sync takes the filesystem write lock. */
 bfs_err_t bfs_txn_commit(struct bfs_fs *fs);
 
 /* Abort: discard changes */
