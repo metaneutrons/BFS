@@ -221,6 +221,30 @@ static void emit_deep_counter_rows(const char *phase,
     prefixed_metric(phase, "NODE_CRC_WRITE_SAMPLE_TICKS",
                     (unsigned long long)snapshot->node_crc_write_sample_ticks);
     prefixed_metric(phase, "CLOCK_PAIR_TICKS", snapshot->clock_pair_ticks);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_CALLS",
+                    snapshot->free_tree_reserve_return_calls);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_RUNS",
+                    snapshot->free_tree_reserve_return_runs);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_BLOCKS",
+                    snapshot->free_tree_reserve_return_blocks);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK",
+                    snapshot->free_tree_reserve_return_runs_1_block);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS",
+                    snapshot->free_tree_reserve_return_runs_2_3_blocks);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS",
+                    snapshot->free_tree_reserve_return_runs_4_7_blocks);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS",
+                    snapshot->free_tree_reserve_return_runs_8_plus_blocks);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS",
+                    snapshot->free_tree_reserve_return_max_run_blocks);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN",
+                    snapshot->free_tree_reserve_return_max_node_writes_per_run);
+    prefixed_metric(phase, "POST_PUBLISH_RECLAIM_PASSES",
+                    snapshot->post_publish_reclaim_passes);
+    prefixed_metric(phase, "MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT",
+                    snapshot->max_post_publish_reclaim_passes_per_commit);
+    prefixed_metric(phase, "SUPERBLOCK_PUBLICATIONS",
+                    snapshot->superblock_publications);
 }
 
 static BOOL make_path(char *path, ULONG capacity, const char *drive, const char *suffix)
@@ -401,7 +425,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     handle = CreateDir(path);
     if (!handle) return fail("mkdir");
     UnLock(handle);
-    if (deep_mode) emit("FS_DEEP_COMPARE\t5\nDRIVE\t");
+    if (deep_mode) emit("FS_DEEP_COMPARE\t6\nDRIVE\t");
     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
     emit(drive);
     emit("\n");

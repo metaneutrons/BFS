@@ -65,6 +65,53 @@ class BenchVerifierTests(unittest.TestCase):
         pfs_lines[0] = "FS_DEEP_COMPARE\t5"
         pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
 
+    def upgrade_deep_compare_to_v6(self):
+        self.upgrade_deep_compare_to_v5()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii").splitlines()
+        self.assertEqual(original[0], "FS_DEEP_COMPARE\t5")
+        upgraded = ["FS_DEEP_COMPARE\t6"]
+        for line in original[1:]:
+            upgraded.append(line)
+            if "\t" not in line:
+                continue
+            name, _ = line.split("\t")
+            if not name.endswith("_CLOCK_PAIR_TICKS"):
+                continue
+            phase = name[:-len("_CLOCK_PAIR_TICKS")]
+            phase_values = {
+                metric_name: int(metric_value)
+                for row in original
+                if row.startswith(phase + "_") and "\t" in row
+                for metric_name, metric_value in [row.split("\t")]
+            }
+            txn_commits = phase_values[phase + "_TXN_COMMITS"]
+            reserve_writes = phase_values[phase + "_FREE_TREE_RESERVE_RETURN_NODE_WRITES"]
+            returned_runs = 1
+            reclaim_passes = txn_commits
+            new_metrics = (
+                ("FREE_TREE_RESERVE_RETURN_CALLS", max(txn_commits, 1)),
+                ("FREE_TREE_RESERVE_RETURN_RUNS", returned_runs),
+                ("FREE_TREE_RESERVE_RETURN_BLOCKS", 1),
+                ("FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK", returned_runs),
+                ("FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS", 0),
+                ("FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS", 0),
+                ("FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS", 0),
+                ("FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS", 1),
+                ("FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN", reserve_writes),
+                ("POST_PUBLISH_RECLAIM_PASSES", reclaim_passes),
+                ("MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT",
+                 1 if reclaim_passes else 0),
+                ("SUPERBLOCK_PUBLICATIONS", txn_commits + reclaim_passes),
+            )
+            upgraded.extend(f"{phase}_{metric}\t{value}" for metric, value in new_metrics)
+        bfs.write_text("\n".join(upgraded) + "\n", encoding="ascii")
+        pfs3 = self.results / "pfs3.deep-compare.tsv"
+        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
+        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t5")
+        pfs_lines[0] = "FS_DEEP_COMPARE\t6"
+        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
+
     def verify(self, mode):
         return subprocess.run(
             [str(VERIFIER), str(self.run_dir), mode],
@@ -142,6 +189,47 @@ class BenchVerifierTests(unittest.TestCase):
                         matching_line, metric + replacement, 1,
                     )
                 bfs.write_text(mutated, encoding="ascii")
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v6_accepts_consistent_reserve_and_commit_metrics(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v6()
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v6_rejects_reserve_and_commit_invariant_violations(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v6()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        txn_line = next(line for line in original.splitlines()
+                        if line.startswith("SMALL_CREATE_40_TXN_COMMITS\t"))
+        txn_commits = int(txn_line.split("\t")[1])
+        reserve_writes_line = next(
+            line for line in original.splitlines()
+            if line.startswith("SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_NODE_WRITES\t")
+        )
+        reserve_writes = int(reserve_writes_line.split("\t")[1])
+        cases = (
+            ("SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_RUNS\t1",
+             "SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_RUNS\t2"),
+            ("SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_BLOCKS\t1",
+             "SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_BLOCKS\t0"),
+            ("SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS\t1",
+             "SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS\t2"),
+            (f"SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN\t{reserve_writes}",
+             f"SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN\t{reserve_writes + 1}"),
+            (f"SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_CALLS\t{max(txn_commits, 1)}",
+             f"SMALL_CREATE_40_FREE_TREE_RESERVE_RETURN_CALLS\t{max(txn_commits - 1, 0)}"),
+            (f"SMALL_CREATE_40_MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT\t{1 if txn_commits else 0}",
+             f"SMALL_CREATE_40_MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT\t{txn_commits + 1}"),
+            (f"SMALL_CREATE_40_SUPERBLOCK_PUBLICATIONS\t{txn_commits * 2}",
+             f"SMALL_CREATE_40_SUPERBLOCK_PUBLICATIONS\t{txn_commits}"),
+        )
+        for old, new in cases:
+            with self.subTest(metric=old):
+                self.assertIn(old, original)
+                bfs.write_text(original.replace(old, new, 1), encoding="ascii")
                 self.assertNotEqual(self.verify("deep-compare").returncode, 0)
 
     def test_real_deep_profile_evidence_and_missing_peer(self):

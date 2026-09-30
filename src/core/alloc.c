@@ -867,6 +867,9 @@ static bool reserve_block_is_emergency(const bfs_freespace_t *fs, bfs_blk_t blk)
 
 bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
 {
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_reserve_return_call();
+#endif
     if (!fs || !fs->tree.bio || fs->reserve_count > BFS_ALLOC_RESERVE_SIZE)
         return BFS_ERR_INVAL;
     uint32_t saved_global_reserve = fs->global_reserve;
@@ -889,10 +892,18 @@ bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
 #ifdef BFS_PERF_PROBE
         ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
             BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN);
+        ULONG node_writes_before =
+            bfs_perf_probe_counters.free_tree_reserve_return_node_writes;
 #endif
         bfs_err_t err = bfs_freespace_free(fs, start, run);
 #ifdef BFS_PERF_PROBE
         bfs_perf_probe_free_tree_phase_leave(previous_phase);
+        if (err == BFS_OK) {
+            ULONG node_writes =
+                bfs_perf_probe_counters.free_tree_reserve_return_node_writes -
+                node_writes_before;
+            bfs_perf_probe_reserve_return_run(run, node_writes);
+        }
 #endif
         if (err != BFS_OK) {
             if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE ||

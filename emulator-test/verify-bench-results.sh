@@ -56,6 +56,7 @@ case "$mode" in
         fixed_metric_value=64
         deep_compare_counters_v4=(BIO_READS BIO_WRITES BIO_UPDATES DATA_READS DATA_WRITES NODE_WRITES TXN_COMMITS FREESPACE_ALLOCS EXTENT_MAPS READ_TICKS WRITE_TICKS UPDATE_TICKS DATA_READ_TICKS DATA_WRITE_TICKS FREE_TREE_NODE_WRITES DIR_TREE_NODE_WRITES INODE_TREE_NODE_WRITES REFCOUNT_TREE_NODE_WRITES OTHER_TREE_NODE_WRITES NODE_CRC_READ_CALLS NODE_CRC_READ_SAMPLES NODE_CRC_READ_SAMPLE_TICKS NODE_CRC_WRITE_CALLS NODE_CRC_WRITE_SAMPLES NODE_CRC_WRITE_SAMPLE_TICKS CLOCK_PAIR_TICKS)
         deep_compare_counters_v5=(BIO_READS BIO_WRITES BIO_UPDATES DATA_READS DATA_WRITES NODE_WRITES TXN_COMMITS FREESPACE_ALLOCS EXTENT_MAPS READ_TICKS WRITE_TICKS UPDATE_TICKS DATA_READ_TICKS DATA_WRITE_TICKS FREE_TREE_NODE_WRITES FREE_TREE_ALLOCATION_BODY_NODE_WRITES FREE_TREE_RESERVE_REFILL_NODE_WRITES FREE_TREE_RESERVE_RETURN_NODE_WRITES FREE_TREE_POST_PUBLISH_PENDING_RECLAIM_NODE_WRITES FREE_TREE_OTHER_NODE_WRITES DIR_TREE_NODE_WRITES INODE_TREE_NODE_WRITES REFCOUNT_TREE_NODE_WRITES OTHER_TREE_NODE_WRITES NODE_CRC_READ_CALLS NODE_CRC_READ_SAMPLES NODE_CRC_READ_SAMPLE_TICKS NODE_CRC_WRITE_CALLS NODE_CRC_WRITE_SAMPLES NODE_CRC_WRITE_SAMPLE_TICKS CLOCK_PAIR_TICKS)
+        deep_compare_counters_v6=("${deep_compare_counters_v5[@]}" FREE_TREE_RESERVE_RETURN_CALLS FREE_TREE_RESERVE_RETURN_RUNS FREE_TREE_RESERVE_RETURN_BLOCKS FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN POST_PUBLISH_RECLAIM_PASSES MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT SUPERBLOCK_PUBLICATIONS)
         deep_compare_bfs_metrics=
         deep_compare_pfs3_metrics=
         positive_metric_names=
@@ -94,15 +95,17 @@ for filesystem in "${filesystems[@]}"; do
             exit 1
         fi
         if [[ "$filesystem" == bfs ]]; then
-            if [[ "$observed_version" != 4 && "$observed_version" != 5 ]]; then
+            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 ]]; then
                 printf 'ERROR: unsupported deep-compare schema version %s\n' "$observed_version" >&2
                 exit 1
             fi
             header_version=$observed_version
             if [[ "$header_version" == 4 ]]; then
                 deep_compare_counters=("${deep_compare_counters_v4[@]}")
-            else
+            elif [[ "$header_version" == 5 ]]; then
                 deep_compare_counters=("${deep_compare_counters_v5[@]}")
+            else
+                deep_compare_counters=("${deep_compare_counters_v6[@]}")
             fi
             deep_compare_bfs_metrics=
             for deep_phase in "${deep_compare_phases[@]}"; do
@@ -149,12 +152,49 @@ for filesystem in "${filesystems[@]}"; do
         { exit 1 }
         END {
             if (NR != metric_count + 3) exit 1
-            if (header_version == 5 && drive == "DH1:") {
+            if ((header_version == 5 || header_version == 6) && drive == "DH1:") {
                 phase_count = split(phases, phase_names, " ")
                 for (phase_index = 1; phase_index <= phase_count; phase_index++) {
                     phase = phase_names[phase_index]
                     bucket_sum = metric_values[phase "_FREE_TREE_ALLOCATION_BODY_NODE_WRITES"] + metric_values[phase "_FREE_TREE_RESERVE_REFILL_NODE_WRITES"] + metric_values[phase "_FREE_TREE_RESERVE_RETURN_NODE_WRITES"] + metric_values[phase "_FREE_TREE_POST_PUBLISH_PENDING_RECLAIM_NODE_WRITES"] + metric_values[phase "_FREE_TREE_OTHER_NODE_WRITES"]
                     if (bucket_sum != metric_values[phase "_FREE_TREE_NODE_WRITES"]) exit 1
+                }
+            }
+            if (header_version == 6 && drive == "DH1:") {
+                for (phase_index = 1; phase_index <= phase_count; phase_index++) {
+                    phase = phase_names[phase_index]
+                    runs = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUNS"]
+                    blocks = metric_values[phase "_FREE_TREE_RESERVE_RETURN_BLOCKS"]
+                    one = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK"]
+                    two_three = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS"]
+                    four_seven = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS"]
+                    eight_plus = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS"]
+                    max_run = metric_values[phase "_FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS"]
+                    max_run_writes = metric_values[phase "_FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN"]
+                    reserve_writes = metric_values[phase "_FREE_TREE_RESERVE_RETURN_NODE_WRITES"]
+                    txn_commits = metric_values[phase "_TXN_COMMITS"]
+                    return_calls = metric_values[phase "_FREE_TREE_RESERVE_RETURN_CALLS"]
+                    passes = metric_values[phase "_POST_PUBLISH_RECLAIM_PASSES"]
+                    max_passes = metric_values[phase "_MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT"]
+                    publications = metric_values[phase "_SUPERBLOCK_PUBLICATIONS"]
+                    if (one + two_three + four_seven + eight_plus != runs) exit 1
+                    min_blocks = one + 2 * two_three + 4 * four_seven + 8 * eight_plus
+                    max_blocks = one + 3 * two_three + 7 * four_seven + max_run * eight_plus
+                    if (blocks < runs || blocks < min_blocks || blocks > max_blocks) exit 1
+                    if (runs == 0) {
+                        if (blocks != 0 || max_run != 0 || max_run_writes != 0 || reserve_writes != 0) exit 1
+                    } else {
+                        if (max_run < 1 || max_run > blocks) exit 1
+                        if (max_run == 1 && (one == 0 || two_three + four_seven + eight_plus != 0)) exit 1
+                        if (max_run >= 2 && max_run <= 3 && (two_three == 0 || four_seven + eight_plus != 0)) exit 1
+                        if (max_run >= 4 && max_run <= 7 && (four_seven == 0 || eight_plus != 0)) exit 1
+                        if (max_run >= 8 && eight_plus == 0) exit 1
+                        if (max_run_writes > reserve_writes) exit 1
+                    }
+                    if (return_calls < txn_commits) exit 1
+                    if (passes > txn_commits * 256 || max_passes > 256 || max_passes > passes) exit 1
+                    if ((passes == 0 && max_passes != 0) || (passes > 0 && max_passes == 0)) exit 1
+                    if (publications != txn_commits + passes) exit 1
                 }
             }
         }

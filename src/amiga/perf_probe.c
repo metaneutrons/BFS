@@ -77,6 +77,31 @@ void bfs_perf_probe_free_tree_phase_leave(ULONG previous_phase)
     bfs_perf_probe_free_tree_phase = previous_phase;
 }
 
+void bfs_perf_probe_reserve_return_call(void)
+{
+    bfs_perf_probe_counters.free_tree_reserve_return_calls++;
+}
+
+void bfs_perf_probe_reserve_return_run(ULONG blocks, ULONG node_writes)
+{
+    bfs_perf_probe_snapshot_t *counters = &bfs_perf_probe_counters;
+    if (blocks == 0) return;
+    counters->free_tree_reserve_return_runs++;
+    counters->free_tree_reserve_return_blocks += blocks;
+    if (blocks == 1)
+        counters->free_tree_reserve_return_runs_1_block++;
+    else if (blocks <= 3)
+        counters->free_tree_reserve_return_runs_2_3_blocks++;
+    else if (blocks <= 7)
+        counters->free_tree_reserve_return_runs_4_7_blocks++;
+    else
+        counters->free_tree_reserve_return_runs_8_plus_blocks++;
+    if (blocks > counters->free_tree_reserve_return_max_run_blocks)
+        counters->free_tree_reserve_return_max_run_blocks = blocks;
+    if (node_writes > counters->free_tree_reserve_return_max_node_writes_per_run)
+        counters->free_tree_reserve_return_max_node_writes_per_run = node_writes;
+}
+
 void bfs_perf_probe_begin(struct EClockVal *start)
 {
     if (timer_open && bfs_perf_probe_counters.clock_hz != 0)

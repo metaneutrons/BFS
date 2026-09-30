@@ -89,6 +89,9 @@ bfs_err_t bfs_txn_write_sb(bfs_txn_t *txn)
     if (next_id == UINT64_MAX) return BFS_ERR_NOSPC;
     bfs_err_t err = bfs_sb_write(txn->bio, &txn->sb_new);
     if (err != BFS_OK) return err;
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.superblock_publications++;
+#endif
     txn->sb = txn->sb_new;
     txn->sb_new.txn_id = bfs_be64(next_id + 1);
     /* active remains true: the transaction stays open for the next commit cycle.
@@ -233,6 +236,9 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
 
     /* Process pending frees: Use a local buffer to avoid overwriting while processing */
     int sync_iterations = 0;
+#ifdef BFS_PERF_PROBE
+    ULONG post_publish_reclaim_passes = 0;
+#endif
     while (fs->pending_count > 0 && sync_iterations < 256) {
         sync_iterations++;
         /* A bulk root swap itself retires the preceding root. Limit batching
@@ -247,6 +253,14 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
         bfs_perf_probe_free_tree_phase_leave(previous_phase);
 #endif
         if (err != BFS_OK) return err;
+#ifdef BFS_PERF_PROBE
+        post_publish_reclaim_passes++;
+        bfs_perf_probe_counters.post_publish_reclaim_passes++;
+        if (post_publish_reclaim_passes >
+            bfs_perf_probe_counters.max_post_publish_reclaim_passes_per_commit)
+            bfs_perf_probe_counters.max_post_publish_reclaim_passes_per_commit =
+                post_publish_reclaim_passes;
+#endif
 
         err = bfs_freespace_return_reserve(&fs->freespace);
         if (err != BFS_OK) return err;

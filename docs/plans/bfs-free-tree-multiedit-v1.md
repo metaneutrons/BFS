@@ -6,6 +6,10 @@ allocation/reclaim design and is not implemented (2026-09-30). The
 puts reserve return first for small-file work; post-publication reclaim is a
 smaller share than anticipated. The 8 MiB write still needs finer attribution
 of its `other` free-tree writes before choosing an edit design.
+The [reserve/commit follow-up](../qualification/bfs-reserve-commit-profile-2026-09-30.md)
+found over 96% singleton reserve-return runs in both small-file phases and
+roughly three post-publication reclaim passes per commit. A design must reduce
+this cycle without breaking its termination or old-root ownership rules.
 
 ## Problem and baseline
 

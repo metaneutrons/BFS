@@ -8,7 +8,7 @@
 
 #define BFS_ACTION_PERF_RESET 3010
 #define BFS_ACTION_PERF_READ  3011
-#define BFS_PERF_PROBE_VERSION 6
+#define BFS_PERF_PROBE_VERSION 7
 #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
 
 typedef struct bfs_perf_probe_snapshot {
@@ -53,6 +53,18 @@ typedef struct bfs_perf_probe_snapshot {
     ULONG free_tree_reserve_return_node_writes;
     ULONG free_tree_post_publish_pending_reclaim_node_writes;
     ULONG free_tree_other_node_writes;
+    ULONG free_tree_reserve_return_calls;
+    ULONG free_tree_reserve_return_runs;
+    ULONG free_tree_reserve_return_blocks;
+    ULONG free_tree_reserve_return_runs_1_block;
+    ULONG free_tree_reserve_return_runs_2_3_blocks;
+    ULONG free_tree_reserve_return_runs_4_7_blocks;
+    ULONG free_tree_reserve_return_runs_8_plus_blocks;
+    ULONG free_tree_reserve_return_max_run_blocks;
+    ULONG free_tree_reserve_return_max_node_writes_per_run;
+    ULONG post_publish_reclaim_passes;
+    ULONG max_post_publish_reclaim_passes_per_commit;
+    ULONG superblock_publications;
 } bfs_perf_probe_snapshot_t;
 
 #ifdef BFS_PERF_PROBE
@@ -81,6 +93,8 @@ void bfs_perf_probe_close(void);
 void bfs_perf_probe_reset(void);
 ULONG bfs_perf_probe_free_tree_phase_enter(enum bfs_perf_free_tree_phase phase);
 void bfs_perf_probe_free_tree_phase_leave(ULONG previous_phase);
+void bfs_perf_probe_reserve_return_call(void);
+void bfs_perf_probe_reserve_return_run(ULONG blocks, ULONG node_writes);
 void bfs_perf_probe_begin(struct EClockVal *start);
 uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start);
 void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,
