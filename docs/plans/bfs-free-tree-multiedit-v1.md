@@ -1,7 +1,11 @@
 # Free-tree multi-edit plan v1
 
 Status: increment 1 locally qualified; increment 2 requires a separate
-allocation/reclaim design and is not implemented (2026-09-29).
+allocation/reclaim design and is not implemented (2026-09-30). The
+[phase-attribution measurement](../qualification/bfs-free-tree-phase-profile-2026-09-30.md)
+puts reserve return first for small-file work; post-publication reclaim is a
+smaller share than anticipated. The 8 MiB write still needs finer attribution
+of its `other` free-tree writes before choosing an edit design.
 
 ## Problem and baseline
 

@@ -8,7 +8,7 @@
 
 #define BFS_ACTION_PERF_RESET 3010
 #define BFS_ACTION_PERF_READ  3011
-#define BFS_PERF_PROBE_VERSION 5
+#define BFS_PERF_PROBE_VERSION 6
 #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
 
 typedef struct bfs_perf_probe_snapshot {
@@ -48,6 +48,11 @@ typedef struct bfs_perf_probe_snapshot {
     uint64_t node_crc_read_sample_ticks;
     // cppcheck-suppress unusedStructMember
     uint64_t node_crc_write_sample_ticks;
+    ULONG free_tree_allocation_body_node_writes;
+    ULONG free_tree_reserve_refill_node_writes;
+    ULONG free_tree_reserve_return_node_writes;
+    ULONG free_tree_post_publish_pending_reclaim_node_writes;
+    ULONG free_tree_other_node_writes;
 } bfs_perf_probe_snapshot_t;
 
 #ifdef BFS_PERF_PROBE
@@ -55,6 +60,15 @@ struct bfs_fs;
 extern bfs_perf_probe_snapshot_t bfs_perf_probe_counters;
 extern ULONG bfs_perf_probe_data_depth;
 extern struct bfs_fs *bfs_perf_probe_fs;
+extern ULONG bfs_perf_probe_free_tree_phase;
+
+enum bfs_perf_free_tree_phase {
+    BFS_PERF_FREE_TREE_PHASE_OTHER,
+    BFS_PERF_FREE_TREE_PHASE_ALLOCATION_BODY,
+    BFS_PERF_FREE_TREE_PHASE_RESERVE_REFILL,
+    BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN,
+    BFS_PERF_FREE_TREE_PHASE_POST_PUBLISH_PENDING_RECLAIM
+};
 
 enum bfs_perf_io_kind {
     BFS_PERF_IO_READ,
@@ -65,6 +79,8 @@ enum bfs_perf_io_kind {
 void bfs_perf_probe_init(struct MsgPort *port);
 void bfs_perf_probe_close(void);
 void bfs_perf_probe_reset(void);
+ULONG bfs_perf_probe_free_tree_phase_enter(enum bfs_perf_free_tree_phase phase);
+void bfs_perf_probe_free_tree_phase_leave(ULONG previous_phase);
 void bfs_perf_probe_begin(struct EClockVal *start);
 uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start);
 void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,

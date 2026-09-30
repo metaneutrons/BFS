@@ -238,7 +238,14 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
         /* A bulk root swap itself retires the preceding root. Limit batching
          * to the initial reclaim pass; the ordinary path settles the resulting
          * small tail without repeatedly swapping one root for another. */
+#ifdef BFS_PERF_PROBE
+        ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+            BFS_PERF_FREE_TREE_PHASE_POST_PUBLISH_PENDING_RECLAIM);
+#endif
         err = reclaim_pending_batch(fs, sync_iterations == 1);
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
         if (err != BFS_OK) return err;
 
         err = bfs_freespace_return_reserve(&fs->freespace);

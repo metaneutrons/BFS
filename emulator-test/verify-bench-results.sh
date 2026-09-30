@@ -51,23 +51,14 @@ case "$mode" in
         header=FS_DEEP_COMPARE
         value_pattern='^[0-9]+$'
         deep_compare_phases=(SMALL_CREATE_40 LOOKUP_400 SMALL_READ_40 SEQ_WRITE_8M SEQ_READ_8M SMALL_DELETE_40)
-        header_version=4
+        header_version=0
         fixed_metric_name=CRC_SAMPLE_STRIDE
         fixed_metric_value=64
-        deep_compare_counters=(BIO_READS BIO_WRITES BIO_UPDATES DATA_READS DATA_WRITES NODE_WRITES TXN_COMMITS FREESPACE_ALLOCS EXTENT_MAPS READ_TICKS WRITE_TICKS UPDATE_TICKS DATA_READ_TICKS DATA_WRITE_TICKS FREE_TREE_NODE_WRITES DIR_TREE_NODE_WRITES INODE_TREE_NODE_WRITES REFCOUNT_TREE_NODE_WRITES OTHER_TREE_NODE_WRITES NODE_CRC_READ_CALLS NODE_CRC_READ_SAMPLES NODE_CRC_READ_SAMPLE_TICKS NODE_CRC_WRITE_CALLS NODE_CRC_WRITE_SAMPLES NODE_CRC_WRITE_SAMPLE_TICKS CLOCK_PAIR_TICKS)
+        deep_compare_counters_v4=(BIO_READS BIO_WRITES BIO_UPDATES DATA_READS DATA_WRITES NODE_WRITES TXN_COMMITS FREESPACE_ALLOCS EXTENT_MAPS READ_TICKS WRITE_TICKS UPDATE_TICKS DATA_READ_TICKS DATA_WRITE_TICKS FREE_TREE_NODE_WRITES DIR_TREE_NODE_WRITES INODE_TREE_NODE_WRITES REFCOUNT_TREE_NODE_WRITES OTHER_TREE_NODE_WRITES NODE_CRC_READ_CALLS NODE_CRC_READ_SAMPLES NODE_CRC_READ_SAMPLE_TICKS NODE_CRC_WRITE_CALLS NODE_CRC_WRITE_SAMPLES NODE_CRC_WRITE_SAMPLE_TICKS CLOCK_PAIR_TICKS)
+        deep_compare_counters_v5=(BIO_READS BIO_WRITES BIO_UPDATES DATA_READS DATA_WRITES NODE_WRITES TXN_COMMITS FREESPACE_ALLOCS EXTENT_MAPS READ_TICKS WRITE_TICKS UPDATE_TICKS DATA_READ_TICKS DATA_WRITE_TICKS FREE_TREE_NODE_WRITES FREE_TREE_ALLOCATION_BODY_NODE_WRITES FREE_TREE_RESERVE_REFILL_NODE_WRITES FREE_TREE_RESERVE_RETURN_NODE_WRITES FREE_TREE_POST_PUBLISH_PENDING_RECLAIM_NODE_WRITES FREE_TREE_OTHER_NODE_WRITES DIR_TREE_NODE_WRITES INODE_TREE_NODE_WRITES REFCOUNT_TREE_NODE_WRITES OTHER_TREE_NODE_WRITES NODE_CRC_READ_CALLS NODE_CRC_READ_SAMPLES NODE_CRC_READ_SAMPLE_TICKS NODE_CRC_WRITE_CALLS NODE_CRC_WRITE_SAMPLES NODE_CRC_WRITE_SAMPLE_TICKS CLOCK_PAIR_TICKS)
         deep_compare_bfs_metrics=
         deep_compare_pfs3_metrics=
         positive_metric_names=
-        for deep_phase in "${deep_compare_phases[@]}"; do
-            deep_compare_bfs_metrics+="${deep_compare_bfs_metrics:+ }${deep_phase}_US"
-            deep_compare_pfs3_metrics+="${deep_compare_pfs3_metrics:+ }${deep_phase}_US"
-            positive_metric_names+="${positive_metric_names:+ }${deep_phase}_US"
-            for deep_counter in "${deep_compare_counters[@]}"; do
-                deep_compare_bfs_metrics+="${deep_compare_bfs_metrics:+ }${deep_phase}_${deep_counter}"
-            done
-        done
-        deep_compare_bfs_metrics+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
-        positive_metric_names+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
         filesystems=(bfs pfs3)
         ;;
     *) printf 'ERROR: mode must be compare, profile, internal, deep, or deep-compare\n' >&2; exit 2 ;;
@@ -97,13 +88,49 @@ for filesystem in "${filesystems[@]}"; do
         read -r -a metric_names_array <<<"$metrics"
         metric_count=${#metric_names_array[@]}
     elif [[ "$mode" == deep-compare ]]; then
-        if [[ "$filesystem" == bfs ]]; then metrics=$deep_compare_bfs_metrics; else metrics=$deep_compare_pfs3_metrics; fi
+        IFS=$'\t' read -r observed_header observed_version < "$output"
+        if [[ "$observed_header" != "$header" ]]; then
+            printf 'ERROR: invalid deep-compare schema header in %s output\n' "$filesystem" >&2
+            exit 1
+        fi
+        if [[ "$filesystem" == bfs ]]; then
+            if [[ "$observed_version" != 4 && "$observed_version" != 5 ]]; then
+                printf 'ERROR: unsupported deep-compare schema version %s\n' "$observed_version" >&2
+                exit 1
+            fi
+            header_version=$observed_version
+            if [[ "$header_version" == 4 ]]; then
+                deep_compare_counters=("${deep_compare_counters_v4[@]}")
+            else
+                deep_compare_counters=("${deep_compare_counters_v5[@]}")
+            fi
+            deep_compare_bfs_metrics=
+            for deep_phase in "${deep_compare_phases[@]}"; do
+                deep_compare_bfs_metrics+="${deep_compare_bfs_metrics:+ }${deep_phase}_US"
+                positive_metric_names+="${positive_metric_names:+ }${deep_phase}_US"
+                for deep_counter in "${deep_compare_counters[@]}"; do
+                    deep_compare_bfs_metrics+="${deep_compare_bfs_metrics:+ }${deep_phase}_${deep_counter}"
+                done
+            done
+            deep_compare_bfs_metrics+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
+            positive_metric_names+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
+        elif [[ "$observed_version" != "$header_version" ]]; then
+            printf 'ERROR: mixed deep-compare schema versions\n' >&2
+            exit 1
+        fi
+        if [[ "$filesystem" == bfs ]]; then metrics=$deep_compare_bfs_metrics; else
+            deep_compare_pfs3_metrics=
+            for deep_phase in "${deep_compare_phases[@]}"; do
+                deep_compare_pfs3_metrics+="${deep_compare_pfs3_metrics:+ }${deep_phase}_US"
+            done
+            metrics=$deep_compare_pfs3_metrics
+        fi
         read -r -a metric_names_array <<<"$metrics"
         metric_count=${#metric_names_array[@]}
     else
         positive_metric_names=
     fi
-    awk -F '\t' -v drive="$drive" -v header="$header" -v header_version="$header_version" -v metric_names="$metrics" -v metric_count="$metric_count" -v value_pattern="$value_pattern" -v positive_metric_names="${positive_metric_names:-}" -v fixed_metric_name="$fixed_metric_name" -v fixed_metric_value="$fixed_metric_value" '
+    awk -F '\t' -v drive="$drive" -v header="$header" -v header_version="$header_version" -v metric_names="$metrics" -v metric_count="$metric_count" -v value_pattern="$value_pattern" -v positive_metric_names="${positive_metric_names:-}" -v fixed_metric_name="$fixed_metric_name" -v fixed_metric_value="$fixed_metric_value" -v phases="${deep_compare_phases[*]:-}" '
         BEGIN {
             split(metric_names, names, " ")
             positive_count = split(positive_metric_names, positive_names, " ")
@@ -112,6 +139,7 @@ for filesystem in "${filesystems[@]}"; do
         NR == 2 { if (NF != 2 || $1 != "DRIVE" || $2 != drive) exit 1; next }
         NR >= 3 && NR <= metric_count + 2 {
             if (NF != 2 || $1 != names[NR-2] || $2 !~ value_pattern) exit 1
+            metric_values[$1] = $2 + 0
             for (i = 1; i <= positive_count; i++)
                 if ($1 == positive_names[i] && $2 !~ /^[1-9][0-9]*$/) exit 1
             if ($1 == fixed_metric_name && $2 != fixed_metric_value) exit 1
@@ -119,7 +147,17 @@ for filesystem in "${filesystems[@]}"; do
         }
         NR == metric_count + 3 { if (NF != 2 || $1 != "PASS" || $2 != "1") exit 1; next }
         { exit 1 }
-        END { if (NR != metric_count + 3) exit 1 }
+        END {
+            if (NR != metric_count + 3) exit 1
+            if (header_version == 5 && drive == "DH1:") {
+                phase_count = split(phases, phase_names, " ")
+                for (phase_index = 1; phase_index <= phase_count; phase_index++) {
+                    phase = phase_names[phase_index]
+                    bucket_sum = metric_values[phase "_FREE_TREE_ALLOCATION_BODY_NODE_WRITES"] + metric_values[phase "_FREE_TREE_RESERVE_REFILL_NODE_WRITES"] + metric_values[phase "_FREE_TREE_RESERVE_RETURN_NODE_WRITES"] + metric_values[phase "_FREE_TREE_POST_PUBLISH_PENDING_RECLAIM_NODE_WRITES"] + metric_values[phase "_FREE_TREE_OTHER_NODE_WRITES"]
+                    if (bucket_sum != metric_values[phase "_FREE_TREE_NODE_WRITES"]) exit 1
+                }
+            }
+        }
     ' "$output" || { printf 'ERROR: invalid or incomplete %s workload output\n' "$filesystem" >&2; exit 1; }
 done
 

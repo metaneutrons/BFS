@@ -12,6 +12,7 @@ struct Device *TimerBase;
 bfs_perf_probe_snapshot_t bfs_perf_probe_counters;
 ULONG bfs_perf_probe_data_depth;
 struct bfs_fs *bfs_perf_probe_fs;
+ULONG bfs_perf_probe_free_tree_phase;
 
 static struct timerequest *probe_timer;
 static BOOL timer_open;
@@ -49,6 +50,7 @@ void bfs_perf_probe_reset(void)
     memset(&bfs_perf_probe_counters, 0, sizeof(bfs_perf_probe_counters));
     bfs_perf_probe_counters.clock_hz = hz;
     bfs_perf_probe_data_depth = 0;
+    bfs_perf_probe_free_tree_phase = BFS_PERF_FREE_TREE_PHASE_OTHER;
     if (hz != 0) {
         uint64_t pair_ticks = 0;
         for (ULONG i = 0; i < 256; i++) {
@@ -58,6 +60,21 @@ void bfs_perf_probe_reset(void)
         }
         bfs_perf_probe_counters.clock_pair_ticks = (ULONG)(pair_ticks / 256);
     }
+}
+
+ULONG bfs_perf_probe_free_tree_phase_enter(enum bfs_perf_free_tree_phase phase)
+{
+    ULONG previous_phase = bfs_perf_probe_free_tree_phase;
+    if (phase != BFS_PERF_FREE_TREE_PHASE_RESERVE_REFILL ||
+        (previous_phase != BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN &&
+         previous_phase != BFS_PERF_FREE_TREE_PHASE_POST_PUBLISH_PENDING_RECLAIM))
+        bfs_perf_probe_free_tree_phase = (ULONG)phase;
+    return previous_phase;
+}
+
+void bfs_perf_probe_free_tree_phase_leave(ULONG previous_phase)
+{
+    bfs_perf_probe_free_tree_phase = previous_phase;
 }
 
 void bfs_perf_probe_begin(struct EClockVal *start)

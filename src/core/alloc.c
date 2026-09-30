@@ -350,7 +350,14 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
     if (count == 1) {
         bfs_blk_t result = BFS_BLK_NULL;
         uint32_t taken = 0;
+#ifdef BFS_PERF_PROBE
+        ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+            BFS_PERF_FREE_TREE_PHASE_ALLOCATION_BODY);
+#endif
         bfs_err_t one_err = alloc_tail_from_highest(fs, 1, &result, &taken);
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
         if (one_err == BFS_OK) {
             fs->in_alloc = false;
             fs->last_error = BFS_OK;
@@ -414,8 +421,15 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
     /* Remove the old extent */
     uint32_t old_key = bfs_be32(sc.found_start);
     uint32_t old_len = bfs_be32(sc.found_len);
+#ifdef BFS_PERF_PROBE
+    ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+        BFS_PERF_FREE_TREE_PHASE_ALLOCATION_BODY);
+#endif
     bfs_err_t err = bfs_btree_delete(&fs->tree, &old_key);
     if (err != BFS_OK) {
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
         fs->in_alloc = false;
         fs->last_error = err;
         return BFS_BLK_NULL;
@@ -429,11 +443,17 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
         err = bfs_btree_insert(&fs->tree, &rem_start, &rem_len);
         if (err != BFS_OK) {
             bfs_err_t rollback_err = bfs_btree_insert(&fs->tree, &old_key, &old_len);
+#ifdef BFS_PERF_PROBE
+            bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
             fs->in_alloc = false;
             fs->last_error = rollback_err == BFS_OK ? err : rollback_err;
             return BFS_BLK_NULL;
         }
     }
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
 
     fs->total_free -= count;
     fs->roving = result + count;
@@ -807,7 +827,14 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
 
         bfs_blk_t start = BFS_BLK_NULL;
         uint32_t taken = 0;
+#ifdef BFS_PERF_PROBE
+        ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+            BFS_PERF_FREE_TREE_PHASE_RESERVE_REFILL);
+#endif
         bfs_err_t err = alloc_tail_from_highest(fs, wanted, &start, &taken);
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
         if (err != BFS_OK) {
             fs->in_alloc = false;
             return err == BFS_ERR_NOTFOUND ? BFS_ERR_CORRUPT : err;
@@ -859,7 +886,14 @@ bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
                 run++;
         }
         fs->reserve_count -= run;
+#ifdef BFS_PERF_PROBE
+        ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+            BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN);
+#endif
         bfs_err_t err = bfs_freespace_free(fs, start, run);
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
         if (err != BFS_OK) {
             if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE ||
                 run > BFS_ALLOC_RESERVE_SIZE - fs->reserve_count) {

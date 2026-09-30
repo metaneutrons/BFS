@@ -168,7 +168,7 @@ static const char *capture_probe(const char *drive, bfs_perf_probe_snapshot_t *s
 static void prefixed_metric(const char *prefix, const char *suffix,
                             unsigned long long value)
 {
-    char name[64];
+    char name[96];
     ULONG prefix_length = text_length(prefix);
     ULONG suffix_length = text_length(suffix);
 
@@ -198,6 +198,16 @@ static void emit_deep_counter_rows(const char *phase,
     prefixed_metric(phase, "DATA_READ_TICKS", (unsigned long long)snapshot->data_read_ticks);
     prefixed_metric(phase, "DATA_WRITE_TICKS", (unsigned long long)snapshot->data_write_ticks);
     prefixed_metric(phase, "FREE_TREE_NODE_WRITES", snapshot->free_tree_node_writes);
+    prefixed_metric(phase, "FREE_TREE_ALLOCATION_BODY_NODE_WRITES",
+                    snapshot->free_tree_allocation_body_node_writes);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_REFILL_NODE_WRITES",
+                    snapshot->free_tree_reserve_refill_node_writes);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_NODE_WRITES",
+                    snapshot->free_tree_reserve_return_node_writes);
+    prefixed_metric(phase, "FREE_TREE_POST_PUBLISH_PENDING_RECLAIM_NODE_WRITES",
+                    snapshot->free_tree_post_publish_pending_reclaim_node_writes);
+    prefixed_metric(phase, "FREE_TREE_OTHER_NODE_WRITES",
+                    snapshot->free_tree_other_node_writes);
     prefixed_metric(phase, "DIR_TREE_NODE_WRITES", snapshot->dir_tree_node_writes);
     prefixed_metric(phase, "INODE_TREE_NODE_WRITES", snapshot->inode_tree_node_writes);
     prefixed_metric(phase, "REFCOUNT_TREE_NODE_WRITES", snapshot->refcount_tree_node_writes);
@@ -391,7 +401,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     handle = CreateDir(path);
     if (!handle) return fail("mkdir");
     UnLock(handle);
-    if (deep_mode) emit("FS_DEEP_COMPARE\t4\nDRIVE\t");
+    if (deep_mode) emit("FS_DEEP_COMPARE\t5\nDRIVE\t");
     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
     emit(drive);
     emit("\n");

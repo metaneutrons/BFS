@@ -148,9 +148,27 @@ static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf
             bfs_perf_probe_elapsed(&crc_started);
     }
     bfs_perf_probe_counters.btree_node_writes++;
-    if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->freespace.tree)
+    if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->freespace.tree) {
         bfs_perf_probe_counters.free_tree_node_writes++;
-    else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->dir_tree.tree)
+        switch (bfs_perf_probe_free_tree_phase) {
+        case BFS_PERF_FREE_TREE_PHASE_ALLOCATION_BODY:
+            bfs_perf_probe_counters.free_tree_allocation_body_node_writes++;
+            break;
+        case BFS_PERF_FREE_TREE_PHASE_RESERVE_REFILL:
+            bfs_perf_probe_counters.free_tree_reserve_refill_node_writes++;
+            break;
+        case BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN:
+            bfs_perf_probe_counters.free_tree_reserve_return_node_writes++;
+            break;
+        case BFS_PERF_FREE_TREE_PHASE_POST_PUBLISH_PENDING_RECLAIM:
+            bfs_perf_probe_counters.free_tree_post_publish_pending_reclaim_node_writes++;
+            break;
+        case BFS_PERF_FREE_TREE_PHASE_OTHER:
+        default:
+            bfs_perf_probe_counters.free_tree_other_node_writes++;
+            break;
+        }
+    } else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->dir_tree.tree)
         bfs_perf_probe_counters.dir_tree_node_writes++;
     else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->inode_tree)
         bfs_perf_probe_counters.inode_tree_node_writes++;
