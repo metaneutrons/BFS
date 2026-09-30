@@ -1,0 +1,79 @@
+_validate_metadata_stock:
+	lea (-20,sp),sp
+	movem.l a5/a4/a3/a2/d7/d6/d5/d4/d3/d2,-(sp)
+	move.l (64,sp),a3
+	move.l (584,a3),a4
+	cmp.w #128,a4
+	jhi .L59
+	move.l (620,a3),a0
+	moveq #32,d0
+	cmp.l (232,a0),d0
+	jcs .L59
+	move.l a4,d0
+	jeq .L62
+	move.l (a3),a1
+	move.l (4,a1),d2
+	move.l d2,d7
+	clr.l d3
+	lea ___udivdi3,a2
+	move.l d2,-(sp)
+	move.l d3,-(sp)
+	move.l (100,a0),-(sp)
+	move.l (96,a0),-(sp)
+	jsr (a2)
+	lea (16,sp),sp
+	move.l d0,d4
+	move.l d1,d5
+	move.l (624,a3),a0
+	move.l d2,-(sp)
+	move.l d3,-(sp)
+	move.l (100,a0),-(sp)
+	move.l (96,a0),-(sp)
+	jsr (a2)
+	move.l #4095,d3
+	add.l d2,d3
+	divu.l d2,d3
+	lea (16,sp),sp
+	move.l d3,(40,sp)
+	move.l d4,(44,sp)
+	move.l d5,(48,sp)
+	move.l d0,(52,sp)
+	move.l d1,(56,sp)
+	lea (72,a4.l*4),a4
+	move.l a4,d4
+	lea (72,a3),a2
+	add.l a3,d4
+	clr.l d3
+	lea _metadata_block_protected,a4
+	lea _validate_free_stock_range,a5
+.L61:
+	move.l (a2)+,d2
+	pea (40,sp)
+	move.l d2,-(sp)
+	move.l a3,-(sp)
+	jsr (a4)
+	lea (12,sp),sp
+	tst.l d0
+	jne .L59
+	move.l d3,-(sp)
+	pea 1.w
+	move.l d2,-(sp)
+	move.l a3,-(sp)
+	jsr (a5)
+	lea (16,sp),sp
+	tst.l d0
+	jne .L56
+	addq.l #1,d3
+	cmp.l a2,d4
+	jne .L61
+.L62:
+	clr.l d0
+.L56:
+	movem.l (sp)+,d2/d3/d4/d5/d6/d7/a2/a3/a4/a5
+	lea (20,sp),sp
+	rts
+.L59:
+	moveq #-3,d0
+	movem.l (sp)+,d2/d3/d4/d5/d6/d7/a2/a3/a4/a5
+	lea (20,sp),sp
+	rts
