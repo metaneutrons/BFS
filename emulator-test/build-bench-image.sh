@@ -23,6 +23,7 @@ ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
 ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
 PFS3="${BFS_PFS3_HANDLER:-$SCRIPT_DIR/.cache/pfs3aio}"
 HANDLER="${BFS_BENCH_HANDLER_FILE:-$PROJECT_DIR/build/amiga/bfshandler}"
+FORMATTER="${BFS_BENCH_FORMATTER_FILE:-$PROJECT_DIR/build/host/bfs}"
 BENCH_ORDER="${BFS_BENCH_ORDER:-bfs-first}"
 BENCH_MODE="${BFS_BENCH_MODE:-compare}"
 case "$BENCH_ORDER" in
@@ -76,7 +77,7 @@ command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
     exit 1
 }
 [ -f "$PROJECT_DIR/build/amiga/$GUEST_TOOL" ] || { echo "ERROR: run 'make amiga-$GUEST_TOOL' first"; exit 1; }
-[ -f "$PROJECT_DIR/build/host/bfs" ] || { echo "ERROR: run 'make build/host/bfs' first"; exit 1; }
+[ -f "$FORMATTER" ] || { echo "ERROR: build the host bfs formatter or set BFS_BENCH_FORMATTER_FILE"; exit 1; }
 
 echo "=== Building BFS vs PFS3 Benchmark ==="
 
@@ -162,7 +163,7 @@ BFS_BLOCKS=$(( (1022 * 16 * 32 * 512) / 4096 ))
 PART_FILE=$(mktemp)
 trap 'rm -f "$PART_FILE"' EXIT
 dd if=/dev/zero of="$PART_FILE" bs=4096 count="$BFS_BLOCKS" status=none
-"$PROJECT_DIR/build/host/bfs" format "$PART_FILE" --label BFSTest --block-size 4096 >/dev/null
+"$FORMATTER" format "$PART_FILE" --label BFSTest --block-size 4096 >/dev/null
 dd if="$PART_FILE" of="$BFS_HDF" bs=512 seek=$(( BFS_OFFSET / 512 )) conv=notrunc status=none
 rm -f "$PART_FILE"
 trap - EXIT

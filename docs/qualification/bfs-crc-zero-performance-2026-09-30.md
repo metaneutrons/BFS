@@ -76,11 +76,13 @@ labelled as contended diagnostic evidence.
 
 ## Environment and identities
 
-Cachy: Linux 7.1.3-2-cachyos, Intel Core i5-1235U, 12 logical CPUs, FS-UAE
+Cachy is a KVM guest: Linux 7.1.3-2-cachyos, a guest-reported Intel Core
+i5-1235U CPU model, 12 virtual CPUs, FS-UAE
 3.2.35 under Xvfb; A1200/68040 maximum speed, 2 MiB chip / 8 MiB fast RAM,
 Kickstart 47.102, Workbench 47.2. The unrelated `coffin.service` emulator was
 stopped for measurement. No compiler or competing emulator ran on Cachy.
-The Mac's concurrent AROS build was not on the measurement host. Both handler
+The Mac's concurrent AROS build was not in the measurement guest. The KVM host
+scheduler and other VM workloads were not controlled. Both handler
 versions used fresh equal-size 256 MiB HDFs produced by the same fixed host
 formatter. PFS3 and the neutral comparison binary are unchanged.
 

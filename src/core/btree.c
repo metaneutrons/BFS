@@ -1017,6 +1017,13 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
     bool found;
     uint32_t idx = node_search(tree, UBUF(d), key, &found);
     if (!found) { free(node_bufs); return BFS_ERR_NOTFOUND; }
+    /* The validated value already represents the requested state. Keep its
+     * real transaction tag and ownership; an identical update needs no COW. */
+    if (memcmp(leaf_val(tree, UBUF(d), idx), new_val,
+               tree->ops->val_size) == 0) {
+        free(node_bufs);
+        return BFS_OK;
+    }
     memcpy(leaf_val(tree, UBUF(d), idx), new_val, tree->ops->val_size);
 
     /* COW back up */
