@@ -248,7 +248,9 @@ static void reserve_allocator_cycle(bfs_freespace_t *fs, uint8_t *owned)
     }
 
     bfs_blk_t second = bfs_freespace_alloc(fs, 6);
-    TEST_ASSERT(second == first + 9);
+    TEST_ASSERT(second != BFS_BLK_NULL);
+    /* A COW root replacement may leave a valid gap between the two runs. */
+    TEST_ASSERT(second + 6 <= first || first + 9 <= second);
     for (uint32_t i = 0; i < 6; i++) {
         TEST_ASSERT(second + i < BLK_COUNT);
         TEST_ASSERT(!owned[second + i]);

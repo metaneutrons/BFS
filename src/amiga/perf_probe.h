@@ -8,7 +8,7 @@
 
 #define BFS_ACTION_PERF_RESET 3010
 #define BFS_ACTION_PERF_READ  3011
-#define BFS_PERF_PROBE_VERSION 7
+#define BFS_PERF_PROBE_VERSION 8
 #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
 
 typedef struct bfs_perf_probe_snapshot {
@@ -65,6 +65,10 @@ typedef struct bfs_perf_probe_snapshot {
     ULONG post_publish_reclaim_passes;
     ULONG max_post_publish_reclaim_passes_per_commit;
     ULONG superblock_publications;
+    ULONG free_tree_reserve_return_run_node_writes;
+    ULONG free_tree_reserve_return_batch_calls;
+    ULONG free_tree_reserve_return_batch_blocks;
+    ULONG free_tree_reserve_return_batch_node_writes;
 } bfs_perf_probe_snapshot_t;
 
 #ifdef BFS_PERF_PROBE
@@ -95,6 +99,7 @@ ULONG bfs_perf_probe_free_tree_phase_enter(enum bfs_perf_free_tree_phase phase);
 void bfs_perf_probe_free_tree_phase_leave(ULONG previous_phase);
 void bfs_perf_probe_reserve_return_call(void);
 void bfs_perf_probe_reserve_return_run(ULONG blocks, ULONG node_writes);
+void bfs_perf_probe_reserve_return_batch(ULONG blocks, ULONG node_writes);
 void bfs_perf_probe_begin(struct EClockVal *start);
 uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start);
 void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,

@@ -865,6 +865,72 @@ static bool reserve_block_is_emergency(const bfs_freespace_t *fs, bfs_blk_t blk)
     return false;
 }
 
+static bool prepare_reserve_leaf_batch(const bfs_freespace_t *fs,
+                                       bfs_blk_t *blocks)
+{
+    for (uint32_t i = 0; i < fs->reserve_count; i++)
+        if (reserve_block_is_emergency(fs, fs->reserve[i])) return false;
+    for (uint32_t i = 0; i + 1 < fs->reserve_count; i++)
+        blocks[i] = fs->reserve[i];
+    for (uint32_t i = 1; i + 1 < fs->reserve_count; i++) {
+        bfs_blk_t value = blocks[i];
+        uint32_t j = i;
+        while (j > 0 && blocks[j - 1] > value) {
+            blocks[j] = blocks[j - 1];
+            j--;
+        }
+        blocks[j] = value;
+    }
+    return true;
+}
+
+/* Return a height-one reserve with one private leaf replacement. Keep one
+ * block outside the batch for the replacement root. Unsupported shapes fall
+ * back before changing ownership; other errors abort the commit. */
+static bfs_err_t return_reserve_root_leaf_batch(bfs_freespace_t *fs)
+{
+    if (fs->tree.height != 1 || fs->tree.root == BFS_BLK_NULL ||
+        fs->reserve_count < 3)
+        return BFS_OK;
+
+    uint32_t original_count = fs->reserve_count;
+    bfs_blk_t original[BFS_ALLOC_RESERVE_SIZE];
+    bfs_blk_t blocks[BFS_ALLOC_RESERVE_SIZE - 1];
+    memcpy(original, fs->reserve, original_count * sizeof(*original));
+    bfs_blk_t scratch = original[original_count - 1];
+    if (!prepare_reserve_leaf_batch(fs, blocks)) return BFS_OK;
+
+    fs->reserve[0] = scratch;
+    fs->reserve_count = 1;
+    bfs_blk_t old_root = fs->tree.root;
+#ifdef BFS_PERF_PROBE
+    ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+        BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN);
+    ULONG node_writes_before =
+        bfs_perf_probe_counters.free_tree_reserve_return_node_writes;
+#endif
+    bfs_err_t err = bfs_freespace_free_sorted_blocks(fs, blocks,
+                                                      original_count - 1);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_free_tree_phase_leave(previous_phase);
+    if (err == BFS_OK) {
+        ULONG node_writes =
+            bfs_perf_probe_counters.free_tree_reserve_return_node_writes -
+            node_writes_before;
+        bfs_perf_probe_reserve_return_batch(original_count - 1, node_writes);
+    }
+#endif
+    if (err == BFS_OK) return BFS_OK;
+    /* A failed write leaves the old root intact and mutation_abort returns
+     * the replacement block to the reserve. Do not conceal a partial swap. */
+    if (fs->tree.root != old_root || fs->reserve_count != 1 ||
+        fs->reserve[0] != scratch)
+        return err == BFS_ERR_UNSUPPORTED ? BFS_ERR_CORRUPT : err;
+    memcpy(fs->reserve, original, original_count * sizeof(*original));
+    fs->reserve_count = original_count;
+    return err == BFS_ERR_UNSUPPORTED ? BFS_OK : err;
+}
+
 bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
 {
 #ifdef BFS_PERF_PROBE
@@ -874,6 +940,12 @@ bfs_err_t bfs_freespace_return_reserve(bfs_freespace_t *fs)
         return BFS_ERR_INVAL;
     uint32_t saved_global_reserve = fs->global_reserve;
     fs->global_reserve = UINT32_MAX;
+    bfs_err_t batch_err = return_reserve_root_leaf_batch(fs);
+    if (batch_err != BFS_OK) {
+        fs->global_reserve = saved_global_reserve;
+        fs->last_error = batch_err;
+        return batch_err;
+    }
     while (fs->reserve_count > 0) {
         bfs_blk_t start = fs->reserve[fs->reserve_count - 1];
         uint32_t run = 1;

@@ -245,6 +245,14 @@ static void emit_deep_counter_rows(const char *phase,
                     snapshot->max_post_publish_reclaim_passes_per_commit);
     prefixed_metric(phase, "SUPERBLOCK_PUBLICATIONS",
                     snapshot->superblock_publications);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES",
+                    snapshot->free_tree_reserve_return_run_node_writes);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
+                    snapshot->free_tree_reserve_return_batch_calls);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS",
+                    snapshot->free_tree_reserve_return_batch_blocks);
+    prefixed_metric(phase, "FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
+                    snapshot->free_tree_reserve_return_batch_node_writes);
 }
 
 static BOOL make_path(char *path, ULONG capacity, const char *drive, const char *suffix)
@@ -425,7 +433,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     handle = CreateDir(path);
     if (!handle) return fail("mkdir");
     UnLock(handle);
-    if (deep_mode) emit("FS_DEEP_COMPARE\t6\nDRIVE\t");
+    if (deep_mode) emit("FS_DEEP_COMPARE\t7\nDRIVE\t");
     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
     emit(drive);
     emit("\n");

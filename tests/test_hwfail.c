@@ -1082,6 +1082,310 @@ static void test_allocator_refill_failure_can_retry_free(void)
     unlink(TEST_IMG);
 }
 
+typedef struct {
+    bfs_fs_t *fs;
+    bfs_blk_t previous_end;
+    uint32_t extent_count;
+    bool have_previous;
+    bool invalid;
+} reserve_return_scan_t;
+
+static bool reserve_return_is_emergency_slot(const bfs_fs_t *fs, bfs_blk_t blk)
+{
+    for (uint32_t i = 0; i < BFS_EMERGENCY_POOL_SIZE; i++)
+        if (bfs_be32(fs->txn.sb_new.emergency_pool[i]) == blk) return true;
+    return false;
+}
+
+static bool reserve_return_scan_extent(const void *key, const void *value,
+                                       void *context)
+{
+    reserve_return_scan_t *scan = (reserve_return_scan_t *)context;
+    bfs_freespace_t *freespace = &scan->fs->freespace;
+    bfs_blk_t start = bfs_load_be32(key);
+    uint32_t length = bfs_load_be32(value);
+    if (length == 0 || start == BFS_BLK_NULL ||
+        start >= freespace->tree.bio->block_count ||
+        length > freespace->tree.bio->block_count - start ||
+        (scan->have_previous && start < scan->previous_end)) {
+        scan->invalid = true;
+        return false;
+    }
+
+    bfs_blk_t end = start + length;
+    for (uint32_t i = 0; i < freespace->reserve_count; i++) {
+        bfs_blk_t reserved = freespace->reserve[i];
+        if (reserved >= start && reserved < end) {
+            scan->invalid = true;
+            return false;
+        }
+    }
+    uint32_t emergency_count = bfs_be32(scan->fs->txn.sb_new.emergency_count);
+    if (emergency_count > BFS_EMERGENCY_POOL_SIZE) {
+        scan->invalid = true;
+        return false;
+    }
+    for (uint32_t i = 0; i < emergency_count; i++) {
+        bfs_blk_t emergency = bfs_be32(scan->fs->txn.sb_new.emergency_pool[i]);
+        if (emergency >= start && emergency < end) {
+            scan->invalid = true;
+            return false;
+        }
+    }
+
+    scan->previous_end = end;
+    scan->have_previous = true;
+    scan->extent_count++;
+    return true;
+}
+
+static bool reserve_return_layout_valid(bfs_fs_t *fs, uint32_t *extent_count_out)
+{
+    bfs_freespace_t *freespace = &fs->freespace;
+    uint32_t emergency_count = bfs_be32(fs->txn.sb_new.emergency_count);
+    if (freespace->reserve_count > BFS_ALLOC_RESERVE_SIZE ||
+        emergency_count > BFS_EMERGENCY_POOL_SIZE)
+        return false;
+
+    for (uint32_t i = 0; i < freespace->reserve_count; i++) {
+        bfs_blk_t blk = freespace->reserve[i];
+        if (blk == BFS_BLK_NULL || blk >= freespace->tree.bio->block_count)
+            return false;
+        for (uint32_t j = 0; j < i; j++)
+            if (freespace->reserve[j] == blk) return false;
+    }
+    for (uint32_t i = 0; i < emergency_count; i++) {
+        bfs_blk_t blk = bfs_be32(fs->txn.sb_new.emergency_pool[i]);
+        if (blk == BFS_BLK_NULL || blk >= freespace->tree.bio->block_count)
+            return false;
+        for (uint32_t j = 0; j < i; j++)
+            if (bfs_be32(fs->txn.sb_new.emergency_pool[j]) == blk) return false;
+        for (uint32_t j = 0; j < freespace->reserve_count; j++)
+            if (freespace->reserve[j] == blk) return false;
+    }
+
+    reserve_return_scan_t scan = {
+        .fs = fs,
+        .previous_end = 0,
+        .extent_count = 0,
+        .have_previous = false,
+        .invalid = false,
+    };
+    if (bfs_btree_scan(&freespace->tree, NULL, reserve_return_scan_extent,
+                       &scan) != BFS_OK || scan.invalid)
+        return false;
+    if (extent_count_out) *extent_count_out = scan.extent_count;
+    return true;
+}
+
+static uint64_t reserve_return_accounting(const bfs_fs_t *fs)
+{
+    return (uint64_t)fs->freespace.total_free + fs->freespace.reserve_count +
+           bfs_be32(fs->txn.sb_new.emergency_count) + fs->pending_count;
+}
+
+static uint32_t reserve_return_run_count(const bfs_freespace_t *fs)
+{
+    bfs_blk_t sorted[BFS_ALLOC_RESERVE_SIZE];
+    if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE) return 0;
+    memcpy(sorted, fs->reserve, fs->reserve_count * sizeof(*sorted));
+    for (uint32_t i = 1; i < fs->reserve_count; i++) {
+        bfs_blk_t value = sorted[i];
+        uint32_t j = i;
+        while (j > 0 && sorted[j - 1] > value) {
+            sorted[j] = sorted[j - 1];
+            j--;
+        }
+        sorted[j] = value;
+    }
+    uint32_t runs = fs->reserve_count > 0 ? 1 : 0;
+    for (uint32_t i = 1; i < fs->reserve_count; i++)
+        if (sorted[i] != sorted[i - 1] + 1) runs++;
+    return runs;
+}
+
+/* Emergency-pool node blocks can temporarily be retired into the allocator
+ * reserve during COW. Return those blocks to their pool slots so the fixture
+ * exercises the ordinary, non-emergency reserve batch. */
+static bool reserve_return_restore_emergency_blocks(bfs_fs_t *fs)
+{
+    bfs_freespace_t *freespace = &fs->freespace;
+    uint32_t saved_global_reserve = freespace->global_reserve;
+    freespace->global_reserve = UINT32_MAX;
+    for (uint32_t i = 0; i < freespace->reserve_count;) {
+        bfs_blk_t blk = freespace->reserve[i];
+        if (!reserve_return_is_emergency_slot(fs, blk)) {
+            i++;
+            continue;
+        }
+        for (uint32_t j = i + 1; j < freespace->reserve_count; j++)
+            freespace->reserve[j - 1] = freespace->reserve[j];
+        freespace->reserve_count--;
+        if (bfs_freespace_free(freespace, blk, 1) != BFS_OK) {
+            freespace->global_reserve = saved_global_reserve;
+            return false;
+        }
+    }
+    freespace->global_reserve = saved_global_reserve;
+    return true;
+}
+
+static bool setup_fragmented_reserve_batch(failing_bio_t *fb, bfs_bio_t **bio_out,
+                                           bfs_fs_t *fs)
+{
+    *bio_out = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    if (!*bio_out || bfs_fs_format(*bio_out, "ReserveBatch", 0) != BFS_OK)
+        return false;
+    init_failing_bio(fb, *bio_out);
+    if (bfs_fs_mount(fs, &fb->base) != BFS_OK || bfs_fs_sync(fs) != BFS_OK)
+        return false;
+
+    bfs_freespace_t *freespace = &fs->freespace;
+    if (freespace->tree.height != 1 || freespace->reserve_count != 0)
+        return false;
+
+    /* Create four isolated free extents at the high end. With refill disabled,
+     * the next reserve fill must draw blocks from more than one free extent. */
+    bfs_blk_t allocated[8];
+    uint32_t saved_global_reserve = freespace->global_reserve;
+    freespace->global_reserve = UINT32_MAX;
+    for (uint32_t i = 0; i < 8; i++) {
+        allocated[i] = bfs_freespace_alloc(freespace, 1);
+        if (allocated[i] == BFS_BLK_NULL) {
+            freespace->global_reserve = saved_global_reserve;
+            return false;
+        }
+    }
+    for (uint32_t i = 0; i < 8; i += 2) {
+        if (bfs_freespace_free(freespace, allocated[i], 1) != BFS_OK) {
+            freespace->global_reserve = saved_global_reserve;
+            return false;
+        }
+    }
+    freespace->global_reserve = saved_global_reserve;
+
+    if (!reserve_return_restore_emergency_blocks(fs) ||
+        freespace->tree.height != 1 || freespace->reserve_count != 0 ||
+        bfs_freespace_refill_reserve(freespace) != BFS_OK ||
+        !reserve_return_restore_emergency_blocks(fs))
+        return false;
+
+    uint32_t extent_count = 0;
+    return freespace->tree.height == 1 && freespace->reserve_count >= 3 &&
+           reserve_return_run_count(freespace) > 1 &&
+           reserve_return_layout_valid(fs, &extent_count) &&
+           extent_count + freespace->reserve_count <
+               bfs_btree_leaf_capacity(&freespace->tree);
+}
+
+static void test_reserve_return_batch_fragmented_accounting(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_fragmented_reserve_batch(&fb, &bio, &fs));
+
+    uint64_t available_before = reserve_return_accounting(&fs);
+    uint32_t global_reserve_before = fs.freespace.global_reserve;
+    uint32_t reserve_count_before = fs.freespace.reserve_count;
+    bfs_blk_t old_root = fs.freespace.tree.root;
+    fb.writes_until_failure = UINT32_MAX;
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    uint32_t writes_observed = UINT32_MAX - fb.writes_until_failure;
+    /* Retiring the old root can require additional writes after the batch. */
+    TEST_ASSERT(writes_observed > 0 && writes_observed < reserve_count_before);
+    TEST_ASSERT_EQ(fb.failed_writes, 0);
+    fb.writes_until_failure = 0;
+    TEST_ASSERT(fs.freespace.tree.root != old_root);
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(fs.freespace.global_reserve, global_reserve_before);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_batch_first_write_failure_is_retryable(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_fragmented_reserve_batch(&fb, &bio, &fs));
+
+    bfs_blk_t old_root = fs.freespace.tree.root;
+    uint32_t old_free = fs.freespace.total_free;
+    uint32_t old_count = fs.freespace.reserve_count;
+    bfs_blk_t old_reserve[BFS_ALLOC_RESERVE_SIZE];
+    memcpy(old_reserve, fs.freespace.reserve, old_count * sizeof(*old_reserve));
+    uint32_t old_emergency_count = bfs_be32(fs.txn.sb_new.emergency_count);
+    uint32_t old_pending_count = fs.pending_count;
+    uint32_t old_global_reserve = fs.freespace.global_reserve;
+    uint64_t available_before = reserve_return_accounting(&fs);
+
+    fb.writes_until_failure = 1;
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_ERR_IO);
+    TEST_ASSERT_EQ(fb.failed_writes, 1);
+    TEST_ASSERT_EQ(fb.writes_until_failure, 0);
+    TEST_ASSERT_EQ(fs.freespace.tree.root, old_root);
+    TEST_ASSERT_EQ(fs.freespace.total_free, old_free);
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, old_count);
+    TEST_ASSERT_MEM_EQ(fs.freespace.reserve, old_reserve,
+                      old_count * sizeof(*old_reserve));
+    TEST_ASSERT_EQ(bfs_be32(fs.txn.sb_new.emergency_count), old_emergency_count);
+    TEST_ASSERT_EQ(fs.pending_count, old_pending_count);
+    TEST_ASSERT_EQ(fs.freespace.global_reserve, old_global_reserve);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    TEST_ASSERT(fs.freespace.tree.root != old_root);
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(fs.freespace.global_reserve, old_global_reserve);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_reserve_return_batch_later_write_failure_keeps_ownership(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio;
+    failing_bio_t fb;
+    bfs_fs_t fs;
+    TEST_ASSERT(setup_fragmented_reserve_batch(&fb, &bio, &fs));
+
+    bfs_blk_t old_root = fs.freespace.tree.root;
+    uint32_t old_free = fs.freespace.total_free;
+    uint32_t old_count = fs.freespace.reserve_count;
+    uint32_t old_global_reserve = fs.freespace.global_reserve;
+    uint64_t available_before = reserve_return_accounting(&fs);
+
+    fb.writes_until_failure = 2;
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_ERR_IO);
+    TEST_ASSERT_EQ(fb.failed_writes, 1);
+    TEST_ASSERT(fs.freespace.tree.root != old_root);
+    TEST_ASSERT_EQ(fs.freespace.total_free, old_free + old_count - 1);
+    TEST_ASSERT_EQ(fs.freespace.global_reserve, old_global_reserve);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    TEST_ASSERT_EQ(bfs_freespace_return_reserve(&fs.freespace), BFS_OK);
+    TEST_ASSERT_EQ(fs.freespace.reserve_count, 0);
+    TEST_ASSERT_EQ(reserve_return_accounting(&fs), available_before);
+    TEST_ASSERT(reserve_return_layout_valid(&fs, NULL));
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 static void test_reserve_return_write_failures_preserve_committed_tree(void)
 {
     unsigned failures = 0;
@@ -1411,6 +1715,9 @@ TEST_SUITE_BEGIN("Hardware Failure Simulation")
     TEST_RUN(test_comment_write_failures_preserve_committed_value);
     TEST_RUN(test_snapshot_delete_write_failure_recovery);
     TEST_RUN(test_allocator_refill_failure_can_retry_free);
+    TEST_RUN(test_reserve_return_batch_fragmented_accounting);
+    TEST_RUN(test_reserve_return_batch_first_write_failure_is_retryable);
+    TEST_RUN(test_reserve_return_batch_later_write_failure_keeps_ownership);
     TEST_RUN(test_reserve_return_write_failures_preserve_committed_tree);
     TEST_RUN(test_batch_leaf_write_failure_preserves_root);
     TEST_RUN(test_short_write_publishes_inode);

@@ -88,6 +88,7 @@ void bfs_perf_probe_reserve_return_run(ULONG blocks, ULONG node_writes)
     if (blocks == 0) return;
     counters->free_tree_reserve_return_runs++;
     counters->free_tree_reserve_return_blocks += blocks;
+    counters->free_tree_reserve_return_run_node_writes += node_writes;
     if (blocks == 1)
         counters->free_tree_reserve_return_runs_1_block++;
     else if (blocks <= 3)
@@ -100,6 +101,15 @@ void bfs_perf_probe_reserve_return_run(ULONG blocks, ULONG node_writes)
         counters->free_tree_reserve_return_max_run_blocks = blocks;
     if (node_writes > counters->free_tree_reserve_return_max_node_writes_per_run)
         counters->free_tree_reserve_return_max_node_writes_per_run = node_writes;
+}
+
+void bfs_perf_probe_reserve_return_batch(ULONG blocks, ULONG node_writes)
+{
+    bfs_perf_probe_snapshot_t *counters = &bfs_perf_probe_counters;
+    if (blocks == 0) return;
+    counters->free_tree_reserve_return_batch_calls++;
+    counters->free_tree_reserve_return_batch_blocks += blocks;
+    counters->free_tree_reserve_return_batch_node_writes += node_writes;
 }
 
 void bfs_perf_probe_begin(struct EClockVal *start)
