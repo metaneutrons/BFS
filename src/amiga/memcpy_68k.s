@@ -22,29 +22,15 @@ _memcpy:
         move.l  48(sp),a0               | dst
         move.l  52(sp),a1               | src
         move.l  56(sp),d0               | len
-        move.l  a0,a2                   | save dst for return
-
-        | If len < 44, skip to long/byte copy
+        | Count bytes directly: divu.w overflows for large valid buffers.
+.Lmc_chunk:
         cmp.l   #44,d0
         bcs.s   .Lmc_longs
-
-        | Main loop: 44 bytes per iteration
-        move.l  d0,d1
-        divu.w  #44,d1                  | d1.w = full 44-byte iterations
-        ext.l   d1
-        subq.l  #1,d1
-
-.Lmc_44:
         movem.l (a1)+,d2-d7/a2/a3/a4/a5/a6
         movem.l d2-d7/a2-a6,(a0)
         lea     44(a0),a0
-        dbra    d1,.Lmc_44
-
-        | Calculate remainder
-        move.l  56(sp),d0
-        divu.w  #44,d0
-        swap    d0                      | d0.w = remainder bytes
-        ext.l   d0
+        sub.l   #44,d0
+        bra.s   .Lmc_chunk
 
 .Lmc_longs:
         | Copy remaining longs
@@ -65,7 +51,7 @@ _memcpy:
         dbra    d0,.Lmc_b1
 
 .Lmc_done:
-        move.l  a2,d0                   | return dst
+        move.l  48(sp),d0               | a2 was used as copy data
         movem.l (sp)+,d2-d7/a2-a6
         rts
 
@@ -101,38 +87,24 @@ _memset:
         move.l  d1,a3
         move.l  d1,a4
         move.l  d1,a5
-        move.l  d1,a6
-
-        | If len < 44, skip to long/byte fill
+        | Eleven registers = 44 bytes. The old d1-d7/a2-a6 store
+        | wrote 48 bytes and overran buffers with short remainders.
+.Lms_chunk:
         cmp.l   #44,d0
         bcs.s   .Lms_longs
-
-        | Main loop: 44 bytes per iteration
-        move.l  d0,-(sp)               | save len
-        move.l  d0,d0
-        divu.w  #44,d0
-        ext.l   d0
-        subq.l  #1,d0
-
-.Lms_44:
-        movem.l d1-d7/a2-a6,(a0)
+        movem.l d1-d7/a2-a5,(a0)
         lea     44(a0),a0
-        dbra    d0,.Lms_44
-
-        | Calculate remainder
-        move.l  (sp)+,d0               | restore len
-        divu.w  #44,d0
-        swap    d0
-        ext.l   d0
+        sub.l   #44,d0
+        bra.s   .Lms_chunk
 
 .Lms_longs:
-        move.l  d0,d0
-        lsr.l   #2,d0
+        move.l  d0,d2
+        lsr.l   #2,d2
         beq.s   .Lms_bytes
-        subq.l  #1,d0
+        subq.l  #1,d2
 .Lms_l4:
         move.l  d1,(a0)+
-        dbra    d0,.Lms_l4
+        dbra    d2,.Lms_l4
 
 .Lms_bytes:
         move.l  56(sp),d0
