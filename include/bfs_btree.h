@@ -51,6 +51,11 @@ typedef struct bfs_btree_ops {
 
     /* Fixed size of a value in bytes (leaf only) */
     uint32_t val_size;
+
+    /* Opt in only when key_compare is pure and defines a stable order for bytes.
+     * Invalidate the BIO cache before changing comparator semantics. Default
+     * false retains full structural validation for arbitrary comparators. */
+    bool cache_key_order;
 } bfs_btree_ops_t;
 
 /* ── Engine limits ─────────────────────────────────────────── */

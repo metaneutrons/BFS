@@ -1,0 +1,17 @@
+=== B+tree structure validation cache ===
+  test_opt_in_cache_skips_repeated_key_order_scan    OK
+  test_default_stateful_comparator_revalidates_each_read OK
+  test_comparator_function_change_revalidates_node   OK
+  test_default_comparator_semantics_change_revalidates OK
+  test_mutated_ops_object_revalidates_actual_tree_read OK
+  test_validation_token_compares_each_field          OK
+  test_ordinary_write_clears_structure_and_bad_order_fails OK
+  test_trusted_write_keeps_only_crc_validation       OK
+  test_stateful_comparator_rejects_crc_valid_bad_order OK
+  test_failed_ordinary_and_trusted_writes_evict_validation OK
+  test_eviction_and_invalidate_clear_structure       OK
+  test_trusted_count_zero_is_not_structurally_cached OK
+  test_expected_level_checked_for_warmed_child       OK
+  test_parent_bounds_checked_for_warmed_child        OK
+
+14 passed, 0 failed

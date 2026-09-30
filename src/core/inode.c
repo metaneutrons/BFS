@@ -10,6 +10,7 @@ static const bfs_btree_ops_t bfs_inode_ops = {
     .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_inode_t),
+    .cache_key_order = true,
 };
 
 static bfs_err_t validate_inode(const bfs_btree_t *tree, uint32_t ino,

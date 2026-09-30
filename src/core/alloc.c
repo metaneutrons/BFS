@@ -47,6 +47,7 @@ static const bfs_btree_ops_t free_ops = {
     .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(uint32_t),
+    .cache_key_order = true,
 };
 
 typedef struct {

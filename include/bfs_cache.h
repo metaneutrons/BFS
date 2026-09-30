@@ -11,6 +11,13 @@
  *
  * Slot count is configurable via the AmigaOS "Buffers" mount option
  * (de_NumBuffers in DosEnvec). Default: 8. Recommended: 16-32.
+ *
+ * Not thread-safe: even reads mutate slots and LRU state. Serialize complete
+ * B-tree operations (read, validate and mark), not just individual BIO calls.
+ * Do not reenter/mutate this cache from a comparator or another BIO callback.
+ * Changing device/media or block geometry requires invalidation or reinit;
+ * resizing block buffers requires destroy/reinit. The Amiga handler processes
+ * packets in one task; host users must provide exclusive external locking.
  */
 
 #ifndef BFS_CACHE_H
@@ -26,6 +33,8 @@ typedef struct bfs_cache_slot {
     uint32_t  age;          /* LRU counter (higher = more recent) */
     uint8_t  *data;         /* block data */
     bool      node_crc_valid; /* cached node bytes have a valid CRC */
+    bool      node_structure_valid;
+    bfs_node_validation_t node_validation;
 } bfs_cache_slot_t;
 
 typedef struct bfs_cache {

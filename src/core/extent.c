@@ -21,6 +21,7 @@ static const bfs_btree_ops_t extent_ops = {
     .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_extent_val_t),
+    .cache_key_order = true,
 };
 
 static bool extent_range_valid(const bfs_extent_tree_t *et, bfs_blk_t disk,

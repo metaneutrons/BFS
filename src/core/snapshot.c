@@ -14,6 +14,7 @@ static const bfs_btree_ops_t snap_ops = {
     .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_snapshot_record_t),
+    .cache_key_order = true,
 };
 
 uint64_t bfs_snapshot_record_txn_id(const bfs_snapshot_record_t *rec)

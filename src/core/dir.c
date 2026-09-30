@@ -87,6 +87,7 @@ static const bfs_btree_ops_t dir_ops = {
     .key_compare = dir_key_compare,
     .key_size = DIR_KEY_SIZE,
     .val_size = sizeof(bfs_dir_val_t),
+    .cache_key_order = true,
 };
 
 /* ── Init ──────────────────────────────────────────────────── */

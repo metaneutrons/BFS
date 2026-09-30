@@ -1,11 +1,13 @@
 # Free-tree multi-edit plan v1
 
-Status: increment 1 locally qualified; increment 2 requires a separate
-allocation/reclaim design and is not implemented (2026-09-30). The
+The dated baseline below predates the subsequently qualified root-retirement,
+CRC and unchanged-update increments. Increment 2 still requires a separate
+allocation/reclaim design; later evidence does not imply its acceptance. The
 [phase-attribution measurement](../qualification/bfs-free-tree-phase-profile-2026-09-30.md)
 puts reserve return first for small-file work; post-publication reclaim is a
-smaller share than anticipated. The 8 MiB write still needs finer attribution
-of its `other` free-tree writes before choosing an edit design.
+smaller share than anticipated. The later
+[node-validation report](../qualification/bfs-validation-cache-performance-2026-09-30.md)
+retains the latest allocator attribution; ≤5× remains unmet in each mutating phase.
 The [reserve/commit follow-up](../qualification/bfs-reserve-commit-profile-2026-09-30.md)
 found over 96% singleton reserve-return runs in both small-file phases and
 roughly three post-publication reclaim passes per commit. A design must reduce
@@ -155,7 +157,62 @@ Keep the experiment only if checked counters and idle normal comparisons
 show a material improvement. A second possible reduction is exact CRC-state
 advancement over canonically zeroed unused write bytes; full-block read CRC
 validation and format compatibility would remain unchanged. It is separate
-from this ownership experiment and is not implemented here.
+from this ownership experiment and was subsequently qualified in the
+[CRC report](../qualification/bfs-crc-zero-performance-2026-09-30.md).
+[Identical-update elision](../qualification/bfs-noop-update-performance-2026-09-30.md)
+and [resident structural validation](../qualification/bfs-validation-cache-performance-2026-09-30.md)
+are separate mechanisms; none establishes the overall 5× target.
+
+## UR: unpublished metadata reserve reuse
+
+This next bounded allocation experiment depends on the qualified root-retirement
+fold; it is not general multi-edit or permission to overwrite a live node.
+The latest diagnostic contains 546 allocation-body and 286 other Free-Tree
+writes in the 8 MiB phase. The proposal reduces short-lived metadata scratch
+traffic, not data allocation or older-node deferral.
+
+Only the B-tree allocator's single-block interface participates. Outside
+Free-Tree recursion, caller-owned retired unpublished metadata may enter the
+existing volatile reserve instead of the Free-Tree. A later metadata allocation
+may take an ordinary block only when stock is strictly above the **entire**
+existing height-dependent refill target. Current-root retirement seeds the
+spare naturally; no spare is assumed in a new/one-operation transaction or
+low space. The recursion floor is not spent.
+
+Initial eligibility: mounted allocator with working/committed superblocks and
+a height-one Free-Tree. Older nodes retain deferred retirement and snapshot
+handling. All historical emergency slots, including inactive ones, are excluded
+from ordinary reuse; their established return path remains. In-allocation
+recursion and the public data/multi-block allocator stay unchanged.
+Unsupported shape, absent spare or full stock take the existing path.
+
+Acceptance criteria before retaining the experiment:
+
+- **UR-1 ownership:** exact range/duplicate/reserve/emergency and Free-Tree
+  separation checks before stash/pop, with shared validation rather than copied
+  logic. Never select a live Free-Tree root or committed-root-reachable metadata.
+  The allocator's deallocation contract must establish caller ownership for
+  current-tag retirements and unpublished abort/compaction scratch.
+- **UR-2 accounting:** stash changes reserve count, not Free-Tree total; pop
+  consumes one entry. Publication and reserve return retain one representation
+  per block. Full-floor, low-space, historical-pool and capacity boundaries
+  require negative tests.
+- **UR-3 errors:** preserve roots/accounting on preflight errors and scratch
+  ownership through partial writes and multi-node aborts. Do not hide cleanup/
+  ownership failures or retry an ambiguous publication.
+- **UR-4 termination:** repeated overwrites, tiny pending queues, snapshots,
+  low-space create/delete, compaction and repeated commits settle within the
+  existing bound. The rejected top-level surplus allocator is not evidence
+  for this narrower interface change.
+- **UR-5 evidence:** focused ownership tests, normal/sanitizer suites, affected
+  write-cut/remount/checker tests and fresh normal-handler Amiga comparisons
+  in both orders with durable counters and identities. Retain a useful gain
+  without material regressions; overall acceptance remains ≤5× in each phase
+  with unchanged guarantees.
+
+No format or CLI change is planned. A source rollback and rebuild need no
+volume migration. This plan authorizes no CI, GitHub mutation or hardware
+qualification.
 
 ## Qualification gates
 

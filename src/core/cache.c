@@ -46,6 +46,7 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
     c->slots[victim].blk = blk;
     c->slots[victim].age = ++c->clock;
     c->slots[victim].node_crc_valid = false;
+    c->slots[victim].node_structure_valid = false;
 
     return BFS_OK;
 }
@@ -64,6 +65,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
             if (c->slots[i].blk == blk) {
                 c->slots[i].blk = UINT32_MAX;
                 c->slots[i].node_crc_valid = false;
+                c->slots[i].node_structure_valid = false;
             }
         return err;
     }
@@ -75,6 +77,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
             memcpy(c->slots[i].data, buf, bio->block_size);
             c->slots[i].age = ++c->clock;
             c->slots[i].node_crc_valid = retain_node;
+            c->slots[i].node_structure_valid = false;
             return BFS_OK;
         }
     }
@@ -85,6 +88,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
         c->slots[victim].blk = blk;
         c->slots[victim].age = ++c->clock;
         c->slots[victim].node_crc_valid = true;
+        c->slots[victim].node_structure_valid = false;
     }
 
     return BFS_OK;
@@ -131,6 +135,38 @@ static void cache_mark_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk)
         }
 }
 
+static bool cache_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
+                                        const bfs_node_validation_t *context)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    for (uint32_t i = 0; i < c->num_slots; i++) {
+        const bfs_cache_slot_t *slot = &c->slots[i];
+        if (slot->blk != blk) continue;
+        const bfs_node_validation_t *known = &slot->node_validation;
+        return slot->node_structure_valid && slot->node_crc_valid &&
+               known->key_compare == context->key_compare &&
+               known->key_size == context->key_size &&
+               known->val_size == context->val_size &&
+               known->block_size == context->block_size &&
+               known->block_count == context->block_count;
+    }
+    return false;
+}
+
+static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
+                                             const bfs_node_validation_t *context)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    for (uint32_t i = 0; i < c->num_slots; i++) {
+        bfs_cache_slot_t *slot = &c->slots[i];
+        if (slot->blk == blk && slot->node_crc_valid) {
+            slot->node_validation = *context;
+            slot->node_structure_valid = true;
+            return;
+        }
+    }
+}
+
 static const bfs_bio_ops_t cache_ops = {
     .read_block  = cache_read,
     .write_block = cache_write,
@@ -139,6 +175,8 @@ static const bfs_bio_ops_t cache_ops = {
     .write_node_block = cache_write_node,
     .node_crc_valid = cache_node_crc_valid,
     .mark_node_crc_valid = cache_mark_node_crc_valid,
+    .node_structure_valid = cache_node_structure_valid,
+    .mark_node_structure_valid = cache_mark_node_structure_valid,
 };
 
 /* ── Public API ────────────────────────────────────────────── */
@@ -168,6 +206,7 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
         cache->slots[i].blk = UINT32_MAX;
         cache->slots[i].age = 0;
         cache->slots[i].node_crc_valid = false;
+        cache->slots[i].node_structure_valid = false;
         cache->slots[i].data = malloc(dev->block_size);
         if (!cache->slots[i].data) {
             for (uint32_t j = 0; j < i; j++) free(cache->slots[j].data);
@@ -204,6 +243,7 @@ void bfs_cache_invalidate(bfs_cache_t *cache)
     for (uint32_t i = 0; i < cache->num_slots; i++) {
         cache->slots[i].blk = UINT32_MAX;
         cache->slots[i].node_crc_valid = false;
+        cache->slots[i].node_structure_valid = false;
     }
     cache->clock = 0;
 }

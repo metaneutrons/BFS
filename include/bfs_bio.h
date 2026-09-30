@@ -18,6 +18,16 @@
 /* Opaque block device handle */
 typedef struct bfs_bio bfs_bio_t;
 
+/* Context for a fully validated resident B-tree node. Comparator semantics
+ * must be stable for the lifetime of this cached result; callers opt in. */
+typedef struct bfs_node_validation {
+    int (*key_compare)(const void *a, const void *b);
+    uint32_t key_size;
+    uint32_t val_size;
+    uint32_t block_size;
+    bfs_blk_t block_count;
+} bfs_node_validation_t;
+
 /* Block device operations — vtable for backend implementations */
 typedef struct bfs_bio_ops {
     /* Read one block. buf must be at least block_size bytes. */
@@ -44,6 +54,18 @@ typedef struct bfs_bio_ops {
      * a successful trusted node write may set it. */
     bool (*node_crc_valid)(bfs_bio_t *bio, bfs_blk_t blk);
     void (*mark_node_crc_valid)(bfs_bio_t *bio, bfs_blk_t blk);
+
+    /* Optional: memoize successful CRC and node-local structural validation
+     * for the exact resident bytes and context. This excludes parent bounds
+     * and the traversal's expected level, which must be checked every time.
+     * Every write (including trusted node writes), failed write, eviction and
+     * invalidation clears this result. A node write alone cannot set it.
+     * The backend must keep resident bytes unchanged throughout the caller's
+     * read/validation/mark sequence (e.g. whole-operation serialization). */
+    bool (*node_structure_valid)(bfs_bio_t *bio, bfs_blk_t blk,
+                                  const bfs_node_validation_t *context);
+    void (*mark_node_structure_valid)(bfs_bio_t *bio, bfs_blk_t blk,
+                                       const bfs_node_validation_t *context);
 } bfs_bio_ops_t;
 
 /* Base block device — all implementations embed this as first member */
@@ -112,6 +134,18 @@ static inline bool bfs_bio_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk) {
 static inline void bfs_bio_mark_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk) {
     if (bio && bio->ops && bio->ops->mark_node_crc_valid)
         bio->ops->mark_node_crc_valid(bio, blk);
+}
+
+static inline bool bfs_bio_node_structure_valid(
+    bfs_bio_t *bio, bfs_blk_t blk, const bfs_node_validation_t *context) {
+    return bio && bio->ops && context && bio->ops->node_structure_valid &&
+           bio->ops->node_structure_valid(bio, blk, context);
+}
+
+static inline void bfs_bio_mark_node_structure_valid(
+    bfs_bio_t *bio, bfs_blk_t blk, const bfs_node_validation_t *context) {
+    if (bio && bio->ops && context && bio->ops->mark_node_structure_valid)
+        bio->ops->mark_node_structure_valid(bio, blk, context);
 }
 
 #endif /* BFS_BIO_H */

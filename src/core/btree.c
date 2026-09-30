@@ -71,6 +71,17 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
     bfs_err_t err = bfs_bio_read(tree->bio, blk, buf);
     if (err != BFS_OK) return err;
 
+    bfs_node_validation_t validation = {
+        .key_compare = tree->ops->key_compare,
+        .key_size = tree->ops->key_size,
+        .val_size = tree->ops->val_size,
+        .block_size = tree->bio->block_size,
+        .block_count = tree->bio->block_count,
+    };
+    if (tree->ops->cache_key_order &&
+        bfs_bio_node_structure_valid(tree->bio, blk, &validation))
+        return BFS_OK;
+
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     if (bfs_be32(hdr->magic) != BFS_NODE_MAGIC)
         return BFS_ERR_CORRUPT;
@@ -123,6 +134,8 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
         }
     }
     bfs_bio_mark_node_crc_valid(tree->bio, blk);
+    if (tree->ops->cache_key_order)
+        bfs_bio_mark_node_structure_valid(tree->bio, blk, &validation);
     return BFS_OK;
 }
 
