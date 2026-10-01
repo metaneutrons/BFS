@@ -1,0 +1,13 @@
+  FAIL: tests/test_btree_bulk_slots.c:458: fixture_open(&fixture, TEST_SMALL_BLOCK_SIZE, &key7_value5_ops)
+  FAIL: tests/test_btree_bulk_slots.c:642: run_leaf_slot_positions()
+  FAIL: tests/test_btree_bulk_slots.c:497: fixture_open(&fixture, TEST_SMALL_BLOCK_SIZE, &key9_value3_ops)
+  FAIL: tests/test_btree_bulk_slots.c:647: run_leaf_cow_faults()
+  FAIL: tests/test_btree_bulk_slots.c:577: fixture_open(&fixture, block_size, ops)
+  FAIL: tests/test_btree_bulk_slots.c:652: run_odd_width_multilevel()
+=== B+tree bulk slot shifts ===
+  test_leaf_slot_positions_odd_widths                FAILED
+  test_leaf_io_failures_preserve_cow_root            FAILED
+  test_odd_width_multilevel_insert_delete            FAILED
+  test_max_key_multilevel_insert_delete              OK
+
+1 passed, 3 failed

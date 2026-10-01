@@ -1,0 +1,3 @@
+d9ab6caddb8ae775638c01b0ffd1e349129843eaa846fd968346fa530252290d  src/core/btree.c
+7bc432ebb42394c0afc38f41b6e531fbbfeaae48cb8be8c54705f7ad481f66c6  src/amiga/string.h
+b628d72bcc5ba0a8280c801c7ef2c769db9cb0d24523d0ff1eb81055cc06c193  src/core/alloc.c

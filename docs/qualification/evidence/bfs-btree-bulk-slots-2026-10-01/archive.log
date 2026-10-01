@@ -1,0 +1,24 @@
+4b29f320a863594fb4f9a64a5864e85db1821dde5398fcf5a1421048ed8b9e65  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-probe-bfs-first/system/Results/bfs.deep-compare.tsv
+c9ad261884906e39d32c6b08c3d7752ff3db0b91d1c24dc2ac14978625b1cebe  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-probe-bfs-first/system/Results/pfs3.deep-compare.tsv
+e5c495ba9e89df6333deb7aad634857907d86e95aba14750d9fbb66f1654647a  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-probe-pfs3-first/system/Results/bfs.deep-compare.tsv
+6f8bace384801fa3a71020ca42ab78a739bb612f2c8afc3d6d2b33842269d328  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-probe-pfs3-first/system/Results/pfs3.deep-compare.tsv
+53f2de68f4c83531546e8430716e25795fa2febcd012e111158f0cdfdb62beff  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-baseline-bfs-first/system/Results/bfs.tsv
+f3b38654b9396a292db34a2a0d6ef06b9066bc712f82740042ce8a14d239caa3  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-baseline-bfs-first/system/Results/pfs3.tsv
+f3897ab235341fa56a48afd158892e8725def0a36ba7292d81bf0354de86a590  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-candidate-pfs3-first/system/Results/bfs.tsv
+e408d382662ffdd5fb9fb90c03c632cf5bf7ed662f48c4442084815ecf442a00  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+ad697022e028ce09317823eb77c8b3517820219879e0141908c2cae99cb6673c  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-baseline-pfs3-first/system/Results/bfs.tsv
+a85415d115f7c03020eaaec580f27f74e50a3c8c88d2d346e22d9ae22f83875f  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+0166296f1f975a8db273835296a4bf738219c9c85d37268fecf40777c8187803  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-candidate-bfs-first/system/Results/bfs.tsv
+24bd0f70b29fd6d0225fc7e452ca64b4b8ec529343e03f2ff162af3324055a3a  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-candidate-bfs-first/system/Results/pfs3.tsv
+54afcd358b7e2c21d0966dd1e0f28096517070b165f1de9d7763e943d912fe2f  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+86c762823fe7870a24071a515af17adf4dbf877dc4db6182e9ab13b20bb8ed1f  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+fc603ecd7f852691408d79eb2b9efa68ddc24d17590396d7ae8b2d3d6c1529fe  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+476f906a559c9a18db9591a6d53c8cb63dffd03d1af177322a709f8e57620858  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+9dc16fcd9c793c083ea191fbb83ac26a79222124a9a342b2a0683af60581057c  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+b4afed95234b8976b42827aa9e1352ab89abad47978fafdf804a05b40a710001  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+a318028d33c7f255bd40208a3e70a7e5c075516bb074e0b1ab8e6aa6e83b58fe  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+a0a6fc7f10bff43f3197fd6736df0939bddfd3644ee81fd87f31751add8403de  /home/fabian/.cache/bfs-performance/btree-bulk-slots-2026-10-01/btree-bulk-slots-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  3.6G  8.3G  30% /tmp
+/dev/vda2       996G  314G  681G  32% /home
+Ten completed btree-bulk-slots images archived recoverably with identical TSV hashes

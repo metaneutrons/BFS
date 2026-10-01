@@ -1,0 +1,314 @@
+Archive member included to satisfy reference by file (symbol)
+
+/opt/homebrew/lib/gcc/m68k-amigaos/6.5.0b/libm020/libgcc.a(_udivdi3.o)
+                              /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccCYPUqq.o (__udivdi3)
+/opt/homebrew/lib/gcc/m68k-amigaos/6.5.0b/libm020/libgcc.a(_umoddi3.o)
+                              /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccDHynBD.o (__umoddi3)
+/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(memcmp.o)
+                              /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o (memcmp)
+/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(memmove.o)
+                              /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccr3S7xR.o (memmove)
+/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(strcmp.o)
+                              /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o (strcmp)
+/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(strlen.o)
+                              /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccPjL375.o (strlen)
+/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(bcopy.o)
+                              /opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(memmove.o) (bcopy)
+
+Allocating common symbols
+Common symbol       size              file
+
+DOSBase             0x4               /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o
+SysBase             0x4               /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o
+
+Memory Configuration
+
+Name             Origin             Length             Attributes
+*default*        0x0000000000000000 0xffffffffffffffff
+
+Linker script and memory map
+
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccqDqzn7.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccXHoEJF.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccRrQ9z7.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccCYPUqq.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cciBojvh.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccdQs1eS.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccr3S7xR.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccP4S8oh.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccWGcOk5.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc2ydP4x.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccZTMUtW.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccDHynBD.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccPjL375.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccIk6cFy.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccURMrjI.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3avLnQ.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc73T18W.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccSVlU0B.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc46Dcgz.o
+LOAD /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccNYoNyl.o
+LOAD /opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib/libamiga.a
+LOAD /opt/homebrew/lib/gcc/m68k-amigaos/6.5.0b/libm020/libgcc.a
+LOAD /opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a
+                [!provide]                        PROVIDE (___machtype = 0x0)
+                0x0000000000000000                . = 0x0
+
+.text           0x0000000000000000    0x1f838
+                0x0000000000000000                __stext = .
+ *(.text)
+ .text          0x0000000000000000       0x68 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccqDqzn7.o
+                0x0000000000000000                start
+ .text          0x0000000000000068     0x1094 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccXHoEJF.o
+                0x0000000000000068                bfs_crc32
+ .text          0x00000000000010fc       0xd0 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccRrQ9z7.o
+                0x00000000000010fc                memcpy
+                0x0000000000001150                memset
+ .text          0x00000000000011cc     0x6020 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o
+                0x0000000000006162                EntryPointNoStack
+                0x00000000000061e2                EntryPoint
+ .text          0x00000000000071ec      0x138 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o
+ .text          0x0000000000007324      0x738 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccCYPUqq.o
+                0x000000000000768a                bfs_amiga_bio_init
+                0x000000000000796a                bfs_amiga_bio_set_readonly
+                0x000000000000797a                bfs_amiga_bio_set_blocksize
+                0x0000000000007a0a                bfs_amiga_bio_probe_superblock
+ .text          0x0000000000007a5c     0x3170 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cciBojvh.o
+                0x000000000000802a                bfs_freespace_init
+                0x00000000000080d8                bfs_freespace_add
+                0x000000000000838e                bfs_freespace_alloc
+                0x00000000000089f6                bfs_freespace_free
+                0x0000000000009298                bfs_freespace_free_sorted_blocks
+                0x00000000000092b0                bfs_freespace_refill_reserve
+                0x00000000000095c4                bfs_freespace_seal_commit
+                0x000000000000aa6a                bfs_freespace_return_reserve
+                0x000000000000aa7a                bfs_freespace_settle_reserve
+                0x000000000000aa88                bfs_freespace_allocator
+ .text          0x000000000000abcc       0xa4 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cciBojvh.o
+ .text          0x000000000000ac70       0xac /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccdQs1eS.o
+                0x000000000000acd0                bootstrap_create
+ .text          0x000000000000ad1c     0x544c /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccr3S7xR.o
+                0x000000000000b274                bfs_btree_init
+                0x000000000000b3ca                bfs_btree_search
+                0x000000000000b780                bfs_btree_leaf_capacity
+                0x000000000000b8ce                bfs_btree_replace_root_leaf
+                0x000000000000b92a                bfs_btree_root_leaf_txn_id
+                0x000000000000ba12                bfs_btree_replace_owned_root_leaf
+                0x000000000000bcf8                bfs_btree_insert
+                0x000000000000c876                bfs_btree_update
+                0x000000000000cc18                bfs_btree_rekey_equal
+                0x000000000000cfb0                bfs_btree_scan
+                0x000000000000d860                bfs_btree_search_floor
+                0x000000000000de0c                bfs_btree_delete
+                0x000000000000f61c                bfs_btree_walk_nodes
+                0x000000000000f6f4                bfs_btree_free_block
+                0x000000000000faba                bfs_btree_compact_build_swap
+ .text          0x0000000000010168      0xa20 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccP4S8oh.o
+                0x0000000000010894                bfs_bio_alloc_buffer
+                0x00000000000108d2                bfs_bio_free_buffer
+                0x0000000000010910                bfs_cache_init
+                0x0000000000010a9e                bfs_cache_set_node_write_retention
+                0x0000000000010aae                bfs_cache_destroy
+                0x0000000000010b2e                bfs_cache_invalidate
+ .text          0x0000000000010b88     0x40c4 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccWGcOk5.o
+                0x0000000000014b88                bfs_crc32_zeros
+ .text          0x0000000000014c4c      0x66c /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc2ydP4x.o
+                0x0000000000014c4c                bfs_intl_toupper
+                0x0000000000014c78                bfs_dir_name_hash
+                0x0000000000014e92                bfs_dir_init
+                0x0000000000014ed4                bfs_dir_lookup
+                0x0000000000014f64                bfs_dir_insert
+                0x0000000000014fd8                bfs_dir_replace
+                0x0000000000015098                bfs_dir_rekey_case
+                0x000000000001511e                bfs_dir_remove
+                0x000000000001520a                bfs_dir_scan
+ .text          0x00000000000152b8      0xbc0 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccZTMUtW.o
+                0x00000000000153dc                bfs_extent_init
+                0x0000000000015436                bfs_extent_lookup
+                0x00000000000154d6                bfs_extent_lookup_val
+                0x000000000001556c                bfs_extent_update_crc
+                0x00000000000155d0                bfs_extent_map_block
+                0x0000000000015630                bfs_extent_map_run
+                0x00000000000156a2                bfs_extent_remap_block_crc
+                0x000000000001590c                bfs_extent_remap_block
+                0x000000000001592a                bfs_extent_append
+                0x0000000000015a68                bfs_extent_walk
+                0x0000000000015c52                bfs_extent_truncate_batch
+                0x0000000000015c78                bfs_extent_truncate
+ .text          0x0000000000015e78     0x1dc4 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccDHynBD.o
+                0x0000000000015fde                bfs_file_open_unlocked
+                0x0000000000016202                bfs_file_read_unlocked
+                0x0000000000017382                bfs_file_write_unlocked
+                0x00000000000174a0                bfs_file_truncate_unlocked
+                0x0000000000017922                bfs_file_open
+                0x000000000001795a                bfs_file_open_readonly_view
+                0x000000000001799e                bfs_file_seek
+                0x00000000000179fc                bfs_file_read
+                0x0000000000017aba                bfs_file_write
+                0x0000000000017ad2                bfs_file_write_with_stamp
+                0x0000000000017b10                bfs_file_append
+                0x0000000000017b98                bfs_file_mark_unlinked
+                0x0000000000017be0                bfs_file_truncate
+ .text          0x0000000000017c3c     0x12e4 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccPjL375.o
+                0x0000000000017c9c                bfs_fs_format
+                0x00000000000186ae                bfs_fs_mount
+                0x00000000000186c2                bfs_fs_mount_readonly
+                0x00000000000186d8                bfs_fs_alloc_ino
+                0x0000000000018716                bfs_fs_queue_pending_free
+                0x00000000000188e2                bfs_fs_free_sink
+                0x0000000000018922                bfs_fs_reserve_pending
+                0x0000000000018a4c                bfs_fs_ensure_free_headroom
+                0x0000000000018b3a                bfs_fs_compact_tree
+                0x0000000000018c34                bfs_fs_sync
+                0x0000000000018c5e                bfs_fs_unmount
+                0x0000000000018d38                bfs_fs_abandon
+                0x0000000000018d98                bfs_fs_reload_committed_unlocked
+                0x0000000000018e98                bfs_fs_reserve
+                0x0000000000018f1c                bfs_fs_unreserve
+ .text          0x0000000000018f20      0xa64 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccIk6cFy.o
+                0x0000000000019402                bfs_fs_check
+ .text          0x0000000000019984      0x2b0 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccURMrjI.o
+                0x00000000000199ae                bfs_inode_apply_stamp
+                0x0000000000019a44                bfs_inode_init
+                0x0000000000019a72                bfs_inode_read
+                0x0000000000019ada                bfs_inode_read_unlinked
+                0x0000000000019b44                bfs_inode_write
+                0x0000000000019bb0                bfs_inode_write_unlinked
+                0x0000000000019c00                bfs_inode_delete
+ .text          0x0000000000019c34     0x2178 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3avLnQ.o
+                0x000000000001a42c                bfs_fs_reap_unlinked_on_mount_unlocked
+                0x000000000001a67a                bfs_fs_create_file
+                0x000000000001a6ac                bfs_fs_create_file_with_stamp
+                0x000000000001a84c                bfs_fs_mkdir
+                0x000000000001aa60                bfs_fs_delete_file
+                0x000000000001ab08                bfs_fs_unlink_open_file
+                0x000000000001abda                bfs_fs_reap_unlinked_file
+                0x000000000001ac58                bfs_fs_rmdir
+                0x000000000001af9c                bfs_fs_rename
+                0x000000000001afda                bfs_fs_rename_replace
+                0x000000000001b78e                bfs_fs_make_hardlink
+                0x000000000001b900                bfs_fs_make_softlink
+                0x000000000001bb3a                bfs_fs_set_comment
+                0x000000000001bcd4                bfs_fs_get_comment
+ .text          0x000000000001bdac      0x288 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc73T18W.o
+                0x000000000001bde6                bfs_refcount_init
+                0x000000000001be2c                bfs_refcount_inc
+                0x000000000001bece                bfs_refcount_dec
+                0x000000000001bf9a                bfs_refcount_get_checked
+                0x000000000001c006                bfs_refcount_get
+ .text          0x000000000001c034     0x1968 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccSVlU0B.o
+                0x000000000001c06e                bfs_snapshot_record_txn_id
+                0x000000000001c086                bfs_snapshot_open
+                0x000000000001c2e2                bfs_snapshot_create_unlocked
+                0x000000000001c918                bfs_snapshot_delete_unlocked
+                0x000000000001c9f0                bfs_snapshot_list_unlocked
+                0x000000000001ca8c                bfs_snapshot_find_by_name_unlocked
+                0x000000000001cb2a                bfs_snapshot_next_id_unlocked
+                0x000000000001cb62                bfs_snapshot_create
+                0x000000000001cb82                bfs_snapshot_delete
+                0x000000000001cd28                bfs_snapshot_list
+                0x000000000001ce00                bfs_snapshot_find_by_name
+                0x000000000001ce2e                bfs_snapshot_next_id
+                0x000000000001ce92                bfs_snapshot_resume_deletions
+ .text          0x000000000001d99c     0x111c /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc46Dcgz.o
+                0x000000000001d99c                bfs_sb_compute_crc
+                0x000000000001d9ba                bfs_sb_validate
+                0x000000000001dc80                bfs_sb_describe_unsupported
+                0x000000000001e182                bfs_sb_read
+                0x000000000001e4a0                bfs_sb_probe
+                0x000000000001e5c6                bfs_sb_write
+                0x000000000001e83e                bfs_sb_write_raw
+ .text          0x000000000001eab8      0x9e8 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//ccNYoNyl.o
+                0x000000000001eab8                bfs_txn_begin
+                0x000000000001ebbe                bfs_txn_begin_readonly
+                0x000000000001ec8a                bfs_txn_set_dir_root
+                0x000000000001ec9a                bfs_txn_set_free_root
+                0x000000000001ecaa                bfs_txn_set_free_blocks
+                0x000000000001ecba                bfs_txn_set_inode_root
+                0x000000000001ecca                bfs_txn_write_sb
+                0x000000000001ed72                bfs_txn_abort
+                0x000000000001edea                bfs_txn_id
+                0x000000000001ee02                bfs_txn_commit
+ .text          0x000000000001f4a0      0x100 /opt/homebrew/lib/gcc/m68k-amigaos/6.5.0b/libm020/libgcc.a(_udivdi3.o)
+                0x000000000001f4a0                __udivdi3
+ .text          0x000000000001f5a0      0x114 /opt/homebrew/lib/gcc/m68k-amigaos/6.5.0b/libm020/libgcc.a(_umoddi3.o)
+                0x000000000001f5a0                __umoddi3
+ .text          0x000000000001f6b4       0x30 /opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(memcmp.o)
+                0x000000000001f6b4                bcmp
+                0x000000000001f6b4                memcmp
+ .text          0x000000000001f6e4       0x20 /opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(memmove.o)
+                0x000000000001f6e4                memmove
+ .text          0x000000000001f704       0x28 /opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(strcmp.o)
+                0x000000000001f704                strcmp
+ .text          0x000000000001f72c       0x10 /opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(strlen.o)
+                0x000000000001f72c                strlen
+ .text          0x000000000001f73c       0xfc /opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a(bcopy.o)
+                0x000000000001f73c                bcopy
+                0x000000000001f73c                __bcopz
+ *(.text.main)
+ *(.text*)
+ *(_*)
+ *(.rodata*)
+ *(.data.rel.ro*)
+ *(.gnu.linkonce.t.*)
+ *(.gnu.linkonce.r.*)
+ *(.gcc_except_table*)
+ *(SORT_BY_NAME(.list___EH_FRAME*))
+ *(SORT_BY_NAME(.list_*))
+ *(.end_of_lists)
+                0x000000000001f838                ___datadata_relocs = .
+                0x000000000001f838                __etext = .
+                0x000000000001f838                ___text_size = SIZEOF (.text)
+                0x000000000001f838                . = ALIGN (0x0)
+
+.data           0x000000000001f838        0x0
+                0x000000000001f838                __sdata = .
+ *(.data)
+ *(SORT_BY_NAME(.data.*))
+ *(SORT_BY_NAME(.dlist___EH_FRAME_OBJECT*))
+ *(SORT_BY_NAME(.dlist_*))
+ *(.end_of_dlists)
+ *(.data.__EH_FRAME_OBJECT__*)
+ *(.gnu.linkonce.d.*)
+                0x000000000001f838                __edata = .
+                0x0000000000000000                ___data_size = SIZEOF (.data)
+
+.bss            0x000000000001f838        0x8
+                0x000000000001f838                __bss_start = .
+ *(.bss)
+ .bss           0x000000000001f838        0x0 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o
+ *(.bss.*)
+ *(COMMON)
+ COMMON         0x000000000001f838        0x8 /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T//cc3kRC2W.o
+                0x000000000001f838                DOSBase
+                0x000000000001f83c                SysBase
+                0x000000000001f840                __end = .
+                0x0000000000000008                ___bss_size = SIZEOF (.bss)
+
+.datachip
+ *(.datachip)
+
+.bsschip
+ *(.bsschip)
+
+.dwarf2         0x000000000001f840        0x0
+                0x000000000001f840                __debug_frame_start = .
+ *(.debug_frame)
+                0x000000000001f840                __debug_info_start = .
+ *(.debug_info)
+                0x000000000001f840                __debug_abbrev_start = .
+ *(.debug_abbrev)
+                0x000000000001f840                __debug_loclists_start = .
+ *(.debug_loclists)
+                0x000000000001f840                __debug_aranges_start = .
+ *(.debug_aranges)
+                0x000000000001f840                __debug_rgnlists_start = .
+ *(.debug_rnglists)
+                0x000000000001f840                __debug_line_start = .
+ *(.debug_line)
+                0x000000000001f840                __debug_str_start = .
+ *(.debug_str)
+                0x000000000001f840                __debug_line_str_start = .
+ *(.debug_line_str)
+OUTPUT(build/amiga-btree-bulk-slots-map/bfshandler amiga)
