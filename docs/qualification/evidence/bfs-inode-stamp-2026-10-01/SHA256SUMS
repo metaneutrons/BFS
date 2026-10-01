@@ -1,5 +1,6 @@
 3a286f907988c84ba5ccbd0e2a8de1208324de49c38475c05cc8d45061433f8b  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/archive-after-buffer-images.sh
 a706723bc5905e63785c6e559fb0cd3d10a0901e9a81677e80caf6087e189804  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/archive-cache-hint-images.sh
+28fcb50e6fe4c9ea7496ebc9cd482821fbcfbf0a9dc37b1a52819f983cf424bb  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/archive-inode-stamp-images.sh
 911c1862d3710e53c4716fdb1eb9312a8515aee241e6438aca30107d5f409ada  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-after-buffer-image-archive-v2.log
 47c9c8939096c0fd050a898338d242a43b6b3c6978844a8781872f114d882e39  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-after-buffer-image-archive.log
 e25ced9e8eab80038140ba58d7bda7cab4a13f5af7e8eccf2872a0259bea5422  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-amiga-rebuilt.log
@@ -8,6 +9,7 @@ b1bac1fe4700db214ac28baf432d51b8dcd0e4fb27f458086a9034f43fa3d5f0  docs/qualifica
 ec7f33c61e055f71d2757c1a0d7cee7fbb861a91ca4339af6bac91e477c33ea7  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-candidate.patch
 624840aca89942e65ce73aeca68c93960e6643a40977c509e0b1e5921ac0209b  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-capacity-diagnostic.log
 2c289a7360788cafc3a1cfbc14fa50c6e08beba32dea21114615ebd9318d50a1  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-comparison.log
+a78c7ceab8e652b18a9465f8a7694bf4055b80a69ccf7a60e46db031aa4773ca  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-completed-image-archive.log
 9e2490ae47beaade429b3c0ad5e53639951c8827c24de66317a4576dcff6156d  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-existing-focused-build.log
 b79c295cb1de7aafb86e39ce09c06e59513dceba3dc600fb6f7f7cfc2c234367  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-existing-focused.log
 ccf3adb1d7c2052b2471d13ac5834a68435c676a9d353058479c6e03de8e47f8  docs/qualification/evidence/bfs-inode-stamp-2026-10-01/inode-stamp-fault-focused-build.log

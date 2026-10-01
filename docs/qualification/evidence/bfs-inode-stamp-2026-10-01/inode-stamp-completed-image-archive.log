@@ -1,0 +1,24 @@
+2d38db1bc3240b065822b58feb56b94a6a6e3671df1ea78c4d92abe2cac923ae  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-probe-bfs-first/system/Results/bfs.deep-compare.tsv
+5dfedf25203d37437db56c302ef9425a3d4184265167887afab13af5b3a784e5  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-probe-bfs-first/system/Results/pfs3.deep-compare.tsv
+f67ffbfa0ab9477338d0b75998cb1a43ea4482cc04327b3251a28b292312af44  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-probe-pfs3-first/system/Results/bfs.deep-compare.tsv
+693f92aef25740bc136f0bcd00ed1ba0d7c74c90ec2d59254caecfc1dadd5d0d  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-probe-pfs3-first/system/Results/pfs3.deep-compare.tsv
+0ec26e97a90bb4aa93d26f6618a1ab2234bd3c7060d1627120be7438403f7e6d  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-baseline-bfs-first/system/Results/bfs.tsv
+91a130932294dbafe294cfbaf215c9925e927ba629afb30393d84a899582debb  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-baseline-bfs-first/system/Results/pfs3.tsv
+50ce05e1935b592176b1ca41385a8bf67d4d4d7c36bc8d0b662a7f2c9ab5ae73  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-candidate-pfs3-first/system/Results/bfs.tsv
+55b4fecae483f4f948d4ead126fd5937690be87278c8bee000ac64700a60b952  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+6475f8131fe476229ea5fa5e3593e91d2a177b6f4f38ef7536be1c60be9bc432  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-baseline-pfs3-first/system/Results/bfs.tsv
+f2b9ac727b030d2170fea7f362f6645d292ee4fc469a729ad5d55a8f0f5238a9  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+306ebd9c61f3a9a3614eff21fd48a0555eb67a4136cd16c2fc1522b3eec020fd  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-candidate-bfs-first/system/Results/bfs.tsv
+e9b554f6a849a27e25d2b67789d5771013870bfca7e44530680f1efbdd0c3469  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-candidate-bfs-first/system/Results/pfs3.tsv
+c47558744f347f45af44f194cd98c628319784eabf61094db80a709fa509da4a  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+7e4ba1afd888494ede4f0999a67e3535ce2f45add183c8d0c0d1608acbed7dc2  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+43b03492ba20ea87e3e8b0b37f3c517da02e2dc580853704eb707dccd6eac9d2  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+b0aa68e38949258ba937af23553d715e29e2eec612c1c4bfad0595bd399871be  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+e8235093ff893a50976517dd55ea454822879298ab6dc8be90f5f3315a1349cb  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+7dab26999a2d708a08d797e768400d48b93c4461df41bd0f625d6dc7a088f96a  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+a06418a2e305205d620cbb94a75ef7e8dcdebc88f72073ad5c1c5b856012ab70  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+44e5152e4fdd91d8e2de7532569188016b82896e14e74405636da7e92d538654  /home/fabian/.cache/bfs-performance/inode-stamp-2026-10-01/inode-stamp-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  3.5G  8.3G  30% /tmp
+/dev/vda2       996G  313G  682G  32% /home
+Ten completed timestamp images archived recoverably with identical TSV hashes

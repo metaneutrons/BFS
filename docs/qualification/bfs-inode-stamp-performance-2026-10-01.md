@@ -129,6 +129,8 @@ before/after TSV hashes identical. A first post-buffer archive attempt used
 wrong TSV filenames and stopped before any move. The corrected script accepted
 the verified empty archive, moved only the two exact completed targets, and
 the one partial image transfer resumed. The final input/idle preflight passed.
+After qualification, all ten completed timestamp images were also moved to
+the recoverable archive; all twenty before/after TSV hashes remain identical.
 
 [Raw evidence](evidence/bfs-inode-stamp-2026-10-01/) preserves all twenty TSVs,
 completion/phase files, emulator configurations/logs, build/test gates, failed

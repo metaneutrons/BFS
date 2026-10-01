@@ -1,5 +1,10 @@
 # Free-tree multi-edit plan v1
 
+The bounded
+[metadata withdrawal batch](bfs-metadata-withdrawal-batch-v1.md) is a proposed
+allocation-side follow-on at the qualified timestamp/sealed-commit checkpoint.
+It does not establish acceptance of increment 2 or the overall five-times goal.
+
 The dated baseline below predates the subsequently qualified root-retirement,
 CRC and unchanged-update increments. Increment 2 still requires a separate
 allocation/reclaim design; later evidence does not imply its acceptance. The
