@@ -1,6 +1,9 @@
 # Amiga 48-byte memcpy loop experiment v1
 
-State: bounded next pilot, not a production acceptance. The overall goal stays
+State: rejected after the actual kernel pilot; original production assembly
+and byte-identical normal handler restored. See the
+[qualification report](../qualification/bfs-memory-copy-48-performance-2026-10-01.md).
+This is not a production acceptance. The overall goal stays
 at most five times PFS3 in every checked AmigaDOS workload with unchanged
 durability, integrity, snapshots and recovery. The native-order CRC trial is
 rejected and its original assembly/normal binary restored before this pilot.
@@ -20,7 +23,10 @@ five-times speedup forecast follows from this candidate.
 Use a distinct frozen standalone comparator: independent byte/guard/source/
 return checks for aligned/unaligned small and large boundary cases, reused
 normal-return ABI register/frame witness and exact register-clobber controls.
-Keep the 8 MiB guest memory budget and 60-second bounded run explicit. Allocate
+Keep the 8 MiB guest memory budget and bounded run explicit. The first 60-second
+run produced no completion/report and was terminated; keep that failed attempt.
+A distinct unchanged-source run extends only the wall limit to 300 seconds.
+This is not an adverse timing observation or a passing correctness gate. Allocate
 large functional buffers and release them before allocating timing buffers.
 No allocation or I/O inside timed loops; alternate old/new order and keep raw
 ticks, mismatches and completion checks. The linker-renamed old assembly is

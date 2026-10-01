@@ -1,0 +1,4 @@
+Command: m68k-amigaos-gcc -m68020 -c build/memory-copy-48/run.TG9eTx/memory-copy-candidate-source.s -o build/memory-copy-48/candidate-explicit-run2.o
+Assembler exit:0
+afc47138cb081634f0222cf9c25055d03f13d0eff73deeb1dee72a2c268cc2e3  build/memory-copy-48/run.TG9eTx/memory-copy-candidate-source.s
+ba7c863789f754261b31534cf46008e38835866e86d38b06e83a631e7682a5d2  build/memory-copy-48/candidate-explicit-run2.o

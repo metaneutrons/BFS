@@ -1,0 +1,49 @@
+mode=AmigaOS memcpy candidate comparison
+small_expected_cases=8512
+small_completed_cases=8512
+large_expected_cases=384
+large_completed_cases=384
+bulk_expected_cases=12
+bulk_completed_cases=12
+small_lengths=0..132; all 64 src/dst offsets; deterministic mixed source pattern
+large_lengths=4095,4096,4097,65535,65536,65537; all 64 src/dst offsets; deterministic mixed source pattern
+bulk_lengths=44*65536-1,44*65536,+1,48*65536-1,48*65536,+1; offset pairs=(0,0),(1,7)
+candidate_checked_calls=8908
+baseline_checked_calls=8908
+candidate_abi_failures=0
+baseline_abi_failures=0
+candidate_return_failures=0
+baseline_return_failures=0
+candidate_data_failures=0
+baseline_data_failures=0
+abi_negative_control_cases=2
+abi_negative_control_passes=2
+abi_negative_control_errors=0
+allocation_failures=0
+timing_available=1
+timing_buffers_available=1
+clock_hz=709379
+timing_samples=48
+timing_order_baseline_first=24
+timing_order_candidate_first=24
+timing_repeat_clamps=4
+timing_mismatches=0
+baseline_timing_calls=567398
+candidate_timing_calls=567398
+baseline_timing_batches=56
+candidate_timing_batches=56
+functional_buffers=two AllocMem regions; largest pair total bytes=6291536
+timing_buffers=two AllocMem regions; total bytes=2097230
+timing_note=raw EClock ticks; six alternating paired samples; 20ms target, repeats capped; src_offset=3 dst_offset=5
+abi_note=callee-saved D2-D7/A2-A6 and SP witness; arbitrary SP corruption may prevent return
+timing_length=0 repeats=20000 calibration_ticks=0,0 baseline_ticks=5811,9761,9171,5947,6266,5766 candidate_ticks=8444,7763,7173,6356,5766,6038
+timing_length=44 repeats=20000 calibration_ticks=0,0 baseline_ticks=8853,8989,8672,8853,8898,8853 candidate_ticks=11396,11168,11214,11078,10987,10896
+timing_length=48 repeats=20000 calibration_ticks=0,0 baseline_ticks=10805,12168,16571,13393,9988,9534 candidate_ticks=9897,13711,21656,16481,9261,8762
+timing_length=264 repeats=20000 calibration_ticks=0,0 baseline_ticks=22609,22654,23154,23018,23744,22655 candidate_ticks=23699,23880,24107,23336,25425,24335
+timing_length=512 repeats=14188 calibration_ticks=1,1 baseline_ticks=31099,28648,28602,28330,28466,29148 candidate_ticks=27876,28058,28284,27468,27467,28012
+timing_length=4096 repeats=309 calibration_ticks=46,46 baseline_ticks=5856,6673,4540,4041,4222,4086 candidate_ticks=6856,6219,6265,4269,3859,3904
+timing_length=65536 repeats=63 calibration_ticks=182,227 baseline_ticks=28715,15119,18750,12849,12803,13484 candidate_ticks=12576,12712,12577,14029,12349,12304
+timing_length=1048576 repeats=5 calibration_ticks=3450,3042 baseline_ticks=16253,16299,16529,16389,16253,16435 candidate_ticks=15527,15437,15616,15481,15391,17070
+failures=0
+MEMORY-COPY-COMPARE-PASS
+Memory copy guest completed within the bounded run

@@ -1,0 +1,6 @@
+b1180cee112a9e395f7978a0fee877a03861ac8673cb62bb3f856fdfa3269eb3  src/amiga/memcpy_68k.s
+9e7f076d8ccc22a9a70c769d1f184e02c4bbc1e05cc3bef6beac0e577553d018  tests/amiga/memory_copy_compare_probe.c
+de6988ba2350d5fa6735083df7591c4dce37f14f15933040ab4be23ef6852b8e  tests/amiga/crc32_abi_probe.s
+5469fba51b7e27e438a19222ffa5b139d7b08c28094fdcb082237fd61c8383b1  build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c
+064d6e2ddc51f2488db99a508cae35d83e462164eddb0a526aa8c3e12c0b9b11  build/memory-copy-48/run.TG9eTx/memory-copy-probe
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  build/amiga-memory-copy-restored/bfshandler

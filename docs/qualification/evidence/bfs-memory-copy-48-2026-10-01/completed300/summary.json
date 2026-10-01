@@ -1,0 +1,261 @@
+{
+  "counts": {
+    "small_expected_cases": 8512,
+    "small_completed_cases": 8512,
+    "large_expected_cases": 384,
+    "large_completed_cases": 384,
+    "bulk_expected_cases": 12,
+    "bulk_completed_cases": 12,
+    "candidate_checked_calls": 8908,
+    "baseline_checked_calls": 8908,
+    "candidate_abi_failures": 0,
+    "baseline_abi_failures": 0,
+    "candidate_return_failures": 0,
+    "baseline_return_failures": 0,
+    "candidate_data_failures": 0,
+    "baseline_data_failures": 0,
+    "abi_negative_control_cases": 2,
+    "abi_negative_control_passes": 2,
+    "abi_negative_control_errors": 0,
+    "allocation_failures": 0,
+    "timing_available": 1,
+    "timing_buffers_available": 1,
+    "clock_hz": 709379,
+    "timing_samples": 48,
+    "timing_order_baseline_first": 24,
+    "timing_order_candidate_first": 24,
+    "timing_repeat_clamps": 4,
+    "timing_mismatches": 0,
+    "baseline_timing_calls": 567398,
+    "candidate_timing_calls": 567398,
+    "baseline_timing_batches": 56,
+    "candidate_timing_batches": 56,
+    "failures": 0
+  },
+  "summaries": [
+    {
+      "length": 0,
+      "repeats": 20000,
+      "calibration": [
+        0,
+        0
+      ],
+      "baseline": [
+        5811,
+        9761,
+        9171,
+        5947,
+        6266,
+        5766
+      ],
+      "candidate": [
+        8444,
+        7763,
+        7173,
+        6356,
+        5766,
+        6038
+      ],
+      "baseline_us_per_call": 0.5018708851920717,
+      "candidate_us_per_call": 0.48798550093344545,
+      "change_percent": -2.76672440428819,
+      "faster_samples": 3
+    },
+    {
+      "length": 44,
+      "repeats": 20000,
+      "calibration": [
+        0,
+        0
+      ],
+      "baseline": [
+        8853,
+        8989,
+        8672,
+        8853,
+        8898,
+        8853
+      ],
+      "candidate": [
+        11396,
+        11168,
+        11214,
+        11078,
+        10987,
+        10896
+      ],
+      "baseline_us_per_call": 0.623996481429532,
+      "candidate_us_per_call": 0.784007326595985,
+      "change_percent": 25.642908242027175,
+      "faster_samples": 0
+    },
+    {
+      "length": 48,
+      "repeats": 20000,
+      "calibration": [
+        0,
+        0
+      ],
+      "baseline": [
+        10805,
+        12168,
+        16571,
+        13393,
+        9988,
+        9534
+      ],
+      "candidate": [
+        9897,
+        13711,
+        21656,
+        16481,
+        9261,
+        8762
+      ],
+      "baseline_us_per_call": 0.851202248727408,
+      "candidate_us_per_call": 0.9370637322691162,
+      "change_percent": 10.087083730109425,
+      "faster_samples": 3
+    },
+    {
+      "length": 264,
+      "repeats": 20000,
+      "calibration": [
+        0,
+        0
+      ],
+      "baseline": [
+        22609,
+        22654,
+        23154,
+        23018,
+        23744,
+        22655
+      ],
+      "candidate": [
+        23699,
+        23880,
+        24107,
+        23336,
+        25425,
+        24335
+      ],
+      "baseline_us_per_call": 1.6191861708151307,
+      "candidate_us_per_call": 1.7008068559495932,
+      "change_percent": 5.040846235326546,
+      "faster_samples": 0
+    },
+    {
+      "length": 512,
+      "repeats": 14188,
+      "calibration": [
+        1,
+        1
+      ],
+      "baseline": [
+        31099,
+        28648,
+        28602,
+        28330,
+        28466,
+        29148
+      ],
+      "candidate": [
+        27876,
+        28058,
+        28284,
+        27468,
+        27467,
+        28012
+      ],
+      "baseline_us_per_call": 2.886218374991398,
+      "candidate_us_per_call": 2.768181709279415,
+      "change_percent": -4.089665104163675,
+      "faster_samples": 6
+    },
+    {
+      "length": 4096,
+      "repeats": 309,
+      "calibration": [
+        46,
+        46
+      ],
+      "baseline": [
+        5856,
+        6673,
+        4540,
+        4041,
+        4222,
+        4086
+      ],
+      "candidate": [
+        6856,
+        6219,
+        6265,
+        4269,
+        3859,
+        3904
+      ],
+      "baseline_us_per_call": 22.36789348973906,
+      "candidate_us_per_call": 23.853611889322654,
+      "change_percent": 6.6421918553266845,
+      "faster_samples": 3
+    },
+    {
+      "length": 65536,
+      "repeats": 63,
+      "calibration": [
+        182,
+        227
+      ],
+      "baseline": [
+        28715,
+        15119,
+        18750,
+        12849,
+        12803,
+        13484
+      ],
+      "candidate": [
+        12576,
+        12712,
+        12577,
+        14029,
+        12349,
+        12304
+      ],
+      "baseline_us_per_call": 379.3466244426873,
+      "candidate_us_per_call": 285.46840406227284,
+      "change_percent": -24.747345654738485,
+      "faster_samples": 5
+    },
+    {
+      "length": 1048576,
+      "repeats": 5,
+      "calibration": [
+        3450,
+        3042
+      ],
+      "baseline": [
+        16253,
+        16299,
+        16529,
+        16389,
+        16253,
+        16435
+      ],
+      "candidate": [
+        15527,
+        15437,
+        15616,
+        15481,
+        15391,
+        17070
+      ],
+      "baseline_us_per_call": 4612.39102557777,
+      "candidate_us_per_call": 4441.53736343102,
+      "change_percent": -3.7042319525662726,
+      "faster_samples": 5
+    }
+  ]
+}
