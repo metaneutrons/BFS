@@ -1,0 +1,59 @@
+mode=AmigaOS memcpy candidate comparison
+small_expected_cases=8512
+small_completed_cases=8512
+large_expected_cases=384
+large_completed_cases=384
+bulk_expected_cases=12
+bulk_completed_cases=12
+timing_mode=short
+short_timing_mode=1
+timing_length_count=14
+timing_lengths=0,1,4,8,16,32,43,44,48,264,512,4096,65536,1048576
+small_lengths=0..132; all 64 src/dst offsets; deterministic mixed source pattern
+large_lengths=4095,4096,4097,65535,65536,65537; all 64 src/dst offsets; deterministic mixed source pattern
+bulk_lengths=44*65536-1,44*65536,+1,48*65536-1,48*65536,+1; offset pairs=(0,0),(1,7)
+candidate_checked_calls=8908
+baseline_checked_calls=8908
+candidate_abi_failures=0
+baseline_abi_failures=0
+candidate_return_failures=0
+baseline_return_failures=0
+candidate_data_failures=0
+baseline_data_failures=0
+abi_negative_control_cases=2
+abi_negative_control_passes=2
+abi_negative_control_errors=0
+allocation_failures=0
+timing_available=1
+timing_buffers_available=1
+clock_hz=709379
+timing_samples=84
+timing_order_baseline_first=42
+timing_order_candidate_first=42
+timing_repeat_clamps=9
+timing_mismatches=0
+baseline_timing_calls=1172738
+candidate_timing_calls=1172738
+baseline_timing_batches=98
+candidate_timing_batches=98
+functional_buffers=two AllocMem regions; largest pair total bytes=6291536
+timing_buffers=two AllocMem regions; total bytes=2097230
+timing_note=raw EClock ticks; six alternating paired samples; 20ms target, repeats capped; src_offset=3 dst_offset=5
+abi_note=callee-saved D2-D7/A2-A6 and SP witness; arbitrary SP corruption may prevent return
+timing_length=0 repeats=20000 calibration_ticks=0,0 baseline_ticks=5947,5993,5721,5721,5947,5811 candidate_ticks=3996,3904,4222,3995,4041,3995
+timing_length=1 repeats=20000 calibration_ticks=0,0 baseline_ticks=6324,6356,6311,6356,6220,7491 candidate_ticks=4539,4630,4586,4676,4586,7083
+timing_length=4 repeats=20000 calibration_ticks=0,0 baseline_ticks=8308,8989,11214,6901,6310,10896 candidate_ticks=4631,7355,7763,6129,6810,5358
+timing_length=8 repeats=20000 calibration_ticks=0,0 baseline_ticks=7763,6992,6992,6857,6719,6992 candidate_ticks=7764,5493,5023,5266,4994,5067
+timing_length=16 repeats=20000 calibration_ticks=0,0 baseline_ticks=10669,11441,8217,7900,7673,7718 candidate_ticks=7536,9034,5856,5902,5947,5993
+timing_length=32 repeats=710 calibration_ticks=0,20 baseline_ticks=318,318,363,317,318,317 candidate_ticks=273,273,273,272,318,272
+timing_length=43 repeats=20000 calibration_ticks=0,0 baseline_ticks=11804,11849,11804,13347,13120,12167 candidate_ticks=9988,9897,10124,10078,11622,14074
+timing_length=44 repeats=20000 calibration_ticks=0,0 baseline_ticks=8763,8990,13574,9034,10079,8671 candidate_ticks=10714,11441,11713,9579,11123,9444
+timing_length=48 repeats=473 calibration_ticks=30,0 baseline_ticks=227,227,227,227,183,214 candidate_ticks=227,227,227,227,227,273
+timing_length=264 repeats=20000 calibration_ticks=0,0 baseline_ticks=22473,22882,25379,27013,22746,31417 candidate_ticks=23472,22882,23472,23336,23018,31553
+timing_length=512 repeats=14188 calibration_ticks=0,1 baseline_ticks=43857,28103,28466,28466,28375,28057 candidate_ticks=29510,28693,28602,29283,28556,28602
+timing_length=4096 repeats=20000 calibration_ticks=0,0 baseline_ticks=277757,261776,312852,281344,279755,350625 candidate_ticks=263956,299322,281662,262094,325382,262594
+timing_length=65536 repeats=78 calibration_ticks=182,182 baseline_ticks=15890,22882,27014,15800,15898,15845 candidate_ticks=15936,20657,17662,18523,15855,16435
+timing_length=1048576 repeats=5 calibration_ticks=3223,3269 baseline_ticks=16617,21293,16208,16344,22701,16298 candidate_ticks=16344,16298,17434,16299,16253,17025
+failures=0
+MEMORY-COPY-COMPARE-PASS
+Short copy guest completed within the bounded run

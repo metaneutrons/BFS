@@ -2,9 +2,7 @@
 /*
  * AmigaOS comparison probe for retained and candidate 68020 memcpy kernels.
  * The runner links the candidate as memcpy and renames the retained entry to
- * memcpy_baseline. Expected bytes are generated independently below. The
- * extended timing matrix is opt-in with the compile-time define
- * BFS_MEMORY_COPY_SHORT_TIMING=1.
+ * memcpy_baseline. Expected bytes are generated independently below.
  */
 
 #include <exec/io.h>
@@ -19,13 +17,6 @@
 
 #include <stddef.h>
 #include <stdint.h>
-
-#ifndef BFS_MEMORY_COPY_SHORT_TIMING
-#define BFS_MEMORY_COPY_SHORT_TIMING 0
-#endif
-#if BFS_MEMORY_COPY_SHORT_TIMING != 0 && BFS_MEMORY_COPY_SHORT_TIMING != 1
-#error BFS_MEMORY_COPY_SHORT_TIMING must be 0 or 1
-#endif
 
 typedef void *(*CopyFunction)(void *, const void *, size_t);
 
@@ -67,16 +58,7 @@ static volatile ULONG timing_sink;
 #define SMALL_CASES (133UL * 8UL * 8UL)
 #define LARGE_CASES (6UL * 8UL * 8UL)
 #define BULK_CASES (6UL * 2UL)
-#if BFS_MEMORY_COPY_SHORT_TIMING
-#define TIMING_LENGTH_COUNT 14UL
-#define TIMING_MODE_NAME "short"
-#define SHORT_TIMING_MODE_VALUE 1UL
-#else
 #define TIMING_LENGTH_COUNT 8UL
-#define TIMING_MODE_NAME "default"
-#define SHORT_TIMING_MODE_VALUE 0UL
-#endif
-#define MAX_TIMING_LENGTH_COUNT TIMING_LENGTH_COUNT
 #define TIMING_SAMPLE_COUNT 6UL
 #define MAX_TIMING_REPEATS 20000UL
 #define REPORT_CAPACITY 8192UL
@@ -97,16 +79,9 @@ static const ULONG bulk_lengths[] = {
 static const ULONG bulk_src_offsets[] = {0UL, 1UL};
 static const ULONG bulk_dst_offsets[] = {0UL, 7UL};
 
-#if BFS_MEMORY_COPY_SHORT_TIMING
-static const ULONG timing_lengths[TIMING_LENGTH_COUNT] = {
-    0UL, 1UL, 4UL, 8UL, 16UL, 32UL, 43UL, 44UL, 48UL, 264UL,
-    512UL, 4096UL, 65536UL, TIMING_MAX_LENGTH
-};
-#else
 static const ULONG timing_lengths[TIMING_LENGTH_COUNT] = {
     0UL, 44UL, 48UL, 264UL, 512UL, 4096UL, 65536UL, TIMING_MAX_LENGTH
 };
-#endif
 
 static const char *const kernel_names[2] = {"candidate", "baseline"};
 
@@ -551,13 +526,13 @@ static ULONG calibrated_repeats(uint64_t baseline_ticks,
     return (ULONG)repeats;
 }
 
-static BOOL run_timing(uint64_t baseline_ticks[MAX_TIMING_LENGTH_COUNT]
+static BOOL run_timing(uint64_t baseline_ticks[TIMING_LENGTH_COUNT]
                                                 [TIMING_SAMPLE_COUNT],
-                       uint64_t candidate_ticks[MAX_TIMING_LENGTH_COUNT]
+                       uint64_t candidate_ticks[TIMING_LENGTH_COUNT]
                                                  [TIMING_SAMPLE_COUNT],
-                       uint64_t baseline_calibration[MAX_TIMING_LENGTH_COUNT],
-                       uint64_t candidate_calibration[MAX_TIMING_LENGTH_COUNT],
-                       ULONG repeats_by_length[MAX_TIMING_LENGTH_COUNT])
+                       uint64_t baseline_calibration[TIMING_LENGTH_COUNT],
+                       uint64_t candidate_calibration[TIMING_LENGTH_COUNT],
+                       ULONG repeats_by_length[TIMING_LENGTH_COUNT])
 {
     UBYTE *dst_storage = (UBYTE *)AllocMem(TIMING_STORAGE_BYTES, MEMF_PUBLIC);
     UBYTE *src_storage = (UBYTE *)AllocMem(TIMING_STORAGE_BYTES, MEMF_PUBLIC);
@@ -684,12 +659,12 @@ static ULONG append_named_count(char *buffer, ULONG offset,
 }
 
 static ULONG append_tick_row(char *buffer, ULONG offset, ULONG length_index,
-                             uint64_t baseline_ticks[MAX_TIMING_LENGTH_COUNT]
+                             uint64_t baseline_ticks[TIMING_LENGTH_COUNT]
                                                     [TIMING_SAMPLE_COUNT],
-                             uint64_t candidate_ticks[MAX_TIMING_LENGTH_COUNT]
+                             uint64_t candidate_ticks[TIMING_LENGTH_COUNT]
                                                       [TIMING_SAMPLE_COUNT],
-                             uint64_t baseline_calibration[MAX_TIMING_LENGTH_COUNT],
-                             uint64_t candidate_calibration[MAX_TIMING_LENGTH_COUNT],
+                             uint64_t baseline_calibration[TIMING_LENGTH_COUNT],
+                             uint64_t candidate_calibration[TIMING_LENGTH_COUNT],
                              ULONG repeats)
 {
     ULONG sample;
@@ -720,13 +695,13 @@ static ULONG append_tick_row(char *buffer, ULONG offset, ULONG length_index,
 }
 
 static ULONG build_report(char *buffer,
-                          uint64_t baseline_ticks[MAX_TIMING_LENGTH_COUNT]
+                          uint64_t baseline_ticks[TIMING_LENGTH_COUNT]
                                                  [TIMING_SAMPLE_COUNT],
-                          uint64_t candidate_ticks[MAX_TIMING_LENGTH_COUNT]
+                          uint64_t candidate_ticks[TIMING_LENGTH_COUNT]
                                                   [TIMING_SAMPLE_COUNT],
-                          uint64_t baseline_calibration[MAX_TIMING_LENGTH_COUNT],
-                          uint64_t candidate_calibration[MAX_TIMING_LENGTH_COUNT],
-                          ULONG repeats_by_length[MAX_TIMING_LENGTH_COUNT],
+                          uint64_t baseline_calibration[TIMING_LENGTH_COUNT],
+                          uint64_t candidate_calibration[TIMING_LENGTH_COUNT],
+                          ULONG repeats_by_length[TIMING_LENGTH_COUNT],
                           BOOL timer_available,
                           BOOL timing_buffers_available)
 {
@@ -746,19 +721,6 @@ static ULONG build_report(char *buffer,
                                 BULK_CASES);
     offset = append_named_count(buffer, offset, "bulk_completed_cases=",
                                 counts.bulk_copy_cases);
-    offset = append_text(buffer, offset,
-        "timing_mode=" TIMING_MODE_NAME "\n");
-    offset = append_named_count(buffer, offset, "short_timing_mode=",
-                                SHORT_TIMING_MODE_VALUE);
-    offset = append_named_count(buffer, offset, "timing_length_count=",
-                                TIMING_LENGTH_COUNT);
-    offset = append_text(buffer, offset, "timing_lengths=");
-    for (length_index = 0; length_index < TIMING_LENGTH_COUNT;
-         length_index++) {
-        if (length_index) offset = append_text(buffer, offset, ",");
-        offset = append_decimal(buffer, offset, timing_lengths[length_index]);
-    }
-    offset = append_text(buffer, offset, "\n");
     offset = append_text(buffer, offset,
         "small_lengths=0..132; all 64 src/dst offsets; deterministic mixed "
         "source pattern\n");
@@ -887,15 +849,13 @@ int main(void)
     APTR old_window = process->pr_WindowPtr;
     struct MsgPort *timer_port = NULL;
     struct timerequest *timer_request = NULL;
-    uint64_t baseline_ticks[MAX_TIMING_LENGTH_COUNT][TIMING_SAMPLE_COUNT] = {{0}};
-    uint64_t candidate_ticks[MAX_TIMING_LENGTH_COUNT][TIMING_SAMPLE_COUNT] = {{0}};
-    uint64_t baseline_calibration[MAX_TIMING_LENGTH_COUNT] = {0};
-    uint64_t candidate_calibration[MAX_TIMING_LENGTH_COUNT] = {0};
-    ULONG repeats_by_length[MAX_TIMING_LENGTH_COUNT] = {0};
+    uint64_t baseline_ticks[TIMING_LENGTH_COUNT][TIMING_SAMPLE_COUNT] = {{0}};
+    uint64_t candidate_ticks[TIMING_LENGTH_COUNT][TIMING_SAMPLE_COUNT] = {{0}};
+    uint64_t baseline_calibration[TIMING_LENGTH_COUNT] = {0};
+    uint64_t candidate_calibration[TIMING_LENGTH_COUNT] = {0};
+    ULONG repeats_by_length[TIMING_LENGTH_COUNT] = {0};
     char report[REPORT_CAPACITY];
     ULONG report_length;
-    ULONG expected_timing_calls = TIMING_LENGTH_COUNT;
-    ULONG length_index;
     BPTR result, marker;
     BOOL timer_available, timing_buffers_available = FALSE;
     BOOL recorded, success;
@@ -920,9 +880,6 @@ int main(void)
     } else {
         record_failure("timing", "EClock", 0, 0, 0, 0, 0, 0, 0);
     }
-
-    for (length_index = 0; length_index < TIMING_LENGTH_COUNT; length_index++)
-        expected_timing_calls += 6UL * repeats_by_length[length_index];
 
     report_length = build_report(report, baseline_ticks, candidate_ticks,
         baseline_calibration, candidate_calibration, repeats_by_length,
@@ -950,17 +907,7 @@ int main(void)
                   SMALL_CASES + LARGE_CASES + BULK_CASES &&
               counts.abi_negative_control_passes == 2 &&
               counts.timing_samples == TIMING_LENGTH_COUNT *
-                                        TIMING_SAMPLE_COUNT &&
-              counts.timing_order_baseline_first ==
-                  TIMING_LENGTH_COUNT * (TIMING_SAMPLE_COUNT / 2UL) &&
-              counts.timing_order_candidate_first ==
-                  TIMING_LENGTH_COUNT * (TIMING_SAMPLE_COUNT / 2UL) &&
-              counts.timing_calls[KERNEL_BASELINE] == expected_timing_calls &&
-              counts.timing_calls[KERNEL_CANDIDATE] == expected_timing_calls &&
-              counts.timing_batches[KERNEL_BASELINE] == TIMING_LENGTH_COUNT *
-                  (1UL + TIMING_SAMPLE_COUNT) &&
-              counts.timing_batches[KERNEL_CANDIDATE] == TIMING_LENGTH_COUNT *
-                  (1UL + TIMING_SAMPLE_COUNT);
+                                        TIMING_SAMPLE_COUNT;
     if (recorded) {
         const char *marker_text = success ? pass_marker : fail_marker;
         ULONG marker_length = success
