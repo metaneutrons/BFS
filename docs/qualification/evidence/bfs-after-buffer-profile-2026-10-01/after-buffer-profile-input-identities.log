@@ -1,0 +1,12 @@
+Thu Oct  1 00:50:27 UTC 2026
+7c4bc992b56fb33df2de9f37a97a577a9ba36643
+?? docs/qualification/evidence/bfs-after-buffer-profile-2026-10-01/
+5095d6dd4e9e2984eb88a68779d1f5ea3fbb7e39c3c10a22f32de0479d2cb7da  src/core/btree.c
+120933149aba4c4c82318819c51ebbd48465f8d6af9e989ef240663a484429b1  src/core/alloc.c
+dd2a20524e7f1ac953b4345da78d8ffdbe9170f6fc4a422c2cd79bd195d062b5  src/core/cache.c
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  build/amiga-path-depth/bfshandler
+be4162868ebfb7a67ff3f44203aec7777edc579887a0f27ca487e4ee9d3f9683  build/amiga-path-depth/bfshandler-probe
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  build/amiga/fs-compare-bench
+0f87a0638791a4a2371083339ed014d4d6659dc85a2270bd993f9df1ddf13cc6  build/benchmark/noop-fixed-formatter
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  build/benchmark/retained-final-deep/system/L/pfs3aio
+68f9d3a36c2866d054f41c29b600618642a4807dfb6bca7354d4879a36c9aa7c  /Users/fabian/Documents/fswb/kickstart/A1200.47.102.rom
