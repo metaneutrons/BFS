@@ -839,8 +839,10 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
 
     /* Descend to leaf, recording path */
     path_entry_t path[MAX_TREE_DEPTH];
-    uint32_t alloc_depth = (tree->height > 0 ? tree->height : 2) + 1;
-    uint8_t *node_bufs = bfs_bio_alloc_buffer(tree->bio, (size_t)alloc_depth * bs);
+    /* Shape is validated above; every recorded path index is below height.
+     * Split siblings and a possible new root have independent buffers. */
+    uint8_t *node_bufs = bfs_bio_alloc_buffer(tree->bio,
+                                             (size_t)tree->height * bs);
     if (!node_bufs) return BFS_ERR_NOMEM;
     #define NBUF(d) (node_bufs + (d) * bs)
     int depth = 0;
@@ -1472,9 +1474,9 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
 
     /* Descend to leaf, recording path */
     path_entry_t path[MAX_TREE_DEPTH];
-    uint32_t del_alloc_depth = (tree->height > 0 ? tree->height : 2) + 1;
+    /* Merge/collapse only uses the existing path; sibling storage is separate. */
     uint8_t *node_bufs = bfs_bio_alloc_buffer(tree->bio,
-                                             (size_t)del_alloc_depth * bs);
+                                             (size_t)tree->height * bs);
     if (!node_bufs) return BFS_ERR_NOMEM;
     uint8_t *sib_buf = alloc_buf(tree);
     if (!sib_buf) { free_buf(tree, node_bufs); return BFS_ERR_NOMEM; }

@@ -94,3 +94,24 @@ No quantitative forecast, deadline or statistical precision is promised.
 The source checkpoint before this experiment provides an exact rollback base.
 Real devices, power cuts, controller behavior, CI, push, PR and release work
 remain outside this increment.
+
+## BR3 Exact path allocation follow on
+
+Decision state: retained after functional qualification and eight additional
+fresh normal runs. BR3 is complete for this bounded increment, not the overall
+goal. The
+[exact-path qualification report](../qualification/bfs-exact-path-buffer-performance-2026-10-01.md)
+records the proof, all adverse observations and remaining threshold failures.
+
+The retained BR1/BR2 checkpoint is `2c6fa11`. Insert/delete currently reserve
+one more path block than their validated height, although every path access
+is below that height. Split-root and sibling storage is independently leased;
+update/rekey already allocate exactly height blocks. Remove only the unused
+extra block, leaving traversal bounds, COW, writes and error behavior intact.
+At height one this permits the existing recycler to handle the path buffer.
+
+Qualification requires a warm-pool allocation-fault oracle that would reject
+the previous two-block request, the complete normal/sanitizer/quality gates,
+split/merge/deeper-tree and natural nested allocator tests, and a separate
+fresh-image normal comparison against `2c6fa11`. A static access-bound review
+is not an elapsed-time prediction or completion of the performance goal.
