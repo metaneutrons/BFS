@@ -142,3 +142,37 @@ tests. Inspect normal m68k assembly to confirm divisions leave the per-entry
 loops; this is not a speedup estimate. Finally compare eight fresh normal runs,
 four per version with both filesystem orders, retain every adverse observation
 and persist the adoption or rejection decision with raw evidence.
+
+## BR5 Reuse a checked resident slot lookup
+
+Decision state: experiment complete and rejected for insufficient consistent
+normal-handler benefit. Production cache/header are restored exactly to
+`358f125`, whose production source is unchanged from `8b35eec`. The
+[qualification report](../qualification/bfs-cache-lookup-hint-performance-2026-10-01.md)
+owns the decision, all raw observations and limitations. The
+[post-buffer diagnostic](../qualification/bfs-after-buffer-profile-2026-10-01.md)
+records the remaining scopes and limitations; it does not time cache searches
+or predict this experiment's benefit. The measured RDB requests 30 slots.
+
+Keep an index-only hint to the most recently located resident cache slot.
+Every use checks the index against num_slots and compares the actual resident
+block ID before returning the slot. A mismatch uses the same first-match
+linear search and records its result. Read and validation callbacks can then
+reuse the immediately preceding lookup without searching the array again.
+The slot remains the sole source of bytes and validation state. No cached
+validation, COW, I/O, victim order, byte copy, fence or flush is removed.
+
+Insertion records the new resident slot; failed writes retain complete
+matching-slot invalidation and clear the hint. Invalidate/destroy/reinit clear
+it. Add one uint32_t field, no heap storage. Existing complete-operation cache
+serialization and no-reentry rules remain unchanged. This is shared cache
+code, not a platform-specific filesystem algorithm.
+
+Qualification covers hit/fallback, stale and out-of-range hints, eviction,
+both write types, failed partial writes, validation context mismatches,
+invalidation, destroy/reinit and cache isolation at several slot counts.
+Keep all existing lease, fault, byte/graph, snapshot and recovery oracles.
+Run independent review, complete normal/sanitizer/local-quality gates,
+normal/probe m68k builds and actual Linux FUSE tests before eight separate
+fresh normal comparisons. Adoption requires an evidence-backed decision;
+the overall five-times target remains unmet regardless of a partial gain.

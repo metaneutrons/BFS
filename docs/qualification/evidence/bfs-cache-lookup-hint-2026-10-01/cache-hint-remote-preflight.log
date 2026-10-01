@@ -1,0 +1,20 @@
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  /tmp/bfs-perf-crc.UBHsLz/hint-normal-baseline-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  /tmp/bfs-perf-crc.UBHsLz/hint-normal-baseline-bfs-first/system/C/fs-compare-bench
+c832040b679669bda0de4e88c047da078d05dcc08624ebf7e6cfcca0b2f0e16e  /tmp/bfs-perf-crc.UBHsLz/hint-normal-candidate-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  /tmp/bfs-perf-crc.UBHsLz/hint-normal-candidate-pfs3-first/system/C/fs-compare-bench
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  /tmp/bfs-perf-crc.UBHsLz/hint-normal-baseline-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  /tmp/bfs-perf-crc.UBHsLz/hint-normal-baseline-pfs3-first/system/C/fs-compare-bench
+c832040b679669bda0de4e88c047da078d05dcc08624ebf7e6cfcca0b2f0e16e  /tmp/bfs-perf-crc.UBHsLz/hint-normal-candidate-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  /tmp/bfs-perf-crc.UBHsLz/hint-normal-candidate-bfs-first/system/C/fs-compare-bench
+c832040b679669bda0de4e88c047da078d05dcc08624ebf7e6cfcca0b2f0e16e  /tmp/bfs-perf-crc.UBHsLz/hint-normal-repeat-candidate-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  /tmp/bfs-perf-crc.UBHsLz/hint-normal-repeat-candidate-bfs-first/system/C/fs-compare-bench
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  /tmp/bfs-perf-crc.UBHsLz/hint-normal-repeat-baseline-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  /tmp/bfs-perf-crc.UBHsLz/hint-normal-repeat-baseline-pfs3-first/system/C/fs-compare-bench
+c832040b679669bda0de4e88c047da078d05dcc08624ebf7e6cfcca0b2f0e16e  /tmp/bfs-perf-crc.UBHsLz/hint-normal-repeat-candidate-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  /tmp/bfs-perf-crc.UBHsLz/hint-normal-repeat-candidate-pfs3-first/system/C/fs-compare-bench
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  /tmp/bfs-perf-crc.UBHsLz/hint-normal-repeat-baseline-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  /tmp/bfs-perf-crc.UBHsLz/hint-normal-repeat-baseline-bfs-first/system/C/fs-compare-bench
+2082920 zsh -c for label in hint-normal-baseline-bfs-first hint-normal-candidate-pfs3-first hint-normal-baseline-pfs3-first hint-normal-candidate-bfs-first hint-normal-repeat-candidate-bfs-first hint-normal-repeat-baseline-pfs3-first hint-normal-repeat-candidate-pfs3-first hint-normal-repeat-baseline-bfs-first; do sha256sum /tmp/bfs-perf-crc.UBHsLz/$label/system/L/bfshandler /tmp/bfs-perf-crc.UBHsLz/$label/system/C/fs-compare-bench; done; pgrep -af "fs-uae|m68k.*gcc|cc1" || true; df -h /tmp /home/fabian
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  8.5G  3.3G  73% /tmp
+/dev/vda2       996G  313G  683G  32% /home
