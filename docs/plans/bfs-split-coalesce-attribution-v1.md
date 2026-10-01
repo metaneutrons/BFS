@@ -45,11 +45,19 @@ Inode/Refcount/Other roles. Bump snapshot ABI12 when extending it and define
 an explicitly distinct deep schema from11; producer/consumer version and
 size checks must match. Preserve backward verification of prior evidence.
 
+The extension must bump snapshot ABI from12 to13 and deep TSV schema from11
+to12, not reuse the currently qualified versions. Old evidence keeps its
+original ABI/schema and backward validation.
+
 Count split attempts, initial-right-write attempts, right-side selection,
 read-back attempts and rewrite attempts at their actual decision/I/O sites.
 Count two-sided and right-only coalescence after validation, separately for
-all heights and height-one/non-null-root eligibility. Record completion only
-after both edits succeed. Attempts are not successful physical writes.
+all heights and height-one/non-null-root shape eligibility sampled before
+either edit. A right-only delete can empty a singleton root before insertion;
+later height/root checks would misclassify that originally eligible case.
+Record completion only after both edits succeed using the saved pre-edit
+shape. Shape eligibility is necessary, not proof that every future shortcut
+precondition holds. Attempts are not successful physical writes.
 
 For fault-free completed splits, attempt >= initial write >= right selection
 >= read-back >= rewrite, with right selection/read-back/rewrite equal after
@@ -64,6 +72,8 @@ Before actual diagnosis, add bounded counter fixtures: no split; full root
 leaf inserting left and right; internal cascade; two-sided root-leaf merge;
 right-only root-leaf merge; one-sided/no-neighbor zero hits; deeper merge not
 eligible for root-leaf replacement; failure/rollback attempt versus completion.
+Include right-only singleton-root replacement and failure/rollback after its
+first edit leaves an empty tree, keeping pre-edit eligibility explicit.
 Prove counters reflect intended paths, not just generated field presence.
 Require independent review of sites, SSOT/version/schema and fixture claims.
 
