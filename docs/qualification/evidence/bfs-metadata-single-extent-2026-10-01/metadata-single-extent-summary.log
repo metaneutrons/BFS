@@ -1,0 +1,6 @@
+SMALL_CREATE_40_US baseline 199118.5 candidate 280557.25 change 40.89964016402292 pfs3 17285 ratio 16.231255423777842 adverse 4 threshold 4
+LOOKUP_400_US baseline 106703.25 candidate 105359.5 change -1.2593337128906534 pfs3 67117 ratio 1.569788578154566 adverse 2 threshold 0
+SMALL_READ_40_US baseline 50720 candidate 46015.25 change -9.275926656151423 pfs3 15548.25 ratio 2.9595131284871288 adverse 1 threshold 0
+SEQ_WRITE_8M_US baseline 383006.5 candidate 497709.5 change 29.94805571184824 pfs3 43500 ratio 11.441597701149425 adverse 4 threshold 4
+SEQ_READ_8M_US baseline 515625 candidate 507677.5 change -1.541333333333328 pfs3 261454.5 ratio 1.9417432096215594 adverse 2 threshold 0
+SMALL_DELETE_40_US baseline 179951.5 candidate 233246.25 change 29.61617435809094 pfs3 7855.75 ratio 29.69114979473634 adverse 4 threshold 4

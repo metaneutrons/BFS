@@ -1,0 +1,18 @@
+diff --git a/src/core/alloc.c b/build/metadata-single-extent-without-headroom-guard.c
+index 4409ed4..22d95be 100644
+--- a/src/core/alloc.c
++++ b/build/metadata-single-extent-without-headroom-guard.c
+@@ -1719,13 +1719,6 @@ static bfs_err_t metadata_batch_withdraw(bfs_freespace_t *fs,
+      * rather than an update. Keep the shared delete preflight, plus the one
+      * slot retired by an initial older root. This read-only callback is
+      * owner-bound; low headroom declines before optional writes. */
+-    uint32_t pending_budget = BFS_BTREE_DELETE_FREE_BUDGET(fs->tree.height) +
+-        (root_is_current ? 0u : 1u);
+-    if (fs->tree.free_sink.headroom(owner) < pending_budget) {
+-        free(storage);
+-        return BFS_ERR_UNSUPPORTED;
+-    }
+-
+     uint32_t original_emergency_count = bfs_be32(fs->sb->emergency_count);
+     if (fs->global_reserve == UINT32_MAX ||
+         (fs->reserve_count == 0 && original_emergency_count == 0)) {

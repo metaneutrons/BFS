@@ -4,9 +4,12 @@ Decision state: the first repeated-tail prototype was implemented, independently
 reviewed, safety-qualified and rejected for normal performance regressions.
 Its production changes were withdrawn and its complete source/evidence retained
 in the [qualification report](../qualification/bfs-metadata-withdrawal-batch-performance-2026-10-01.md).
-The single-extent follow-on below is accepted for a bounded local prototype
-after read-only Luna feasibility review and the primary agent's decision;
-it is not implemented or performance-accepted.
+The single-extent follow-on was also implemented and safety-qualified, then
+rejected for slower create/write/delete elapsed times. Its source was withdrawn
+and its [complete evidence retained](../qualification/bfs-metadata-single-extent-performance-2026-10-01.md).
+Neither optional stock policy is performance-accepted. The next approved
+increment is [diagnostic handler/core CPU attribution](bfs-handler-cpu-attribution-v1.md)
+on the retained timestamp baseline.
 No epic/milestone issue is created: external tracking and publication are outside
 the present authorization. This plan is a bounded follow-on to the existing
 [Free-Tree plan](bfs-free-tree-multiedit-v1.md), not a second overall performance
