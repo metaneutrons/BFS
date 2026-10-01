@@ -1,0 +1,20 @@
+insert failed while searching shape=0 id=41 err=-6 height=3
+  search180 err=0 val=1929379840 decoded=115
+  search200 err=-5 val=1929379840 decoded=115
+  extent key=180 length=115
+singleton right free err=0 root=5014 height=1 free=115 expected_free=115 extent=0
+singleton failed insertion err=-1 root=5014 height=1 free=95 expected_free=95 extent=0 writes=5 failed_at=0
+PASS leaf split zero-hit nonfull insert
+PASS leaf split left branch
+PASS leaf split right branch
+PASS leaf split allocator failure
+FAIL internal deep and root cascade
+PASS two-sided root-leaf free
+PASS right-only root-leaf free
+FAIL right-only singleton root free
+PASS left-only and no-neighbor free controls
+PASS deep two-sided free
+PASS first coalescence write failure
+PASS second coalescence write rollback
+FAIL singleton empty-root insert rollback
+SUMMARY cases=13 assertions=794 failed_cases=3 assertion_failures=3

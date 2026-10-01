@@ -1,0 +1,7 @@
+Pre-manifest replay: integrity manifest not checked
+Lossless source/log/patch decoding: PASS (39 files)
+Strict schema-12 consumer and exact JSON replay (bfs-first): PASS
+Strict schema-12 consumer and exact JSON replay (pfs3-first): PASS
+Retained 483 non-time fields per order and exact equivalence JSON: PASS
+Opposite-order path matrix and exact primary summary JSON: PASS
+Offline replay completed; no emulator, network, binary build or normal timing acceptance

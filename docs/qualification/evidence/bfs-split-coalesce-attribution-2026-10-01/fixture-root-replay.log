@@ -1,0 +1,28 @@
+PASS leaf split zero-hit nonfull insert
+PASS leaf split left branch
+PASS leaf split right branch
+PASS leaf split allocator failure
+PASS internal deep and root cascade
+PASS two-sided root-leaf free
+PASS right-only root-leaf free
+PASS right-only singleton root free
+PASS left-only and no-neighbor free controls
+PASS deep two-sided free
+PASS first coalescence write failure
+PASS second coalescence write rollback
+PASS singleton empty-root insert rollback
+SUMMARY cases=13 assertions=974 failed_cases=0 assertion_failures=0
+PASS leaf split zero-hit nonfull insert
+PASS leaf split left branch
+PASS leaf split right branch
+PASS leaf split allocator failure
+PASS internal deep and root cascade
+PASS two-sided root-leaf free
+PASS right-only root-leaf free
+PASS right-only singleton root free
+PASS left-only and no-neighbor free controls
+PASS deep two-sided free
+PASS first coalescence write failure
+PASS second coalescence write rollback
+PASS singleton empty-root insert rollback
+SUMMARY cases=13 assertions=974 failed_cases=0 assertion_failures=0

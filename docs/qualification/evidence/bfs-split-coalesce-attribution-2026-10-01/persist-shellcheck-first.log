@@ -1,0 +1,10 @@
+
+In build/split-coalesce-attribution-persist.sh line 32:
+        relative=${path#build/split-coalesce-attribution-$group/}
+                                                         ^----^ SC2295 (info): Expansions inside ${..} need to be quoted separately, otherwise they match as patterns.
+
+Did you mean:
+        relative=${path#build/split-coalesce-attribution-"$group"/}
+
+For more information:
+  https://www.shellcheck.net/wiki/SC2295 -- Expansions inside ${..} need to b...

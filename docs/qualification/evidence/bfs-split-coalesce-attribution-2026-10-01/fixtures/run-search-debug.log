@@ -1,0 +1,15 @@
+insert failed while searching shape=0 id=10011 err=-6 pre_search=0 height=3 next_block=112 invalid_alloc=0 invalid_free=0
+PASS leaf split zero-hit nonfull insert
+PASS leaf split left branch
+PASS leaf split right branch
+PASS leaf split allocator failure
+FAIL internal deep and root cascade
+PASS two-sided root-leaf free
+PASS right-only root-leaf free
+PASS right-only singleton root free
+PASS left-only and no-neighbor free controls
+PASS deep two-sided free
+PASS first coalescence write failure
+PASS second coalescence write rollback
+PASS singleton empty-root insert rollback
+SUMMARY cases=13 assertions=874 failed_cases=1 assertion_failures=1

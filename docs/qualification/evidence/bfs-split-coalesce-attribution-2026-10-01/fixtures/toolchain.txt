@@ -1,0 +1,6 @@
+Apple clang version 21.0.0 (clang-2100.1.1.101)
+Target: arm64-apple-darwin25.5.0
+Thread model: posix
+Private core source: /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/split-coalesce-attribution-source/src/core/*.c
+Common flags: -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -DBFS_HOST=1 -DBFS_PERF_PROBE -D_POSIX_C_SOURCE=200809L
+Include flags: -I /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/split-coalesce-attribution-fixtures/fake -I /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/split-coalesce-attribution-source/include -idirafter /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/split-coalesce-attribution-source/src/amiga
