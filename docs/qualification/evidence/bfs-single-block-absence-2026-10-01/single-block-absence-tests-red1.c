@@ -203,13 +203,15 @@ static bool fixture_make_gap_extents(allocator_fixture_t *fixture,
     return true;
 }
 
-static void fixture_refresh_root_crc(allocator_fixture_t *fixture)
+static bool fixture_write_root_crc(allocator_fixture_t *fixture)
 {
     uint8_t *node = fixture->device.bytes +
                     (size_t)fixture->space.tree.root * TEST_BLOCK_SIZE;
     bfs_btnode_hdr_t *hdr = hdr_of(node);
     hdr->crc32 = 0;
     hdr->crc32 = bfs_be32(node_compute_crc(&fixture->space.tree, node));
+    return bfs_bio_write(&fixture->device.bio, fixture->space.tree.root,
+                         node) == BFS_OK;
 }
 
 static void test_dealloc_stashes_without_free_tree_mutation(void)
@@ -241,32 +243,20 @@ static void test_alloc_pops_stashed_suffix_above_height_one_floor(void)
     TEST_ASSERT(block != BFS_BLK_NULL);
     bfs_blk_t root_before = fixture.space.tree.root;
     uint32_t free_before = fixture.space.total_free;
+    fixture.device.reads = 0;
     TEST_ASSERT_EQ(fixture.space.iface.dealloc(&fixture.space.iface, block),
                    BFS_OK);
+    TEST_ASSERT_EQ(fixture.device.reads, 1);
+    fixture.device.reads = 0;
     fixture.device.writes = 0;
 
     bfs_blk_t reused = fixture.space.iface.alloc(&fixture.space.iface);
     TEST_ASSERT_EQ(reused, block);
+    TEST_ASSERT_EQ(fixture.device.reads, 1);
     TEST_ASSERT_EQ(fixture.space.tree.root, root_before);
     TEST_ASSERT_EQ(fixture.space.total_free, free_before);
     TEST_ASSERT_EQ(fixture.space.reserve_count, HEIGHT_ONE_FLOOR);
     TEST_ASSERT_EQ(fixture.device.writes, 0);
-    fixture_destroy(&fixture);
-}
-
-static void test_alloc_stashed_stock_uses_one_root_read(void)
-{
-    allocator_fixture_t fixture;
-    TEST_ASSERT(fixture_init(&fixture, TEST_BLOCK_COUNT));
-    bfs_blk_t block = allocate_ordinary(&fixture);
-    TEST_ASSERT(block != BFS_BLK_NULL);
-    TEST_ASSERT_EQ(fixture.space.iface.dealloc(&fixture.space.iface, block),
-                   BFS_OK);
-    fixture.device.reads = 0;
-
-    TEST_ASSERT_EQ(fixture.space.iface.alloc(&fixture.space.iface), block);
-    TEST_ASSERT_EQ(fixture.device.reads, 1);
-    TEST_ASSERT_EQ(fixture.space.reserve_count, HEIGHT_ONE_FLOOR);
     fixture_destroy(&fixture);
 }
 
@@ -520,7 +510,7 @@ static void test_single_block_absence_rejects_bad_key_order_on_first_read(void)
     TEST_ASSERT_EQ(num_keys(root), 2);
     bfs_store_be32(node_key(&fixture.space.tree, root, 1),
                    bfs_load_be32(node_key(&fixture.space.tree, root, 0)));
-    fixture_refresh_root_crc(&fixture);
+    TEST_ASSERT(fixture_write_root_crc(&fixture));
     fixture.device.reads = 0;
 
     TEST_ASSERT_EQ(fixture.space.iface.dealloc(&fixture.space.iface, owned),
@@ -543,7 +533,7 @@ static void test_single_block_absence_rejects_bad_selected_extent_on_first_read(
     uint8_t *root = fixture.device.bytes +
                     (size_t)root_before * TEST_BLOCK_SIZE;
     bfs_store_be32(leaf_val(&fixture.space.tree, root, 0), 0);
-    fixture_refresh_root_crc(&fixture);
+    TEST_ASSERT(fixture_write_root_crc(&fixture));
     fixture.device.reads = 0;
 
     TEST_ASSERT_EQ(fixture.space.iface.dealloc(&fixture.space.iface,
@@ -1064,7 +1054,6 @@ static void test_snapshot_keeps_old_data_across_overwrite_and_remount(void)
 TEST_SUITE_BEGIN("Mounted metadata free-block reuse")
     TEST_RUN(test_dealloc_stashes_without_free_tree_mutation);
     TEST_RUN(test_alloc_pops_stashed_suffix_above_height_one_floor);
-    TEST_RUN(test_alloc_stashed_stock_uses_one_root_read);
     TEST_RUN(test_alloc_never_spends_the_height_one_floor);
     TEST_RUN(test_allocator_skips_inactive_historical_emergency_slots);
     TEST_RUN(test_duplicate_and_reserve_blocks_are_rejected_unchanged);

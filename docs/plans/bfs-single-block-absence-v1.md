@@ -1,6 +1,8 @@
 # Single-block Free-Tree absence proof v1
 
-Decision state: bounded local pilot within the authorized performance goal.
+Decision state: retained bounded local pilot; M1 and M2 completed. The
+[qualification report](../qualification/bfs-single-block-absence-performance-2026-10-01.md)
+records the observed small gain, adverse pairs, limits and still-failed target.
 External issue tracking is not created by this increment. The qualification
 report will own its observed outcome; this plan defines acceptance requirements.
 

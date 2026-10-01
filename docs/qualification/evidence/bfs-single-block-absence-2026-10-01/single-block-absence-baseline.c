@@ -751,12 +751,6 @@ static bfs_err_t validate_free_tree_absence(bfs_freespace_t *fs,
             return BFS_ERR_CORRUPT;
         if (pk <= start && pl > start - pk) return BFS_ERR_EXISTS;
     }
-    /* A validated root leaf has strictly ordered integer keys: for one block,
-     * an exact key or covering predecessor was rejected above, and every
-     * successor starts at or beyond the exclusive end. Deeper trees retain
-     * the scan's additional parent-bound validation. No proof is cached. */
-    if (count == 1 && fs->tree.height == 1 && fs->tree.root != BFS_BLK_NULL)
-        return BFS_OK;
     overlap_scan_ctx_t overlap = { .end = start + count, .overlap = false };
     uint32_t key = bfs_be32(start);
     err = bfs_btree_scan(&fs->tree, &key, overlap_scan_cb, &overlap);
