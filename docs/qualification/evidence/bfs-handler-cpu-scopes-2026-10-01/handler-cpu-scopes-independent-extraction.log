@@ -1,0 +1,25 @@
+Primary record of independent Luna extraction response, not a shell transcript.
+Reviewer: cache_lookup_hint_review; no source authorship for these measurements.
+The reviewer extracted all eight raw TSVs before reading the primary JSON.
+Expected schema10 controls/schema11 extended, DH1/DH2, unique keys and PASS1 agree.
+All preflight handler/guest identities agree with the supplied exact inputs.
+Extended CLOCK_HZ709379, CPU stride1 and CRC stride64 agree.
+Every raw body metric, all6 same-order BFS/PFS elapsed changes and all new scope call/tick/clock means match primary JSON. No numerical discrepancy.
+Packet totals and exact calls/samples/ticks partitions agree in each extended run.
+Packet calls per phase: create120, lookup800, smallread160, write130, read131, delete40.
+Create categories40open/40write/40end; smallread40open/80read/40end.
+Write1open/128write/1end; read1open/129read/1end; delete40delete; lookup800other.
+All flush category counts0. All unlisted categories0.
+Inclusive means in microseconds, rounded, extended2 orders:
+Create: packet227827, create78117, filewrite70223, sync63553, seal36708, ifacefree15723.
+Lookup: packet74182, no core mutations.
+Smallread: packet41053, no core mutations.
+Write: packet395566, create2432, filewrite381268, sync1888, seal1057, ifacefree61041.
+Read: packet275506, no core mutations.
+Delete: packet198490, delete117956, sync68443, seal42145, ifacefree416.
+Existing inclusive interface/freespace allocation means create56331/64941, write62212/50295, delete40533/39116.
+Existing direct B-tree malloc/free means create670/463, write4466/2862, delete1536/1004.
+Device callback means were extracted separately, not added to core scopes.
+Largest gross intervals lie in packet and nested core mutation work.
+Intervals overlap and can include scheduling; do not sum or subtract exclusive residuals.
+Control/extended elapsed directions vary across order; no causal probe-effect or normal speedup conclusion.

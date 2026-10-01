@@ -1,0 +1,31 @@
+070b162d85ebbe2aa67774b48dea2543db7b0e864270c1c05096680498660389  handler-cpu-scopes-control-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  handler-cpu-scopes-control-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  handler-cpu-scopes-control-bfs-first/system/L/pfs3aio
+dfde220d7e070d9ca0ecb07316569286d258984b5fef22271ac50304de0c58a5  handler-cpu-scopes-control-bfs-first/system/S/Startup-Sequence
+d6c126181a6e9967a763bc9330def53f3bd564839f82180482ac10288d71fa50  handler-cpu-scopes-control-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  handler-cpu-scopes-control-bfs-first/bench-pfs3.hdf
+289a9f411a6e0ea19ae7f99a1645e53a98d48eb7979b5dc329f7ff0adba1d6dd  handler-cpu-scopes-extended-pfs3-first/system/L/bfshandler
+5126e8640256e19bc2f5661d8b735f7961c4882edf3d8046b26bd2badfc86277  handler-cpu-scopes-extended-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  handler-cpu-scopes-extended-pfs3-first/system/L/pfs3aio
+c32210da8136f1357d22a55e1afb300acd160d06a864691fca8e491e41f759a2  handler-cpu-scopes-extended-pfs3-first/system/S/Startup-Sequence
+8266914a2a474944c58932f2fe147e17d7316952fc85ce38fa285d9c080821bc  handler-cpu-scopes-extended-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  handler-cpu-scopes-extended-pfs3-first/bench-pfs3.hdf
+070b162d85ebbe2aa67774b48dea2543db7b0e864270c1c05096680498660389  handler-cpu-scopes-control-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  handler-cpu-scopes-control-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  handler-cpu-scopes-control-pfs3-first/system/L/pfs3aio
+c32210da8136f1357d22a55e1afb300acd160d06a864691fca8e491e41f759a2  handler-cpu-scopes-control-pfs3-first/system/S/Startup-Sequence
+d6c126181a6e9967a763bc9330def53f3bd564839f82180482ac10288d71fa50  handler-cpu-scopes-control-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  handler-cpu-scopes-control-pfs3-first/bench-pfs3.hdf
+289a9f411a6e0ea19ae7f99a1645e53a98d48eb7979b5dc329f7ff0adba1d6dd  handler-cpu-scopes-extended-bfs-first/system/L/bfshandler
+5126e8640256e19bc2f5661d8b735f7961c4882edf3d8046b26bd2badfc86277  handler-cpu-scopes-extended-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  handler-cpu-scopes-extended-bfs-first/system/L/pfs3aio
+dfde220d7e070d9ca0ecb07316569286d258984b5fef22271ac50304de0c58a5  handler-cpu-scopes-extended-bfs-first/system/S/Startup-Sequence
+8266914a2a474944c58932f2fe147e17d7316952fc85ce38fa285d9c080821bc  handler-cpu-scopes-extended-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  handler-cpu-scopes-extended-bfs-first/bench-pfs3.hdf
+68f9d3a36c2866d054f41c29b600618642a4807dfb6bca7354d4879a36c9aa7c  /home/fabian/Amiga/kick.a1200.47.102.rom
+3.2.35
+Linux cachy 7.1.3-2-cachyos #1 SMP PREEMPT_DYNAMIC Wed, 08 Jul 2026 18:34:01 +0000 x86_64 GNU/Linux
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  5.5G  6.3G  47% /tmp
+/dev/vda2       996G  313G  682G  32% /home
+Four fresh diagnostic image inputs and idle preflight verified

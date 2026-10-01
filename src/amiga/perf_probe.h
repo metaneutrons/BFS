@@ -9,9 +9,26 @@
 
 #define BFS_ACTION_PERF_RESET 3010
 #define BFS_ACTION_PERF_READ  3011
-#define BFS_PERF_PROBE_VERSION 11
+#define BFS_PERF_PROBE_VERSION 12
 #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
 #define BFS_PERF_CPU_SAMPLE_STRIDE 1u
+
+/* One source of truth for the diagnostic CPU-scope ABI and guest schema. */
+#define BFS_PERF_CPU_SCOPES(X) \
+    X(PACKET, packet) \
+    X(PACKET_OPEN, packet_open) \
+    X(PACKET_READ, packet_read) \
+    X(PACKET_WRITE, packet_write) \
+    X(PACKET_END, packet_end) \
+    X(PACKET_DELETE, packet_delete) \
+    X(PACKET_FLUSH, packet_flush) \
+    X(PACKET_OTHER, packet_other) \
+    X(CORE_CREATE, core_create) \
+    X(CORE_DELETE, core_delete) \
+    X(CORE_FILE_WRITE, core_file_write) \
+    X(CORE_SYNC, core_sync) \
+    X(IFACE_FREE, iface_free) \
+    X(SEAL_COMMIT, seal_commit)
 
 typedef struct bfs_perf_probe_snapshot {
     ULONG version;
@@ -94,6 +111,13 @@ typedef struct bfs_perf_probe_snapshot {
     ULONG freespace_alloc_samples;
     // cppcheck-suppress unusedStructMember
     uint64_t freespace_alloc_sample_ticks;
+
+#define BFS_PERF_CPU_SCOPE_FIELDS(upper, lower) \
+    ULONG lower##_calls; \
+    ULONG lower##_samples; \
+    /* cppcheck-suppress unusedStructMember */ uint64_t lower##_sample_ticks;
+    BFS_PERF_CPU_SCOPES(BFS_PERF_CPU_SCOPE_FIELDS)
+#undef BFS_PERF_CPU_SCOPE_FIELDS
 } bfs_perf_probe_snapshot_t;
 
 #ifdef BFS_PERF_PROBE
@@ -117,6 +141,12 @@ enum bfs_perf_io_kind {
     BFS_PERF_IO_UPDATE
 };
 
+enum bfs_perf_cpu_scope {
+#define BFS_PERF_CPU_SCOPE_ENUM(upper, lower) BFS_PERF_CPU_SCOPE_##upper,
+    BFS_PERF_CPU_SCOPES(BFS_PERF_CPU_SCOPE_ENUM)
+#undef BFS_PERF_CPU_SCOPE_ENUM
+};
+
 void bfs_perf_probe_init(struct MsgPort *port);
 void bfs_perf_probe_close(void);
 void bfs_perf_probe_reset(void);
@@ -131,6 +161,8 @@ void bfs_perf_probe_begin(struct EClockVal *start);
 uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start);
 void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,
                         const struct EClockVal *start);
+void bfs_perf_probe_cpu_scope_record(enum bfs_perf_cpu_scope scope,
+                                     uint64_t ticks);
 #endif
 
 #endif /* BFS_AMIGA_PERF_PROBE_H */

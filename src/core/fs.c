@@ -10,6 +10,9 @@
 #include "bfs_snapshot.h"
 #include <string.h>
 #include <stdlib.h>
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 /* Global metadata-reserve sizing (blocks held back so delete/rename/COW never
  * hit ENOSPC mid-transaction): target ~1/20 of the volume, but at least
@@ -507,7 +510,11 @@ bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree)
 
 /* ── Sync ──────────────────────────────────────────────────── */
 
+#ifdef BFS_PERF_PROBE
+static bfs_err_t fs_sync_work(bfs_fs_t *fs)
+#else
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
+#endif
 {
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
@@ -517,6 +524,18 @@ bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
     bfs_lock_unlock(&fs->lock);
     return err;
 }
+
+#ifdef BFS_PERF_PROBE
+bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    bfs_err_t result = fs_sync_work(fs);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_SYNC,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
 
 bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
 {

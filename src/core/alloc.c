@@ -263,7 +263,11 @@ static bfs_blk_t iface_alloc(bfs_allocator_t *a)
 }
 #endif
 
+#ifdef BFS_PERF_PROBE
+static bfs_err_t iface_free_work(bfs_allocator_t *a, bfs_blk_t blk)
+#else
 static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
+#endif
 {
     if (!a || !a->ctx) return BFS_ERR_INVAL;
     bfs_freespace_t *fs = (bfs_freespace_t *)a->ctx;
@@ -289,6 +293,21 @@ static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
     }
     return bfs_freespace_free(fs, blk, 1);
 }
+
+#ifdef BFS_PERF_PROBE
+/* Recursive reserve returns are inside their outer allocator scope. */
+static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
+{
+    if (a && a->ctx && ((bfs_freespace_t *)a->ctx)->in_alloc)
+        return iface_free_work(a, blk);
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    bfs_err_t result = iface_free_work(a, blk);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_IFACE_FREE,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
 
 static bfs_err_t iface_error(bfs_allocator_t *a)
 {
@@ -1408,7 +1427,11 @@ static bfs_err_t prepare_seal_leaf(bfs_fs_t *owner,
     return next->count == 0 ? BFS_ERR_UNSUPPORTED : BFS_OK;
 }
 
+#ifdef BFS_PERF_PROBE
+static bfs_err_t freespace_seal_commit_work(bfs_fs_t *owner, bool *sealed)
+#else
 bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
+#endif
 {
     if (!owner || !sealed || !owner->bio) return BFS_ERR_INVAL;
     *sealed = false;
@@ -1517,6 +1540,18 @@ done:
     fs->last_error = err;
     return err;
 }
+
+#ifdef BFS_PERF_PROBE
+bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    bfs_err_t result = freespace_seal_commit_work(owner, sealed);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_SEAL_COMMIT,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
 
 static bfs_err_t restore_failed_reserve_root_fold(bfs_freespace_t *fs,
                                                   const reserve_root_fold_t *batch,

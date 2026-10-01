@@ -16,6 +16,9 @@
 #include "bfs_snapshot.h"
 #include <string.h>
 #include <stdlib.h>
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 typedef struct {
     char name[80];
@@ -925,7 +928,11 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
                                          NULL, NULL, ino_out);
 }
 
+#ifdef BFS_PERF_PROBE
+static bfs_err_t fs_create_file_with_stamp_work(bfs_fs_t *fs, uint32_t parent_ino,
+#else
 bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
+#endif
                                        const char *name, uint8_t name_len,
                                        bfs_inode_stamp_fn stamp_fn,
                                        void *stamp_context, uint32_t *ino_out)
@@ -944,6 +951,22 @@ bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
     return err;
 }
 
+#ifdef BFS_PERF_PROBE
+bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
+                                       const char *name, uint8_t name_len,
+                                       bfs_inode_stamp_fn stamp_fn,
+                                       void *stamp_context, uint32_t *ino_out)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    bfs_err_t result = fs_create_file_with_stamp_work(fs, parent_ino, name,
+                         name_len, stamp_fn, stamp_context, ino_out);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_CREATE,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
+
 bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {
     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
@@ -959,7 +982,11 @@ bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
     return err;
 }
 
+#ifdef BFS_PERF_PROBE
+static bfs_err_t fs_delete_file_work(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
+#else
 bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
+#endif
 {
     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
@@ -973,6 +1000,19 @@ bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
     bfs_lock_unlock(&fs->lock);
     return err;
 }
+
+#ifdef BFS_PERF_PROBE
+bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name,
+                             uint8_t name_len)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    bfs_err_t result = fs_delete_file_work(fs, parent_ino, name, name_len);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_DELETE,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
 
 bfs_err_t bfs_fs_unlink_open_file(bfs_fs_t *fs, uint32_t parent_ino,
                                   const char *name, uint8_t name_len,

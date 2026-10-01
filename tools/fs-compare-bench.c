@@ -280,6 +280,13 @@ static void emit_deep_counter_rows(const char *phase,
                     snapshot->freespace_alloc_samples);
     prefixed_metric(phase, "FREESPACE_ALLOC_SAMPLE_TICKS",
                     (unsigned long long)snapshot->freespace_alloc_sample_ticks);
+#define BFS_EMIT_CPU_SCOPE(UPPER, lower) \
+    prefixed_metric(phase, #UPPER "_CALLS", snapshot->lower##_calls); \
+    prefixed_metric(phase, #UPPER "_SAMPLES", snapshot->lower##_samples); \
+    prefixed_metric(phase, #UPPER "_SAMPLE_TICKS", \
+                    (unsigned long long)snapshot->lower##_sample_ticks);
+    BFS_PERF_CPU_SCOPES(BFS_EMIT_CPU_SCOPE)
+#undef BFS_EMIT_CPU_SCOPE
 }
 
 static BOOL make_path(char *path, ULONG capacity, const char *drive, const char *suffix)
@@ -460,7 +467,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     handle = CreateDir(path);
     if (!handle) return fail("mkdir");
     UnLock(handle);
-    if (deep_mode) emit("FS_DEEP_COMPARE\t10\nDRIVE\t");
+    if (deep_mode) emit("FS_DEEP_COMPARE\t11\nDRIVE\t");
     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
     emit(drive);
     emit("\n");

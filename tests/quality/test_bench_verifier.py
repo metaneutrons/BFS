@@ -11,6 +11,30 @@ import unittest
 ROOT = Path(__file__).resolve().parents[2]
 EVIDENCE = ROOT / "docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29"
 VERIFIER = ROOT / "emulator-test/verify-bench-results.sh"
+UINT32_MAX = 4294967295
+UINT64_MAX = 18446744073709551615
+CPU_SCOPES = (
+    "PACKET", "PACKET_OPEN", "PACKET_READ", "PACKET_WRITE", "PACKET_END",
+    "PACKET_DELETE", "PACKET_FLUSH", "PACKET_OTHER", "CORE_CREATE",
+    "CORE_DELETE", "CORE_FILE_WRITE", "CORE_SYNC", "IFACE_FREE",
+    "SEAL_COMMIT",
+)
+CPU_SCOPE_VALUES = {
+    "PACKET": (35, 35, 350),
+    "PACKET_OPEN": (2, 2, 20),
+    "PACKET_READ": (3, 3, 30),
+    "PACKET_WRITE": (4, 4, 40),
+    "PACKET_END": (5, 5, 50),
+    "PACKET_DELETE": (6, 6, 60),
+    "PACKET_FLUSH": (7, 7, 70),
+    "PACKET_OTHER": (8, 8, 80),
+    "CORE_CREATE": (11, 11, 101),
+    "CORE_DELETE": (0, 0, 0),
+    "CORE_FILE_WRITE": (13, 13, 131),
+    "CORE_SYNC": (17, 17, 170),
+    "IFACE_FREE": (19, 19, 190),
+    "SEAL_COMMIT": (23, 23, 230),
+}
 
 
 class BenchVerifierTests(unittest.TestCase):
@@ -332,6 +356,39 @@ class BenchVerifierTests(unittest.TestCase):
         pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
         self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t9")
         pfs_lines[0] = "FS_DEEP_COMPARE\t10"
+        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
+
+    def upgrade_deep_compare_to_v11(self):
+        self.upgrade_deep_compare_to_v10()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii").splitlines()
+        self.assertEqual(original[0], "FS_DEEP_COMPARE\t10")
+        upgraded = ["FS_DEEP_COMPARE\t11"]
+        for line in original[1:]:
+            if line.startswith("PASS\t"):
+                upgraded.append(line)
+                continue
+            upgraded.append(line)
+            name = line.split("\t", 1)[0]
+            suffix = "_FREESPACE_ALLOC_SAMPLE_TICKS"
+            if not name.endswith(suffix):
+                continue
+            phase = name[:-len(suffix)]
+            # Contract-only synthetic values; these are not forecasts of
+            # workload operation counts or success-only production behavior.
+            for scope in CPU_SCOPES:
+                calls, samples, ticks = CPU_SCOPE_VALUES[scope]
+                upgraded.extend((
+                    f"{phase}_{scope}_CALLS\t{calls}",
+                    f"{phase}_{scope}_SAMPLES\t{samples}",
+                    f"{phase}_{scope}_SAMPLE_TICKS\t{ticks}",
+                ))
+        bfs.write_text("\n".join(upgraded) + "\n", encoding="ascii")
+
+        pfs3 = self.results / "pfs3.deep-compare.tsv"
+        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
+        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t10")
+        pfs_lines[0] = "FS_DEEP_COMPARE\t11"
         pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
 
     def upgrade_raw_deep_compare_v8_to_v9(self):
@@ -883,6 +940,227 @@ class BenchVerifierTests(unittest.TestCase):
                 bfs.write_text(original, encoding="ascii")
                 self.set_metrics(bfs, updates)
                 self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v11_accepts_inclusive_cpu_scopes_and_packet_partition(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v11()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        contents = bfs.read_text(encoding="ascii")
+        self.assertIn("FS_DEEP_COMPARE\t11", contents)
+        self.assertIn("CPU_SAMPLE_STRIDE\t1", contents)
+        for phase in (
+            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
+            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
+        ):
+            rows = [
+                line for line in contents.splitlines()
+                if line.startswith(phase + "_")
+            ]
+            cpu_rows = [
+                line for line in rows
+                if any(line.startswith(phase + "_" + scope + "_")
+                       for scope in CPU_SCOPES)
+            ]
+            self.assertEqual(len(cpu_rows), len(CPU_SCOPES) * 3)
+            for scope, expected in CPU_SCOPE_VALUES.items():
+                self.assertEqual(
+                    tuple(self.metric_value(
+                        contents, f"{phase}_{scope}_{suffix}",
+                    ) for suffix in ("CALLS", "SAMPLES", "SAMPLE_TICKS")),
+                    expected,
+                )
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v11_rejects_missing_malformed_and_duplicate_scopes(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v11()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        missing_row = "LOOKUP_400_IFACE_FREE_SAMPLE_TICKS\t190"
+        malformed_row = "SMALL_READ_40_CORE_CREATE_SAMPLE_TICKS\t101"
+        duplicate_row = "SMALL_DELETE_40_PACKET_OTHER_CALLS\t8"
+        self.assertIn(missing_row + "\n", original)
+        self.assertIn(malformed_row + "\n", original)
+        self.assertIn(duplicate_row + "\n", original)
+        cases = (
+            ("missing scope row", original.replace(missing_row + "\n", "", 1)),
+            ("malformed scope row", original.replace(
+                malformed_row + "\n",
+                "SMALL_READ_40_CORE_CREATE_SAMPLE_TICKS\tbad\n", 1,
+            )),
+            ("duplicate scope row", original.replace(
+                "PASS\t1\n", duplicate_row + "\nPASS\t1\n", 1,
+            )),
+        )
+        for label, mutated in cases:
+            with self.subTest(scope=label):
+                bfs.write_text(mutated, encoding="ascii")
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v11_rejects_sample_and_zero_call_tick_errors(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v11()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        cases = (
+            ("sample differs from call count", {
+                "SMALL_CREATE_40_CORE_CREATE_SAMPLES": 10,
+            }),
+            ("ticks with zero calls", {
+                "SMALL_CREATE_40_CORE_DELETE_SAMPLE_TICKS": 1,
+            }),
+        )
+        for label, updates in cases:
+            with self.subTest(scope=label):
+                bfs.write_text(original, encoding="ascii")
+                self.set_metrics(bfs, updates)
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v11_rejects_mixed_version_headers(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v11()
+        pfs3 = self.results / "pfs3.deep-compare.tsv"
+        original = pfs3.read_text(encoding="ascii")
+        pfs3.write_text(original.replace(
+            "FS_DEEP_COMPARE\t11\n", "FS_DEEP_COMPARE\t10\n", 1,
+        ), encoding="ascii")
+        result = self.verify("deep-compare")
+        self.assertNotEqual(result.returncode, 0)
+
+    def test_deep_compare_v11_rejects_packet_partition_call_and_tick_errors(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v11()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        cases = (
+            ("packet call partition", {
+                "SMALL_CREATE_40_PACKET_CALLS": 36,
+                "SMALL_CREATE_40_PACKET_SAMPLES": 36,
+            }),
+            ("packet tick partition", {
+                "SMALL_CREATE_40_PACKET_SAMPLE_TICKS": 351,
+            }),
+            ("exact uint64 packet tick partition", {
+                "SMALL_CREATE_40_PACKET_SAMPLE_TICKS": 9007199254740993,
+                "SMALL_CREATE_40_PACKET_OPEN_SAMPLE_TICKS": 9007199254740992,
+                "SMALL_CREATE_40_PACKET_READ_SAMPLE_TICKS": 0,
+                "SMALL_CREATE_40_PACKET_WRITE_SAMPLE_TICKS": 0,
+                "SMALL_CREATE_40_PACKET_END_SAMPLE_TICKS": 0,
+                "SMALL_CREATE_40_PACKET_DELETE_SAMPLE_TICKS": 0,
+                "SMALL_CREATE_40_PACKET_FLUSH_SAMPLE_TICKS": 0,
+                "SMALL_CREATE_40_PACKET_OTHER_SAMPLE_TICKS": 0,
+            }),
+        )
+        for label, updates in cases:
+            with self.subTest(partition=label):
+                bfs.write_text(original, encoding="ascii")
+                self.set_metrics(bfs, updates)
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v11_accepts_maximum_unsigned_scope_values(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v11()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        updates = {}
+        for scope in CPU_SCOPES:
+            updates[f"SMALL_CREATE_40_{scope}_CALLS"] = UINT32_MAX
+            updates[f"SMALL_CREATE_40_{scope}_SAMPLES"] = UINT32_MAX
+            updates[f"SMALL_CREATE_40_{scope}_SAMPLE_TICKS"] = UINT64_MAX
+        updates.update({
+            "SMALL_CREATE_40_PACKET_OPEN_CALLS": UINT32_MAX,
+            "SMALL_CREATE_40_PACKET_OPEN_SAMPLES": UINT32_MAX,
+            "SMALL_CREATE_40_PACKET_OPEN_SAMPLE_TICKS": UINT64_MAX,
+            "SMALL_CREATE_40_PACKET_READ_CALLS": 0,
+            "SMALL_CREATE_40_PACKET_READ_SAMPLES": 0,
+            "SMALL_CREATE_40_PACKET_READ_SAMPLE_TICKS": 0,
+            "SMALL_CREATE_40_PACKET_WRITE_CALLS": 0,
+            "SMALL_CREATE_40_PACKET_WRITE_SAMPLES": 0,
+            "SMALL_CREATE_40_PACKET_WRITE_SAMPLE_TICKS": 0,
+            "SMALL_CREATE_40_PACKET_END_CALLS": 0,
+            "SMALL_CREATE_40_PACKET_END_SAMPLES": 0,
+            "SMALL_CREATE_40_PACKET_END_SAMPLE_TICKS": 0,
+            "SMALL_CREATE_40_PACKET_DELETE_CALLS": 0,
+            "SMALL_CREATE_40_PACKET_DELETE_SAMPLES": 0,
+            "SMALL_CREATE_40_PACKET_DELETE_SAMPLE_TICKS": 0,
+            "SMALL_CREATE_40_PACKET_FLUSH_CALLS": 0,
+            "SMALL_CREATE_40_PACKET_FLUSH_SAMPLES": 0,
+            "SMALL_CREATE_40_PACKET_FLUSH_SAMPLE_TICKS": 0,
+            "SMALL_CREATE_40_PACKET_OTHER_CALLS": 0,
+            "SMALL_CREATE_40_PACKET_OTHER_SAMPLES": 0,
+            "SMALL_CREATE_40_PACKET_OTHER_SAMPLE_TICKS": 0,
+            "SMALL_CREATE_40_PACKET_CALLS": UINT32_MAX,
+            "SMALL_CREATE_40_PACKET_SAMPLES": UINT32_MAX,
+            "SMALL_CREATE_40_PACKET_SAMPLE_TICKS": UINT64_MAX,
+        })
+        self.set_metrics(bfs, updates)
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_deep_compare_v11_rejects_unsigned_overflow_and_lossy_counts(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v11()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        original = bfs.read_text(encoding="ascii")
+        cases = (
+            ("ULONG call overflow", {
+                "SMALL_CREATE_40_CORE_CREATE_CALLS": UINT32_MAX + 1,
+                "SMALL_CREATE_40_CORE_CREATE_SAMPLES": UINT32_MAX + 1,
+            }),
+            ("ULONG sample overflow", {
+                "SMALL_CREATE_40_CORE_CREATE_SAMPLES": UINT32_MAX + 1,
+            }),
+            ("uint64 tick overflow", {
+                "SMALL_CREATE_40_CORE_SYNC_SAMPLE_TICKS": UINT64_MAX + 1,
+            }),
+            ("lossy large sample mismatch", {
+                "SMALL_CREATE_40_CORE_FILE_WRITE_CALLS": 9007199254740992,
+                "SMALL_CREATE_40_CORE_FILE_WRITE_SAMPLES": 9007199254740993,
+            }),
+            ("self-consistent but out-of-range packet total", {
+                "SMALL_CREATE_40_PACKET_CALLS": 7000000000,
+                "SMALL_CREATE_40_PACKET_SAMPLES": 7000000000,
+                "SMALL_CREATE_40_PACKET_SAMPLE_TICKS": 7,
+                "SMALL_CREATE_40_PACKET_OPEN_CALLS": 1000000000,
+                "SMALL_CREATE_40_PACKET_OPEN_SAMPLES": 1000000000,
+                "SMALL_CREATE_40_PACKET_OPEN_SAMPLE_TICKS": 1,
+                "SMALL_CREATE_40_PACKET_READ_CALLS": 1000000000,
+                "SMALL_CREATE_40_PACKET_READ_SAMPLES": 1000000000,
+                "SMALL_CREATE_40_PACKET_READ_SAMPLE_TICKS": 1,
+                "SMALL_CREATE_40_PACKET_WRITE_CALLS": 1000000000,
+                "SMALL_CREATE_40_PACKET_WRITE_SAMPLES": 1000000000,
+                "SMALL_CREATE_40_PACKET_WRITE_SAMPLE_TICKS": 1,
+                "SMALL_CREATE_40_PACKET_END_CALLS": 1000000000,
+                "SMALL_CREATE_40_PACKET_END_SAMPLES": 1000000000,
+                "SMALL_CREATE_40_PACKET_END_SAMPLE_TICKS": 1,
+                "SMALL_CREATE_40_PACKET_DELETE_CALLS": 1000000000,
+                "SMALL_CREATE_40_PACKET_DELETE_SAMPLES": 1000000000,
+                "SMALL_CREATE_40_PACKET_DELETE_SAMPLE_TICKS": 1,
+                "SMALL_CREATE_40_PACKET_FLUSH_CALLS": 1000000000,
+                "SMALL_CREATE_40_PACKET_FLUSH_SAMPLES": 1000000000,
+                "SMALL_CREATE_40_PACKET_FLUSH_SAMPLE_TICKS": 1,
+                "SMALL_CREATE_40_PACKET_OTHER_CALLS": 1000000000,
+                "SMALL_CREATE_40_PACKET_OTHER_SAMPLES": 1000000000,
+                "SMALL_CREATE_40_PACKET_OTHER_SAMPLE_TICKS": 1,
+            }),
+        )
+        for label, updates in cases:
+            with self.subTest(scope=label):
+                bfs.write_text(original, encoding="ascii")
+                self.set_metrics(bfs, updates)
+                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+
+    def test_deep_compare_v10_does_not_apply_schema11_integer_bounds(self):
+        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+        self.upgrade_deep_compare_to_v10()
+        bfs = self.results / "bfs.deep-compare.tsv"
+        self.set_metrics(bfs, {
+            "SMALL_CREATE_40_BTREE_MALLOC_CALLS": UINT32_MAX + 1,
+            "SMALL_CREATE_40_BTREE_MALLOC_SAMPLES": UINT32_MAX + 1,
+            "SMALL_CREATE_40_BTREE_MALLOC_SAMPLE_TICKS": UINT64_MAX + 1,
+        })
+        result = self.verify("deep-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
 
     def test_deep_compare_v10_rejects_reserve_batch_and_sealed_accounting_errors(self):
         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")

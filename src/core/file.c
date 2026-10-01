@@ -727,7 +727,11 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len)
     return err;
 }
 
+#ifdef BFS_PERF_PROBE
+static int32_t file_write_operation_work(bfs_file_t *f, const void *buf, uint32_t len,
+#else
 static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len,
+#endif
                                      const file_write_metadata_t *metadata)
 {
     if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf))
@@ -739,6 +743,19 @@ static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len
     bfs_lock_unlock(&f->fs->lock);
     return err;
 }
+
+#ifdef BFS_PERF_PROBE
+static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len,
+                                     const file_write_metadata_t *metadata)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    int32_t result = file_write_operation_work(f, buf, len, metadata);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_FILE_WRITE,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
 
 int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
 {

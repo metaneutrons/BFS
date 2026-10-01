@@ -1276,7 +1276,11 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     return true;
 }
 
+#ifdef BFS_PERF_PROBE
+static void HandlePacketWork(struct DosPacket *pkt, struct bfs_handler *h)
+#else
 static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+#endif
 {
     LONG res1 = (pkt->dp_Type == ACTION_READ || pkt->dp_Type == ACTION_WRITE ||
                  pkt->dp_Type == ACTION_SEEK || pkt->dp_Type == ACTION_SET_FILE_SIZE ||
@@ -2759,6 +2763,47 @@ reply:
     pkt->dp_Res2 = res2;
     ReplyPacket(pkt, h);
 }
+
+#ifdef BFS_PERF_PROBE
+static enum bfs_perf_cpu_scope PacketCpuScope(LONG packet_type)
+{
+    switch (packet_type) {
+    case ACTION_FINDINPUT:
+    case ACTION_FINDOUTPUT:
+    case ACTION_FINDUPDATE:
+        return BFS_PERF_CPU_SCOPE_PACKET_OPEN;
+    case ACTION_READ:
+        return BFS_PERF_CPU_SCOPE_PACKET_READ;
+    case ACTION_WRITE:
+        return BFS_PERF_CPU_SCOPE_PACKET_WRITE;
+    case ACTION_END:
+        return BFS_PERF_CPU_SCOPE_PACKET_END;
+    case ACTION_DELETE_OBJECT:
+        return BFS_PERF_CPU_SCOPE_PACKET_DELETE;
+    case ACTION_FLUSH:
+        return BFS_PERF_CPU_SCOPE_PACKET_FLUSH;
+    default:
+        return BFS_PERF_CPU_SCOPE_PACKET_OTHER;
+    }
+}
+
+static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+{
+    if (pkt->dp_Type == BFS_ACTION_PERF_RESET ||
+        pkt->dp_Type == BFS_ACTION_PERF_READ) {
+        HandlePacketWork(pkt, h);
+        return;
+    }
+
+    enum bfs_perf_cpu_scope packet_scope = PacketCpuScope(pkt->dp_Type);
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    HandlePacketWork(pkt, h);
+    uint64_t ticks = bfs_perf_probe_elapsed(&started);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_PACKET, ticks);
+    bfs_perf_probe_cpu_scope_record(packet_scope, ticks);
+}
+#endif
 
 /* ── Main handler entry ────────────────────────────────────── */
 

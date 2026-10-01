@@ -1,0 +1,20 @@
+cf88ad20bdaa8423f17c370f90bf2d2facd6b4e6ab416d0af7e3f8c69bda5993  /tmp/bfs-perf-crc.UBHsLz/handler-cpu-scopes-control-bfs-first/system/Results/bfs.deep-compare.tsv
+bb3b1fbe23fc998ad3e2fb72e85a0d54a036555869d8db0ebf3c07263b257d42  /tmp/bfs-perf-crc.UBHsLz/handler-cpu-scopes-control-bfs-first/system/Results/pfs3.deep-compare.tsv
+242875606afbea89a153f9dc7705ce6e878346f372d4dee8095ce5385251cdaa  /tmp/bfs-perf-crc.UBHsLz/handler-cpu-scopes-extended-pfs3-first/system/Results/bfs.deep-compare.tsv
+d6187cf19aa0dc0056a3b53061c3ceebc225bbf55b6ea761061d7fd641f713ea  /tmp/bfs-perf-crc.UBHsLz/handler-cpu-scopes-extended-pfs3-first/system/Results/pfs3.deep-compare.tsv
+e575165b20e202e7c1cc21f4eefa52bc8d65ce8f719be5609602efa53b9e1bdd  /tmp/bfs-perf-crc.UBHsLz/handler-cpu-scopes-control-pfs3-first/system/Results/bfs.deep-compare.tsv
+f4baaf1dd5be1df007cb9714a59674c5a1e3b8efbdce6d0f89f2960aa2f5f73e  /tmp/bfs-perf-crc.UBHsLz/handler-cpu-scopes-control-pfs3-first/system/Results/pfs3.deep-compare.tsv
+ad0a71c27199841ad6c4c018f5ec0cc13012ab37b25b9f8ab188e5cd134c4648  /tmp/bfs-perf-crc.UBHsLz/handler-cpu-scopes-extended-bfs-first/system/Results/bfs.deep-compare.tsv
+d5133a71d5b6a3afe2d1d1776d8a9cc119b0c145be8ba90cca5c776b2b253c23  /tmp/bfs-perf-crc.UBHsLz/handler-cpu-scopes-extended-bfs-first/system/Results/pfs3.deep-compare.tsv
+cf88ad20bdaa8423f17c370f90bf2d2facd6b4e6ab416d0af7e3f8c69bda5993  /home/fabian/.cache/bfs-performance/handler-cpu-scopes-2026-10-01/handler-cpu-scopes-control-bfs-first/system/Results/bfs.deep-compare.tsv
+bb3b1fbe23fc998ad3e2fb72e85a0d54a036555869d8db0ebf3c07263b257d42  /home/fabian/.cache/bfs-performance/handler-cpu-scopes-2026-10-01/handler-cpu-scopes-control-bfs-first/system/Results/pfs3.deep-compare.tsv
+242875606afbea89a153f9dc7705ce6e878346f372d4dee8095ce5385251cdaa  /home/fabian/.cache/bfs-performance/handler-cpu-scopes-2026-10-01/handler-cpu-scopes-extended-pfs3-first/system/Results/bfs.deep-compare.tsv
+d6187cf19aa0dc0056a3b53061c3ceebc225bbf55b6ea761061d7fd641f713ea  /home/fabian/.cache/bfs-performance/handler-cpu-scopes-2026-10-01/handler-cpu-scopes-extended-pfs3-first/system/Results/pfs3.deep-compare.tsv
+e575165b20e202e7c1cc21f4eefa52bc8d65ce8f719be5609602efa53b9e1bdd  /home/fabian/.cache/bfs-performance/handler-cpu-scopes-2026-10-01/handler-cpu-scopes-control-pfs3-first/system/Results/bfs.deep-compare.tsv
+f4baaf1dd5be1df007cb9714a59674c5a1e3b8efbdce6d0f89f2960aa2f5f73e  /home/fabian/.cache/bfs-performance/handler-cpu-scopes-2026-10-01/handler-cpu-scopes-control-pfs3-first/system/Results/pfs3.deep-compare.tsv
+ad0a71c27199841ad6c4c018f5ec0cc13012ab37b25b9f8ab188e5cd134c4648  /home/fabian/.cache/bfs-performance/handler-cpu-scopes-2026-10-01/handler-cpu-scopes-extended-bfs-first/system/Results/bfs.deep-compare.tsv
+d5133a71d5b6a3afe2d1d1776d8a9cc119b0c145be8ba90cca5c776b2b253c23  /home/fabian/.cache/bfs-performance/handler-cpu-scopes-2026-10-01/handler-cpu-scopes-extended-bfs-first/system/Results/pfs3.deep-compare.tsv
+Archived four completed images recoverably; eight TSV hashes unchanged
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  3.5G  8.3G  30% /tmp
+/dev/vda2       996G  313G  682G  32% /home

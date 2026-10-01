@@ -1,5 +1,12 @@
 # Handler and shared-core CPU attribution v1
 
+M1 and M2 are complete. The normal handler is byte-identical to the retained
+baseline, all planned gates and four fresh diagnostic runs pass. The
+[qualification report](../qualification/bfs-handler-cpu-scopes-2026-10-01.md)
+records gross intervals and their limits. M3 begins with the separate
+[native-word-order CRC pilot](bfs-crc-native-word-order-v1.md); no production
+optimization or five-times acceptance is claimed by this diagnostic checkpoint.
+
 Decision state: approved for a bounded diagnostic-only local increment by the
 primary agent after rejecting both metadata-withdrawal variants. No new
 production allocation policy is approved. The overall target remains at most

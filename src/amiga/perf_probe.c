@@ -128,6 +128,21 @@ uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start)
            (((uint64_t)start->ev_hi << 32) | start->ev_lo);
 }
 
+void bfs_perf_probe_cpu_scope_record(enum bfs_perf_cpu_scope scope,
+                                     uint64_t ticks)
+{
+    switch (scope) {
+#define BFS_PERF_CPU_SCOPE_RECORD_CASE(upper, lower) \
+    case BFS_PERF_CPU_SCOPE_##upper: \
+        bfs_perf_probe_counters.lower##_calls++; \
+        bfs_perf_probe_counters.lower##_samples++; \
+        bfs_perf_probe_counters.lower##_sample_ticks += ticks; \
+        break;
+        BFS_PERF_CPU_SCOPES(BFS_PERF_CPU_SCOPE_RECORD_CASE)
+#undef BFS_PERF_CPU_SCOPE_RECORD_CASE
+    }
+}
+
 /* Direct B-tree buffer heap calls only. These diagnostic intervals include
  * the underlying allocator, but not caller-side buffer copies/initialization.
  * They may lie inside the inclusive allocation scopes; never add them to
