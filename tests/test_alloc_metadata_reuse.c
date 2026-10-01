@@ -212,6 +212,126 @@ static void fixture_refresh_root_crc(allocator_fixture_t *fixture)
     hdr->crc32 = bfs_be32(node_compute_crc(&fixture->space.tree, node));
 }
 
+typedef struct {
+    bfs_blk_t root;
+    uint32_t total_free;
+    uint32_t reserve_count;
+    uint32_t writes;
+    bfs_blk_t reserve[BFS_ALLOC_RESERVE_SIZE];
+    bfs_superblock_t working;
+    uint8_t root_bytes[TEST_BLOCK_SIZE];
+} allocator_state_snapshot_t;
+
+typedef enum {
+    STOCK_DUPLICATE_FIRST_PAIR,
+    STOCK_DUPLICATE_MIDDLE_PAIR,
+    STOCK_DUPLICATE_NONADJACENT_PAIR,
+    STOCK_DUPLICATE_BEFORE_PROTECTED,
+    STOCK_PROTECTED_BEFORE_DUPLICATE,
+    STOCK_ACTIVE_EMERGENCY_ALIAS,
+} stock_fault_kind_t;
+
+static void fixture_capture_allocator_state(
+    const allocator_fixture_t *fixture, allocator_state_snapshot_t *snapshot)
+{
+    snapshot->root = fixture->space.tree.root;
+    snapshot->total_free = fixture->space.total_free;
+    snapshot->reserve_count = fixture->space.reserve_count;
+    snapshot->writes = fixture->device.writes;
+    memcpy(snapshot->reserve, fixture->space.reserve,
+           sizeof(snapshot->reserve)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    memcpy(&snapshot->working, &fixture->working,
+           sizeof(snapshot->working)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    memcpy(snapshot->root_bytes,
+           fixture->device.bytes + (size_t)snapshot->root * TEST_BLOCK_SIZE,
+           sizeof(snapshot->root_bytes)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+}
+
+static bool fixture_allocator_state_unchanged(
+    const allocator_fixture_t *fixture,
+    const allocator_state_snapshot_t *snapshot)
+{
+    return fixture->space.tree.root == snapshot->root &&
+           fixture->space.tree.root < fixture->device.bio.block_count &&
+           fixture->space.total_free == snapshot->total_free &&
+           fixture->space.reserve_count == snapshot->reserve_count &&
+           fixture->device.writes == snapshot->writes &&
+           memcmp(fixture->space.reserve, snapshot->reserve,
+                  sizeof(snapshot->reserve)) == 0 &&
+           memcmp(&fixture->working, &snapshot->working,
+                  sizeof(snapshot->working)) == 0 &&
+           memcmp(fixture->device.bytes +
+                      (size_t)snapshot->root * TEST_BLOCK_SIZE,
+                  snapshot->root_bytes, sizeof(snapshot->root_bytes)) == 0;
+}
+
+static bool reserve_stock_fault_case(stock_fault_kind_t kind,
+                                     bfs_err_t expected)
+{
+    allocator_fixture_t fixture;
+    if (!fixture_init(&fixture, TEST_BLOCK_COUNT)) return false;
+    bfs_blk_t candidate = allocate_ordinary(&fixture);
+    if (candidate == BFS_BLK_NULL || candidate == 0) {
+        fixture_destroy(&fixture);
+        return false;
+    }
+
+    bfs_blk_t x = fixture.space.reserve[0];
+    bfs_blk_t y = fixture.space.reserve[1];
+    bfs_blk_t z = fixture.space.reserve[2];
+    if (candidate == x || candidate == y || candidate == z) {
+        fixture_destroy(&fixture);
+        return false;
+    }
+    bfs_blk_t protected_root = bfs_be32(fixture.committed.free_tree_root);
+    switch (kind) {
+    case STOCK_DUPLICATE_FIRST_PAIR:
+        fixture.space.reserve_count = 3;
+        fixture.space.reserve[0] = x;
+        fixture.space.reserve[1] = x;
+        fixture.space.reserve[2] = z;
+        break;
+    case STOCK_DUPLICATE_MIDDLE_PAIR:
+        fixture.space.reserve_count = 3;
+        fixture.space.reserve[0] = z;
+        fixture.space.reserve[1] = x;
+        fixture.space.reserve[2] = x;
+        break;
+    case STOCK_DUPLICATE_NONADJACENT_PAIR:
+        fixture.space.reserve_count = 3;
+        fixture.space.reserve[0] = x;
+        fixture.space.reserve[1] = y;
+        fixture.space.reserve[2] = x;
+        break;
+    case STOCK_DUPLICATE_BEFORE_PROTECTED:
+        fixture.space.reserve_count = 3;
+        fixture.space.reserve[0] = x;
+        fixture.space.reserve[1] = protected_root;
+        fixture.space.reserve[2] = x;
+        break;
+    case STOCK_PROTECTED_BEFORE_DUPLICATE:
+        fixture.space.reserve_count = 2;
+        fixture.space.reserve[0] = protected_root;
+        fixture.space.reserve[1] = protected_root;
+        break;
+    case STOCK_ACTIVE_EMERGENCY_ALIAS:
+        fixture.working.emergency_pool[0] = bfs_be32(x);
+        fixture.working.emergency_count = bfs_be32(1);
+        break;
+    default:
+        fixture_destroy(&fixture);
+        return false;
+    }
+
+    allocator_state_snapshot_t before;
+    fixture_capture_allocator_state(&fixture, &before);
+    bfs_err_t result = fixture.space.iface.dealloc(&fixture.space.iface,
+                                                   candidate);
+    bool unchanged = fixture_allocator_state_unchanged(&fixture, &before);
+    fixture_destroy(&fixture);
+    return result == expected && unchanged;
+}
+
 static void test_dealloc_stashes_without_free_tree_mutation(void)
 {
     allocator_fixture_t fixture;
@@ -334,6 +454,126 @@ static void test_duplicate_and_reserve_blocks_are_rejected_unchanged(void)
     TEST_ASSERT_EQ(fixture.space.total_free, free_before);
     TEST_ASSERT_EQ(fixture.space.reserve_count, reserve_before);
     fixture_destroy(&fixture);
+}
+
+static void test_metadata_stock_accepts_healthy_active_prefixes(void)
+{
+    /* Synthetic active-prefix probes: truncating reserve_count leaves the
+     * suffix inactive and is not a publishable/free-space-accounting fixture. */
+    for (uint32_t active_count = 0; active_count <= 1; active_count++) {
+        allocator_fixture_t fixture;
+        TEST_ASSERT(fixture_init(&fixture, TEST_BLOCK_COUNT));
+        bfs_blk_t candidate = allocate_ordinary(&fixture);
+        TEST_ASSERT(candidate != BFS_BLK_NULL && candidate > 0);
+        bfs_blk_t kept = fixture.space.reserve[0];
+        fixture.space.reserve_count = active_count;
+
+        bfs_blk_t root_before = fixture.space.tree.root;
+        uint32_t free_before = fixture.space.total_free;
+        uint8_t root_bytes[TEST_BLOCK_SIZE];
+        memcpy(root_bytes, fixture.device.bytes +
+                   (size_t)root_before * TEST_BLOCK_SIZE,
+               sizeof(root_bytes)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+        fixture.device.writes = 0;
+
+        TEST_ASSERT_EQ(fixture.space.iface.dealloc(&fixture.space.iface,
+                                                   candidate), BFS_OK);
+        TEST_ASSERT_EQ(fixture.space.tree.root, root_before);
+        TEST_ASSERT_MEM_EQ(fixture.device.bytes +
+                           (size_t)root_before * TEST_BLOCK_SIZE,
+                           root_bytes, sizeof(root_bytes));
+        TEST_ASSERT_EQ(fixture.space.total_free, free_before);
+        TEST_ASSERT_EQ(fixture.space.reserve_count, active_count + 1);
+        if (active_count == 1)
+            TEST_ASSERT_EQ(fixture.space.reserve[0], kept);
+        TEST_ASSERT_EQ(fixture.space.reserve[active_count], candidate);
+        TEST_ASSERT_EQ(fixture.device.writes, 0);
+        fixture_destroy(&fixture);
+    }
+
+    allocator_fixture_t fixture;
+    TEST_ASSERT(fixture_init(&fixture, TEST_BLOCK_COUNT));
+    bfs_blk_t candidate = allocate_ordinary(&fixture);
+    TEST_ASSERT(candidate != BFS_BLK_NULL && candidate > 0);
+    for (uint32_t i = 0; i < fixture.space.reserve_count / 2; i++) {
+        uint32_t opposite = fixture.space.reserve_count - 1 - i;
+        bfs_blk_t tmp = fixture.space.reserve[i];
+        fixture.space.reserve[i] = fixture.space.reserve[opposite];
+        fixture.space.reserve[opposite] = tmp;
+    }
+    bfs_blk_t root_before = fixture.space.tree.root;
+    uint32_t free_before = fixture.space.total_free;
+    uint32_t reserve_before = fixture.space.reserve_count;
+    uint8_t root_bytes[TEST_BLOCK_SIZE];
+    memcpy(root_bytes, fixture.device.bytes +
+               (size_t)root_before * TEST_BLOCK_SIZE,
+           sizeof(root_bytes)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    fixture.device.writes = 0;
+
+    TEST_ASSERT_EQ(fixture.space.iface.dealloc(&fixture.space.iface, candidate),
+                   BFS_OK);
+    TEST_ASSERT_EQ(fixture.space.tree.root, root_before);
+    TEST_ASSERT_MEM_EQ(fixture.device.bytes +
+                       (size_t)root_before * TEST_BLOCK_SIZE,
+                       root_bytes, sizeof(root_bytes));
+    TEST_ASSERT_EQ(fixture.space.total_free, free_before);
+    TEST_ASSERT_EQ(fixture.space.reserve_count, reserve_before + 1);
+    TEST_ASSERT_EQ(fixture.space.reserve[reserve_before], candidate);
+    TEST_ASSERT_EQ(fixture.device.writes, 0);
+    fixture_destroy(&fixture);
+}
+
+static void test_full_healthy_metadata_stock_validates_and_pops(void)
+{
+    allocator_fixture_t fixture;
+    TEST_ASSERT(fixture_init(&fixture, TEST_BLOCK_COUNT));
+    while (fixture.space.reserve_count < BFS_ALLOC_RESERVE_SIZE) {
+        bfs_blk_t owned = allocate_ordinary(&fixture);
+        TEST_ASSERT(owned != BFS_BLK_NULL && owned > 0);
+        for (uint32_t i = 0; i < fixture.space.reserve_count; i++)
+            TEST_ASSERT(fixture.space.reserve[i] != owned);
+        fixture.space.reserve[fixture.space.reserve_count++] = owned;
+    }
+    bfs_blk_t expected = fixture.space.reserve[BFS_ALLOC_RESERVE_SIZE - 1];
+    TEST_ASSERT(expected != BFS_BLK_NULL && expected > 0);
+    bfs_blk_t reserve_prefix[BFS_ALLOC_RESERVE_SIZE - 1];
+    memcpy(reserve_prefix, fixture.space.reserve, sizeof(reserve_prefix)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    bfs_blk_t root_before = fixture.space.tree.root;
+    uint32_t free_before = fixture.space.total_free;
+    uint8_t root_bytes[TEST_BLOCK_SIZE];
+    memcpy(root_bytes, fixture.device.bytes +
+               (size_t)root_before * TEST_BLOCK_SIZE,
+           sizeof(root_bytes)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    fixture.device.writes = 0;
+
+    bfs_blk_t allocated = fixture.space.iface.alloc(&fixture.space.iface);
+    TEST_ASSERT_EQ(allocated, expected);
+    TEST_ASSERT_EQ(fixture.space.reserve_count, BFS_ALLOC_RESERVE_SIZE - 1);
+    TEST_ASSERT_MEM_EQ(fixture.space.reserve, reserve_prefix,
+                       sizeof(reserve_prefix));
+    TEST_ASSERT_EQ(fixture.space.tree.root, root_before);
+    TEST_ASSERT_MEM_EQ(fixture.device.bytes +
+                       (size_t)root_before * TEST_BLOCK_SIZE,
+                       root_bytes, sizeof(root_bytes));
+    TEST_ASSERT_EQ(fixture.space.total_free, free_before);
+    TEST_ASSERT_EQ(fixture.device.writes, 0);
+    fixture_destroy(&fixture);
+}
+
+static void test_metadata_stock_fault_order_and_duplicate_positions(void)
+{
+    TEST_ASSERT(reserve_stock_fault_case(STOCK_DUPLICATE_FIRST_PAIR,
+                                         BFS_ERR_EXISTS));
+    TEST_ASSERT(reserve_stock_fault_case(STOCK_DUPLICATE_MIDDLE_PAIR,
+                                         BFS_ERR_EXISTS));
+    TEST_ASSERT(reserve_stock_fault_case(STOCK_DUPLICATE_NONADJACENT_PAIR,
+                                         BFS_ERR_EXISTS));
+    TEST_ASSERT(reserve_stock_fault_case(STOCK_DUPLICATE_BEFORE_PROTECTED,
+                                         BFS_ERR_EXISTS));
+    TEST_ASSERT(reserve_stock_fault_case(STOCK_PROTECTED_BEFORE_DUPLICATE,
+                                         BFS_ERR_CORRUPT));
+    TEST_ASSERT(reserve_stock_fault_case(STOCK_ACTIVE_EMERGENCY_ALIAS,
+                                         BFS_ERR_EXISTS));
 }
 
 static void test_free_tree_overlap_is_rejected_unchanged(void)
@@ -1068,6 +1308,9 @@ TEST_SUITE_BEGIN("Mounted metadata free-block reuse")
     TEST_RUN(test_alloc_never_spends_the_height_one_floor);
     TEST_RUN(test_allocator_skips_inactive_historical_emergency_slots);
     TEST_RUN(test_duplicate_and_reserve_blocks_are_rejected_unchanged);
+    TEST_RUN(test_metadata_stock_accepts_healthy_active_prefixes);
+    TEST_RUN(test_full_healthy_metadata_stock_validates_and_pops);
+    TEST_RUN(test_metadata_stock_fault_order_and_duplicate_positions);
     TEST_RUN(test_free_tree_overlap_is_rejected_unchanged);
     TEST_RUN(test_single_block_absence_checks_only_the_height_one_root);
     TEST_RUN(test_single_block_absence_rejects_bad_root_crc_on_first_read);

@@ -1,6 +1,9 @@
 # Forward-only reserve-pair validation v1
 
-Decision state: bounded successor pilot; not yet a qualified production change.
+Decision state: rejected after completed M1/M2 qualification; exact production
+baseline restored, equivalent added tests retained. The
+[qualification report](../qualification/bfs-reserve-pair-validation-performance-2026-10-01.md)
+records all adverse pairs and the failed target; this plan owns requirements.
 The overall requirement remains at most five times PFS3 in every checked
 AmigaDOS workload, without weaker durability, integrity, snapshots or recovery.
 No external issue, CI or publication is part of this increment.
