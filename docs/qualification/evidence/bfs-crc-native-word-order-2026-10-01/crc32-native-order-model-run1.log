@@ -1,0 +1,11 @@
+PASS: CRC32 native-order algorithm model
+ASM table constants checked: 1024/1024
+Core T0 constants checked: 256/256; API complement/byte recurrence matches oracle
+Bitwise-oracle equivalence cases: 46048
+  lengths 0..132, offsets 0..7, four seeds: 4256
+  4 KiB/64 KiB boundaries, offsets 0..7, four seeds: 192
+  deterministic random cases: 512
+  seed basis vectors (1-byte + four byte positions): 40960
+  chaining cases: 128
+Zero/NULL conceptual no-read checks: 16
+LIMIT: JS model only; no 68k assembly execution, ABI, alignment-load, or target-runtime qualification.

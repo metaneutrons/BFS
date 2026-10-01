@@ -1,0 +1,24 @@
+91307d9e5103279d36d4038962a4475d513e1b6ed2fdf689571fd32039848b2c  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-probe-bfs-first/system/Results/bfs.deep-compare.tsv
+06aceb25843912e80123168a97c3f7adae649fbbc187734c57437d420894550a  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-probe-bfs-first/system/Results/pfs3.deep-compare.tsv
+bca24a322b7be521c575d4aa3391b8beb43b1a9305ce8ac74ae541a0dac9dcb0  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-probe-pfs3-first/system/Results/bfs.deep-compare.tsv
+d811c7557c3f13fde04c0206ac7ad15f9d2ca7749addcf2f29b5a4c3a6d62528  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-probe-pfs3-first/system/Results/pfs3.deep-compare.tsv
+95ed32649d4d10346801f1159578912c70dec9a37ff04f90a8312a792f585901  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-baseline-bfs-first/system/Results/bfs.tsv
+d10d316aba154189846334f5bf6e2cc6c9072dc6fa22a757eb1890fbb727969b  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-baseline-bfs-first/system/Results/pfs3.tsv
+a55ccbacea1addc6c068d71798019f7f0a43b28c2b3ec68e1b046d5a12a93e00  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-candidate-pfs3-first/system/Results/bfs.tsv
+3132937d3fcccbfda71b530c757256837a3663f50f3904250a89abe18e9f3e79  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+48f9b325ff09a4e37307b73fbc8360ae558a2435bd7091b20d2430772a6311de  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-baseline-pfs3-first/system/Results/bfs.tsv
+4f201ff045c3f0b915e86f0be3bcf57f9eb765e6e45df47a92196167da9ab136  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+0225509deaa1ffa6c15ad939f8a5abf08e49c05757e3a5b6599035c60c69dfe7  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-candidate-bfs-first/system/Results/bfs.tsv
+15104c3bd179f62b4d23abb8b57807cc58a93308e22a21c228781fc033467104  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-candidate-bfs-first/system/Results/pfs3.tsv
+d9e486458b8c7ee3091755f868975765b4c98dbe3c1195f69c231c5de3f32899  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+b3c746bc11e20f7735b9f3c7e2773be62d2034a4bf8108ec51e83682cc2a7d21  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+9fc26daf01fa18e56566955064a1d42887698fd1fab0afba4174487cb992dac3  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+abb768b2de18c6d482031c1983dc887dddd4d53c8e1ef93a6f76ba392d44d3f5  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+9e4bf2f35fe466c0bd8d1a13cec0537215476269e07d642ea4c5ac09ab8b2e44  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+6b04943c51d0ac6ec74cc946598ddad36839adbb29cc6365b26fd06dadd70faa  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+480b54e6d3a11d42e55868049ff41ec3e1db00cb4f9561996bf31a7adffb794d  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+114509f2e5fe1d89dd90ec58e2975b45abe962be3f31558529d8a3607f9e1ad2  /home/fabian/.cache/bfs-performance/crc-native-order-2026-10-01/crc-native-order-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  3.5G  8.3G  30% /tmp
+/dev/vda2       996G  314G  682G  32% /home
+Ten completed crc-native-order images archived recoverably with identical TSV hashes

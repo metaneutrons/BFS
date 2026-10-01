@@ -1,0 +1,6 @@
+Primary-authored record, not a shell transcript.
+The first invocation selected all root entries starting with crc-native-order-.
+It selected 22 entries, including files, instead of the ten run directories.
+The assert.equal(labels.length, 10) failed with 22 !== 10 before the write loop.
+Captured stdout was empty; the tool displayed the assertion failure on stderr.
+No evidence file was written by that failed invocation.

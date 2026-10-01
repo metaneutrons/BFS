@@ -1,0 +1,218 @@
+{
+  "result_file": "build/crc32-native-order/run.s0tN5q/system/Results/crc32-probe.txt",
+  "strict_gate": "PASS",
+  "raw_clock_hz": 709379,
+  "functional_calls_per_kernel": 51565,
+  "timing_calls_per_kernel": 651480,
+  "timing_note": "Inclusive timed loops in one emulator invocation, not filesystem elapsed or hardware qualification.",
+  "rows": [
+    {
+      "length": 0,
+      "repeats": 50000,
+      "baseline_ticks": [
+        "12848",
+        "12848",
+        "12757",
+        "13302",
+        "13166",
+        "13006"
+      ],
+      "candidate_ticks": [
+        "6764",
+        "6947",
+        "6901",
+        "6992",
+        "6831",
+        "7083"
+      ],
+      "baseline_mean_ticks": 12987.833333333334,
+      "candidate_mean_ticks": 6919.666666666667,
+      "baseline_us_per_call": 0.3661747340514262,
+      "candidate_us_per_call": 0.19509082357009913,
+      "elapsed_change_percent": -46.72193206462458,
+      "candidate_faster_samples": 6
+    },
+    {
+      "length": 1,
+      "repeats": 20000,
+      "baseline_ticks": [
+        "7355",
+        "6993",
+        "7173",
+        "7128",
+        "7037",
+        "7264"
+      ],
+      "candidate_ticks": [
+        "7900",
+        "8172",
+        "7990",
+        "7945",
+        "8081",
+        "7900"
+      ],
+      "baseline_mean_ticks": 7158.333333333333,
+      "candidate_mean_ticks": 7998,
+      "baseline_us_per_call": 0.5045492841861214,
+      "candidate_us_per_call": 0.5637325040634132,
+      "elapsed_change_percent": 11.72991850989522,
+      "candidate_faster_samples": 0
+    },
+    {
+      "length": 3,
+      "repeats": 20000,
+      "baseline_ticks": [
+        "10170",
+        "10169",
+        "10079",
+        "10170",
+        "10090",
+        "10169"
+      ],
+      "candidate_ticks": [
+        "11213",
+        "10986",
+        "11259",
+        "10987",
+        "11259",
+        "10987"
+      ],
+      "baseline_mean_ticks": 10141.166666666666,
+      "candidate_mean_ticks": 11115.166666666666,
+      "baseline_us_per_call": 0.7147918578550159,
+      "candidate_us_per_call": 0.7834434531235536,
+      "elapsed_change_percent": 9.604417637681406,
+      "candidate_faster_samples": 0
+    },
+    {
+      "length": 4,
+      "repeats": 15000,
+      "baseline_ticks": [
+        "7331",
+        "7491",
+        "7310",
+        "7582",
+        "7581",
+        "7763"
+      ],
+      "candidate_ticks": [
+        "7718",
+        "7628",
+        "7899",
+        "7581",
+        "7945",
+        "7446"
+      ],
+      "baseline_mean_ticks": 7509.666666666667,
+      "candidate_mean_ticks": 7702.833333333333,
+      "baseline_us_per_call": 0.7057503033560967,
+      "candidate_us_per_call": 0.7239038965379893,
+      "elapsed_change_percent": 2.5722402237116526,
+      "candidate_faster_samples": 2
+    },
+    {
+      "length": 44,
+      "repeats": 3000,
+      "baseline_ticks": [
+        "7445",
+        "7309",
+        "7355",
+        "7594",
+        "7355",
+        "7537"
+      ],
+      "candidate_ticks": [
+        "6764",
+        "6765",
+        "6765",
+        "6764",
+        "6992",
+        "6764"
+      ],
+      "baseline_mean_ticks": 7432.5,
+      "candidate_mean_ticks": 6802.333333333333,
+      "baseline_us_per_call": 3.4924913198727334,
+      "candidate_us_per_call": 3.196379431086125,
+      "elapsed_change_percent": -8.478528983069856,
+      "candidate_faster_samples": 6
+    },
+    {
+      "length": 256,
+      "repeats": 512,
+      "baseline_ticks": [
+        "6809",
+        "6537",
+        "6538",
+        "6719",
+        "6538",
+        "6765"
+      ],
+      "candidate_ticks": [
+        "5948",
+        "5948",
+        "5947",
+        "5902",
+        "6537",
+        "5856"
+      ],
+      "baseline_mean_ticks": 6651,
+      "candidate_mean_ticks": 6023,
+      "baseline_us_per_call": 18.3121214118264,
+      "candidate_us_per_call": 16.583056271753183,
+      "elapsed_change_percent": -9.442189144489554,
+      "candidate_faster_samples": 6
+    },
+    {
+      "length": 4096,
+      "repeats": 64,
+      "baseline_ticks": [
+        "12985",
+        "12667",
+        "12939",
+        "12939",
+        "12939",
+        "12712"
+      ],
+      "candidate_ticks": [
+        "11622",
+        "11713",
+        "11622",
+        "11577",
+        "11577",
+        "11623"
+      ],
+      "baseline_mean_ticks": 12863.5,
+      "candidate_mean_ticks": 11622.333333333334,
+      "baseline_us_per_call": 283.3354067430809,
+      "candidate_us_per_call": 255.99708806340948,
+      "elapsed_change_percent": -9.64874774879827,
+      "candidate_faster_samples": 6
+    },
+    {
+      "length": 65536,
+      "repeats": 4,
+      "baseline_ticks": [
+        "12984",
+        "14029",
+        "12849",
+        "13574",
+        "12666",
+        "12712"
+      ],
+      "candidate_ticks": [
+        "11668",
+        "11668",
+        "11667",
+        "12146",
+        "11396",
+        "11396"
+      ],
+      "baseline_mean_ticks": 13135.666666666666,
+      "candidate_mean_ticks": 11656.833333333334,
+      "baseline_us_per_call": 4629.283735022698,
+      "candidate_us_per_call": 4108.111930763856,
+      "elapsed_change_percent": -11.258152104955965,
+      "candidate_faster_samples": 6
+    }
+  ]
+}

@@ -1,0 +1,7 @@
+a3dac0a8f33589b350fb11928445adb3223562c6bdce2f9de33f2c23820d92cf  src/amiga/crc32_68k.s
+e0aca17922beb0ee3311174cc9e08cdcf39ce73ee549ef1e62c8250299c31607  tests/amiga/crc32_probe.c
+de6988ba2350d5fa6735083df7591c4dce37f14f15933040ab4be23ef6852b8e  tests/amiga/crc32_abi_probe.s
+5611527d918ac1196160dcec955e60045e25d41ef479340586d36470777dd090  build/crc32-native-order-baseline.s
+7b2c034548522921fc4ff9fb16b2760ede7cb7174d4de70d388f4aae1f42bb41  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/crc32-native-order/run.FnUvHJ/crc32-baseline-renamed.s
+624375b557db28c5712da42d287abe6569c75b6c1f6f7bf327281154da798d72  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/crc32-native-order/run.FnUvHJ/crc32-probe
+8ba1f82ba065fa4fe01fe79dbeca422c2e8b8669a45816e08cc23f29c0b00e4e  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/crc32-native-order/run.FnUvHJ/crc32.fs-uae

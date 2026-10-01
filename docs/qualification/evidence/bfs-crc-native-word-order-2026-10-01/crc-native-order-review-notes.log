@@ -1,0 +1,72 @@
+Primary transcription of bounded Luna reviews and independent extractions.
+This is not a fabricated command transcript. No reviewer edited production.
+
+ASM pilot 1: metadata_batch_tests reviewed the actual frozen source a3dac0a8...
+and all 1024 byte-swapped constants, entry/return conversions, native-order
+word and exact tail recurrence, ABI frame and zero/no-read behavior. No blocker.
+The mathematical model originally read the retained assembly, not the changed
+instructions. A review initially confused those scopes; the primary clarified
+them. Explicit assembler attempt2 records exit0/object/source identities.
+
+Harness author: allocation_crc_next. Original C a1784c0032a6369a42f97e12b...
+failed the first warning-strict actual m68k build on uint32_t* versus ULONG* in
+run_timing. The only correction changed that parameter to ULONG*. Current C
+e0aca17922beb0ee3311174cc9e08cdcf39ce73ee549ef1e62c8250299c31607.
+The first-build source was reconstructed by that one inverse parameter edit;
+its SHA exactly matches the original frozen source. It is labelled reconstructed,
+not an untouched pre-build snapshot. The failed compiler log was never replaced.
+
+Independent harness reviewer: cache_lookup_hint_review (not its author).
+No blocker in C e0aca179... / ABI de6988ba.... The bitwise oracle independently
+implements reflected IEEE complement/seed semantics. Exact loop arithmetic:
+51,565 functional target calls per kernel; 34,597 oracle invocations over
+19,238,465 bytes. Oracle invocation/byte totals are source-derived, not runtime
+report fields. ABI witness: 44-byte MOVEM save plus12-byte locals; arguments
+60/64/68/72/76. Correct right-to-left pushes, callee registers and masks. Negative
+controls require exactly D2=0x4 or A2=0x100 with preserved return/stack.
+Post-return frame access is not safe against arbitrary/destructive SP damage.
+No negative SP mutation was tested. Eight lengths, six samples, order24/24,
+volatile calls/sink and per-batch checksum comparison. Aggregate XOR zero is
+not an independent correctness oracle. Static report bound is below8192bytes;
+runner Stack32768 is required and covers its report/tick arrays. Standalone
+default-stack execution is outside this qualification. Writes and closes are
+checked before completion publication; EClock setup failure prevents PASS.
+
+ASM pilot2 reviewer: metadata_batch_tests. Frozen46b89a015bd771dbdc48acded...
+differs from pilot1 only by early zero-length return, preserving D1's loaded
+length for the nonempty path, and removal of the late redundant zero test.
+D1 is caller-saved; MOVE setsZ; BNE handles all32length bits. Zero returns seed
+without reading data-pointer/table arguments. Body/tables otherwise identical.
+No blocker; source review itself does not claim runtime/build qualification.
+
+Independent actual pilot1 and pilot2 extraction: cache_lookup_hint_review read
+raw report/marker/identities before primary summary JSON. Both exact markers
+PASS, Hz709379, all reported functional counts expected, controls2/2, no CRC/
+ABI errors, timing48 with24/24 order,651480 calls/kernel, no batch mismatch.
+All raw tick arrays, converted means and sample signs agree with primary JSON.
+Pilot1 percentage changes by0,1,3,4,44,256,4096,65536 bytes:
++12.3776,+14.2160,+13.4317,+1.3004,-7.1874,-9.0027,-9.4204,-9.4445.
+Pilot2:
+-46.7219,+11.7299,+9.6044,+2.5722,-8.4785,-9.4422,-9.6487,-11.2582.
+Inclusive timed loops, not kernel-only latency or filesystem speed.
+
+Independent normal filesystem extraction: cache_lookup_hint_review read all16
+raw normal TSVs before primary summary existed. Strict schema1, exact six
+integer elapsed fields, expected drives, unique keys, PASS1. Explicit pairs:
+baseline-bfs-first -> candidate-bfs-first;
+baseline-pfs3-first -> candidate-pfs3-first;
+repeat-baseline-bfs-first -> repeat-candidate-bfs-first;
+repeat-baseline-pfs3-first -> repeat-candidate-pfs3-first.
+All raw tuples, all four-run means, matched BFS deltas and24same-run candidate/
+PFS3 ratios agree with the primary. Mean BFS changes in six-workload order:
++13.9346,+14.5477,+8.4010,+7.7787,+1.5531,-5.5318percent.
+Adverse pairs2/4,3/4,2/4,4/4,2/4,1/4 =14/24.
+All four create/write/delete candidate ratios exceed5 =12/24threshold failures.
+No controlled host scheduling or causal/statistical precision is claimed.
+Primary rejected the candidate and restored the exact original production ASM.
+
+Separate read-only next audits: metadata_single_extent_faults identified a
+duplicate right-leaf write/read on a subset of splits, not a demonstrated hot
+path. allocation_crc_next identified D1 as a possible twelfth MOVEM payload
+register for48-byte memcpy chunks, with short44-47byte regression risk. Neither
+was implemented or measured by those audits; no forecast/dominance claim.

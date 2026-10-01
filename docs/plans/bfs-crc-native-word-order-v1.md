@@ -1,6 +1,8 @@
 # Native-word-order Amiga CRC32 experiment v1
 
-Decision state: bounded kernel experiment, not an accepted production change.
+Decision state: rejected after complete qualification and fresh normal-handler
+comparison. The original assembly and byte-identical normal handler are restored.
+See [qualification evidence](../qualification/bfs-crc-native-word-order-performance-2026-10-01.md).
 The overall target remains at most five times PFS3 in every checked AmigaDOS
 workload, with unchanged integrity, durability, snapshots and crash recovery.
 
@@ -49,3 +51,17 @@ A2-A6, stack balance, zero-length/no-read semantics, exact tails and existing
 Persist exact source, mathematical and real-68k evidence. Archive completed
 emulator images recoverably. No CI, push, PR, merge, release, new user thread
 or physical hardware qualification is included.
+
+## Completed decision
+
+Both the native-order kernel and its empty-span fast-return revision pass the
+actual Amiga oracle/ABI probe. The second revision reduces timed-loop elapsed
+by about 8–11% at 44 bytes and larger, but still regresses 1–4 byte calls.
+That size-dependent evidence justified measuring the normal workloads; it
+did not justify adoption or a blanket faster-kernel claim. All such regressions
+remain in the report. Four fresh normal runs per revision show every matched
+8 MiB write slower, with +7.78% mean elapsed. Mean creation is +13.93%; deletion
+is −5.53%, but 14/24 matched BFS observations are adverse and 12/24 candidate
+same-run PFS3 ratios exceed five. Host scheduling and PFS3 variability prevent
+causal precision. The observations do not establish a reliable normal-workload
+benefit, so the production experiment is not retained. Tests and evidence remain.
