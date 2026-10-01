@@ -1,0 +1,17 @@
+src/core/alloc.c: OK
+src/core/btree.c: OK
+src/core/txn.c: OK
+src/core/fs.c: OK
+src/core/file.c: OK
+src/amiga/perf_probe.c: OK
+src/amiga/perf_probe.h: OK
+include/bfs_btree.h: OK
+include/bfs_btree_internal.h: OK
+include/bfs_alloc.h: OK
+include/bfs_ondisk.h: OK
+tools/fs-compare-bench.c: OK
+tests/test_alloc_root_shift.c: OK
+tests/test_alloc_metadata_reuse.c: OK
+tests/test_txn_sealed_preflight.c: OK
+tests/test_txn_sealed_persistence.c: OK
+tests/test_txn_sealed_convergence.c: OK
