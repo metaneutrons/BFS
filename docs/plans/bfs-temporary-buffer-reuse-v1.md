@@ -115,3 +115,30 @@ the previous two-block request, the complete normal/sanitizer/quality gates,
 split/merge/deeper-tree and natural nested allocator tests, and a separate
 fresh-image normal comparison against `2c6fa11`. A static access-bound review
 is not an elapsed-time prediction or completion of the performance goal.
+
+## BR4 Sealed preflight geometry follow on
+
+Decision state: experiment complete and rejected as the default. Write and
+delete were slower in all four same-order fresh-image pairs. Production is
+restored exactly to retained checkpoint `8b35eec`; additional backup-width
+tests remain. The [qualification report](../qualification/bfs-seal-geometry-performance-2026-10-01.md)
+owns the measurements, decision and limitations. The overall five-times
+target is unchanged and remains unmet.
+
+Capture the data start, device block count and both backup block quotients once
+at entry to the callback-free sealed-commit preflight. Reuse this ephemeral
+geometry for each pool entry and input block; do not cache it across mutations.
+Keep full-width 64-bit equality for individual blocks and the existing explicit
+32-bit casts for old Free-Tree range checks. Preserve every root, reserve,
+pending and all-32-slot historical-pool guard, all validation and publication
+fences. Do not restore the rejected metadata-stock policy.
+
+Qualification requires distinct working/committed backup rejection tests for
+pending, reserve, inactive pool and old Free-Tree overlaps. Artificial high-half
+offset tests must preserve the distinct comparison widths without publishing
+or remounting malformed superblocks. Run these tests on the exact baseline and
+candidate, then all normal/sanitizer/local-quality gates and actual Linux FUSE
+tests. Inspect normal m68k assembly to confirm divisions leave the per-entry
+loops; this is not a speedup estimate. Finally compare eight fresh normal runs,
+four per version with both filesystem orders, retain every adverse observation
+and persist the adoption or rejection decision with raw evidence.

@@ -1,0 +1,29 @@
+Thu Oct  1 00:37:59 UTC 2026
+8b35eecba61c27fc8677fbadf473d470e6a0f1d1
+ M docs/plans/bfs-temporary-buffer-reuse-v1.md
+ M src/core/alloc.c
+ M tests/test_txn_sealed_preflight.c
+m68k-amigaos-gcc (GCC) 6.5.0b 260303094121^
+Copyright (C) 2017 Free Software Foundation, Inc.
+This is free software; see the source for copying conditions.  There is NO
+warranty; not even for MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.
+
+Apple clang version 21.0.0 (clang-2100.1.1.101)
+Target: arm64-apple-darwin25.5.0
+Thread model: posix
+InstalledDir: /Applications/Xcode.app/Contents/Developer/Toolchains/XcodeDefault.xctoolchain/usr/bin
+971e6720e57775be06698af2dce58c65b0cdccd387007a152e7372e0b5359cb4  src/core/alloc.c
+dc2eb399da7ad6bb3d3354e629630c2d05224d6e39e46479945e3a1d5175414c  tests/test_txn_sealed_preflight.c
+120933149aba4c4c82318819c51ebbd48465f8d6af9e989ef240663a484429b1  build/seal-geometry-baseline-alloc.c
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  build/amiga-path-depth/bfshandler
+71abbd520974f1d534cd30dc14ae79c9f18f60fb3a50194b57ef5b9a32ac2bee  build/amiga-seal-geometry/bfshandler
+2d19441071bce1fef37318036b7438a27961859ed8f66168b13eca09f67395ee  build/amiga-seal-geometry/bfshandler-probe
+71abbd520974f1d534cd30dc14ae79c9f18f60fb3a50194b57ef5b9a32ac2bee  build/amiga-seal-geometry-rebuilt/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  build/amiga/fs-compare-bench
+0f87a0638791a4a2371083339ed014d4d6659dc85a2270bd993f9df1ddf13cc6  build/benchmark/noop-fixed-formatter
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  build/benchmark/retained-final-deep/system/L/pfs3aio
+68f9d3a36c2866d054f41c29b600618642a4807dfb6bca7354d4879a36c9aa7c  /Users/fabian/Documents/fswb/kickstart/A1200.47.102.rom
+989814fd5a4ad9903e9844342e3c2ba23f6c002f39af9fd47ed085a81b877f30  build/geometry-codegen-alloc.s
+49f43ca1357b5998de8fbf46f4ee7775d6da17fb257c59358ac94fdf2abc24aa  build/seal-geometry-candidate-alloc.s
+aeb7bd36f3b0f270e0d8ef0f7f1e95d19ba07d6b97611bed1e12a16e488d052a  build/prepare-seal-geometry-measurements.sh
+c4d88df80bf1546ff05408e1a117f8a890bc1e39b8d92977c6cb3b76296d4950  build/run-seal-geometry-measurements.sh

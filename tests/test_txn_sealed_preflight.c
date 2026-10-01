@@ -227,6 +227,100 @@ static bool pool_contains(const bfs_superblock_t *sb, bfs_blk_t block)
     return false;
 }
 
+static bool reserve_contains(const bfs_freespace_t *space, bfs_blk_t block)
+{
+    for (uint32_t i = 0; i < space->reserve_count; i++)
+        if (space->reserve[i] == block) return true;
+    return false;
+}
+
+static bool superblock_root_contains(const bfs_superblock_t *sb,
+                                     bfs_blk_t block)
+{
+    return block == bfs_be32(sb->dir_tree_root) ||
+           block == bfs_be32(sb->extent_tree_root) ||
+           block == bfs_be32(sb->inode_tree_root) ||
+           block == bfs_be32(sb->free_tree_root) ||
+           block == bfs_be32(sb->refcount_tree_root) ||
+           block == bfs_be32(sb->snapshot_tree_root);
+}
+
+static bool root_contains(const bfs_fs_t *fs, bfs_blk_t block)
+{
+    return block == fs->freespace.tree.root ||
+           block == fs->dir_tree.tree.root ||
+           block == fs->inode_tree.root ||
+           block == fs->refcount.tree.root ||
+           superblock_root_contains(&fs->txn.sb_new, block) ||
+           superblock_root_contains(&fs->txn.sb, block);
+}
+
+static bool current_leaf_contains(bfs_fs_t *fs, bfs_blk_t block);
+
+static bool ordinary_candidate(bfs_fs_t *fs, bfs_blk_t block)
+{
+    return block >= bfs_data_start_block(fs->bio->block_size) &&
+           block < fs->bio->block_count &&
+           !current_leaf_contains(fs, block) &&
+           !pool_contains(&fs->txn.sb_new, block) &&
+           !pool_contains(&fs->txn.sb, block) &&
+           !reserve_contains(&fs->freespace, block) &&
+           !pending_contains(fs, block) && !root_contains(fs, block);
+}
+
+static void set_backup_block_quotient(bfs_superblock_t *sb,
+                                      uint64_t block, uint32_t block_size)
+{
+    uint64_t offset = block * block_size;
+    sb->sb_backup_offset_hi = bfs_be32((uint32_t)(offset >> 32));
+    sb->sb_backup_offset_lo = bfs_be32((uint32_t)offset);
+}
+
+static bool allocate_ordinary_alias(bfs_fs_t *fs, bfs_blk_t excluded,
+                                    bfs_blk_t *alias)
+{
+    bfs_blk_t first = bfs_freespace_alloc(&fs->freespace, 2);
+    if (first == BFS_BLK_NULL) return false;
+    *alias = BFS_BLK_NULL;
+    for (uint32_t i = 0; i < 2; i++) {
+        bfs_blk_t candidate = first + i;
+        if (candidate != excluded && ordinary_candidate(fs, candidate)) {
+            *alias = candidate;
+            return true;
+        }
+    }
+    return false;
+}
+
+static bool setup_distinct_backup_positions(fixture_t *fixture,
+                                            bfs_blk_t *working_backup,
+                                            bfs_blk_t *committed_backup)
+{
+    bfs_fs_t *fs = &fixture->fs;
+    uint32_t block_size = fs->bio->block_size;
+    uint64_t working_offset = bfs_sb_backup_offset(&fs->txn.sb_new);
+    if (working_offset != bfs_default_backup_offset(fs->bio->block_count,
+                                                    block_size) ||
+        working_offset % block_size != 0)
+        return false;
+
+    *working_backup = (bfs_blk_t)(working_offset / block_size);
+    /* Allocate through the public allocator so the committed target is a
+     * genuinely allocated data block, rather than a synthetic in-range value. */
+    if (!allocate_ordinary_alias(fs, *working_backup, committed_backup) ||
+        !ordinary_candidate(fs, *working_backup))
+        return false;
+
+    set_backup_block_quotient(&fs->txn.sb, *committed_backup, block_size);
+    return bfs_sb_backup_offset(&fs->txn.sb) != working_offset;
+}
+
+static bfs_superblock_t *selected_backup_superblock(bfs_fs_t *fs,
+                                                    bool committed)
+{
+    return committed ? &fs->txn.sb : &fs->txn.sb_new;
+}
+
 static bool current_leaf_contains(bfs_fs_t *fs, bfs_blk_t block)
 {
     uint32_t search = bfs_be32(block), key_be = 0, length_be = 0;
@@ -461,53 +555,48 @@ static void test_missing_scratch_and_inactive_pool_alias_decline(void)
 
 static void test_backup_block_and_current_root_rejections(void)
 {
+    for (uint32_t target_index = 0; target_index < 2; target_index++) {
+        for (uint32_t shape = 0; shape < 4; shape++) {
+            fixture_t fixture;
+            TEST_ASSERT(fixture_init(&fixture));
+            bfs_fs_t *fs = &fixture.fs;
+            bfs_lock_write(&fs->lock);
+            bfs_blk_t working_backup, committed_backup;
+            TEST_ASSERT(setup_distinct_backup_positions(&fixture,
+                &working_backup, &committed_backup));
+            bfs_blk_t backup = target_index == 0
+                ? working_backup : committed_backup;
+            switch (shape) {
+            case 0:
+                fs->pending_frees[0] = backup;
+                fs->pending_count = 1;
+                break;
+            case 1:
+                TEST_ASSERT(fs->freespace.reserve_count <
+                            BFS_ALLOC_RESERVE_SIZE);
+                fs->freespace.reserve[fs->freespace.reserve_count++] = backup;
+                break;
+            case 2: {
+                uint32_t active = bfs_be32(fs->freespace.sb->emergency_count);
+                TEST_ASSERT(active < BFS_EMERGENCY_POOL_SIZE);
+                fs->freespace.sb->emergency_pool[active] = bfs_be32(backup);
+                break;
+            }
+            case 3:
+                TEST_ASSERT_EQ(bfs_freespace_free(&fs->freespace, backup, 1),
+                               BFS_OK);
+                TEST_ASSERT(current_leaf_contains(fs, backup));
+                break;
+            }
+            fixture.device.writes = 0;
+            TEST_ASSERT(check_preflight(&fixture, BFS_ERR_CORRUPT, false));
+            bfs_lock_unlock(&fs->lock);
+            fixture_destroy(&fixture);
+        }
+    }
+
     fixture_t fixture;
-    TEST_ASSERT(fixture_init(&fixture));
-    bfs_fs_t *fs = &fixture.fs;
-    bfs_lock_write(&fs->lock);
-    bfs_blk_t backup = (bfs_blk_t)(bfs_sb_backup_offset(&fs->txn.sb_new) /
-                                   fs->bio->block_size);
-    fs->pending_frees[0] = backup;
-    fs->pending_count = 1;
-    TEST_ASSERT(check_preflight(&fixture, BFS_ERR_CORRUPT, false));
-    bfs_lock_unlock(&fs->lock);
-    fixture_destroy(&fixture);
-
-    TEST_ASSERT(fixture_init(&fixture));
-    fs = &fixture.fs;
-    bfs_lock_write(&fs->lock);
-    backup = (bfs_blk_t)(bfs_sb_backup_offset(&fs->txn.sb_new) /
-                         fs->bio->block_size);
-    TEST_ASSERT(fs->freespace.reserve_count < BFS_ALLOC_RESERVE_SIZE);
-    fs->freespace.reserve[fs->freespace.reserve_count++] = backup;
-    TEST_ASSERT(check_preflight(&fixture, BFS_ERR_CORRUPT, false));
-    bfs_lock_unlock(&fs->lock);
-    fixture_destroy(&fixture);
-
-    TEST_ASSERT(fixture_init(&fixture));
-    fs = &fixture.fs;
-    bfs_lock_write(&fs->lock);
-    uint32_t active = bfs_be32(fs->freespace.sb->emergency_count);
-    TEST_ASSERT(active < BFS_EMERGENCY_POOL_SIZE);
-    backup = (bfs_blk_t)(bfs_sb_backup_offset(&fs->txn.sb_new) /
-                         fs->bio->block_size);
-    fs->freespace.sb->emergency_pool[active] = bfs_be32(backup);
-    TEST_ASSERT(check_preflight(&fixture, BFS_ERR_CORRUPT, false));
-    bfs_lock_unlock(&fs->lock);
-    fixture_destroy(&fixture);
-
-    TEST_ASSERT(fixture_init(&fixture));
-    fs = &fixture.fs;
-    bfs_lock_write(&fs->lock);
-    backup = (bfs_blk_t)(bfs_sb_backup_offset(&fs->txn.sb_new) /
-                         fs->bio->block_size);
-    TEST_ASSERT_EQ(bfs_freespace_free(&fs->freespace, backup, 1), BFS_OK);
-    fixture.device.writes = 0;
-    TEST_ASSERT(current_leaf_contains(fs, backup));
-    TEST_ASSERT(check_preflight(&fixture, BFS_ERR_CORRUPT, false));
-    bfs_lock_unlock(&fs->lock);
-    fixture_destroy(&fixture);
-
+    bfs_fs_t *fs;
     for (uint32_t root_case = 0; root_case < 2; root_case++) {
         TEST_ASSERT(fixture_init(&fixture));
         fs = &fixture.fs;
@@ -516,6 +605,113 @@ static void test_backup_block_and_current_root_rejections(void)
             ? fs->dir_tree.tree.root : fs->inode_tree.root;
         fs->pending_count = 1;
         TEST_ASSERT(check_preflight(&fixture, BFS_ERR_CORRUPT, false));
+        bfs_lock_unlock(&fs->lock);
+        fixture_destroy(&fixture);
+    }
+}
+
+static uint64_t high_backup_quotient(bfs_blk_t alias)
+{
+    return (UINT64_C(1) << 32) + alias;
+}
+
+static void test_high_backup_quotients_do_not_alias_pending_blocks(void)
+{
+    for (uint32_t committed = 0; committed < 2; committed++) {
+        fixture_t fixture;
+        TEST_ASSERT(fixture_init(&fixture));
+        bfs_fs_t *fs = &fixture.fs;
+        bfs_lock_write(&fs->lock);
+
+        uint64_t default_offset = bfs_sb_backup_offset(&fs->txn.sb_new);
+        TEST_ASSERT_EQ(default_offset,
+            bfs_default_backup_offset(fs->bio->block_count,
+                                      fs->bio->block_size));
+        TEST_ASSERT_EQ(default_offset % fs->bio->block_size, 0);
+        bfs_blk_t default_backup =
+            (bfs_blk_t)(default_offset / fs->bio->block_size);
+        bfs_blk_t alias;
+        TEST_ASSERT(allocate_ordinary_alias(fs, default_backup, &alias));
+        TEST_ASSERT(ordinary_candidate(fs, alias));
+
+        uint64_t high = high_backup_quotient(alias);
+        bfs_superblock_t *sb = selected_backup_superblock(fs, committed != 0);
+        set_backup_block_quotient(sb, high, fs->bio->block_size);
+        TEST_ASSERT_EQ(bfs_sb_backup_offset(sb) / fs->bio->block_size, high);
+        TEST_ASSERT(bfs_sb_backup_offset(sb) / fs->bio->block_size != alias);
+        fs->pending_frees[0] = alias;
+        fs->pending_count = 1;
+        TEST_ASSERT_EQ(fs->pending_frees[0], alias);
+        TEST_ASSERT(alias >= bfs_data_start_block(fs->bio->block_size));
+        TEST_ASSERT(alias < fs->bio->block_count);
+        TEST_ASSERT(!pool_contains(&fs->txn.sb_new, alias));
+        TEST_ASSERT(!pool_contains(&fs->txn.sb, alias));
+        TEST_ASSERT(!reserve_contains(&fs->freespace, alias));
+        TEST_ASSERT(!current_leaf_contains(fs, alias));
+        TEST_ASSERT(!root_contains(fs, alias));
+
+        allocator_snapshot_t before;
+        take_snapshot(fs, &before);
+        uint32_t writes_before = fixture.device.writes;
+        bool sealed = false;
+        bfs_err_t err = bfs_freespace_seal_commit(fs, &sealed);
+        TEST_ASSERT_EQ(err, BFS_OK);
+        TEST_ASSERT(sealed);
+        TEST_ASSERT_EQ(fixture.device.writes, writes_before + 1u);
+        TEST_ASSERT(fs->freespace.allocation_frozen);
+        TEST_ASSERT_EQ(fs->recovery_error, BFS_OK);
+        TEST_ASSERT_EQ(fs->pending_count, before.pending_count);
+        TEST_ASSERT_MEM_EQ(fs->pending_frees, before.pending,
+                           sizeof(before.pending));
+        TEST_ASSERT_MEM_EQ(&fs->txn.sb, &before.committed_sb,
+                           sizeof(before.committed_sb));
+        TEST_ASSERT_EQ(bfs_sb_backup_offset(&fs->txn.sb_new),
+                       bfs_sb_backup_offset(&before.working_sb));
+        TEST_ASSERT_EQ(fs->live_txn_id, before.live_txn_id);
+        TEST_ASSERT_EQ(fs->options, before.options);
+        TEST_ASSERT_EQ(fs->has_snapshots, before.has_snapshots);
+        TEST_ASSERT_EQ(fs->freespace.tree.free_sink_err,
+                       before.free_sink_err);
+        TEST_ASSERT_EQ(bfs_sb_backup_offset(sb) / fs->bio->block_size, high);
+        TEST_ASSERT(pending_contains(fs, alias));
+        TEST_ASSERT(current_leaf_contains(fs, alias));
+        TEST_ASSERT(!pool_contains(&fs->txn.sb_new, alias));
+        TEST_ASSERT(!reserve_contains(&fs->freespace, alias));
+        TEST_ASSERT(fs->mounted);
+
+        /* Keep the malformed offset in memory only. fixture_destroy abandons
+         * this mounted instance; this test never commits or remounts it. */
+        bfs_lock_unlock(&fs->lock);
+        fixture_destroy(&fixture);
+    }
+}
+
+static void test_high_backup_quotients_cast_only_for_old_leaf_checks(void)
+{
+    for (uint32_t committed = 0; committed < 2; committed++) {
+        fixture_t fixture;
+        TEST_ASSERT(fixture_init(&fixture));
+        bfs_fs_t *fs = &fixture.fs;
+        bfs_lock_write(&fs->lock);
+
+        uint64_t default_offset = bfs_sb_backup_offset(&fs->txn.sb_new);
+        TEST_ASSERT_EQ(default_offset % fs->bio->block_size, 0);
+        bfs_blk_t default_backup =
+            (bfs_blk_t)(default_offset / fs->bio->block_size);
+        bfs_blk_t alias;
+        TEST_ASSERT(allocate_ordinary_alias(fs, default_backup, &alias));
+        TEST_ASSERT(ordinary_candidate(fs, alias));
+
+        uint64_t high = high_backup_quotient(alias);
+        bfs_superblock_t *sb = selected_backup_superblock(fs, committed != 0);
+        set_backup_block_quotient(sb, high, fs->bio->block_size);
+        TEST_ASSERT_EQ(bfs_sb_backup_offset(sb) / fs->bio->block_size, high);
+        TEST_ASSERT_EQ(bfs_freespace_free(&fs->freespace, alias, 1), BFS_OK);
+        TEST_ASSERT(current_leaf_contains(fs, alias));
+        fixture.device.writes = 0;
+        TEST_ASSERT(check_preflight(&fixture, BFS_ERR_CORRUPT, false));
+
+        /* As above, do not publish or mount the deliberately malformed SB. */
         bfs_lock_unlock(&fs->lock);
         fixture_destroy(&fixture);
     }
@@ -965,6 +1161,8 @@ TEST_SUITE_BEGIN("Sealed commit preflight")
     TEST_RUN(test_older_future_deeper_and_full_leaf_shapes);
     TEST_RUN(test_missing_scratch_and_inactive_pool_alias_decline);
     TEST_RUN(test_backup_block_and_current_root_rejections);
+    TEST_RUN(test_high_backup_quotients_do_not_alias_pending_blocks);
+    TEST_RUN(test_high_backup_quotients_cast_only_for_old_leaf_checks);
     TEST_RUN(test_invalid_candidates_fail_before_write);
     TEST_RUN(test_cross_source_duplicates_and_bounds_fail_before_write);
     TEST_RUN(test_success_seals_mixed_provenance_and_freezes_mutation);
