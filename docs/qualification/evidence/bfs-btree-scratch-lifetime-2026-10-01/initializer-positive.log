@@ -1,0 +1,2 @@
+PASS: 2192-byte host journal initializes both counts, preserves all unused array bytes
+PASS: 1026-byte host bounds reset clears both flags, preserves both unused key arrays

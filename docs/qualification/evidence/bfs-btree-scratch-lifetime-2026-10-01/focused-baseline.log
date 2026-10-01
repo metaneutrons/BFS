@@ -1,0 +1,6 @@
+=== B-tree scratch lifetime ===
+  test_full_width_multilevel_search_and_scan         OK
+  test_crc_valid_child_with_wrong_inherited_bound    OK
+  test_multilevel_update_abort_restores_root_mapping_and_ownership OK
+
+3 passed, 0 failed

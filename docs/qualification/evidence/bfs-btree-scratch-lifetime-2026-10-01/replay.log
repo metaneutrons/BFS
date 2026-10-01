@@ -1,0 +1,2 @@
+PASS: structural and all non-time counters agree in both diagnostic orders
+PASS: offline strict verification and both exact JSON extractions reproduce

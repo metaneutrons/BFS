@@ -1,0 +1,7 @@
+/usr/bin/clang
+clang version 22.1.8
+Target: x86_64-pc-linux-gnu
+/usr/lib/clang/22/lib/linux/libclang_rt.msan_cxx-x86_64.a
+/usr/lib/clang/22/lib/linux/libclang_rt.msan_cxx-x86_64.a.syms
+/usr/lib/clang/22/lib/linux/libclang_rt.msan-x86_64.a
+/usr/lib/clang/22/lib/linux/libclang_rt.msan-x86_64.a.syms

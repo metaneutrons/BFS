@@ -1,0 +1,4 @@
+FAIL: mutation initializer changed unused journal arrays or omitted a count
+journal_exit=1
+FAIL: bounds reset changed unused key arrays or omitted a flag
+bounds_exit=1
