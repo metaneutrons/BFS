@@ -14,6 +14,12 @@
 #include "perf_probe.h"
 #endif
 
+typedef struct {
+    bfs_inode_stamp_fn stamp_fn;
+    void *stamp_context;
+    uint32_t protection_clear;
+} file_write_metadata_t;
+
 /* Only the disposable profiler marks file payload I/O. The production build
  * compiles these wrappers to the ordinary BIO calls. */
 static bfs_err_t file_data_bio_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
@@ -106,7 +112,8 @@ bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
     return file_open_from_tree_unlocked(f, fs, &fs->inode_tree, inode_nr, false);
 }
 
-static bfs_err_t file_update_inode(bfs_file_t *f)
+static bfs_err_t file_update_inode(bfs_file_t *f,
+                                    const file_write_metadata_t *metadata)
 {
     bfs_inode_t inode;
     bfs_err_t err = f->unlinked
@@ -117,6 +124,16 @@ static bfs_err_t file_update_inode(bfs_file_t *f)
     inode.size_hi = bfs_be32((uint32_t)(f->size >> 32));
     inode.size_lo = bfs_be32((uint32_t)(f->size & 0xFFFFFFFF));
     inode.extent_root = bfs_be32(f->extents.tree.root);
+    if (metadata) {
+        if (metadata->stamp_fn) {
+            bfs_inode_stamp_t stamp = {0};
+            metadata->stamp_fn(metadata->stamp_context, &stamp);
+            bfs_inode_apply_stamp(&inode, &stamp, false);
+        }
+        if (metadata->protection_clear != 0)
+            inode.protection = bfs_be32(bfs_be32(inode.protection) &
+                                        ~metadata->protection_clear);
+    }
     return f->unlinked
                ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, &inode)
                : bfs_inode_write(f->inode_tree, f->inode_nr, &inode);
@@ -129,12 +146,13 @@ static bfs_err_t file_update_inode(bfs_file_t *f)
  * inconsistent with the extent map. Always flush the inode, then sync. */
 static bfs_err_t file_flush_and_sync(bfs_file_t *f)
 {
-    bfs_err_t err = file_update_inode(f);
+    bfs_err_t err = file_update_inode(f, NULL);
     if (err != BFS_OK) return err;
     return bfs_txn_commit(f->fs);
 }
 
-static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode)
+static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode,
+                                         const file_write_metadata_t *metadata)
 {
     bfs_fs_t *fs = f->fs;
     /* A reclamation failure can follow a successful tree-root change. Do not
@@ -145,7 +163,7 @@ static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode)
     if (state_error == BFS_OK) state_error = fs->freespace.tree.free_sink_err;
     if (state_error == BFS_OK) state_error = fs->refcount.tree.free_sink_err;
     if (state_error == BFS_OK && update_inode)
-        state_error = file_update_inode(f);
+        state_error = file_update_inode(f, metadata);
     if (state_error != BFS_OK) {
         bfs_err_t reload_error = bfs_fs_reload_committed_unlocked(fs);
         return reload_error == BFS_OK ? state_error : reload_error;
@@ -153,9 +171,10 @@ static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode)
     return BFS_OK;
 }
 
-static int32_t file_finish_write(bfs_file_t *f, uint32_t total, bfs_err_t error)
+static int32_t file_finish_write(const file_write_metadata_t *metadata,
+                                bfs_file_t *f, uint32_t total, bfs_err_t error)
 {
-    bfs_err_t state_error = file_publish_or_recover(f, total > 0);
+    bfs_err_t state_error = file_publish_or_recover(f, total > 0, metadata);
     if (state_error != BFS_OK) return state_error;
     return total > 0 ? (int32_t)total : (int32_t)error;
 }
@@ -354,7 +373,9 @@ static bfs_err_t file_write_new_run(bfs_file_t *f, const uint8_t *input,
     return file_write_allocated_run(f, input, file_block, start, count, written);
 }
 
-int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+static int32_t file_write_with_metadata_unlocked(
+    bfs_file_t *f, const void *buf, uint32_t len,
+    const file_write_metadata_t *metadata)
 {
     bfs_err_t handle_err = file_handle_error(f);
     if (handle_err != BFS_OK) return handle_err;
@@ -376,11 +397,11 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
         if (f->fs->pending_count + 3u * BFS_BTREE_MAX_OP_FREES > bfs_fs_pending_cap(f->fs)) {
             bfs_err_t ferr = file_flush_and_sync(f);
             if (ferr != BFS_OK)
-                return file_finish_write(f, total, ferr);
+                return file_finish_write(metadata, f, total, ferr);
         }
         uint32_t file_blk;
         bfs_err_t err = file_block_for_offset(f->fs, f->offset, &file_blk);
-        if (err != BFS_OK) return file_finish_write(f, total, err);
+        if (err != BFS_OK) return file_finish_write(metadata, f, total, err);
 
         uint32_t run_written;
         bool run_handled;
@@ -391,7 +412,7 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
             total += run_written;
             len -= run_written;
             if (f->offset > f->size) f->size = f->offset;
-            if (err != BFS_OK) return file_finish_write(f, total, err);
+            if (err != BFS_OK) return file_finish_write(metadata, f, total, err);
             continue;
         }
 
@@ -401,7 +422,7 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
         if ((uint64_t)chunk > max_file_size_for_block_size(bs) - f->offset)
             chunk = (uint32_t)(max_file_size_for_block_size(bs) - f->offset);
         if (chunk == 0)
-            return file_finish_write(f, total, BFS_ERR_INVAL);
+            return file_finish_write(metadata, f, total, BFS_ERR_INVAL);
 
         bfs_blk_t disk_blk;
         err = bfs_extent_lookup(&f->extents, file_blk, &disk_blk);
@@ -415,35 +436,35 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
                 if (f->fs->pending_count > BFS_SYNC_THRESHOLD) {
                     bfs_err_t serr = file_flush_and_sync(f);
                     if (serr != BFS_OK)
-                        return file_finish_write(f, total, serr);
+                        return file_finish_write(metadata, f, total, serr);
                 }
             }
             /* Stop data writes when only global reserve remains */
             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
-                return file_finish_write(f, total, BFS_ERR_NOSPC);
+                return file_finish_write(metadata, f, total, BFS_ERR_NOSPC);
             }
             /* Allocate and initialize data before publishing its extent mapping. */
             disk_blk = bfs_freespace_alloc(&f->fs->freespace, 1);
             if (disk_blk == BFS_BLK_NULL)
-                return file_finish_write(f, total,
+                return file_finish_write(metadata, f, total,
                                          file_alloc_error(&f->fs->freespace));
             new_mapping = true;
             memset(blk_buf, 0, bs);
         } else if (err != BFS_OK) {
-            return file_finish_write(f, total, err);
+            return file_finish_write(metadata, f, total, err);
         } else {
             if (f->fs->has_snapshots) {
                 uint32_t refcount;
                 err = bfs_refcount_get_checked(&f->fs->refcount, disk_blk, &refcount);
                 if (err != BFS_OK)
-                    return file_finish_write(f, total, err);
+                    return file_finish_write(metadata, f, total, err);
                 shared_block = refcount > 1;
             }
             cow_block = shared_block || f->extents.data_checksums;
             if (blk_off != 0 || chunk < bs) {
                 /* Verify retained data before calculating a replacement CRC. */
                 err = file_read_checked_block(f, file_blk, disk_blk, blk_buf);
-                if (err != BFS_OK) return file_finish_write(f, total, err);
+                if (err != BFS_OK) return file_finish_write(metadata, f, total, err);
             }
         }
 
@@ -457,31 +478,31 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
                 err = bfs_extent_map_block(&f->extents, file_blk, disk_blk, crc);
             if (err != BFS_OK) {
                 if (f->extents.tree.free_sink_err != BFS_OK)
-                    return file_finish_write(f, total, err);
+                    return file_finish_write(metadata, f, total, err);
                 bfs_err_t cleanup_err = bfs_freespace_free(&f->fs->freespace, disk_blk, 1);
                 if (cleanup_err != BFS_OK) f->fs->recovery_error = cleanup_err;
-                return file_finish_write(f, total, err);
+                return file_finish_write(metadata, f, total, err);
             }
         } else if (cow_block) {
             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
                 bfs_err_t serr = file_flush_and_sync(f);
                 if (serr != BFS_OK)
-                    return file_finish_write(f, total, serr);
+                    return file_finish_write(metadata, f, total, serr);
             }
             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
-                return file_finish_write(f, total, BFS_ERR_NOSPC);
+                return file_finish_write(metadata, f, total, BFS_ERR_NOSPC);
             }
 
             bfs_blk_t new_blk = bfs_freespace_alloc(&f->fs->freespace, 1);
             if (new_blk == BFS_BLK_NULL)
-                return file_finish_write(f, total,
+                return file_finish_write(metadata, f, total,
                                          file_alloc_error(&f->fs->freespace));
 
             err = file_data_bio_write(f->fs->bio, new_blk, blk_buf);
             if (err != BFS_OK) {
                 bfs_err_t cleanup_err = bfs_freespace_free(&f->fs->freespace, new_blk, 1);
                 if (cleanup_err != BFS_OK) f->fs->recovery_error = cleanup_err;
-                return file_finish_write(f, total, err);
+                return file_finish_write(metadata, f, total, err);
             }
 
             bfs_blk_t old_blk = BFS_BLK_NULL;
@@ -489,22 +510,22 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
                                              &old_blk);
             if (err != BFS_OK) {
                 if (f->extents.tree.free_sink_err != BFS_OK)
-                    return file_finish_write(f, total, err);
+                    return file_finish_write(metadata, f, total, err);
                 bfs_err_t cleanup_err = bfs_freespace_free(&f->fs->freespace, new_blk, 1);
                 if (cleanup_err != BFS_OK) f->fs->recovery_error = cleanup_err;
-                return file_finish_write(f, total, err);
+                return file_finish_write(metadata, f, total, err);
             }
 
             err = bfs_fs_queue_pending_free(f->fs, old_blk);
             if (err != BFS_OK) {
                 f->fs->recovery_error = err;
-                return file_finish_write(f, total, err);
+                return file_finish_write(metadata, f, total, err);
             }
             disk_blk = new_blk;
         } else {
             err = file_data_bio_write(f->fs->bio, disk_blk, blk_buf);
             if (err != BFS_OK)
-                return file_finish_write(f, total, err);
+                return file_finish_write(metadata, f, total, err);
         }
 
         in += chunk;
@@ -515,7 +536,12 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
         if (f->offset > f->size) f->size = f->offset;
     }
 
-    return file_finish_write(f, total, BFS_OK);
+    return file_finish_write(metadata, f, total, BFS_OK);
+}
+
+int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+{
+    return file_write_with_metadata_unlocked(f, buf, len, NULL);
 }
 
 static int64_t file_seek_unlocked(bfs_file_t *f, int64_t offset, int mode)
@@ -569,7 +595,7 @@ static bfs_err_t file_zero_truncated_tail(bfs_file_t *f, uint64_t new_size)
     if (err != BFS_OK) return err;
     f->size = old_size;
     f->offset = old_offset;
-    err = file_publish_or_recover(f, true);
+    err = file_publish_or_recover(f, true, NULL);
     if (err != BFS_OK) return err;
     return written == (int32_t)length ? BFS_OK :
            written < 0 ? (bfs_err_t)written : BFS_ERR_IO;
@@ -577,7 +603,7 @@ static bfs_err_t file_zero_truncated_tail(bfs_file_t *f, uint64_t new_size)
 
 static bfs_err_t file_finish_truncate(bfs_file_t *f, bfs_err_t error)
 {
-    bfs_err_t state_error = file_publish_or_recover(f, true);
+    bfs_err_t state_error = file_publish_or_recover(f, true, NULL);
     return state_error == BFS_OK ? error : state_error;
 }
 
@@ -701,16 +727,34 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len)
     return err;
 }
 
-int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
+static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len,
+                                     const file_write_metadata_t *metadata)
 {
     if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf))
         return BFS_ERR_INVAL;
     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&f->fs->lock);
     int32_t err = file_refresh_unlocked(f);
-    if (err == BFS_OK) err = bfs_file_write_unlocked(f, buf, len);
+    if (err == BFS_OK) err = file_write_with_metadata_unlocked(f, buf, len, metadata);
     bfs_lock_unlock(&f->fs->lock);
     return err;
+}
+
+int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
+{
+    return file_write_operation(f, buf, len, NULL);
+}
+
+int32_t bfs_file_write_with_stamp(bfs_file_t *f, const void *buf, uint32_t len,
+                                  bfs_inode_stamp_fn stamp_fn,
+                                  void *stamp_context, uint32_t protection_clear)
+{
+    const file_write_metadata_t metadata = {
+        .stamp_fn = stamp_fn,
+        .stamp_context = stamp_context,
+        .protection_clear = protection_clear,
+    };
+    return file_write_operation(f, buf, len, &metadata);
 }
 
 int32_t bfs_file_append(bfs_file_t *f, const void *buf, uint32_t len)

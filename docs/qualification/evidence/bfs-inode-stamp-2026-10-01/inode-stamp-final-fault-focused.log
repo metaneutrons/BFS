@@ -1,0 +1,7 @@
+=== Inode Stamp Publication Faults ===
+  test_combined_inode_write_failure_reloads_committed OK
+  test_combined_inode_partial_write_reloads_committed OK
+  test_positive_prefix_gets_one_combined_stamp       OK
+  test_intermediate_commits_do_not_sample_final_stamp OK
+
+4 passed, 0 failed

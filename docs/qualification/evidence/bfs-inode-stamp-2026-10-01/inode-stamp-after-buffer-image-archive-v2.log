@@ -1,0 +1,8 @@
+09a504c79e5c49a12e3134f9b80d96c99f4cf38b3f5365ab1a76e7520d2303e7  /home/fabian/.cache/bfs-performance/after-buffer-profile-2026-10-01/after-buffer-probe-bfs-first/system/Results/bfs.deep-compare.tsv
+f0eeb3f17799fd13f1940f00690ed538f6976ad8446c22148df8b5c9e97e3b07  /home/fabian/.cache/bfs-performance/after-buffer-profile-2026-10-01/after-buffer-probe-bfs-first/system/Results/pfs3.deep-compare.tsv
+400ba912560ad824485f76593d033ff8ef127a644963e2d6bb7ca02c1ac22656  /home/fabian/.cache/bfs-performance/after-buffer-profile-2026-10-01/after-buffer-probe-pfs3-first/system/Results/bfs.deep-compare.tsv
+dff025bf482363b79a9d40a9a217da8da256adcb0e2917d1d35a434f130cf12d  /home/fabian/.cache/bfs-performance/after-buffer-profile-2026-10-01/after-buffer-probe-pfs3-first/system/Results/pfs3.deep-compare.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  8.3G  3.5G  71% /tmp
+/dev/vda2       996G  313G  683G  32% /home
+Two completed diagnostic images archived recoverably with identical TSV hashes

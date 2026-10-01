@@ -6,6 +6,19 @@
 #include "bfs_inode.h"
 #include <string.h>
 
+void bfs_inode_apply_stamp(bfs_inode_t *inode, const bfs_inode_stamp_t *stamp,
+                           bool creation)
+{
+    inode->modify_days = bfs_be16(stamp->days);
+    inode->modify_mins = bfs_be16(stamp->mins);
+    inode->modify_ticks = bfs_be16(stamp->ticks);
+    if (creation) {
+        inode->create_days = inode->modify_days;
+        inode->create_mins = inode->modify_mins;
+        inode->create_ticks = inode->modify_ticks;
+    }
+}
+
 static const bfs_btree_ops_t bfs_inode_ops = {
     .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),

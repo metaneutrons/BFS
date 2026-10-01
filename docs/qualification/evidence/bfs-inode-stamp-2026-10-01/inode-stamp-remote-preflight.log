@@ -1,0 +1,37 @@
+070b162d85ebbe2aa67774b48dea2543db7b0e864270c1c05096680498660389  inode-stamp-probe-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-probe-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-probe-bfs-first/system/L/pfs3aio
+070b162d85ebbe2aa67774b48dea2543db7b0e864270c1c05096680498660389  inode-stamp-probe-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-probe-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-probe-pfs3-first/system/L/pfs3aio
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  inode-stamp-normal-baseline-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-normal-baseline-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-normal-baseline-bfs-first/system/L/pfs3aio
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  inode-stamp-normal-candidate-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-normal-candidate-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-normal-candidate-pfs3-first/system/L/pfs3aio
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  inode-stamp-normal-baseline-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-normal-baseline-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-normal-baseline-pfs3-first/system/L/pfs3aio
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  inode-stamp-normal-candidate-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-normal-candidate-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-normal-candidate-bfs-first/system/L/pfs3aio
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  inode-stamp-normal-repeat-candidate-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-normal-repeat-candidate-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-normal-repeat-candidate-bfs-first/system/L/pfs3aio
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  inode-stamp-normal-repeat-baseline-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-normal-repeat-baseline-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-normal-repeat-baseline-pfs3-first/system/L/pfs3aio
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  inode-stamp-normal-repeat-candidate-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-normal-repeat-candidate-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-normal-repeat-candidate-pfs3-first/system/L/pfs3aio
+c4d4241a45b84c768ec9498e77144e650812e31576c952925f4ed1de65be0d5a  inode-stamp-normal-repeat-baseline-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  inode-stamp-normal-repeat-baseline-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  inode-stamp-normal-repeat-baseline-bfs-first/system/L/pfs3aio
+68f9d3a36c2866d054f41c29b600618642a4807dfb6bca7354d4879a36c9aa7c  /home/fabian/Amiga/kick.a1200.47.102.rom
+3.2.35
+Linux cachy 7.1.3-2-cachyos #1 SMP PREEMPT_DYNAMIC Wed, 08 Jul 2026 18:34:01 +0000 x86_64 GNU/Linux
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  8.5G  3.3G  73% /tmp
+/dev/vda2       996G  313G  683G  32% /home
+All ten image inputs and idle preflight verified

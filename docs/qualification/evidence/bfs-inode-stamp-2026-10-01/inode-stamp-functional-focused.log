@@ -1,0 +1,11 @@
+  FAIL: tests/test_inode_stamp.c:308: bfs_be32(cleared.protection) == 61455, expected 15
+=== Inode Stamps ===
+  test_create_stamp_encoding_survives_remount        OK
+  test_create_rejections_and_null_wrapper_equivalence OK
+  test_write_stamp_preserves_fresh_inode_metadata    OK
+  test_write_null_stamp_matches_legacy_and_null_mask_clears FAILED
+  test_zero_error_and_readonly_calls_do_not_sample   OK
+  test_snapshot_keeps_old_stamp_and_content          OK
+  test_open_unlinked_write_updates_inode_stamp       OK
+
+6 passed, 1 failed

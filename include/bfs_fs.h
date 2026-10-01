@@ -136,6 +136,14 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino,
                                const char *name, uint8_t name_len,
                                uint32_t *ino_out);
 
+/* Initialize creation/modification time in the first inode COW mutation.
+ * Samples once immediately before insertion. NULL preserves ordinary create
+ * behavior. The sampler follows bfs_inode_stamp_fn's no-reentry contract. */
+bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
+                                       const char *name, uint8_t name_len,
+                                       bfs_inode_stamp_fn stamp_fn,
+                                       void *stamp_context, uint32_t *ino_out);
+
 /* Create a subdirectory. Returns inode number. */
 bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino,
                          const char *name, uint8_t name_len,

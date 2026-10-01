@@ -209,7 +209,10 @@ static bfs_err_t fs_queue_extent_tree_for_delete(bfs_fs_t *fs,
     return BFS_OK;
 }
 
-static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
+static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino,
+                                         const char *name, uint8_t name_len,
+                                         bfs_inode_stamp_fn stamp_fn,
+                                         void *stamp_context, uint32_t *ino_out)
 {
     bfs_err_t err = fs_require_dir(fs, parent_ino);
     if (err != BFS_OK) return err;
@@ -221,6 +224,11 @@ static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
     inode.inode_nr = bfs_be32(ino);
     inode.type = bfs_be32(BFS_INODE_FILE);
     inode.link_count = bfs_be32(1);
+    if (stamp_fn) {
+        bfs_inode_stamp_t stamp = {0};
+        stamp_fn(stamp_context, &stamp);
+        bfs_inode_apply_stamp(&inode, &stamp, true);
+    }
     err = bfs_inode_write(&fs->inode_tree, ino, &inode);
     if (err != BFS_OK) {
         fs_release_ino_if_last(fs, ino);
@@ -913,6 +921,15 @@ static bfs_err_t fs_get_comment_unlocked(bfs_fs_t *fs, uint32_t ino, char *buf, 
 }
 bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {
+    return bfs_fs_create_file_with_stamp(fs, parent_ino, name, name_len,
+                                         NULL, NULL, ino_out);
+}
+
+bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
+                                       const char *name, uint8_t name_len,
+                                       bfs_inode_stamp_fn stamp_fn,
+                                       void *stamp_context, uint32_t *ino_out)
+{
     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (parent_ino == 0 || !fs_name_valid(name, name_len))
@@ -920,7 +937,8 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
-        err = fs_create_file_unlocked(fs, parent_ino, name, name_len, ino_out);
+        err = fs_create_file_unlocked(fs, parent_ino, name, name_len,
+                                      stamp_fn, stamp_context, ino_out);
     err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;

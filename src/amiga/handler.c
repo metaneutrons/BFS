@@ -968,6 +968,16 @@ static LONG CheckProtection(struct bfs_handler *h, uint32_t ino, uint32_t mask)
     return 0;
 }
 
+static void SampleInodeStamp(void *context, bfs_inode_stamp_t *stamp)
+{
+    (void)context;
+    struct DateStamp ds;
+    DateStamp(&ds);
+    stamp->days = (uint16_t)ds.ds_Days;
+    stamp->mins = (uint16_t)ds.ds_Minute;
+    stamp->ticks = (uint16_t)ds.ds_Tick;
+}
+
 static LONG MarkFileChanged(struct bfs_handler *h, uint32_t ino)
 {
     h->dirty = true;
@@ -975,11 +985,9 @@ static LONG MarkFileChanged(struct bfs_handler *h, uint32_t ino)
     bfs_inode_t inode;
     bfs_err_t err = bfs_inode_read(&h->fs.inode_tree, ino, &inode);
     if (err != BFS_OK) return Pfs4ToDosError(err);
-    struct DateStamp ds;
-    DateStamp(&ds);
-    inode.modify_days = bfs_be16((uint16_t)ds.ds_Days);
-    inode.modify_mins = bfs_be16((uint16_t)ds.ds_Minute);
-    inode.modify_ticks = bfs_be16((uint16_t)ds.ds_Tick);
+    bfs_inode_stamp_t stamp;
+    SampleInodeStamp(NULL, &stamp);
+    bfs_inode_apply_stamp(&inode, &stamp, false);
     inode.protection = bfs_be32(bfs_be32(inode.protection) & ~FIBF_ARCHIVE);
     return Pfs4ToDosError(bfs_inode_write(&h->fs.inode_tree, ino, &inode));
 }
@@ -1518,33 +1526,13 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                 if (err != BFS_OK) {
                     FreeVec(open_file); res2 = Pfs4ToDosError(err); break;
                 }
-                err = bfs_fs_create_file(&h->fs, parent_ino, namebuf, len, &ino);
+                err = bfs_fs_create_file_with_stamp(&h->fs, parent_ino, namebuf,
+                                                    len, SampleInodeStamp,
+                                                    NULL, &ino);
                 if (err != BFS_OK) {
                     FreeVec(open_file); res2 = Pfs4ToDosError(err); break;
                 }
                 type = BFS_INODE_FILE;
-                /* Set creation/modification timestamp */
-                { struct DateStamp ds; DateStamp(&ds);
-                  bfs_inode_t ni;
-                  err = bfs_inode_read(&h->fs.inode_tree, ino, &ni);
-                  if (err == BFS_OK) {
-                      ni.create_days = bfs_be16((uint16_t)ds.ds_Days);
-                      ni.create_mins = bfs_be16((uint16_t)ds.ds_Minute);
-                      ni.create_ticks = bfs_be16((uint16_t)ds.ds_Tick);
-                      ni.modify_days = ni.create_days;
-                      ni.modify_mins = ni.create_mins;
-                      ni.modify_ticks = ni.create_ticks;
-                      err = bfs_inode_write(&h->fs.inode_tree, ino, &ni);
-                  }
-                }
-                if (err != BFS_OK) {
-                    bfs_err_t cleanup_err = bfs_fs_delete_file(&h->fs, parent_ino, namebuf, len);
-                    if (cleanup_err != BFS_OK) err = cleanup_err;
-                    FreeVec(open_file);
-                    h->dirty = true;
-                    res2 = Pfs4ToDosError(err);
-                    break;
-                }
                 h->dirty = true;
                 h->notify_pending = true;
             } else {
@@ -1647,13 +1635,18 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         res2 = CheckProtection(h, f->inode_nr, FIBF_WRITE);
         if (res2) break;
-        int32_t n = bfs_file_write(f, buf, (uint32_t)len);
+        int32_t n = bfs_file_write_with_stamp(f, buf, (uint32_t)len,
+                                             SampleInodeStamp, NULL, FIBF_ARCHIVE);
         if (n < 0) {
             res1 = -1;
             res2 = Pfs4ToDosError((bfs_err_t)n);
         } else {
-            res2 = n > 0 ? MarkFileChanged(h, f->inode_nr) : 0;
-            res1 = res2 ? -1 : n;
+            if (n > 0) {
+                h->dirty = true;
+                h->notify_pending = true;
+            }
+            res2 = 0;
+            res1 = n;
         }
         break;
     }

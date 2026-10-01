@@ -1,0 +1,76 @@
+make: Entering directory '/tmp/bfs-perf-crc.UBHsLz/buffer-source'
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/alloc.o src/core/alloc.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/bootstrap_alloc.o src/core/bootstrap_alloc.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/btree.o src/core/btree.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/cache.o src/core/cache.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/crc32.o src/core/crc32.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/crc32_zero.o src/core/crc32_zero.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/dir.o src/core/dir.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/extent.o src/core/extent.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/file.o src/core/file.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/fs.o src/core/fs.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/fsck.o src/core/fsck.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/inode.o src/core/inode.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/namespace.o src/core/namespace.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/refcount.o src/core/refcount.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/snapshot.o src/core/snapshot.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/superblock.o src/core/superblock.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/txn.o src/core/txn.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/host/posix_bio.o src/host/posix_bio.c
+make[1]: Entering directory '/tmp/bfs-perf-crc.UBHsLz/buffer-source'
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/alloc.o src/core/alloc.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/bootstrap_alloc.o src/core/bootstrap_alloc.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/btree.o src/core/btree.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/cache.o src/core/cache.c
+ar rcs build/host/libbfs.a build/host/obj/core/alloc.o build/host/obj/core/bootstrap_alloc.o build/host/obj/core/btree.o build/host/obj/core/cache.o build/host/obj/core/crc32.o build/host/obj/core/crc32_zero.o build/host/obj/core/dir.o build/host/obj/core/extent.o build/host/obj/core/file.o build/host/obj/core/fs.o build/host/obj/core/fsck.o build/host/obj/core/inode.o build/host/obj/core/namespace.o build/host/obj/core/refcount.o build/host/obj/core/snapshot.o build/host/obj/core/superblock.o build/host/obj/core/txn.o
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/bfs-conformance-core tools/bfs-conformance-core.c build/host/obj/host/posix_bio.o build/host/libbfs.a
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/crc32.o src/core/crc32.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -DBFS_FUSE_ENABLED -I/usr/include/fuse3 -o build/host/bfs \
+	tools/bfs_host.c tools/bfs_host_common.c src/fuse/bfs_fuse.c \
+	build/host/obj/host/posix_bio.o build/host/libbfs.a -lfuse3 -lpthread
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/crc32_zero.o src/core/crc32_zero.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/dir.o src/core/dir.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/extent.o src/core/extent.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/file.o src/core/file.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/fs.o src/core/fs.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/fsck.o src/core/fsck.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/inode.o src/core/inode.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/namespace.o src/core/namespace.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/refcount.o src/core/refcount.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/snapshot.o src/core/snapshot.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/superblock.o src/core/superblock.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/conformance-fixture-writer tests/conformance/fixture_writer.c build/host/obj/host/posix_bio.o build/host/libbfs.a
+test_catalog_and_direct_replay (test_conformance.ConformanceTests.test_catalog_and_direct_replay) ... cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/txn.o src/core/txn.c
+ok
+test_catalog_preserves_matching_amiga_test_ids (test_conformance.ConformanceTests.test_catalog_preserves_matching_amiga_test_ids) ... ok
+test_conformance_is_a_required_host_and_debian_check (test_conformance.ConformanceTests.test_conformance_is_a_required_host_and_debian_check) ... ok
+test_full_direct_replay (test_conformance.ConformanceTests.test_full_direct_replay) ... cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/host/posix_bio.o src/host/posix_bio.c
+ar rcs build/host/libbfs.a build/host/obj/core/alloc.o build/host/obj/core/bootstrap_alloc.o build/host/obj/core/btree.o build/host/obj/core/cache.o build/host/obj/core/crc32.o build/host/obj/core/crc32_zero.o build/host/obj/core/dir.o build/host/obj/core/extent.o build/host/obj/core/file.o build/host/obj/core/fs.o build/host/obj/core/fsck.o build/host/obj/core/inode.o build/host/obj/core/namespace.o build/host/obj/core/refcount.o build/host/obj/core/snapshot.o build/host/obj/core/superblock.o build/host/obj/core/txn.o
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -DBFS_FUSE_ENABLED -I/usr/include/fuse3 -o build/host/bfs \
+	tools/bfs_host.c tools/bfs_host_common.c src/fuse/bfs_fuse.c \
+	build/host/obj/host/posix_bio.o build/host/libbfs.a -lfuse3 -lpthread
+ok
+test_oracle_and_conformance_programs_are_independent (test_conformance.ConformanceTests.test_oracle_and_conformance_programs_are_independent) ... ok
+test_oracle_exports_namespace_content_and_snapshot_manifest (test_conformance.ConformanceTests.test_oracle_exports_namespace_content_and_snapshot_manifest) ... ok
+test_oracle_fails_closed_on_non_bfs_input (test_conformance.ConformanceTests.test_oracle_fails_closed_on_non_bfs_input) ... ok
+test_oracle_rejects_a_cycle_with_a_valid_node_crc (test_conformance.ConformanceTests.test_oracle_rejects_a_cycle_with_a_valid_node_crc) ... ok
+test_oracle_rejects_corrupted_checksummed_data (test_conformance.ConformanceTests.test_oracle_rejects_corrupted_checksummed_data) ... ok
+test_oracle_rejects_crc_and_unsupported_version (test_conformance.ConformanceTests.test_oracle_rejects_crc_and_unsupported_version) ... ok
+test_oracle_reports_hard_links_as_distinct_namespace_entries (test_conformance.ConformanceTests.test_oracle_reports_hard_links_as_distinct_namespace_entries) ... ok
+test_oracle_uses_documented_directory_key_order_for_hash_collisions (test_conformance.ConformanceTests.test_oracle_uses_documented_directory_key_order_for_hash_collisions) ... ok
+test_oracle_walks_a_committed_image (test_conformance.ConformanceTests.test_oracle_walks_a_committed_image) ... ok
+test_orchestrator_rejects_a_semantically_wrong_backend_result (test_conformance.ConformanceTests.test_orchestrator_rejects_a_semantically_wrong_backend_result) ... ok
+test_orchestrator_rejects_an_inconsistent_backend_exit (test_conformance.ConformanceTests.test_orchestrator_rejects_an_inconsistent_backend_exit) ... ok
+test_persistence_model_separates_acknowledgement_from_media_state (test_conformance.ConformanceTests.test_persistence_model_separates_acknowledgement_from_media_state) ... ok
+test_posix_backend_is_not_linked_to_bfs (test_conformance.ConformanceTests.test_posix_backend_is_not_linked_to_bfs) ... ok
+test_posix_backend_requires_an_owned_nonsymlink_root (test_conformance.ConformanceTests.test_posix_backend_requires_an_owned_nonsymlink_root) ... ok
+test_replay_requires_completion_and_nonempty_selection (test_conformance.ConformanceTests.test_replay_requires_completion_and_nonempty_selection) ... ok
+test_runner_bounds_child_runtime_and_output (test_conformance.ConformanceTests.test_runner_bounds_child_runtime_and_output) ... ok
+
+----------------------------------------------------------------------
+Ran 20 tests in 1.443s
+
+OK
+make[1]: Leaving directory '/tmp/bfs-perf-crc.UBHsLz/buffer-source'
+FUSE qualification passed
+make: Leaving directory '/tmp/bfs-perf-crc.UBHsLz/buffer-source'

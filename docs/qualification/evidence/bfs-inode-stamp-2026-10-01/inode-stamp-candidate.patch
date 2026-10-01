@@ -1,0 +1,308 @@
+diff --git a/include/bfs_file.h b/include/bfs_file.h
+index 72e7a6c..0f4cf3a 100644
+--- a/include/bfs_file.h
++++ b/include/bfs_file.h
+@@ -48,0 +49,9 @@ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len);
++/* Optional completion metadata, folded into the existing final inode COW.
++ * Samples once after positive progress and a fresh inode read, not at intermediate
++ * commits. Clears only the requested protection bits on that fresh inode.
++ * No progress means no sampling/metadata update. NULL/zero is ordinary write.
++ * The sampler follows bfs_inode_stamp_fn's no-reentry contract. */
++int32_t bfs_file_write_with_stamp(bfs_file_t *f, const void *buf, uint32_t len,
++                                  bfs_inode_stamp_fn stamp_fn,
++                                  void *stamp_context, uint32_t protection_clear);
++
+diff --git a/include/bfs_fs.h b/include/bfs_fs.h
+index a042ad2..22f4be2 100644
+--- a/include/bfs_fs.h
++++ b/include/bfs_fs.h
+@@ -138,0 +139,8 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino,
++/* Initialize creation/modification time in the first inode COW mutation.
++ * Samples once immediately before insertion. NULL preserves ordinary create
++ * behavior. The sampler follows bfs_inode_stamp_fn's no-reentry contract. */
++bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
++                                       const char *name, uint8_t name_len,
++                                       bfs_inode_stamp_fn stamp_fn,
++                                       void *stamp_context, uint32_t *ino_out);
++
+diff --git a/include/bfs_inode.h b/include/bfs_inode.h
+index 8d54fe3..fd6c2ea 100644
+--- a/include/bfs_inode.h
++++ b/include/bfs_inode.h
+@@ -14,0 +15,16 @@
++/* Host-order timestamp; on-disk encoding remains in the common inode code. */
++typedef struct {
++    uint16_t days;
++    uint16_t mins;
++    uint16_t ticks;
++} bfs_inode_stamp_t;
++
++/* Non-failing clock sampler. Fully initialize stamp; do not reenter BFS or
++ * mutate its BIO/cache. Called under the filesystem's exclusive operation lock. */
++typedef void (*bfs_inode_stamp_fn)(void *context, bfs_inode_stamp_t *stamp);
++
++/* Set modification fields, and optionally creation fields, in a private inode.
++ * Does not change any other field or perform I/O. Both pointers must be valid. */
++void bfs_inode_apply_stamp(bfs_inode_t *inode, const bfs_inode_stamp_t *stamp,
++                           bool creation);
++
+diff --git a/src/amiga/handler.c b/src/amiga/handler.c
+index c281c65..db83d9f 100644
+--- a/src/amiga/handler.c
++++ b/src/amiga/handler.c
+@@ -970,0 +971,10 @@ static LONG CheckProtection(struct bfs_handler *h, uint32_t ino, uint32_t mask)
++static void SampleInodeStamp(void *context, bfs_inode_stamp_t *stamp)
++{
++    (void)context;
++    struct DateStamp ds;
++    DateStamp(&ds);
++    stamp->days = (uint16_t)ds.ds_Days;
++    stamp->mins = (uint16_t)ds.ds_Minute;
++    stamp->ticks = (uint16_t)ds.ds_Tick;
++}
++
+@@ -978,5 +988,3 @@ static LONG MarkFileChanged(struct bfs_handler *h, uint32_t ino)
+-    struct DateStamp ds;
+-    DateStamp(&ds);
+-    inode.modify_days = bfs_be16((uint16_t)ds.ds_Days);
+-    inode.modify_mins = bfs_be16((uint16_t)ds.ds_Minute);
+-    inode.modify_ticks = bfs_be16((uint16_t)ds.ds_Tick);
++    bfs_inode_stamp_t stamp;
++    SampleInodeStamp(NULL, &stamp);
++    bfs_inode_apply_stamp(&inode, &stamp, false);
+@@ -1521 +1529,3 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+-                err = bfs_fs_create_file(&h->fs, parent_ino, namebuf, len, &ino);
++                err = bfs_fs_create_file_with_stamp(&h->fs, parent_ino, namebuf,
++                                                    len, SampleInodeStamp,
++                                                    NULL, &ino);
+@@ -1526,22 +1535,0 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+-                /* Set creation/modification timestamp */
+-                { struct DateStamp ds; DateStamp(&ds);
+-                  bfs_inode_t ni;
+-                  err = bfs_inode_read(&h->fs.inode_tree, ino, &ni);
+-                  if (err == BFS_OK) {
+-                      ni.create_days = bfs_be16((uint16_t)ds.ds_Days);
+-                      ni.create_mins = bfs_be16((uint16_t)ds.ds_Minute);
+-                      ni.create_ticks = bfs_be16((uint16_t)ds.ds_Tick);
+-                      ni.modify_days = ni.create_days;
+-                      ni.modify_mins = ni.create_mins;
+-                      ni.modify_ticks = ni.create_ticks;
+-                      err = bfs_inode_write(&h->fs.inode_tree, ino, &ni);
+-                  }
+-                }
+-                if (err != BFS_OK) {
+-                    bfs_err_t cleanup_err = bfs_fs_delete_file(&h->fs, parent_ino, namebuf, len);
+-                    if (cleanup_err != BFS_OK) err = cleanup_err;
+-                    FreeVec(open_file);
+-                    h->dirty = true;
+-                    res2 = Pfs4ToDosError(err);
+-                    break;
+-                }
+@@ -1650 +1638,2 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+-        int32_t n = bfs_file_write(f, buf, (uint32_t)len);
++        int32_t n = bfs_file_write_with_stamp(f, buf, (uint32_t)len,
++                                             SampleInodeStamp, NULL, FIBF_ARCHIVE);
+@@ -1655,2 +1644,6 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+-            res2 = n > 0 ? MarkFileChanged(h, f->inode_nr) : 0;
+-            res1 = res2 ? -1 : n;
++            if (n > 0) {
++                h->dirty = true;
++                h->notify_pending = true;
++            }
++            res2 = 0;
++            res1 = n;
+diff --git a/src/core/file.c b/src/core/file.c
+index a9a60c7..ea390e5 100644
+--- a/src/core/file.c
++++ b/src/core/file.c
+@@ -16,0 +17,6 @@
++typedef struct {
++    bfs_inode_stamp_fn stamp_fn;
++    void *stamp_context;
++    uint32_t protection_clear;
++} file_write_metadata_t;
++
+@@ -109 +115,2 @@ bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
+-static bfs_err_t file_update_inode(bfs_file_t *f)
++static bfs_err_t file_update_inode(bfs_file_t *f,
++                                    const file_write_metadata_t *metadata)
+@@ -119,0 +127,10 @@ static bfs_err_t file_update_inode(bfs_file_t *f)
++    if (metadata) {
++        if (metadata->stamp_fn) {
++            bfs_inode_stamp_t stamp = {0};
++            metadata->stamp_fn(metadata->stamp_context, &stamp);
++            bfs_inode_apply_stamp(&inode, &stamp, false);
++        }
++        if (metadata->protection_clear != 0)
++            inode.protection = bfs_be32(bfs_be32(inode.protection) &
++                                        ~metadata->protection_clear);
++    }
+@@ -132 +149 @@ static bfs_err_t file_flush_and_sync(bfs_file_t *f)
+-    bfs_err_t err = file_update_inode(f);
++    bfs_err_t err = file_update_inode(f, NULL);
+@@ -137 +154,2 @@ static bfs_err_t file_flush_and_sync(bfs_file_t *f)
+-static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode)
++static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode,
++                                         const file_write_metadata_t *metadata)
+@@ -148 +166 @@ static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode)
+-        state_error = file_update_inode(f);
++        state_error = file_update_inode(f, metadata);
+@@ -156 +174,2 @@ static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode)
+-static int32_t file_finish_write(bfs_file_t *f, uint32_t total, bfs_err_t error)
++static int32_t file_finish_write(const file_write_metadata_t *metadata,
++                                bfs_file_t *f, uint32_t total, bfs_err_t error)
+@@ -158 +177 @@ static int32_t file_finish_write(bfs_file_t *f, uint32_t total, bfs_err_t error)
+-    bfs_err_t state_error = file_publish_or_recover(f, total > 0);
++    bfs_err_t state_error = file_publish_or_recover(f, total > 0, metadata);
+@@ -357 +376,3 @@ static bfs_err_t file_write_new_run(bfs_file_t *f, const uint8_t *input,
+-int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
++static int32_t file_write_with_metadata_unlocked(
++    bfs_file_t *f, const void *buf, uint32_t len,
++    const file_write_metadata_t *metadata)
+@@ -379 +400 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total, ferr);
++                return file_finish_write(metadata, f, total, ferr);
+@@ -383 +404 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-        if (err != BFS_OK) return file_finish_write(f, total, err);
++        if (err != BFS_OK) return file_finish_write(metadata, f, total, err);
+@@ -394 +415 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-            if (err != BFS_OK) return file_finish_write(f, total, err);
++            if (err != BFS_OK) return file_finish_write(metadata, f, total, err);
+@@ -404 +425 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-            return file_finish_write(f, total, BFS_ERR_INVAL);
++            return file_finish_write(metadata, f, total, BFS_ERR_INVAL);
+@@ -418 +439 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                        return file_finish_write(f, total, serr);
++                        return file_finish_write(metadata, f, total, serr);
+@@ -423 +444 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total, BFS_ERR_NOSPC);
++                return file_finish_write(metadata, f, total, BFS_ERR_NOSPC);
+@@ -428 +449 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total,
++                return file_finish_write(metadata, f, total,
+@@ -433 +454 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-            return file_finish_write(f, total, err);
++            return file_finish_write(metadata, f, total, err);
+@@ -439 +460 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                    return file_finish_write(f, total, err);
++                    return file_finish_write(metadata, f, total, err);
+@@ -446 +467 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                if (err != BFS_OK) return file_finish_write(f, total, err);
++                if (err != BFS_OK) return file_finish_write(metadata, f, total, err);
+@@ -460 +481 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                    return file_finish_write(f, total, err);
++                    return file_finish_write(metadata, f, total, err);
+@@ -463 +484 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total, err);
++                return file_finish_write(metadata, f, total, err);
+@@ -469 +490 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                    return file_finish_write(f, total, serr);
++                    return file_finish_write(metadata, f, total, serr);
+@@ -472 +493 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total, BFS_ERR_NOSPC);
++                return file_finish_write(metadata, f, total, BFS_ERR_NOSPC);
+@@ -477 +498 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total,
++                return file_finish_write(metadata, f, total,
+@@ -484 +505 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total, err);
++                return file_finish_write(metadata, f, total, err);
+@@ -492 +513 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                    return file_finish_write(f, total, err);
++                    return file_finish_write(metadata, f, total, err);
+@@ -495 +516 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total, err);
++                return file_finish_write(metadata, f, total, err);
+@@ -501 +522 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total, err);
++                return file_finish_write(metadata, f, total, err);
+@@ -507 +528 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-                return file_finish_write(f, total, err);
++                return file_finish_write(metadata, f, total, err);
+@@ -518 +539,6 @@ int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
+-    return file_finish_write(f, total, BFS_OK);
++    return file_finish_write(metadata, f, total, BFS_OK);
++}
++
++int32_t bfs_file_write_unlocked(bfs_file_t *f, const void *buf, uint32_t len)
++{
++    return file_write_with_metadata_unlocked(f, buf, len, NULL);
+@@ -572 +598 @@ static bfs_err_t file_zero_truncated_tail(bfs_file_t *f, uint64_t new_size)
+-    err = file_publish_or_recover(f, true);
++    err = file_publish_or_recover(f, true, NULL);
+@@ -580 +606 @@ static bfs_err_t file_finish_truncate(bfs_file_t *f, bfs_err_t error)
+-    bfs_err_t state_error = file_publish_or_recover(f, true);
++    bfs_err_t state_error = file_publish_or_recover(f, true, NULL);
+@@ -704 +730,2 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len)
+-int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
++static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len,
++                                     const file_write_metadata_t *metadata)
+@@ -711 +738 @@ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
+-    if (err == BFS_OK) err = bfs_file_write_unlocked(f, buf, len);
++    if (err == BFS_OK) err = file_write_with_metadata_unlocked(f, buf, len, metadata);
+@@ -715,0 +743,17 @@ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
++int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
++{
++    return file_write_operation(f, buf, len, NULL);
++}
++
++int32_t bfs_file_write_with_stamp(bfs_file_t *f, const void *buf, uint32_t len,
++                                  bfs_inode_stamp_fn stamp_fn,
++                                  void *stamp_context, uint32_t protection_clear)
++{
++    const file_write_metadata_t metadata = {
++        .stamp_fn = stamp_fn,
++        .stamp_context = stamp_context,
++        .protection_clear = protection_clear,
++    };
++    return file_write_operation(f, buf, len, &metadata);
++}
++
+diff --git a/src/core/inode.c b/src/core/inode.c
+index 69b1926..985a129 100644
+--- a/src/core/inode.c
++++ b/src/core/inode.c
+@@ -8,0 +9,13 @@
++void bfs_inode_apply_stamp(bfs_inode_t *inode, const bfs_inode_stamp_t *stamp,
++                           bool creation)
++{
++    inode->modify_days = bfs_be16(stamp->days);
++    inode->modify_mins = bfs_be16(stamp->mins);
++    inode->modify_ticks = bfs_be16(stamp->ticks);
++    if (creation) {
++        inode->create_days = inode->modify_days;
++        inode->create_mins = inode->modify_mins;
++        inode->create_ticks = inode->modify_ticks;
++    }
++}
++
+diff --git a/src/core/namespace.c b/src/core/namespace.c
+index 0999a59..7cb9597 100644
+--- a/src/core/namespace.c
++++ b/src/core/namespace.c
+@@ -212 +212,4 @@ static bfs_err_t fs_queue_extent_tree_for_delete(bfs_fs_t *fs,
+-static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
++static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino,
++                                         const char *name, uint8_t name_len,
++                                         bfs_inode_stamp_fn stamp_fn,
++                                         void *stamp_context, uint32_t *ino_out)
+@@ -223,0 +227,5 @@ static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
++    if (stamp_fn) {
++        bfs_inode_stamp_t stamp = {0};
++        stamp_fn(stamp_context, &stamp);
++        bfs_inode_apply_stamp(&inode, &stamp, true);
++    }
+@@ -914,0 +923,9 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
++{
++    return bfs_fs_create_file_with_stamp(fs, parent_ino, name, name_len,
++                                         NULL, NULL, ino_out);
++}
++
++bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
++                                       const char *name, uint8_t name_len,
++                                       bfs_inode_stamp_fn stamp_fn,
++                                       void *stamp_context, uint32_t *ino_out)
+@@ -923 +940,2 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
+-        err = fs_create_file_unlocked(fs, parent_ino, name, name_len, ino_out);
++        err = fs_create_file_unlocked(fs, parent_ino, name, name_len,
++                                      stamp_fn, stamp_context, ino_out);

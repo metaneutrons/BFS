@@ -1,7 +1,10 @@
 # BFS inode timestamp coalescing
 
-Decision state: design for a bounded follow-on experiment, not implemented or
-accepted. The cache lookup experiment is still being measured. The goal remains
+Decision state: implemented and locally retained after independent review,
+460-test normal/sanitizer gates and eight fresh normal comparisons. The cache
+lookup hint was rejected and is absent from production. See the
+[timestamp result and evidence](../qualification/bfs-inode-stamp-performance-2026-10-01.md).
+The goal remains
 at most five times PFS3 elapsed time in every checked AmigaDOS workload with
 unchanged durability, integrity, snapshot and recovery guarantees. This design
 does not predict its speedup or solve the remaining delete workload by itself.
@@ -68,6 +71,12 @@ provider runs. The callback adds no allocation or fallible post-write step.
 The eliminated second timestamp COW has no independent failure point in the
 new path. This is not permission to weaken the data/graph/recovery oracles or
 omit testing failures of the remaining combined publication.
+
+The retained implementation sets Amiga dirty/notify only after a positive
+combined result. This changes the former separate timestamp-failure side
+effect, where MarkFileChanged could set those flags before its later inode
+update failed. No external OS-notification or hardware-clock test is claimed;
+the exact new date encoding and final callback ordering are tested.
 
 ## Qualification and decision
 
