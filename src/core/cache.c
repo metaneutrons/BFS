@@ -167,6 +167,42 @@ static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
     }
 }
 
+static void *cache_alloc_buffer(bfs_bio_t *bio, size_t size)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+
+    if (size == bio->block_size) {
+        for (uint32_t i = 0; i < BFS_CACHE_SCRATCH_SLOTS; i++) {
+            bfs_cache_scratch_slot_t *slot = &c->scratch[i];
+            if (slot->busy) continue;
+
+            if (!slot->data) {
+                slot->data = malloc(size);
+                if (!slot->data) return NULL;
+            }
+            slot->busy = true;
+            return slot->data;
+        }
+    }
+
+    return malloc(size);
+}
+
+static void cache_free_buffer(bfs_bio_t *bio, void *buffer)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+
+    for (uint32_t i = 0; i < BFS_CACHE_SCRATCH_SLOTS; i++) {
+        bfs_cache_scratch_slot_t *slot = &c->scratch[i];
+        if (slot->data == buffer) {
+            slot->busy = false;
+            return;
+        }
+    }
+
+    free(buffer);
+}
+
 static const bfs_bio_ops_t cache_ops = {
     .read_block  = cache_read,
     .write_block = cache_write,
@@ -177,7 +213,26 @@ static const bfs_bio_ops_t cache_ops = {
     .mark_node_crc_valid = cache_mark_node_crc_valid,
     .node_structure_valid = cache_node_structure_valid,
     .mark_node_structure_valid = cache_mark_node_structure_valid,
+    .alloc_buffer = cache_alloc_buffer,
+    .free_buffer = cache_free_buffer,
 };
+
+void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)
+{
+    if (bio && bio->ops && bio->ops->alloc_buffer && bio->ops->free_buffer)
+        return bio->ops->alloc_buffer(bio, size);
+    return malloc(size);
+}
+
+void bfs_bio_free_buffer(bfs_bio_t *bio, void *buffer)
+{
+    if (!buffer) return;
+    if (bio && bio->ops && bio->ops->alloc_buffer && bio->ops->free_buffer) {
+        bio->ops->free_buffer(bio, buffer);
+        return;
+    }
+    free(buffer);
+}
 
 /* ── Public API ────────────────────────────────────────────── */
 
@@ -227,14 +282,21 @@ void bfs_cache_set_node_write_retention(bfs_cache_t *cache, bool enabled)
 void bfs_cache_destroy(bfs_cache_t *cache)
 {
     if (!cache) return;
-    if (!cache->slots) return;
-    for (uint32_t i = 0; i < cache->num_slots; i++) {
-        free(cache->slots[i].data);
+    if (cache->slots) {
+        for (uint32_t i = 0; i < cache->num_slots; i++) {
+            free(cache->slots[i].data);
+        }
+        free(cache->slots);
     }
-    free(cache->slots);
     cache->slots = NULL;
     cache->num_slots = 0;
     cache->clock = 0;
+
+    for (uint32_t i = 0; i < BFS_CACHE_SCRATCH_SLOTS; i++) {
+        free(cache->scratch[i].data);
+        cache->scratch[i].data = NULL;
+        cache->scratch[i].busy = false;
+    }
 }
 
 void bfs_cache_invalidate(bfs_cache_t *cache)

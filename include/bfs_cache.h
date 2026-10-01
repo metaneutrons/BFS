@@ -27,6 +27,7 @@
 
 #define BFS_CACHE_SLOTS_DEFAULT 8
 #define BFS_CACHE_SLOTS_MAX     128
+#define BFS_CACHE_SCRATCH_SLOTS 4
 
 typedef struct bfs_cache_slot {
     bfs_blk_t blk;         /* cached block number (UINT32_MAX = empty) */
@@ -37,6 +38,11 @@ typedef struct bfs_cache_slot {
     bfs_node_validation_t node_validation;
 } bfs_cache_slot_t;
 
+typedef struct bfs_cache_scratch_slot {
+    uint8_t *data;
+    bool busy;
+} bfs_cache_scratch_slot_t;
+
 typedef struct bfs_cache {
     bfs_bio_t          bio;     /* must be first — inherits bfs_bio_t interface */
     bfs_bio_t         *dev;     /* underlying device */
@@ -44,6 +50,7 @@ typedef struct bfs_cache {
     uint32_t           num_slots;
     uint32_t           clock;   /* LRU clock */
     bool               retain_written_nodes;
+    bfs_cache_scratch_slot_t scratch[BFS_CACHE_SCRATCH_SLOTS];
 } bfs_cache_t;
 
 /* Initialize cache with num_slots buffers. Use 0 for default (8). */
@@ -53,10 +60,12 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
  * default so ordinary write-through cache behavior remains unchanged. */
 void bfs_cache_set_node_write_retention(bfs_cache_t *cache, bool enabled);
 
-/* Destroy cache (free buffers). */
+/* Destroy cache (free resident and retained scratch buffers). All temporary
+ * buffer leases must already be released; a live cache must not be copied. */
 void bfs_cache_destroy(bfs_cache_t *cache);
 
-/* Invalidate all entries (call after format or fsck). */
+/* Invalidate resident entries (call after format or fsck). Temporary leases
+ * and their bytes remain independent of resident cache invalidation. */
 void bfs_cache_invalidate(bfs_cache_t *cache);
 
 #endif /* BFS_CACHE_H */

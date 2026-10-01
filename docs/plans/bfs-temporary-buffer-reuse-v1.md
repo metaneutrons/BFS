@@ -1,6 +1,10 @@
 # BFS temporary block buffer reuse
 
-Decision state: bounded local experiment under the existing performance goal.
+Decision state: retained after functional qualification and eight fresh normal
+measurements. BR1 and BR2 are complete for this increment; the overall goal
+remains unachieved. The
+[qualification report](../qualification/bfs-temporary-buffer-reuse-performance-2026-10-01.md)
+owns the decision, all timings and limitations.
 No new GitHub tracking or publication is authorized. This plan extends the
 existing performance qualification, not its acceptance target: BFS must take
 at most five times PFS3 elapsed time in every checked AmigaDOS workload, with

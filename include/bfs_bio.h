@@ -66,6 +66,12 @@ typedef struct bfs_bio_ops {
                                   const bfs_node_validation_t *context);
     void (*mark_node_structure_valid)(bfs_bio_t *bio, bfs_blk_t blk,
                                        const bfs_node_validation_t *context);
+
+    /* Optional paired hooks for private temporary operation buffers. They are
+     * used only when both hooks are present. Each live allocation must be
+     * independent of other live buffers and resident node-cache bytes. */
+    void *(*alloc_buffer)(bfs_bio_t *bio, size_t size);
+    void (*free_buffer)(bfs_bio_t *bio, void *buffer);
 } bfs_bio_ops_t;
 
 /* Base block device — all implementations embed this as first member */
@@ -74,6 +80,14 @@ struct bfs_bio {
     uint32_t block_size;    /* bytes per block */
     bfs_blk_t block_count; /* total blocks on device */
 };
+
+/* Allocate and release temporary buffers associated with a BIO. Backends
+ * without a complete hook pair use the ordinary heap. Allocation failure is
+ * returned unchanged; NULL release is a no-op. Release through the same BIO
+ * and unchanged hook pair before destroying/reinitializing that backend.
+ * Callers initialize bytes exactly as for malloc; no content is promised. */
+void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size);
+void bfs_bio_free_buffer(bfs_bio_t *bio, void *buffer);
 
 /* Select filesystem geometry without truncating the block address range.
  * A trailing partial block is unused, as in existing v2 volumes.
