@@ -1,0 +1,8 @@
+  FAIL: tests/test_metadata_withdrawal_batch_faults.c:503: allocation_error == -4, expected 0
+=== Metadata Withdrawal Batch Faults ===
+  test_successful_first_request_batch_with_baseline  FAILED
+  test_full_initial_refill_write_failure_preserves_root OK
+  test_prefix_initial_refill_write_failure_preserves_root OK
+  test_pending_headroom_declines_without_refill_write OK
+
+3 passed, 1 failed

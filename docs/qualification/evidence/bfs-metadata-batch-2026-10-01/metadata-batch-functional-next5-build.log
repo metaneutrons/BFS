@@ -1,0 +1,4 @@
+tests/test_metadata_withdrawal_batch.c:1247:15: error: unused variable 'roving_before' [-Werror,-Wunused-variable]
+ 1247 |     bfs_blk_t roving_before = fs->freespace.roving;
+      |               ^~~~~~~~~~~~~
+1 error generated.

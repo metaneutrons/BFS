@@ -1,0 +1,5 @@
+Attempted command: cmake --build build/host-metadata-batch-functional --target test_metadata_withdrawal_batch
+Exit code: 1
+Error: not a CMake build directory (missing CMakeCache.txt)
+
+This was an invocation failure, not a test build result. The focused build uses the direct cc command recorded in metadata-batch-functional-build.log.

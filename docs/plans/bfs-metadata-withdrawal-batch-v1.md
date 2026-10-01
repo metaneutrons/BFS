@@ -1,7 +1,12 @@
 # Bounded metadata withdrawal batch v1
 
-Decision state: design accepted for a bounded local prototype after independent
-review and the clarifications below. It is not implemented or performance-accepted.
+Decision state: the first repeated-tail prototype was implemented, independently
+reviewed, safety-qualified and rejected for normal performance regressions.
+Its production changes were withdrawn and its complete source/evidence retained
+in the [qualification report](../qualification/bfs-metadata-withdrawal-batch-performance-2026-10-01.md).
+The single-extent follow-on below is accepted for a bounded local prototype
+after read-only Luna feasibility review and the primary agent's decision;
+it is not implemented or performance-accepted.
 No epic/milestone issue is created: external tracking and publication are outside
 the present authorization. This plan is a bounded follow-on to the existing
 [Free-Tree plan](bfs-free-tree-multiedit-v1.md), not a second overall performance
@@ -23,7 +28,7 @@ allocators, on-disk format and CLI contracts remain unchanged. This is not
 general multi-edit, in-place reuse of a live node, early committed-node reclaim,
 a dirty metadata cache, commit batching or weaker synchronous error reporting.
 
-## Design and decisions
+## First prototype design and retained guards
 
 ### Provenance and eligibility
 
@@ -45,6 +50,8 @@ invoking its callbacks; the existing seal eligibility is not broadened.
 
 Before any optional refill/write, read the validated root leaf's transaction
 ID and reject a future ID as corruption. An older valid root may be refilled.
+Reject an equal-live tag on a committed superblock root before refill too:
+retirement must not infer ownership of a published block from that tag.
 After refill, require the root ID to equal the live ID exactly and its block
 not to be a published root before granting batch permission. The early check
 is necessary because ordinary COW writes stamp the live ID and could otherwise
@@ -73,6 +80,11 @@ bound. Fewer than two ordinary surplus blocks declines before optional writes.
 Eight is an experimental amortization parameter, not an optimality claim.
 Fragmented highest extents may require the existing repeated tail withdrawals;
 never assume one physical write or one contiguous run will always suffice.
+Before optional start, require the shared B-tree delete pending-free budget
+plus one slot for an initial older root. An owner-bound read-only headroom
+callback provides the existing sink's available slots; tuple matching itself
+does not invoke callbacks. Insufficient headroom declines to the unchanged
+ordinary allocation, which can require less than the combined refill.
 
 Before the optional refill, validate existing stock and the complete validated
 root leaf against the current/committed roots, reserved geometry including both
@@ -134,6 +146,52 @@ The current sealed-commit checkpoint changes the experiment's environment,
 but only new convergence/fault and normal timing evidence can justify retention.
 Repeated failed settlement or material regressions reject this candidate.
 
+## Follow-on: one fitting extent, one COW mutation
+
+The first prototype reduced body writes but increased reserve refills and heap
+work. All four matched create/write/delete timings regressed. Requesting a
+larger highest-tail refill is therefore not an accepted amortization policy.
+This follow-on overrides only that refill mechanism and its range accounting;
+all owner, complete-leaf, stock, root-tag, sink-binding and recovery guards above
+remain. It is not permission to weaken their tests.
+
+Factor the existing tail mutation into one helper taking a validated extent
+key and length. The ordinary highest-key search delegates to that helper with
+unchanged short-tail behavior. Share the in-allocation/phase/accounting/stock
+append step between ordinary refill and the optional batch; do not create a
+second withdrawal or append implementation. Ordinary/public-data allocation
+and the normal recursion floor retain their existing policy.
+
+For the batch alone, reverse-walk the already validated height-one leaf to
+select the highest-key extent fitting a single draw. Let T be floor plus the
+bounded extra and R the starting reserve count. Draw T-R, plus one if an older
+root consumes reserve scratch, minus one if a current root with empty reserve
+returns its replaced root to stock after emergency scratch. Thus the post-COW
+reserve must equal T and total_free must fall by exactly that draw. Emergency
+count decreases exactly when R is zero; an older root contributes one pending
+retirement, while a current unpublished root returns to stock. Require the
+existing global-reserve guard, stock capacity, emergency availability and
+conservative shared delete headroom before optional start.
+
+Decline before mutation if no extent fits, or an exact fit would delete the
+sole leaf entry. Do not assemble a batch from multiple short extents. A valid
+height-one update or nonempty-result delete makes exactly one different-block
+COW write. After optional start, any physical, retirement or accounting error
+fails without ordinary fallback; uncertain state remains sticky. Verify the
+new/live/nonpublished root and exact reserve/free/emergency/pending accounting
+before the first validated pop and successful permission tag.
+
+The fragmented fixture with a large lower run must now witness one COW write,
+not multiple highest-tail writes. Preserve second-write physical fault coverage
+in an explicit no-fit ordinary-fallback fixture, with matching successful
+control and ordinary-path recovery semantics. It is not a second mutation in
+the single-COW batch. Retain full/prefix first-write batch faults and committed
+graph/data remount oracles. A test-only owner-capacity contradiction injected
+after successful scratch BIO may additionally exercise the real mounted
+retirement callback: disclose that artificial state fault, assert the real
+callback failure, and do not call it a naturally reachable valid-context error
+or a controller/hardware power test. No production failure hook is authorized.
+
 ## Delivery and acceptance
 
 ### M1: bounded implementation and ownership proof
@@ -158,6 +216,8 @@ Execution: local experiment only; issue tracking is not authorized.
   readable root or enter sticky recovery; failed node scratch, double frees
   and post-swap retirement failure cannot publish an ambiguous working state.
   Checker/remount graph/data oracles, not only counters, establish recovery.
+  Distinguish single-COW batch faults, ordinary multi-tail fallback faults and
+  deliberately injected owner contradictions; do not relabel one as another.
 
 ### M2: convergence and measured decision
 
@@ -202,3 +262,10 @@ and a factored validated pop that cannot publish success permission early.
 The original sealing predicate, its error precedence and both existing backup
 comparison behaviors are preserved. Remaining convergence/latency uncertainty
 belongs to M1/M2 qualification, not to an assumption of successful sealing.
+
+The implementation review additionally rejected an equal-live tag on a
+published root before refill, and required conservative pending-free headroom
+before optional start. The delete budget is factored in the common B-tree
+header and used by the unchanged generic delete preflight, avoiding a second
+formula. These are batch-specific qualification guards, not a claim that all
+generic tree paths now reject every forged transaction tag.

@@ -1,0 +1,65 @@
+Independent review and qualification boundaries, 2026-10-01
+
+The final production freeze is the five-file identity set in
+metadata-batch-final-source-identities.log. Independent production review found
+no remaining blocker in owner binding, accounting, fallback or sealed commit.
+Two review findings were fixed before the final gates: reject a CRC-valid
+equal-live tag on a committed root before optional refill, and require the
+shared delete pending-free budget plus an initial older-root retirement slot.
+The shared owner gate preserves sealing's original wrapper exclusions and
+the qualified full-width stock versus narrowed old-leaf backup comparisons.
+
+Independent test review verified the frozen functional, fault and sealed
+fixture hashes and found no blocker. The two isolated guard-removal variants
+each fail exactly their corresponding functional probe (15 passed, 1 failed),
+while the frozen production passes all 16. The one-slot probe distinguishes
+optional batch decline from successful ordinary allocation. The full-pending
+fault test alone is only behavior-level fallback coverage: its zero writes and
+AGAIN can also result from the ordinary B-tree headroom preflight.
+
+Full/prefix first-write failures and full/prefix second-write failures are
+tested with matching successful controls. The fragmented latter faults occur
+after one successful actual Free-Tree COW/root swap. Published-root bytes,
+volatile pool inventory, sticky recovery, no physical retry, and committed
+checker/remount graph/data oracles are asserted. A later physical COW-write
+failure is NOT a post-swap retirement-callback failure. No safe failure hook
+was introduced for the real mounted callback. Source review establishes the
+conditional valid-context argument: exclusive operation, exact owner-bound
+sink tuple and successful headroom preflight leave no expected callback error
+without owner-state corruption or forbidden reentry. Existing lower-level
+atomic-root-shift retirement-failure tests also pass, but their substituted
+sink is deliberately not eligible for the new batch. These facts do not prove
+a batch-specific injected retirement failure or hardware flush honesty.
+
+The sealed fixture repair uses an actual different-block leaf COW through an
+active emergency scratch block, preserves all logical keys/values/free totals,
+merges the returned old root into the saved reserve once, and retains the old
+inactive historical-pool provenance assertions. It does not assert whole-node
+byte identity, since transaction/checksum fields legitimately change. Some
+test assertion-failure paths can bypass cleanup or unlock; successful paths
+clean up and the full ASan/UBSan run passes (leak detection disabled as recorded).
+
+Read-only Luna CRC audit found that the Amiga main loop already slices by four;
+proposing slicing-by-four is not a new Amiga optimization. The ABI preserves
+D2-D4/A2-A4, uses stack seed/data/length and D0 return, complements the initial
+state and result, and handles zero length, arbitrary seeds and 0-3 byte tails.
+CRC probe timing samples every 64th node call, not every buffer CRC invocation;
+write timing includes the node checksum helper and zero-byte advancement.
+A future assembly change needs actual 68k vector and callee-saved/stack ABI
+runtime checks, not merely the portable host oracle. No CRC change was made.
+
+All sixteen normal TSVs and both detailed probe orders were independently
+extracted by Luna. Means, matched deltas, eighteen adverse observations,
+twelve same-run threshold failures and the reported operation counts agree.
+This is diagnostic/normal evidence agreement, not statistical precision.
+
+Production and fixture changes were withdrawn with apply_patch from the exact
+validated reverse diff; the new test files were compared with the saved evidence
+then moved recoverably to build/metadata-batch-rejected-source. An initial
+reverse-diff conversion rejected Git's reversed a/b header spelling before any
+edit. The corrected conversion verified the exact six targets and completed.
+The active production/fixture files match cb925e4; both retained patches pass
+git apply --check there. The rejected implementation is not a retained speedup.
+Raw unified patches preserve their required single-space blank context lines.
+An evidence-local .gitattributes exempts only patch context-line end whitespace;
+it does not alter source checks. Copied log final blank lines are normalized.

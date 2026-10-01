@@ -1,0 +1,26 @@
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  build/amiga-inode-stamp/bfshandler
+73e9198e6ef2619248b21913b948654199c5b5202102d32c63a23c3d656aec96  build/amiga-metadata-batch/bfshandler
+17d27e22b6dbd2d1fc11fefb60b033e2d12d61e53c812452286b7d6ed8ea4721  build/amiga-metadata-batch/bfshandler-probe
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  build/amiga/fs-compare-bench
+0f87a0638791a4a2371083339ed014d4d6659dc85a2270bd993f9df1ddf13cc6  build/benchmark/noop-fixed-formatter
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  build/benchmark/retained-final-deep/system/L/pfs3aio
+68f9d3a36c2866d054f41c29b600618642a4807dfb6bca7354d4879a36c9aa7c  /Users/fabian/Documents/fswb/kickstart/A1200.47.102.rom
+build/benchmark/metadata-batch-normal-baseline-bfs-first options=                        0
+
+build/benchmark/metadata-batch-normal-baseline-pfs3-first options=                        0
+
+build/benchmark/metadata-batch-normal-candidate-bfs-first options=                        0
+
+build/benchmark/metadata-batch-normal-candidate-pfs3-first options=                        0
+
+build/benchmark/metadata-batch-normal-repeat-baseline-bfs-first options=                        0
+
+build/benchmark/metadata-batch-normal-repeat-baseline-pfs3-first options=                        0
+
+build/benchmark/metadata-batch-normal-repeat-candidate-bfs-first options=                        0
+
+build/benchmark/metadata-batch-normal-repeat-candidate-pfs3-first options=                        0
+
+build/benchmark/metadata-batch-probe-bfs-first options=                        0
+
+build/benchmark/metadata-batch-probe-pfs3-first options=                        0

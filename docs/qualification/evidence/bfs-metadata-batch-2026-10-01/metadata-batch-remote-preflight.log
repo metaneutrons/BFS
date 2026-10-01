@@ -1,0 +1,57 @@
+17d27e22b6dbd2d1fc11fefb60b033e2d12d61e53c812452286b7d6ed8ea4721  metadata-batch-probe-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-probe-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-probe-bfs-first/system/L/pfs3aio
+a4179a6271319f5d2dcc91ff7c1a16b62b290762caf46b7d8b5ba4c8a6b69934  metadata-batch-probe-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-probe-bfs-first/bench-pfs3.hdf
+17d27e22b6dbd2d1fc11fefb60b033e2d12d61e53c812452286b7d6ed8ea4721  metadata-batch-probe-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-probe-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-probe-pfs3-first/system/L/pfs3aio
+a4179a6271319f5d2dcc91ff7c1a16b62b290762caf46b7d8b5ba4c8a6b69934  metadata-batch-probe-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-probe-pfs3-first/bench-pfs3.hdf
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  metadata-batch-normal-baseline-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-normal-baseline-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-normal-baseline-bfs-first/system/L/pfs3aio
+cfd7f279ac6bd31b539f9084c640ed9186c24a2882057e7f9e8ee27bbaedadd2  metadata-batch-normal-baseline-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-normal-baseline-bfs-first/bench-pfs3.hdf
+73e9198e6ef2619248b21913b948654199c5b5202102d32c63a23c3d656aec96  metadata-batch-normal-candidate-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-normal-candidate-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-normal-candidate-pfs3-first/system/L/pfs3aio
+4eef929edb7c2f7a6bd1e31782e4c46bf98a8fd56299f00fa712c5e0b542e22e  metadata-batch-normal-candidate-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-normal-candidate-pfs3-first/bench-pfs3.hdf
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  metadata-batch-normal-baseline-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-normal-baseline-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-normal-baseline-pfs3-first/system/L/pfs3aio
+cfd7f279ac6bd31b539f9084c640ed9186c24a2882057e7f9e8ee27bbaedadd2  metadata-batch-normal-baseline-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-normal-baseline-pfs3-first/bench-pfs3.hdf
+73e9198e6ef2619248b21913b948654199c5b5202102d32c63a23c3d656aec96  metadata-batch-normal-candidate-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-normal-candidate-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-normal-candidate-bfs-first/system/L/pfs3aio
+4eef929edb7c2f7a6bd1e31782e4c46bf98a8fd56299f00fa712c5e0b542e22e  metadata-batch-normal-candidate-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-normal-candidate-bfs-first/bench-pfs3.hdf
+73e9198e6ef2619248b21913b948654199c5b5202102d32c63a23c3d656aec96  metadata-batch-normal-repeat-candidate-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-normal-repeat-candidate-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-normal-repeat-candidate-bfs-first/system/L/pfs3aio
+4eef929edb7c2f7a6bd1e31782e4c46bf98a8fd56299f00fa712c5e0b542e22e  metadata-batch-normal-repeat-candidate-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-normal-repeat-candidate-bfs-first/bench-pfs3.hdf
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  metadata-batch-normal-repeat-baseline-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-normal-repeat-baseline-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-normal-repeat-baseline-pfs3-first/system/L/pfs3aio
+cfd7f279ac6bd31b539f9084c640ed9186c24a2882057e7f9e8ee27bbaedadd2  metadata-batch-normal-repeat-baseline-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-normal-repeat-baseline-pfs3-first/bench-pfs3.hdf
+73e9198e6ef2619248b21913b948654199c5b5202102d32c63a23c3d656aec96  metadata-batch-normal-repeat-candidate-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-normal-repeat-candidate-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-normal-repeat-candidate-pfs3-first/system/L/pfs3aio
+4eef929edb7c2f7a6bd1e31782e4c46bf98a8fd56299f00fa712c5e0b542e22e  metadata-batch-normal-repeat-candidate-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-normal-repeat-candidate-pfs3-first/bench-pfs3.hdf
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  metadata-batch-normal-repeat-baseline-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  metadata-batch-normal-repeat-baseline-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  metadata-batch-normal-repeat-baseline-bfs-first/system/L/pfs3aio
+cfd7f279ac6bd31b539f9084c640ed9186c24a2882057e7f9e8ee27bbaedadd2  metadata-batch-normal-repeat-baseline-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  metadata-batch-normal-repeat-baseline-bfs-first/bench-pfs3.hdf
+68f9d3a36c2866d054f41c29b600618642a4807dfb6bca7354d4879a36c9aa7c  /home/fabian/Amiga/kick.a1200.47.102.rom
+3.2.35
+Linux cachy 7.1.3-2-cachyos #1 SMP PREEMPT_DYNAMIC Wed, 08 Jul 2026 18:34:01 +0000 x86_64 GNU/Linux
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  8.5G  3.3G  73% /tmp
+/dev/vda2       996G  313G  682G  32% /home
+All ten fresh image inputs and idle preflight verified
