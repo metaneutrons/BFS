@@ -377,6 +377,15 @@ static void read_block(bfs_bio_t *bio, bfs_blk_t blk, uint8_t *buf)
     TEST_ASSERT_EQ(bfs_bio_read(bio, blk, buf), BFS_OK);
 }
 
+/* Insert key k with value k * 10. */
+static bfs_err_t insert_tenfold(bfs_btree_t *tree, uint32_t k)
+{
+    uint32_t key, val;
+    make_key(&key, k);
+    val = bfs_be32(k * 10u);
+    return bfs_btree_insert(tree, &key, &val);
+}
+
 static void test_owned_rewrite_requires_registration(void)
 {
     unlink(TEST_IMG);
@@ -389,15 +398,12 @@ static void test_owned_rewrite_requires_registration(void)
     bfs_btree_owned_t owned = {0};
     tree.free_sink.owned = &owned;
 
-    uint32_t key, val;
-    make_key(&key, 1); val = bfs_be32(10);
-    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 1), BFS_OK);
     bfs_blk_t root = tree.root;
     bfs_blk_t next = ba->next_block;
 
     /* A node the live transaction allocated is rewritten in place. */
-    make_key(&key, 2); val = bfs_be32(20);
-    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 2), BFS_OK);
     TEST_ASSERT_EQ(tree.root, root);
     TEST_ASSERT_EQ(ba->next_block, next);
 
@@ -406,31 +412,28 @@ static void test_owned_rewrite_requires_registration(void)
     bfs_btree_owned_reset(&owned);
     uint8_t before[BLK_SIZE], after[BLK_SIZE];
     read_block(bio, root, before);
-    make_key(&key, 3); val = bfs_be32(30);
-    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 3), BFS_OK);
     TEST_ASSERT(tree.root != root);
     read_block(bio, root, after);
     TEST_ASSERT_MEM_EQ(after, before, BLK_SIZE);
 
     /* The copy is registered and rewritten in place again. */
     root = tree.root;
-    make_key(&key, 4); val = bfs_be32(40);
-    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 4), BFS_OK);
     TEST_ASSERT_EQ(tree.root, root);
 
     /* A different transaction id invalidates every entry. */
     tree.txn_id_fallback = 2;
-    make_key(&key, 5); val = bfs_be32(50);
-    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 5), BFS_OK);
     TEST_ASSERT(tree.root != root);
 
     /* The disabled switch keeps every change copy-on-write. */
     root = tree.root;
     owned.disabled = true;
-    make_key(&key, 6); val = bfs_be32(60);
-    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 6), BFS_OK);
     TEST_ASSERT(tree.root != root);
 
+    uint32_t key, val;
     for (uint32_t i = 1; i <= 6; i++) {
         make_key(&key, i);
         TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);

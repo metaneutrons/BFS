@@ -923,6 +923,30 @@ static void test_owned_nodes_rewrite_in_place_until_publication(void)
     unlink(TEST_IMG);
 }
 
+/* Only committed state survives a remount; the uncommitted transaction is
+ * either fully published by a successful sync or entirely absent. */
+static void check_owned_survivors(bfs_bio_t *bio, bool delete_operation,
+                                  bool committed_new)
+{
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    uint32_t ino, type;
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "kept", 4, &ino, &type),
+                   BFS_OK);
+    bfs_err_t first = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "first", 5, &ino, &type);
+    bfs_err_t second = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "second", 6, &ino, &type);
+    if (!committed_new) {
+        TEST_ASSERT_EQ(first, BFS_ERR_NOTFOUND);
+        TEST_ASSERT_EQ(second, BFS_ERR_NOTFOUND);
+    } else if (delete_operation) {
+        TEST_ASSERT_EQ(first, BFS_ERR_NOTFOUND);
+    } else {
+        TEST_ASSERT_EQ(first, BFS_OK);
+        TEST_ASSERT_EQ(second, BFS_OK);
+    }
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+}
+
 static void run_owned_write_failures(bool delete_operation, unsigned *injected,
                                      unsigned *successes, unsigned *recoveries,
                                      unsigned *fsck_failures)
@@ -960,25 +984,7 @@ static void run_owned_write_failures(bool delete_operation, unsigned *injected,
             if (fs.recovery_error != BFS_OK) (*recoveries)++;
         }
         bfs_fs_abandon(&fs);
-
-        /* Only committed state survives; the uncommitted transaction is
-         * either fully published by the sync above or entirely absent. */
-        TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
-        uint32_t type;
-        TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "kept", 4, &ino, &type),
-                       BFS_OK);
-        bfs_err_t first = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "first", 5, &ino, &type);
-        bfs_err_t second = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "second", 6, &ino, &type);
-        if (!committed_new) {
-            TEST_ASSERT_EQ(first, BFS_ERR_NOTFOUND);
-            TEST_ASSERT_EQ(second, BFS_ERR_NOTFOUND);
-        } else if (delete_operation) {
-            TEST_ASSERT_EQ(first, BFS_ERR_NOTFOUND);
-        } else {
-            TEST_ASSERT_EQ(first, BFS_OK);
-            TEST_ASSERT_EQ(second, BFS_OK);
-        }
-        TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        check_owned_survivors(bio, delete_operation, committed_new);
         if (!hwfail_fsck_clean(bio, delete_operation ? "owned-delete" : "owned-create",
                                0, fail_at))
             (*fsck_failures)++;

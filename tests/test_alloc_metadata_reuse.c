@@ -1236,6 +1236,26 @@ static void test_mounted_warmed_append_write_failure_cuts_preserve_commit(void)
     memory_destroy(&device);
 }
 
+/* Read inode ino through the "before" snapshot and compare it with expected. */
+static void check_snapshot_contents(bfs_fs_t *fs, bfs_bio_t *bio, uint32_t ino,
+                                    const uint8_t *expected, uint8_t *actual,
+                                    uint32_t size)
+{
+    bfs_snapshot_record_t record;
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(fs, "before", NULL, &record),
+                   BFS_OK);
+    bfs_dir_tree_t snapshot_dir;
+    bfs_btree_t snapshot_inode;
+    TEST_ASSERT_EQ(bfs_snapshot_open(&record, bio,
+                    bfs_freespace_allocator(&fs->freespace), &snapshot_dir,
+                    &snapshot_inode), BFS_OK);
+    bfs_file_t snapshot_file;
+    TEST_ASSERT_EQ(bfs_file_open_readonly_view(&snapshot_file, fs,
+                                               &snapshot_inode, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_read(&snapshot_file, actual, size), (int32_t)size);
+    TEST_ASSERT_MEM_EQ(actual, expected, size);
+}
+
 static void snapshot_preservation_case(uint32_t options, bool copy_on_write)
 {
     memory_device_t device;
@@ -1282,21 +1302,7 @@ static void snapshot_preservation_case(uint32_t options, bool copy_on_write)
     TEST_ASSERT_EQ(bfs_file_read(&file, actual, sizeof(actual)),
                    (int32_t)sizeof(actual));
     TEST_ASSERT_MEM_EQ(actual, replacement, sizeof(replacement));
-
-    bfs_snapshot_record_t record;
-    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(&fs, "before", NULL, &record),
-                   BFS_OK);
-    bfs_dir_tree_t snapshot_dir;
-    bfs_btree_t snapshot_inode;
-    TEST_ASSERT_EQ(bfs_snapshot_open(&record, &device.bio,
-                    bfs_freespace_allocator(&fs.freespace), &snapshot_dir,
-                    &snapshot_inode), BFS_OK);
-    bfs_file_t snapshot_file;
-    TEST_ASSERT_EQ(bfs_file_open_readonly_view(&snapshot_file, &fs,
-                                               &snapshot_inode, ino), BFS_OK);
-    TEST_ASSERT_EQ(bfs_file_read(&snapshot_file, actual, sizeof(actual)),
-                   (int32_t)sizeof(actual));
-    TEST_ASSERT_MEM_EQ(actual, original, sizeof(original));
+    check_snapshot_contents(&fs, &device.bio, ino, original, actual, sizeof(actual));
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
     memory_destroy(&device);
 }
