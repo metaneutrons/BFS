@@ -87,6 +87,25 @@ completion marker. Run `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DI
 recheck retained outputs. The result is an emulated AmigaOS comparison, not a
 native-hardware throughput claim.
 
+Set `BFS_BENCH_MODE=durable-compare` to run the same workload with an
+`ACTION_FLUSH` to the volume at the end of the create, write and delete phases,
+inside the timed region. Each filesystem then pays for its own commit within
+the phase that caused it; PFS3, which commits from a timer, otherwise defers
+that work past the measurement or into a later phase. The outputs are
+`bfs.durable.tsv` and `pfs3.durable.tsv` with the schema header
+`FS_DURABLE_COMPARE 1`; validate them with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" durable-compare`.
+
+For a deterministic, emulator-free view of where the core spends its work, run
+`make core-workload-profile` (requires `valgrind`). It replays the six compare
+phases through the core API with the handler's calls and cache settings and
+prints the instruction count of each phase, once with a commit after every
+close and delete (`sync`) and once with one commit per mutating phase
+(`group`). `tools/core-workload-profile.sh MODE N` also lists the N most
+expensive functions of each phase. The counts are x86 host instructions; they
+show relative cost and regressions, not 68k cycles, because CRC and memory
+copies use assembler routines on the Amiga.
+
 For diagnostic phase profiling, build `make amiga-fs-profile-bench`, set
 `BFS_BENCH_MODE=profile`, and use a new `BFS_BENCH_RUN_DIR` with the same builder and
 runner. This measures fresh-file and same-file overwrite calls separately from
