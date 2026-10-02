@@ -3,7 +3,8 @@ cf18b4f89cb7ef4b22e91b78136d7454090950064ca14a39a513c16f05af2844  after-buffer-p
 0e6734481750ecd23a8506c2232f2255620dedc663dbabbf1832e0057ef4b6aa  after-buffer-probe-bfs-first/bench.fs-uae
 09a504c79e5c49a12e3134f9b80d96c99f4cf38b3f5365ab1a76e7520d2303e7  after-buffer-probe-bfs-first/bfs.deep-compare.tsv
 81c4760af5af82566811dbd3329c626358563def824ca64e89d58a929f356091  after-buffer-probe-bfs-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  after-buffer-probe-bfs-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  after-buffer-probe-bfs-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  after-buffer-probe-bfs-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  after-buffer-probe-bfs-first/fs-uae.log
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  after-buffer-probe-bfs-first/info-after-format.txt
 5c633e11fdc4739b0f9e5885fd126bcfbfbf8eee4041e9e714eb18d01e60ce6a  after-buffer-probe-bfs-first/info.txt
@@ -15,7 +16,8 @@ d7d0ae2b5606e68e7ad6f53329e747de7b803bb9c6b5a3df0bb6593512dfd116  after-buffer-p
 0d1279bf8e72e54df9ef22af70a79a59b4a32e3873a97ba71e09792368809471  after-buffer-probe-pfs3-first/bench.fs-uae
 400ba912560ad824485f76593d033ff8ef127a644963e2d6bb7ca02c1ac22656  after-buffer-probe-pfs3-first/bfs.deep-compare.tsv
 81c4760af5af82566811dbd3329c626358563def824ca64e89d58a929f356091  after-buffer-probe-pfs3-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  after-buffer-probe-pfs3-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  after-buffer-probe-pfs3-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  after-buffer-probe-pfs3-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  after-buffer-probe-pfs3-first/fs-uae.log
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  after-buffer-probe-pfs3-first/info-after-format.txt
 5c633e11fdc4739b0f9e5885fd126bcfbfbf8eee4041e9e714eb18d01e60ce6a  after-buffer-probe-pfs3-first/info.txt

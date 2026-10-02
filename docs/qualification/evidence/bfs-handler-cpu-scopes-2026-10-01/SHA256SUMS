@@ -10,7 +10,8 @@ aa69eefaa4374572a46cd4fc9819633a05d07c82e9c0e263fe372051d712b932  handler-cpu-sc
 78f44e6016ba9a718e628eb7d917b9a3784fc0d9193e8c613837e09f22a5af58  handler-cpu-scopes-control-bfs-first/handler-cpu-scopes-control-bfs-first-run.log
 cf88ad20bdaa8423f17c370f90bf2d2facd6b4e6ab416d0af7e3f8c69bda5993  handler-cpu-scopes-control-bfs-first/system/Results/bfs.deep-compare.tsv
 81c4760af5af82566811dbd3329c626358563def824ca64e89d58a929f356091  handler-cpu-scopes-control-bfs-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  handler-cpu-scopes-control-bfs-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  handler-cpu-scopes-control-bfs-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  handler-cpu-scopes-control-bfs-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  handler-cpu-scopes-control-bfs-first/system/Results/info-after-format.txt
 fb1d6e2e3e974897cd84f96a563ce43cc4dc96490cbbaae4c1671b04db713caa  handler-cpu-scopes-control-bfs-first/system/Results/info.txt
 bb3b1fbe23fc998ad3e2fb72e85a0d54a036555869d8db0ebf3c07263b257d42  handler-cpu-scopes-control-bfs-first/system/Results/pfs3.deep-compare.tsv
@@ -24,7 +25,8 @@ f7683848209c77395c9cc340ca9b5ae8768b2e59b42f51e964bc8e23b328f6f2  handler-cpu-sc
 ec6dcc50dfc874aae0e44731be041d74a3d8c3fefdf559018c27feea517752fa  handler-cpu-scopes-control-pfs3-first/handler-cpu-scopes-control-pfs3-first-run.log
 e575165b20e202e7c1cc21f4eefa52bc8d65ce8f719be5609602efa53b9e1bdd  handler-cpu-scopes-control-pfs3-first/system/Results/bfs.deep-compare.tsv
 81c4760af5af82566811dbd3329c626358563def824ca64e89d58a929f356091  handler-cpu-scopes-control-pfs3-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  handler-cpu-scopes-control-pfs3-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  handler-cpu-scopes-control-pfs3-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  handler-cpu-scopes-control-pfs3-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  handler-cpu-scopes-control-pfs3-first/system/Results/info-after-format.txt
 fb1d6e2e3e974897cd84f96a563ce43cc4dc96490cbbaae4c1671b04db713caa  handler-cpu-scopes-control-pfs3-first/system/Results/info.txt
 f4baaf1dd5be1df007cb9714a59674c5a1e3b8efbdce6d0f89f2960aa2f5f73e  handler-cpu-scopes-control-pfs3-first/system/Results/pfs3.deep-compare.tsv
@@ -38,7 +40,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  handler-cpu-sc
 07127593ff912887a41fb3453177a30b5dec587bed35ca69aeed529c64faa89d  handler-cpu-scopes-extended-bfs-first/handler-cpu-scopes-extended-bfs-first-run.log
 ad0a71c27199841ad6c4c018f5ec0cc13012ab37b25b9f8ab188e5cd134c4648  handler-cpu-scopes-extended-bfs-first/system/Results/bfs.deep-compare.tsv
 81c4760af5af82566811dbd3329c626358563def824ca64e89d58a929f356091  handler-cpu-scopes-extended-bfs-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  handler-cpu-scopes-extended-bfs-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  handler-cpu-scopes-extended-bfs-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  handler-cpu-scopes-extended-bfs-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  handler-cpu-scopes-extended-bfs-first/system/Results/info-after-format.txt
 66fa46565f144d42d9b8078e5b1fd3c53938e83df0e4d1c73e513aa4f8000586  handler-cpu-scopes-extended-bfs-first/system/Results/info.txt
 d5133a71d5b6a3afe2d1d1776d8a9cc119b0c145be8ba90cca5c776b2b253c23  handler-cpu-scopes-extended-bfs-first/system/Results/pfs3.deep-compare.tsv
@@ -52,7 +55,8 @@ e124227c9b115e4d1bc1d32fe4b3ce32cd75b6147b8bdc0de32713eef40801f6  handler-cpu-sc
 e124227c9b115e4d1bc1d32fe4b3ce32cd75b6147b8bdc0de32713eef40801f6  handler-cpu-scopes-extended-pfs3-first/handler-cpu-scopes-extended-pfs3-first-run.log
 242875606afbea89a153f9dc7705ce6e878346f372d4dee8095ce5385251cdaa  handler-cpu-scopes-extended-pfs3-first/system/Results/bfs.deep-compare.tsv
 81c4760af5af82566811dbd3329c626358563def824ca64e89d58a929f356091  handler-cpu-scopes-extended-pfs3-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  handler-cpu-scopes-extended-pfs3-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  handler-cpu-scopes-extended-pfs3-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  handler-cpu-scopes-extended-pfs3-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  handler-cpu-scopes-extended-pfs3-first/system/Results/info-after-format.txt
 66fa46565f144d42d9b8078e5b1fd3c53938e83df0e4d1c73e513aa4f8000586  handler-cpu-scopes-extended-pfs3-first/system/Results/info.txt
 d6187cf19aa0dc0056a3b53061c3ceebc225bbf55b6ea761061d7fd641f713ea  handler-cpu-scopes-extended-pfs3-first/system/Results/pfs3.deep-compare.tsv

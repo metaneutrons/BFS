@@ -2,7 +2,8 @@
 736ef9c1ad8c51b1002ba4f23ce86a69ae463910214428aeea2d937346215693  geometry-normal-baseline-bfs-first/bench.fs-uae
 f0d7f6a1ff41fc54beba008e1bff3ed301ec09193bfe12df6bd87b108416c492  geometry-normal-baseline-bfs-first/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  geometry-normal-baseline-bfs-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  geometry-normal-baseline-bfs-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  geometry-normal-baseline-bfs-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  geometry-normal-baseline-bfs-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  geometry-normal-baseline-bfs-first/fs-uae.log
 5bee4f007ab9f3ba6a95d51376089151dc5448df4c16c114b262c30920ba641c  geometry-normal-baseline-bfs-first/geometry-normal-baseline-bfs-first-images.log
 035832d1a531a0e09ec116ea5b30e18cf101207e33b85d11b431457102041b9f  geometry-normal-baseline-bfs-first/geometry-normal-baseline-bfs-first-run.log
@@ -14,7 +15,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  geometry-norma
 ee1148304cc75bef07626751104bfa4011a03a3be1e9e63d4a04ee493d967f09  geometry-normal-baseline-pfs3-first/bench.fs-uae
 8ec68e3d6edd4ef7eca4b5144eeafbd6356fa1faa840cb6c7dc5f8c933f03206  geometry-normal-baseline-pfs3-first/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  geometry-normal-baseline-pfs3-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  geometry-normal-baseline-pfs3-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  geometry-normal-baseline-pfs3-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  geometry-normal-baseline-pfs3-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  geometry-normal-baseline-pfs3-first/fs-uae.log
 d7e74624f6ccce173cc898be6d55c23a59cf48a2e3f37ad3d3a1494dbaabe8ca  geometry-normal-baseline-pfs3-first/geometry-normal-baseline-pfs3-first-images.log
 20197e01e92dba7e14a036dfbec9e580c2e9fdd81542af27a8f712b50abd4dc4  geometry-normal-baseline-pfs3-first/geometry-normal-baseline-pfs3-first-run.log
@@ -26,7 +28,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  geometry-norma
 780caea71f8b708ca2984e3a085291b44bc7e225a25a1972d4b45172588eed4e  geometry-normal-candidate-bfs-first/bench.fs-uae
 cba420f601c799ce846f969ba21baf502d1ef74f24a3ef867f3fad3d79789f55  geometry-normal-candidate-bfs-first/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  geometry-normal-candidate-bfs-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  geometry-normal-candidate-bfs-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  geometry-normal-candidate-bfs-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  geometry-normal-candidate-bfs-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  geometry-normal-candidate-bfs-first/fs-uae.log
 134a6e856b6859589319139950d006a9318ed4a39082f681c669ad9f127c7140  geometry-normal-candidate-bfs-first/geometry-normal-candidate-bfs-first-images.log
 61a5bf7ed3cdc0f53d6d26bc1bf8b1e98242f7b287e3eee9c6225b5316fa1d86  geometry-normal-candidate-bfs-first/geometry-normal-candidate-bfs-first-run.log
@@ -38,7 +41,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  geometry-norma
 5d0d6ded9203482a3bf35004f22cb8f4bf946d164c54546cbbb1f2effd85e41c  geometry-normal-candidate-pfs3-first/bench.fs-uae
 fe0dc5477e246f8015237ba7421ccd4bc0b234ed470bdb51caddab77899c59dd  geometry-normal-candidate-pfs3-first/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  geometry-normal-candidate-pfs3-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  geometry-normal-candidate-pfs3-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  geometry-normal-candidate-pfs3-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  geometry-normal-candidate-pfs3-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  geometry-normal-candidate-pfs3-first/fs-uae.log
 994d5d351bebbbd0ab4d5c48ae95e96e51236f302a6d888074d42f830d24b5cf  geometry-normal-candidate-pfs3-first/geometry-normal-candidate-pfs3-first-images.log
 fbdba3c2be92a0fff8d4bcf56a761d98a78fcc1579ca1eb89fd8ab1fa52e5202  geometry-normal-candidate-pfs3-first/geometry-normal-candidate-pfs3-first-run.log
@@ -50,7 +54,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  geometry-norma
 e61a5cdde69fca6da8030b9439e771e50880e30cecd0e55c1f354f48a759399d  geometry-normal-repeat-baseline-bfs-first/bench.fs-uae
 897d12fabddf1656413aa8ac424a55969143a65e10263ed7a2c51a59ac21227c  geometry-normal-repeat-baseline-bfs-first/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  geometry-normal-repeat-baseline-bfs-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  geometry-normal-repeat-baseline-bfs-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  geometry-normal-repeat-baseline-bfs-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  geometry-normal-repeat-baseline-bfs-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  geometry-normal-repeat-baseline-bfs-first/fs-uae.log
 9ba20613c8439756d0e1b210cf2cae534e16701464be9bb380efcf7871299d38  geometry-normal-repeat-baseline-bfs-first/geometry-normal-repeat-baseline-bfs-first-images.log
 e79a79b2bc620a4b5c43ff21c64bc32fbdb1d88d3ca9341b045025bfe4e903dd  geometry-normal-repeat-baseline-bfs-first/geometry-normal-repeat-baseline-bfs-first-run.log
@@ -62,7 +67,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  geometry-norma
 d506afdb12ee08018818eefafa2612a847e80af4af750202b9cdb54e089545cd  geometry-normal-repeat-baseline-pfs3-first/bench.fs-uae
 915e3992b392520ebaf05e98b741bcd22ae6e4f5614db28601e974beb062144a  geometry-normal-repeat-baseline-pfs3-first/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  geometry-normal-repeat-baseline-pfs3-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  geometry-normal-repeat-baseline-pfs3-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  geometry-normal-repeat-baseline-pfs3-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  geometry-normal-repeat-baseline-pfs3-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  geometry-normal-repeat-baseline-pfs3-first/fs-uae.log
 7030f08c7e09ce7f6dad95adfabbb5f6178c687bfd65e4ef08d5ab5d35d83a1a  geometry-normal-repeat-baseline-pfs3-first/geometry-normal-repeat-baseline-pfs3-first-images.log
 929b8dc990a3194cfc68e55e827a9398bc582ea6d345d697c76b855da4055f7a  geometry-normal-repeat-baseline-pfs3-first/geometry-normal-repeat-baseline-pfs3-first-run.log
@@ -74,7 +80,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  geometry-norma
 e889cf8df912ffad23a5e2d6f95930c9a6942fe4ad8e0bf9205cb526c6fe4755  geometry-normal-repeat-candidate-bfs-first/bench.fs-uae
 44697e3b8686c724c2d8941ef02c8efa982b28178ce55d6a5326b22d08bc4c05  geometry-normal-repeat-candidate-bfs-first/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  geometry-normal-repeat-candidate-bfs-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  geometry-normal-repeat-candidate-bfs-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  geometry-normal-repeat-candidate-bfs-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  geometry-normal-repeat-candidate-bfs-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  geometry-normal-repeat-candidate-bfs-first/fs-uae.log
 683177cc7bed8a6f21796c4cd6576e38fb55f2098fad9e87c1f211826d5c3b6e  geometry-normal-repeat-candidate-bfs-first/geometry-normal-repeat-candidate-bfs-first-images.log
 890bf2016867e8bad50f59a89949e33915cd40a54090f0a3519d01cce1a2a5ec  geometry-normal-repeat-candidate-bfs-first/geometry-normal-repeat-candidate-bfs-first-run.log
@@ -86,7 +93,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  geometry-norma
 3185ea71ffb4bb1d0e653de6c0abdf5832b85ae3cba4ff5171799f9a70767863  geometry-normal-repeat-candidate-pfs3-first/bench.fs-uae
 88497ac0552b8f1663017dbb716ab9c30f586b2e462d95876380459441e06d51  geometry-normal-repeat-candidate-pfs3-first/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  geometry-normal-repeat-candidate-pfs3-first/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  geometry-normal-repeat-candidate-pfs3-first/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  geometry-normal-repeat-candidate-pfs3-first/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  geometry-normal-repeat-candidate-pfs3-first/format-pfs3.txt.b64
 3ae45a69b38ddf6c9dc806bd230c573283d1384ca6db8ce8dd50cd36273a3142  geometry-normal-repeat-candidate-pfs3-first/fs-uae.log
 6bbc4febc12584cd6fb54f6441cf77cd81142e1c652dded0dd307c3b72ee5af3  geometry-normal-repeat-candidate-pfs3-first/geometry-normal-repeat-candidate-pfs3-first-images.log
 2f0776100dcfd8e2f98a1f324929332cc78066c8b5bfd377dfe5754efa224e05  geometry-normal-repeat-candidate-pfs3-first/geometry-normal-repeat-candidate-pfs3-first-run.log

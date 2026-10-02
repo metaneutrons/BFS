@@ -1,0 +1,6 @@
+Exact evidence inventory and SHA-256: PASS (12 files)
+Raw-identity and exact JSON replay from outside the repository: PASS
+Primary six-phase table and metadata/counter distinction: PASS
+Isolated copy of the four pinned raw inputs: PASS
+Owned temporary raw-byte mutation rejects before JSON emission: PASS (expected exit 1)
+Audit verification completed; no new performance or logical qualification claimed

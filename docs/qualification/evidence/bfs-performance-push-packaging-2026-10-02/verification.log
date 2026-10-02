@@ -1,0 +1,3 @@
+Original formatter bytes and ASCII views: PASS (68 records, exact checkpoint identities)
+Original manifests retained and current manifests verified: PASS (9 archives)
+Performance TSVs, fixture sources and production/build tooling unchanged: PASS

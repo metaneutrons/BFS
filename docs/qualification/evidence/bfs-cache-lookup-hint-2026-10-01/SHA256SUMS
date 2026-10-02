@@ -29,7 +29,8 @@ de47613f38e6d9fff4d7977d4893b705a01f8c59384072a8c23c06d24063f1de  docs/qualifica
 3f06105fb917fb9826873a97923709240a2cf3e730e7eb27367aea053952fbab  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/hint-normal-baseline-bfs-first-run.log
 8f728f344dbb536f76fabcddd90dae663897e856d7b0ec3fbb07ffe948439286  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/info-after-format.txt
 99c8e2c49f948ad25477856032a2fc01701cb10da131671827bb79f9735dc2cf  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/info.txt
 1aeb4d80d52f344c249956a3a45416c4c57ad4ffe8392fe0e5b755219f3d0a67  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/pfs3.tsv
@@ -41,7 +42,8 @@ b8b4ca5c3c7499ebfa40d8d061c7d7be4833c29ee0bac04069498196167935d4  docs/qualifica
 2e60bbfd91f2da125695645c0d513a7649b90cea5c071bf6dda4e4d34f5eb3d3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/hint-normal-baseline-pfs3-first-run.log
 eccfb4277c72cf760956d7c125de29ff0ef680833fba41bc7d375bdd3114b487  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/info-after-format.txt
 99c8e2c49f948ad25477856032a2fc01701cb10da131671827bb79f9735dc2cf  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/info.txt
 53d001d5c33c362aeb242d233b24559f2d7cff894be901db840b21a561238620  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/pfs3.tsv
@@ -53,7 +55,8 @@ a763f3074789b24a1b2f6600e3907c1cff9e788e6bfbf84aea4a9deb36a74fd1  docs/qualifica
 b9721153639f92d7aedf0d0a5c1754b7db3415ea9bac7de0103ed40d2c6cdd47  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/hint-normal-candidate-bfs-first-run.log
 ed5ebf7f6231367f04b87f2d5bdfd0f5e47300b03f1278da56196ca2e8b6f738  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/info-after-format.txt
 790b445acea6821045f3e9cecf9010cbebac7733e668ae0039f202384e840ec8  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/info.txt
 f1a61359b7f9fef602b11d3c43f6d088cbf9435ba3fd385f0ebc13f90d2d55bf  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/pfs3.tsv
@@ -65,7 +68,8 @@ f830d2f5726277f9c5576881f4bab0010737084ecfac17b1ffaa6dafa6a67c97  docs/qualifica
 7e333af9afa82e5cdb1620a62b5ed186c10feb291bfdad527a6ac5f5fd4ed561  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/hint-normal-candidate-pfs3-first-run.log
 a04c81ad48ca47033542c70c6bc1b824a8b7ab039a30137dfdf2cc34e5d6d867  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/info-after-format.txt
 790b445acea6821045f3e9cecf9010cbebac7733e668ae0039f202384e840ec8  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/info.txt
 3bafa6c958ea671e98d2675ef36320845a7db74e4cd27aa2ab6e777584d8a286  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/pfs3.tsv
@@ -77,7 +81,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  docs/qualifica
 3c6f65f78013013320c21d1e95f3cd48150e33116d382a06a016124d0d8431c6  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/hint-normal-repeat-baseline-bfs-first-run.log
 b3625767fa7a1941120fb4fc57cd3e60756e2bf5dc2080f56b0deb35d2b4ff29  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/info-after-format.txt
 99c8e2c49f948ad25477856032a2fc01701cb10da131671827bb79f9735dc2cf  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/info.txt
 a97d463c6277bf38f4af4a681cd68a970e7f956f912878e101b955187392ac95  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
@@ -89,7 +94,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  docs/qualifica
 e2f008e15a6a5024a336675b450034e4cd3897e42c7e0f775da7ccb0159631e1  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/hint-normal-repeat-baseline-pfs3-first-run.log
 665573c181e7c7fada3b33cc107fc2e40f51d29b7d8a8de9b1cb69f1730cd569  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/info-after-format.txt
 99c8e2c49f948ad25477856032a2fc01701cb10da131671827bb79f9735dc2cf  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/info.txt
 adf5418c3dc54e997e01c1cfbbb723e87c779701246ae3bee39255f7abe7d6c7  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
@@ -101,7 +107,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  docs/qualifica
 4e95fb11fd42cd4281e2f7020e0f3dbc85dd08d793c5c8f3d1b7170d28a87f6c  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/hint-normal-repeat-candidate-bfs-first-run.log
 f943b02c3d78233f94a17e0dff2811ae02327df1cda7fa23e48fdcef5e15a843  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/info-after-format.txt
 790b445acea6821045f3e9cecf9010cbebac7733e668ae0039f202384e840ec8  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/info.txt
 b3fa82da1466c5347b32ccb891c3abd2206a4d084a3830b01d000f8e85c9edd2  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
@@ -113,7 +120,8 @@ a9d3535c30a0441066ddd1af01515092f296b30efb1c3b5e30ebd9d40eb953d2  docs/qualifica
 c0122f41f09c92ba780af2b90fb009de52c750b217b96ee96a33c505e85ef94a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/hint-normal-repeat-candidate-pfs3-first-run.log
 2dae63c60c9908a1d72a6b99336867174fc5eb241e2c7857cd19582c76978c55  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
 29229f6e4166508e724e5c1fdc73d9015c120ddabc2d61c24af283287d6afc83  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/complete.txt
-baab07d165ae2839d3abd84b88ae5a56033773523b1bea4ce5af79be40bc3cb3  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/format-pfs3.txt
+55a0285791c045d43362ce8bd6dc2c5a13e87210f2f514141a399fb34945bd1a  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/format-pfs3.txt
+f14a1c42f6a165ef4946847708e55a473cb5762fdaa54ed087bd7ae1514b6b85  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/format-pfs3.txt.b64
 3356e7ef51185adef95574fdd8d1328be1d5f7d8d44602d6d67ac7ca538475cb  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/info-after-format.txt
 790b445acea6821045f3e9cecf9010cbebac7733e668ae0039f202384e840ec8  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/info.txt
 cc52e42ab9abd8dc33a73a0d97a88ce9ab1b96dd86828dd9cbecab382a723915  docs/qualification/evidence/bfs-cache-lookup-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
