@@ -2,7 +2,8 @@
 
 Decision state: design approved for staged implementation. The delayed commit
 policy is the chosen default, with a synchronous mode retained as an option.
-Nothing in this plan is implemented on `main`. The prototype numbers below come
+Stage A and the measurement tooling are implemented on
+`perf/txn-owned-nodes`; stages B and C are not implemented. The prototype numbers below come
 from compile-time experiments on `perf/group-commit-inplace-experiments`
 (`1d7483a`) and are indications, not qualification evidence. The goal remains
 at most five times PFS3 elapsed time in every checked AmigaDOS workload while
