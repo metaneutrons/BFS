@@ -152,6 +152,14 @@ struct bfs_handler {
     BYTE diskchange_sig;
     struct IOExtTD *diskchange_req;
     struct Interrupt *diskchange_int;
+#ifdef BFS_GROUP_COMMIT
+    struct MsgPort *commit_port;
+    struct timerequest *commit_timer;
+    bool commit_timer_open;
+    bool commit_timer_pending;
+    bool commit_activity;   /* a packet arrived since the timer was armed */
+    uint8_t commit_periods; /* timer periods elapsed since the first dirtying */
+#endif
 };
 
 /* The source handler keeps this code resident for each mounted snapshot.
@@ -1692,6 +1700,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         bfs_file_t *f = (bfs_file_t *)pkt->dp_Arg1;
         if (!FindOpenFile(h, f)) { res2 = ERROR_INVALID_LOCK; break; }
         bfs_err_t err = BFS_OK;
+#ifndef BFS_GROUP_COMMIT
         if (h->dirty) {
             err = bfs_fs_sync(&h->fs);
             if (err == BFS_OK) {
@@ -1700,6 +1709,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                 h->notify_pending = false;
             }
         }
+#endif
         FreeOpenFile(h, f);
         res1 = (err == BFS_OK) ? DOSTRUE : DOSFALSE;
         res2 = Pfs4ToDosError(err);
@@ -1990,6 +2000,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
     /* ── INHIBIT ───────────────────────────────────────────── */
     case ACTION_INHIBIT:
+#ifdef BFS_GROUP_COMMIT
+        if (pkt->dp_Arg1 && h->dirty) {
+            bfs_err_t err = bfs_fs_sync(&h->fs);
+            if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+            h->dirty = false;
+            if (h->notify_pending) SendNotifications(h);
+            h->notify_pending = false;
+        }
+#endif
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -2736,7 +2755,11 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
     /* Sync standalone metadata operations. File mutations are committed by
      * ACTION_END so rapid writes to one open handle share one transaction. */
+#ifdef BFS_GROUP_COMMIT
+    if (false &&
+#else
     if (h->dirty && res2 == 0 &&
+#endif
                     (pkt->dp_Type == ACTION_DELETE_OBJECT ||
                      pkt->dp_Type == ACTION_CREATE_DIR ||
                      pkt->dp_Type == ACTION_RENAME_OBJECT ||
@@ -3017,10 +3040,44 @@ void EntryPoint(void)
         PutMsg(replyport, pkt->dp_Link);
     }
 
+#ifdef BFS_GROUP_COMMIT
+    h->commit_port = CreateMsgPort();
+    if (h->commit_port) {
+        h->commit_timer = (struct timerequest *)CreateIORequest(h->commit_port,
+                                                                sizeof(struct timerequest));
+        if (h->commit_timer)
+            h->commit_timer_open = OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_VBLANK,
+                                              (struct IORequest *)h->commit_timer, 0) == 0;
+    }
+#endif
+
     /* ── Main packet loop ──────────────────────────────────── */
     while (running) {
-        ULONG sigs = Wait((1UL << h->msgport->mp_SigBit) |
-                          ((h->diskchange_sig >= 0) ? (1UL << h->diskchange_sig) : 0));
+        ULONG wait_mask = (1UL << h->msgport->mp_SigBit) |
+                          ((h->diskchange_sig >= 0) ? (1UL << h->diskchange_sig) : 0);
+#ifdef BFS_GROUP_COMMIT
+        if (h->commit_timer_open) wait_mask |= 1UL << h->commit_port->mp_SigBit;
+#endif
+        ULONG sigs = Wait(wait_mask);
+#ifdef BFS_GROUP_COMMIT
+        if (h->commit_timer_open && (sigs & (1UL << h->commit_port->mp_SigBit)) &&
+            h->commit_timer_pending && CheckIO((struct IORequest *)h->commit_timer)) {
+            WaitIO((struct IORequest *)h->commit_timer);
+            h->commit_timer_pending = false;
+            h->commit_periods++;
+            /* Commit after one quiet period, or at the latest after five. */
+            if (h->dirty && h->fs.mounted &&
+                (!h->commit_activity || h->commit_periods >= 5)) {
+                if (bfs_fs_sync(&h->fs) == BFS_OK) {
+                    h->dirty = false;
+                    if (h->notify_pending) SendNotifications(h);
+                    h->notify_pending = false;
+                }
+            }
+            h->commit_activity = false;
+            if (!h->dirty) h->commit_periods = 0;
+        }
+#endif
 
         if (h->diskchange_sig >= 0 && (sigs & (1UL << h->diskchange_sig))) {
             /* The old medium is gone: discard cached state without writing it
@@ -3041,11 +3098,33 @@ void EntryPoint(void)
                 break;
             }
             if (h->media_changed && !HandlerIsInUse(h)) TryRemountMedia(h);
+#ifdef BFS_GROUP_COMMIT
+            h->commit_activity = true;
+#endif
         }
+#ifdef BFS_GROUP_COMMIT
+        if (running && h->dirty && h->commit_timer_open && !h->commit_timer_pending) {
+            h->commit_timer->tr_node.io_Command = TR_ADDREQUEST;
+            h->commit_timer->tr_time.tv_secs = 0;
+            h->commit_timer->tr_time.tv_micro = 200000;
+            SendIO((struct IORequest *)h->commit_timer);
+            h->commit_timer_pending = true;
+            h->commit_activity = false;
+        }
+#endif
 
     }
 
     /* Cleanup */
+#ifdef BFS_GROUP_COMMIT
+    if (h->commit_timer_pending) {
+        AbortIO((struct IORequest *)h->commit_timer);
+        WaitIO((struct IORequest *)h->commit_timer);
+    }
+    if (h->commit_timer_open) CloseDevice((struct IORequest *)h->commit_timer);
+    if (h->commit_timer) DeleteIORequest((struct IORequest *)h->commit_timer);
+    if (h->commit_port) DeleteMsgPort(h->commit_port);
+#endif
     h->devnode->dn_Task = NULL;
     if (h->diskchange_req) {
         h->diskchange_req->iotd_Req.io_Command = TD_REMCHANGEINT;

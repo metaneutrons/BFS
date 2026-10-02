@@ -510,6 +510,17 @@ static bfs_err_t cow_node(bfs_btree_t *tree, btree_mutation_t *mutation,
 {
     const bfs_btnode_hdr_t *old_hdr = (const bfs_btnode_hdr_t *)buf;
     uint64_t old_txn = bfs_be64(old_hdr->txn_id);
+#ifdef BFS_INPLACE_TXN_NODES
+    /* EXPERIMENT: a node first written by the live transaction is not
+     * referenced by any committed superblock or snapshot, so it can be
+     * rewritten in place without allocating a replacement. */
+    if (old_blk != BFS_BLK_NULL && old_txn >= bfs_btree_txn_id(tree)) {
+        bfs_err_t err = node_write(tree, old_blk, buf);
+        if (err != BFS_OK) return err;
+        *out_blk = old_blk;
+        return BFS_OK;
+    }
+#endif
     bfs_blk_t new_blk = mutation_alloc(tree, mutation);
     if (new_blk == BFS_BLK_NULL) return allocator_failure(tree);
 

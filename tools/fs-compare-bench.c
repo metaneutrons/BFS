@@ -431,6 +431,17 @@ static const char *delete_small_files(const char *drive)
     return NULL;
 }
 
+#ifdef BFS_BENCH_DURABLE
+/* Ask the handler to commit its pending state so the phase time includes
+ * the filesystem's own durability work (for PFS3, its deferred UpdateDisk). */
+static const char *flush_volume(const char *drive)
+{
+    struct MsgPort *port = DeviceProc(drive);
+    if (!port) return "flush-port";
+    return DoPkt(port, ACTION_FLUSH, 0, 0, 0, 0, 0) ? NULL : "flush";
+}
+#endif
+
 typedef const char *(*workload_fn)(const char *drive);
 
 static const char *run_phase(const char *drive, const char *phase,
@@ -446,6 +457,13 @@ static const char *run_phase(const char *drive, const char *phase,
     if (!clock_time(&before)) return timer_error;
     error = workload(drive);
     if (error) return error;
+#ifdef BFS_BENCH_DURABLE
+    if (workload == create_small_files || workload == write_large_file ||
+        workload == delete_small_files) {
+        error = flush_volume(drive);
+        if (error) return error;
+    }
+#endif
     if (!clock_time(&after) || !elapsed_us(&before, &after, &elapsed))
         return timer_error;
     if (probe_enabled) {
