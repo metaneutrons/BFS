@@ -28,6 +28,8 @@ trap 'rm -rf "$work"' EXIT
 grep -q "^PASS" "$work/run.log" || { cat "$work/run.log" >&2; exit 1; }
 
 printf 'CORE_WORKLOAD_PROFILE\t1\nMODE\t%s\n' "$mode"
+# Counts are only comparable between binaries built by the same compiler.
+grep '^COMPILER' "$work/run.log"
 for dump in "$work"/cg.out.*; do
     phase=$(sed -n 's/^desc: Trigger: Client Request: //p' "$dump")
     instructions=$(sed -n 's/^summary: //p' "$dump")

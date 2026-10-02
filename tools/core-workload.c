@@ -214,6 +214,7 @@ int main(int argc, char **argv)
     bfs_cache_destroy(&cache);
     bfs_bio_close(device);
     (void)unlink(image);
+    printf("COMPILER\t%s\n", __VERSION__);
     printf("PASS\t%s\n", group_commit ? "group" : "sync");
     return 0;
 }
