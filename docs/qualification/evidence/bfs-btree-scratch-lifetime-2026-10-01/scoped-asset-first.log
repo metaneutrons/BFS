@@ -1,0 +1,12 @@
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-normal-baseline-bfs-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-normal-baseline-pfs3-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-normal-candidate-bfs-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-normal-candidate-pfs3-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-normal-repeat-baseline-bfs-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-normal-repeat-baseline-pfs3-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-normal-repeat-candidate-bfs-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-normal-repeat-candidate-pfs3-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-probe-bfs-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/btree-scratch-lifetime-probe-pfs3-first (inode/directory, binary)
+ERROR: tracked binary artifact: docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/retained-probe-controls (inode/directory, binary)
+Tracked binaries are forbidden; build or download them at run time.

@@ -1,0 +1,18 @@
+=== Building BFS vs PFS3 Benchmark ===
+  Boot directory: /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/benchmark/crc-native-order-normal-repeat-baseline-pfs3-first/system
+  Order: pfs3-first
+  Mode: compare
+Creating BFS partition (255.5 MiB)...
+  BFS: /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/benchmark/crc-native-order-normal-repeat-baseline-pfs3-first/bench-bfs.hdf (256M)
+Creating PFS3 partition (255.5 MiB)...
+  PFS3: /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/benchmark/crc-native-order-normal-repeat-baseline-pfs3-first/bench-pfs3.hdf ( 80K)
+
+=== Done ===
+
+Test in FS-UAE: BFS_BENCH_RUN_DIR=/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/benchmark/crc-native-order-normal-repeat-baseline-pfs3-first ./emulator-test/run-bench.sh
+
+For real hardware, create a single RDB image:
+  Partition 1: FFS boot (copy /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/benchmark/crc-native-order-normal-repeat-baseline-pfs3-first/system contents)
+  Partition 2: BFS 255.5 MiB (DosType 0x42465300)
+  Partition 3: PFS3 255.5 MiB (DosType 0x50465303)
+  Add bfshandler + pfs3aio to RDB filesystem entries

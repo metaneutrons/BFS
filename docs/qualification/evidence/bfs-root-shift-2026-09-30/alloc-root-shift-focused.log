@@ -1,0 +1,18 @@
+=== Atomic root-leaf allocator run shift ===
+  test_first_fit_run_carve_emits_one_root_leaf_write OK
+  test_roving_wrap_skips_short_first_fit_extent      OK
+  test_exact_fit_and_single_block_keep_legacy_selection OK
+  test_deeper_free_tree_keeps_legacy_mutation_path   OK
+  test_read_failure_does_not_mutate_allocator_state  OK
+  test_read_failure_cuts_cover_every_pre_swap_read   OK
+  test_partial_leaf_write_failure_is_atomic_and_retryable OK
+  test_pending_headroom_again_precedes_root_swap     OK
+  test_current_and_older_root_retirement_ownership   OK
+  test_allocator_scratch_exhaustion_preserves_root   OK
+  test_crc_valid_overlapping_leaf_is_rejected_before_write OK
+  test_mounted_retirement_defer_io_failure           OK
+  test_mounted_retirement_defer_unsupported_failure  OK
+  test_readonly_mount_rejects_single_and_run_allocations OK
+  test_large_append_sync_readonly_remount_and_strict_fsck OK
+
+15 passed, 0 failed

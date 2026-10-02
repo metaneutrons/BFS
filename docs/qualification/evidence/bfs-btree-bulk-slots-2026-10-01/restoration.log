@@ -1,0 +1,5 @@
+5095d6dd4e9e2984eb88a68779d1f5ea3fbb7e39c3c10a22f32de0479d2cb7da  src/core/btree.c
+8f402e80b8c9c097ef50b7e71a211514f3d97962e8c5802f66614316878b7254  src/amiga/string.h
+cf0333a3b7025ce0d4e18c6c65a70b8c5db00eda3345975ac48d366a40e607ea  tests/test_btree_bulk_slots.c
+7ec433160c6aa37c3ebbb5345097ef549638bde634dd8a3aa34e1b898a4a7d19  build/amiga-btree-bulk-slots-restored/bfshandler
+Restored source and normal handler are exact retained baseline bytes

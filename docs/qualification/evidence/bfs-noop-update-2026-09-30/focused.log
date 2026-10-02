@@ -1,0 +1,11 @@
+=== B+tree update no-op ===
+  test_update_same_value_leaf_noop                   OK
+  test_update_same_value_internal_noop               OK
+  test_update_changed_value_still_cows               OK
+  test_update_same_value_does_not_consume_write_fault OK
+  test_update_read_failure_precedes_equality         OK
+  test_update_crc_valid_bad_order_precedes_equality  OK
+  test_update_missing_key_returns_notfound           OK
+  test_update_equal_value_still_requires_pending_headroom OK
+
+8 passed, 0 failed

@@ -1,0 +1,444 @@
+{
+  "strict_gate": "PASS",
+  "runs": [
+    {
+      "label": "btree-bulk-slots-normal-baseline-bfs-first",
+      "suffix": "baseline-bfs-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 183167,
+        "LOOKUP_400_US": 105279,
+        "SMALL_READ_40_US": 47040,
+        "SEQ_WRITE_8M_US": 361341,
+        "SEQ_READ_8M_US": 600508,
+        "SMALL_DELETE_40_US": 171199
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 19840,
+        "LOOKUP_400_US": 66879,
+        "SMALL_READ_40_US": 14271,
+        "SEQ_WRITE_8M_US": 35776,
+        "SEQ_READ_8M_US": 288190,
+        "SMALL_DELETE_40_US": 8449
+      }
+    },
+    {
+      "label": "btree-bulk-slots-normal-candidate-pfs3-first",
+      "suffix": "candidate-pfs3-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 190142,
+        "LOOKUP_400_US": 105023,
+        "SMALL_READ_40_US": 47552,
+        "SEQ_WRITE_8M_US": 324670,
+        "SEQ_READ_8M_US": 502088,
+        "SMALL_DELETE_40_US": 171455
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 17407,
+        "LOOKUP_400_US": 78143,
+        "SMALL_READ_40_US": 13375,
+        "SEQ_WRITE_8M_US": 38015,
+        "SEQ_READ_8M_US": 285566,
+        "SMALL_DELETE_40_US": 7872
+      }
+    },
+    {
+      "label": "btree-bulk-slots-normal-baseline-pfs3-first",
+      "suffix": "baseline-pfs3-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 208894,
+        "LOOKUP_400_US": 104959,
+        "SMALL_READ_40_US": 47743,
+        "SEQ_WRITE_8M_US": 317256,
+        "SEQ_READ_8M_US": 550654,
+        "SMALL_DELETE_40_US": 189054
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16768,
+        "LOOKUP_400_US": 66112,
+        "SMALL_READ_40_US": 16959,
+        "SEQ_WRITE_8M_US": 49280,
+        "SEQ_READ_8M_US": 287358,
+        "SMALL_DELETE_40_US": 7935
+      }
+    },
+    {
+      "label": "btree-bulk-slots-normal-candidate-bfs-first",
+      "suffix": "candidate-bfs-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 222910,
+        "LOOKUP_400_US": 119167,
+        "SMALL_READ_40_US": 44863,
+        "SEQ_WRITE_8M_US": 414142,
+        "SEQ_READ_8M_US": 536637,
+        "SMALL_DELETE_40_US": 183871
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 18240,
+        "LOOKUP_400_US": 67762,
+        "SMALL_READ_40_US": 13503,
+        "SEQ_WRITE_8M_US": 34290,
+        "SEQ_READ_8M_US": 269695,
+        "SMALL_DELETE_40_US": 8065
+      }
+    },
+    {
+      "label": "btree-bulk-slots-normal-repeat-candidate-bfs-first",
+      "suffix": "repeat-candidate-bfs-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 191296,
+        "LOOKUP_400_US": 111551,
+        "SMALL_READ_40_US": 53057,
+        "SEQ_WRITE_8M_US": 338942,
+        "SEQ_READ_8M_US": 553277,
+        "SMALL_DELETE_40_US": 184831
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 17471,
+        "LOOKUP_400_US": 78592,
+        "SMALL_READ_40_US": 14463,
+        "SEQ_WRITE_8M_US": 34560,
+        "SEQ_READ_8M_US": 263153,
+        "SMALL_DELETE_40_US": 7935
+      }
+    },
+    {
+      "label": "btree-bulk-slots-normal-repeat-baseline-pfs3-first",
+      "suffix": "repeat-baseline-pfs3-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 207098,
+        "LOOKUP_400_US": 113662,
+        "SMALL_READ_40_US": 51073,
+        "SEQ_WRITE_8M_US": 327293,
+        "SEQ_READ_8M_US": 494078,
+        "SMALL_DELETE_40_US": 168191
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 15680,
+        "LOOKUP_400_US": 65279,
+        "SMALL_READ_40_US": 14145,
+        "SEQ_WRITE_8M_US": 34431,
+        "SEQ_READ_8M_US": 299006,
+        "SMALL_DELETE_40_US": 8063
+      }
+    },
+    {
+      "label": "btree-bulk-slots-normal-repeat-candidate-pfs3-first",
+      "suffix": "repeat-candidate-pfs3-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 230718,
+        "LOOKUP_400_US": 106751,
+        "SMALL_READ_40_US": 48896,
+        "SEQ_WRITE_8M_US": 340607,
+        "SEQ_READ_8M_US": 496958,
+        "SMALL_DELETE_40_US": 183038
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 31810,
+        "LOOKUP_400_US": 68798,
+        "SMALL_READ_40_US": 13811,
+        "SEQ_WRITE_8M_US": 32896,
+        "SEQ_READ_8M_US": 287678,
+        "SMALL_DELETE_40_US": 8000
+      }
+    },
+    {
+      "label": "btree-bulk-slots-normal-repeat-baseline-bfs-first",
+      "suffix": "repeat-baseline-bfs-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 216011,
+        "LOOKUP_400_US": 111039,
+        "SMALL_READ_40_US": 46592,
+        "SEQ_WRITE_8M_US": 332188,
+        "SEQ_READ_8M_US": 508029,
+        "SMALL_DELETE_40_US": 225598
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 31871,
+        "LOOKUP_400_US": 74431,
+        "SMALL_READ_40_US": 20735,
+        "SEQ_WRITE_8M_US": 41600,
+        "SEQ_READ_8M_US": 303487,
+        "SMALL_DELETE_40_US": 8000
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "label": "bfs-first",
+      "baseline": "btree-bulk-slots-normal-baseline-bfs-first",
+      "candidate": "btree-bulk-slots-normal-candidate-bfs-first",
+      "bfs_change_percent": {
+        "SMALL_CREATE_40_US": 21.69768571849733,
+        "LOOKUP_400_US": 13.191614661993366,
+        "SMALL_READ_40_US": -4.627976190476191,
+        "SEQ_WRITE_8M_US": 14.612512834137291,
+        "SEQ_READ_8M_US": -10.636161383362086,
+        "SMALL_DELETE_40_US": 7.401912394348087
+      },
+      "pfs3_change_percent": {
+        "SMALL_CREATE_40_US": -8.064516129032262,
+        "LOOKUP_400_US": 1.320294860868132,
+        "SMALL_READ_40_US": -5.3815429892789535,
+        "SEQ_WRITE_8M_US": -4.153622540250446,
+        "SEQ_READ_8M_US": -6.417641139526009,
+        "SMALL_DELETE_40_US": -4.544916558172563
+      }
+    },
+    {
+      "label": "pfs3-first",
+      "baseline": "btree-bulk-slots-normal-baseline-pfs3-first",
+      "candidate": "btree-bulk-slots-normal-candidate-pfs3-first",
+      "bfs_change_percent": {
+        "SMALL_CREATE_40_US": -8.976801631449439,
+        "LOOKUP_400_US": 0.06097619070304372,
+        "SMALL_READ_40_US": -0.40005864734097285,
+        "SEQ_WRITE_8M_US": 2.336914037874771,
+        "SEQ_READ_8M_US": -8.81969439975011,
+        "SMALL_DELETE_40_US": -9.30898050292509
+      },
+      "pfs3_change_percent": {
+        "SMALL_CREATE_40_US": 3.8108301526717625,
+        "LOOKUP_400_US": 18.19790658276863,
+        "SMALL_READ_40_US": -21.133321540185158,
+        "SEQ_WRITE_8M_US": -22.859172077922075,
+        "SEQ_READ_8M_US": -0.6236123581038311,
+        "SMALL_DELETE_40_US": -0.7939508506616288
+      }
+    },
+    {
+      "label": "repeat-bfs-first",
+      "baseline": "btree-bulk-slots-normal-repeat-baseline-bfs-first",
+      "candidate": "btree-bulk-slots-normal-repeat-candidate-bfs-first",
+      "bfs_change_percent": {
+        "SMALL_CREATE_40_US": -11.441546958256755,
+        "LOOKUP_400_US": 0.46109925341546454,
+        "SMALL_READ_40_US": 13.875772664835173,
+        "SEQ_WRITE_8M_US": 2.0331860271894264,
+        "SEQ_READ_8M_US": 8.906578167781753,
+        "SMALL_DELETE_40_US": -18.070638924103932
+      },
+      "pfs3_change_percent": {
+        "SMALL_CREATE_40_US": -45.182140503906375,
+        "LOOKUP_400_US": 5.590412596901828,
+        "SMALL_READ_40_US": -30.248372317337836,
+        "SEQ_WRITE_8M_US": -16.92307692307692,
+        "SEQ_READ_8M_US": -13.290190354117314,
+        "SMALL_DELETE_40_US": -0.8125000000000049
+      }
+    },
+    {
+      "label": "repeat-pfs3-first",
+      "baseline": "btree-bulk-slots-normal-repeat-baseline-pfs3-first",
+      "candidate": "btree-bulk-slots-normal-repeat-candidate-pfs3-first",
+      "bfs_change_percent": {
+        "SMALL_CREATE_40_US": 11.40522844257308,
+        "LOOKUP_400_US": -6.080308282451474,
+        "SMALL_READ_40_US": -4.2625261880054,
+        "SEQ_WRITE_8M_US": 4.067914681951645,
+        "SEQ_READ_8M_US": 0.5829039139569003,
+        "SMALL_DELETE_40_US": 8.827464014126797
+      },
+      "pfs3_change_percent": {
+        "SMALL_CREATE_40_US": 102.86989795918369,
+        "LOOKUP_400_US": 5.390707578241094,
+        "SMALL_READ_40_US": -2.3612583951926447,
+        "SEQ_WRITE_8M_US": -4.458191745810458,
+        "SEQ_READ_8M_US": -3.7885527380721484,
+        "SMALL_DELETE_40_US": -0.7813468932159284
+      }
+    }
+  ],
+  "summary": [
+    {
+      "phase": "SMALL_CREATE_40_US",
+      "baseline_bfs_mean_us": 203792.5,
+      "candidate_bfs_mean_us": 208766.5,
+      "bfs_change_percent": 2.4407178870665014,
+      "baseline_pfs3_mean_us": 21039.75,
+      "candidate_pfs3_mean_us": 21232,
+      "pfs3_change_percent": 0.9137465987000715,
+      "candidate_ratio_of_means": 9.832634702336096,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "btree-bulk-slots-normal-candidate-pfs3-first",
+          "ratio": 10.92330671568909
+        },
+        {
+          "label": "btree-bulk-slots-normal-candidate-bfs-first",
+          "ratio": 12.22094298245614
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-bfs-first",
+          "ratio": 10.949344628241086
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-pfs3-first",
+          "ratio": 7.253002200565859
+        }
+      ],
+      "same_run_threshold_failures": 4,
+      "adverse_bfs_pairs": 2
+    },
+    {
+      "phase": "LOOKUP_400_US",
+      "baseline_bfs_mean_us": 108734.75,
+      "candidate_bfs_mean_us": 110623,
+      "bfs_change_percent": 1.7365653574409334,
+      "baseline_pfs3_mean_us": 68175.25,
+      "candidate_pfs3_mean_us": 73323.75,
+      "pfs3_change_percent": 7.551860829259893,
+      "candidate_ratio_of_means": 1.5086926132392302,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "btree-bulk-slots-normal-candidate-pfs3-first",
+          "ratio": 1.3439847459145413
+        },
+        {
+          "label": "btree-bulk-slots-normal-candidate-bfs-first",
+          "ratio": 1.7586110209261827
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-bfs-first",
+          "ratio": 1.4193683835504887
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-pfs3-first",
+          "ratio": 1.5516584784441407
+        }
+      ],
+      "same_run_threshold_failures": 0,
+      "adverse_bfs_pairs": 3
+    },
+    {
+      "phase": "SMALL_READ_40_US",
+      "baseline_bfs_mean_us": 48112,
+      "candidate_bfs_mean_us": 48592,
+      "bfs_change_percent": 0.9976720984369747,
+      "baseline_pfs3_mean_us": 16527.5,
+      "candidate_pfs3_mean_us": 13788,
+      "pfs3_change_percent": -16.575404628649228,
+      "candidate_ratio_of_means": 3.5242239628662606,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "btree-bulk-slots-normal-candidate-pfs3-first",
+          "ratio": 3.555289719626168
+        },
+        {
+          "label": "btree-bulk-slots-normal-candidate-bfs-first",
+          "ratio": 3.3224468636599274
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-bfs-first",
+          "ratio": 3.6684643573255893
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-pfs3-first",
+          "ratio": 3.540366374628919
+        }
+      ],
+      "same_run_threshold_failures": 0,
+      "adverse_bfs_pairs": 1
+    },
+    {
+      "phase": "SEQ_WRITE_8M_US",
+      "baseline_bfs_mean_us": 334519.5,
+      "candidate_bfs_mean_us": 354590.25,
+      "bfs_change_percent": 5.999874446781139,
+      "baseline_pfs3_mean_us": 40271.75,
+      "candidate_pfs3_mean_us": 34940.25,
+      "pfs3_change_percent": -13.238808842426764,
+      "candidate_ratio_of_means": 10.148474896430335,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "btree-bulk-slots-normal-candidate-pfs3-first",
+          "ratio": 8.540576088386164
+        },
+        {
+          "label": "btree-bulk-slots-normal-candidate-bfs-first",
+          "ratio": 12.077631962671333
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-bfs-first",
+          "ratio": 9.807349537037037
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-pfs3-first",
+          "ratio": 10.354055204280156
+        }
+      ],
+      "same_run_threshold_failures": 4,
+      "adverse_bfs_pairs": 4
+    },
+    {
+      "phase": "SEQ_READ_8M_US",
+      "baseline_bfs_mean_us": 538317.25,
+      "candidate_bfs_mean_us": 522240,
+      "bfs_change_percent": -2.986575295515792,
+      "baseline_pfs3_mean_us": 294510.25,
+      "candidate_pfs3_mean_us": 276523,
+      "pfs3_change_percent": -6.107512387090097,
+      "candidate_ratio_of_means": 1.888595162066085,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "btree-bulk-slots-normal-candidate-pfs3-first",
+          "ratio": 1.7582205164480365
+        },
+        {
+          "label": "btree-bulk-slots-normal-candidate-bfs-first",
+          "ratio": 1.9897921726394632
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-bfs-first",
+          "ratio": 2.102491706345738
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-pfs3-first",
+          "ratio": 1.7274800297554904
+        }
+      ],
+      "same_run_threshold_failures": 0,
+      "adverse_bfs_pairs": 2
+    },
+    {
+      "phase": "SMALL_DELETE_40_US",
+      "baseline_bfs_mean_us": 188510.5,
+      "candidate_bfs_mean_us": 180798.75,
+      "bfs_change_percent": -4.090886184058718,
+      "baseline_pfs3_mean_us": 8111.75,
+      "candidate_pfs3_mean_us": 7968,
+      "pfs3_change_percent": -1.7721206891238017,
+      "candidate_ratio_of_means": 22.690606174698797,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "btree-bulk-slots-normal-candidate-pfs3-first",
+          "ratio": 21.780360772357724
+        },
+        {
+          "label": "btree-bulk-slots-normal-candidate-bfs-first",
+          "ratio": 22.798636081835088
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-bfs-first",
+          "ratio": 23.293131695022055
+        },
+        {
+          "label": "btree-bulk-slots-normal-repeat-candidate-pfs3-first",
+          "ratio": 22.87975
+        }
+      ],
+      "same_run_threshold_failures": 4,
+      "adverse_bfs_pairs": 2
+    }
+  ],
+  "adverse_bfs_pairs": 14,
+  "same_run_threshold_failures": 12,
+  "limit": "Four normal runs per revision, balanced order/repeat. No scheduling control or causal precision; probe and microtimes are separate evidence."
+}

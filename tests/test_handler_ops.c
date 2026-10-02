@@ -42,11 +42,11 @@ static uint32_t handler_create_write(const char *name, uint8_t nlen,
 {
     uint32_t ino;
     assert(bfs_fs_create_file(&fs, 1, name, nlen, &ino) == BFS_OK);
-    bfs_fs_sync(&fs); /* sync after metadata op */
+    assert(bfs_fs_sync(&fs) == BFS_OK); /* sync after metadata op */
     bfs_file_t f;
     assert(bfs_file_open(&f, &fs, ino) == BFS_OK);
     assert(bfs_file_write(&f, data, size) == (int32_t)size);
-    bfs_fs_sync(&fs); /* sync on close */
+    assert(bfs_fs_sync(&fs) == BFS_OK); /* sync on close */
     return ino;
 }
 
@@ -55,17 +55,17 @@ static void handler_overwrite(uint32_t ino, const void *data, uint32_t size)
 {
     bfs_file_t f;
     assert(bfs_file_open(&f, &fs, ino) == BFS_OK);
-    bfs_file_truncate(&f, 0);
+    assert(bfs_file_truncate(&f, 0) == BFS_OK);
     /* Handler does NOT sync after FINDOUTPUT (excluded from auto-sync) */
     assert(bfs_file_write(&f, data, size) == (int32_t)size);
-    bfs_fs_sync(&fs); /* sync on close */
+    assert(bfs_fs_sync(&fs) == BFS_OK); /* sync on close */
 }
 
 /* Simulate handler: delete file + sync */
 static void handler_delete(const char *name, uint8_t nlen)
 {
     assert(bfs_fs_delete_file(&fs, 1, name, nlen) == BFS_OK);
-    bfs_fs_sync(&fs); /* sync after metadata op */
+    assert(bfs_fs_sync(&fs) == BFS_OK); /* sync after metadata op */
 }
 
 static uint32_t xorshift(uint32_t s) { s^=s<<13; s^=s>>17; s^=s<<5; return s; }

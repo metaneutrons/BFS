@@ -1,0 +1,19 @@
+# Machine Info
+Kickstart 47.102, Workbench 47.2
+System: 68040 68040/060-FPU   (INST: Cache Burst) (DATA: NoCache NoBurst)
+Type  Available    In-Use   Maximum   Largest
+chip    2028040     52728   2080768   2027968
+fast    7737688    650920   8388608   7732640
+total   9765728    703648  10469376   7732640
+
+
+Mounted disks:
+Unit      Size       Used       Free Full Errs   Status   Name
+DF0       No disk present
+DH0      4095M    4194304    4194303  50%   0  Read/Write System
+DH1       255M         36      65372   0%   0  Read/Write BFSTest
+DH2       Not a DOS disk
+
+Volumes available:
+BFSTest [Mounted]
+System [Mounted]

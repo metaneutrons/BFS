@@ -1,0 +1,9 @@
+  FAIL: tests/test_cache_buffer_faults.c:275: bfs_btree_insert(&tree, &key30, &value30) == -2, expected 0
+=== Temporary buffer allocation faults ===
+  test_each_lazy_slot_failure                        OK
+  test_overflow_and_multiblock_failures              OK
+  test_cache_initialization_failures                 OK
+  test_replacement_second_buffer_failure_releases_first OK
+  test_height_one_mutations_reuse_warm_scratch       FAILED
+
+4 passed, 1 failed

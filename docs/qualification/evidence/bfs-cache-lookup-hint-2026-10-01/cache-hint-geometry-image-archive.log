@@ -1,0 +1,35 @@
+f0d7f6a1ff41fc54beba008e1bff3ed301ec09193bfe12df6bd87b108416c492  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-baseline-bfs-first/system/Results/bfs.tsv
+28a8e8aeb19a3b52a3d1ff5e8516c12fe6c4bdce9d256ad0ee148e846884d02b  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-baseline-bfs-first/system/Results/pfs3.tsv
+fe0dc5477e246f8015237ba7421ccd4bc0b234ed470bdb51caddab77899c59dd  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-candidate-pfs3-first/system/Results/bfs.tsv
+b510d0b3447e39d5f24d36c261621d3ec8d8fb9b5ae8813032ee4a5df9dde89c  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+8ec68e3d6edd4ef7eca4b5144eeafbd6356fa1faa840cb6c7dc5f8c933f03206  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-baseline-pfs3-first/system/Results/bfs.tsv
+6eb448a06bb0373d37801e84f2a94b54e9eea5b1644d18d3f6911b3d5fece19a  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+cba420f601c799ce846f969ba21baf502d1ef74f24a3ef867f3fad3d79789f55  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-candidate-bfs-first/system/Results/bfs.tsv
+711202440ea8cf351685addea48089ef42cb188711f96040616ab813d8610dd7  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-candidate-bfs-first/system/Results/pfs3.tsv
+44697e3b8686c724c2d8941ef02c8efa982b28178ce55d6a5326b22d08bc4c05  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+6befed1214ed20a61f4216d159c6772084ee2942b61c38c3fa06e2fe2c7a0129  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+915e3992b392520ebaf05e98b741bcd22ae6e4f5614db28601e974beb062144a  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+6b210bfe5c4374d54b991eaf554bb02f3a3a7d9fce57ed168e53a27d4eb33135  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+88497ac0552b8f1663017dbb716ab9c30f586b2e462d95876380459441e06d51  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+f42c0e4b470d7dccdac1506fd9fd3d7e8a5c57fbe7bcd2d3e27e1b6eeec6fec5  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+897d12fabddf1656413aa8ac424a55969143a65e10263ed7a2c51a59ac21227c  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+525c04e191a162667842c36328e23d75ac85ecc64424058ba41bbafd695be14f  /tmp/bfs-perf-crc.UBHsLz/geometry-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+f0d7f6a1ff41fc54beba008e1bff3ed301ec09193bfe12df6bd87b108416c492  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-baseline-bfs-first/system/Results/bfs.tsv
+28a8e8aeb19a3b52a3d1ff5e8516c12fe6c4bdce9d256ad0ee148e846884d02b  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-baseline-bfs-first/system/Results/pfs3.tsv
+fe0dc5477e246f8015237ba7421ccd4bc0b234ed470bdb51caddab77899c59dd  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-candidate-pfs3-first/system/Results/bfs.tsv
+b510d0b3447e39d5f24d36c261621d3ec8d8fb9b5ae8813032ee4a5df9dde89c  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+8ec68e3d6edd4ef7eca4b5144eeafbd6356fa1faa840cb6c7dc5f8c933f03206  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-baseline-pfs3-first/system/Results/bfs.tsv
+6eb448a06bb0373d37801e84f2a94b54e9eea5b1644d18d3f6911b3d5fece19a  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+cba420f601c799ce846f969ba21baf502d1ef74f24a3ef867f3fad3d79789f55  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-candidate-bfs-first/system/Results/bfs.tsv
+711202440ea8cf351685addea48089ef42cb188711f96040616ab813d8610dd7  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-candidate-bfs-first/system/Results/pfs3.tsv
+44697e3b8686c724c2d8941ef02c8efa982b28178ce55d6a5326b22d08bc4c05  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+6befed1214ed20a61f4216d159c6772084ee2942b61c38c3fa06e2fe2c7a0129  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+915e3992b392520ebaf05e98b741bcd22ae6e4f5614db28601e974beb062144a  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+6b210bfe5c4374d54b991eaf554bb02f3a3a7d9fce57ed168e53a27d4eb33135  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+88497ac0552b8f1663017dbb716ab9c30f586b2e462d95876380459441e06d51  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+f42c0e4b470d7dccdac1506fd9fd3d7e8a5c57fbe7bcd2d3e27e1b6eeec6fec5  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+897d12fabddf1656413aa8ac424a55969143a65e10263ed7a2c51a59ac21227c  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+525c04e191a162667842c36328e23d75ac85ecc64424058ba41bbafd695be14f  /home/fabian/.cache/bfs-performance/seal-geometry-2026-10-01/geometry-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  4.5G  7.3G  39% /tmp
+/dev/vda2       996G  313G  683G  32% /home

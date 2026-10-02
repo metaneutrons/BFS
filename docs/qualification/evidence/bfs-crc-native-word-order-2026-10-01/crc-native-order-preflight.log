@@ -1,0 +1,57 @@
+04b5b982291e772d9dd538114aaf4c256058affd7f34f16423242c6a2092df23  crc-native-order-probe-bfs-first/system/L/bfshandler
+5126e8640256e19bc2f5661d8b735f7961c4882edf3d8046b26bd2badfc86277  crc-native-order-probe-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-probe-bfs-first/system/L/pfs3aio
+28bb93cd0b06568cad7e206019e33ee71640415e33af378c8489de6dd533c41b  crc-native-order-probe-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-probe-bfs-first/bench-pfs3.hdf
+04b5b982291e772d9dd538114aaf4c256058affd7f34f16423242c6a2092df23  crc-native-order-probe-pfs3-first/system/L/bfshandler
+5126e8640256e19bc2f5661d8b735f7961c4882edf3d8046b26bd2badfc86277  crc-native-order-probe-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-probe-pfs3-first/system/L/pfs3aio
+28bb93cd0b06568cad7e206019e33ee71640415e33af378c8489de6dd533c41b  crc-native-order-probe-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-probe-pfs3-first/bench-pfs3.hdf
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  crc-native-order-normal-baseline-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  crc-native-order-normal-baseline-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-normal-baseline-bfs-first/system/L/pfs3aio
+cfd7f279ac6bd31b539f9084c640ed9186c24a2882057e7f9e8ee27bbaedadd2  crc-native-order-normal-baseline-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-normal-baseline-bfs-first/bench-pfs3.hdf
+968f7d00f4aafafb832af70bff6b8c65b669a9dd9dd62f4e2f83414ceeb08b3e  crc-native-order-normal-candidate-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  crc-native-order-normal-candidate-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-normal-candidate-pfs3-first/system/L/pfs3aio
+13bf317bbf0613941a27fe80858713aa0415a7c1993771144947fb00d082cf3c  crc-native-order-normal-candidate-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-normal-candidate-pfs3-first/bench-pfs3.hdf
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  crc-native-order-normal-baseline-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  crc-native-order-normal-baseline-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-normal-baseline-pfs3-first/system/L/pfs3aio
+cfd7f279ac6bd31b539f9084c640ed9186c24a2882057e7f9e8ee27bbaedadd2  crc-native-order-normal-baseline-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-normal-baseline-pfs3-first/bench-pfs3.hdf
+968f7d00f4aafafb832af70bff6b8c65b669a9dd9dd62f4e2f83414ceeb08b3e  crc-native-order-normal-candidate-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  crc-native-order-normal-candidate-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-normal-candidate-bfs-first/system/L/pfs3aio
+13bf317bbf0613941a27fe80858713aa0415a7c1993771144947fb00d082cf3c  crc-native-order-normal-candidate-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-normal-candidate-bfs-first/bench-pfs3.hdf
+968f7d00f4aafafb832af70bff6b8c65b669a9dd9dd62f4e2f83414ceeb08b3e  crc-native-order-normal-repeat-candidate-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  crc-native-order-normal-repeat-candidate-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-normal-repeat-candidate-bfs-first/system/L/pfs3aio
+13bf317bbf0613941a27fe80858713aa0415a7c1993771144947fb00d082cf3c  crc-native-order-normal-repeat-candidate-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-normal-repeat-candidate-bfs-first/bench-pfs3.hdf
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  crc-native-order-normal-repeat-baseline-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  crc-native-order-normal-repeat-baseline-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-normal-repeat-baseline-pfs3-first/system/L/pfs3aio
+cfd7f279ac6bd31b539f9084c640ed9186c24a2882057e7f9e8ee27bbaedadd2  crc-native-order-normal-repeat-baseline-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-normal-repeat-baseline-pfs3-first/bench-pfs3.hdf
+968f7d00f4aafafb832af70bff6b8c65b669a9dd9dd62f4e2f83414ceeb08b3e  crc-native-order-normal-repeat-candidate-pfs3-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  crc-native-order-normal-repeat-candidate-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-normal-repeat-candidate-pfs3-first/system/L/pfs3aio
+13bf317bbf0613941a27fe80858713aa0415a7c1993771144947fb00d082cf3c  crc-native-order-normal-repeat-candidate-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-normal-repeat-candidate-pfs3-first/bench-pfs3.hdf
+572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3  crc-native-order-normal-repeat-baseline-bfs-first/system/L/bfshandler
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  crc-native-order-normal-repeat-baseline-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  crc-native-order-normal-repeat-baseline-bfs-first/system/L/pfs3aio
+cfd7f279ac6bd31b539f9084c640ed9186c24a2882057e7f9e8ee27bbaedadd2  crc-native-order-normal-repeat-baseline-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  crc-native-order-normal-repeat-baseline-bfs-first/bench-pfs3.hdf
+68f9d3a36c2866d054f41c29b600618642a4807dfb6bca7354d4879a36c9aa7c  /home/fabian/Amiga/kick.a1200.47.102.rom
+3.2.35
+Linux cachy 7.1.3-2-cachyos #1 SMP PREEMPT_DYNAMIC Wed, 08 Jul 2026 18:34:01 +0000 x86_64 GNU/Linux
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  8.5G  3.3G  73% /tmp
+/dev/vda2       996G  313G  682G  32% /home
+All ten fresh image inputs and idle preflight verified

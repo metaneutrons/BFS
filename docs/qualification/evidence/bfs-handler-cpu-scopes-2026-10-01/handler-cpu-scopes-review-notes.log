@@ -1,0 +1,27 @@
+Diagnostic-only increment against production baseline at 6598d19.
+The normal handler reproduced the retained 572c469e5914c8d7ee71a8e09fe53a5cdbf4b9775931506a49881ad3866a71e3 identity exactly.
+Two independent normal/probe/guest m68k build directories agree byte-for-byte.
+Normal and actual ASan/UBSan runs each pass 48 suites / 460 cases.
+ASAN_OPTIONS=detect_leaks=0; no LeakSanitizer claim.
+Packet and shared header author: Luna metadata_batch_tests.
+Guest/verifier/test author: Luna metadata_single_extent_faults.
+Core wrapper and guest-input builder author: primary agent.
+Independent packet and core wrapper review: Luna cache_lookup_hint_review, no blocker; source-only, not a build/byte identity proof.
+Packet RESET/READ bypass timing. One elapsed value records parent and exactly one category.
+Reply/scheduling can lie within inclusive packet EClock wall time. Do not interpret it as exclusive CPU cycles.
+Core original work bodies and non-probe signatures remain unchanged.
+Create/file-write common wrappers measure stamped/unstamped public operations once.
+The file-write scope does not claim direct unlocked/append APIs outside that common body.
+iface_free times invalid-argument errors and excludes only valid in_alloc recursive returns.
+Seal timing ends when the seal function returns, before subsequent commit fences.
+Every work return is recorded; no success-only measurement.
+Initial verifier run: 18/31 failed because host AWK rejected multiline call expressions, not semantic rejection behavior. Original failed log is retained.
+Minimal line-layout fix: 31/31 verifier tests, bash -n and shellcheck pass (run2).
+Independent guest/verifier review found a strict parsing defect: new ULONG call/sample fields lacked uint32 bounds; AWK rounds 9007199254740992 and 9007199254740993 to the same numeric value.
+This malformed-output acceptance is impossible for legitimate ULONG snapshots but was a verifier blocker. New uint32/uint64 bounds and exact decimal call/sample/tick comparisons now pass 34 verifier tests (run3).
+Boundary tests accept internally consistent max-legal values, reject ULONG/U64 overflow, >2^53 mismatch and oversized self-consistent packet partitions; old schema-10 acceptance deliberately remains unchanged.
+Independent final fixed verifier/test review by Luna metadata_batch_tests found no remaining blocker; exact frozen hashes match.
+First full quality pass contains 75 tests and shell/static checks; it predates the range fix and is not the final verifier qualification.
+Final full quality pass contains 78 tests plus shellcheck/actionlint/clang static analysis. All gates completed before emulator timing.
+All four fresh images are prepared before timing. Old control guest and handler remain immutable; new guest is selected through BFS_BENCH_GUEST_FILE with unchanged builder default.
+No CI, push, PR, merge, release or hardware qualification.

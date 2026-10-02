@@ -1,0 +1,7 @@
+tests/test_metadata_withdrawal_batch.c:1565:44: error: incompatible pointer types passing 'bfs_fs_t *' (aka 'struct bfs_fs *') to parameter of type 'bfs_freespace_t *' (aka 'struct bfs_freespace *') [-Werror,-Wincompatible-pointer-types]
+ 1565 |         allocated[i] = bfs_freespace_alloc(fs, 1);
+      |                                            ^~
+include/bfs_alloc.h:66:48: note: passing argument to parameter 'fs' here
+   66 | bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count);
+      |                                                ^
+1 error generated.

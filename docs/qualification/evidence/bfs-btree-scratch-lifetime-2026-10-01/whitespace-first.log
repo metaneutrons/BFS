@@ -1,0 +1,16 @@
+docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/baseline.c:482: trailing whitespace.
++/* Centralized node deallocation. Blocks from the current transaction are
+docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/candidate.c:497: trailing whitespace.
++/* Centralized node deallocation. Blocks from the current transaction are
+docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/candidate.patch:8: trailing whitespace.
++
+docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/candidate.patch:26: trailing whitespace.
++
+docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/candidate.patch:32: trailing whitespace.
++
+docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/candidate.patch:46: trailing whitespace.
++
+docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/candidate.patch:94: trailing whitespace.
++
+docs/qualification/evidence/bfs-btree-scratch-lifetime-2026-10-01/negative-core.c:493: trailing whitespace.
++/* Centralized node deallocation. Blocks from the current transaction are

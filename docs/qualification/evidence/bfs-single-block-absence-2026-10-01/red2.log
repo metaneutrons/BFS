@@ -1,0 +1,29 @@
+  FAIL: tests/test_alloc_metadata_reuse.c:268: fixture.device.reads == 3, expected 1
+  FAIL: tests/test_alloc_metadata_reuse.c:479: fixture.device.reads == 2, expected 1
+=== Mounted metadata free-block reuse ===
+  test_dealloc_stashes_without_free_tree_mutation    OK
+  test_alloc_pops_stashed_suffix_above_height_one_floor OK
+  test_alloc_stashed_stock_uses_one_root_read        FAILED
+  test_alloc_never_spends_the_height_one_floor       OK
+  test_allocator_skips_inactive_historical_emergency_slots OK
+  test_duplicate_and_reserve_blocks_are_rejected_unchanged OK
+  test_free_tree_overlap_is_rejected_unchanged       OK
+  test_single_block_absence_checks_only_the_height_one_root FAILED
+  test_single_block_absence_rejects_bad_root_crc_on_first_read OK
+  test_single_block_absence_rejects_bad_key_order_on_first_read OK
+  test_single_block_absence_rejects_bad_selected_extent_on_first_read OK
+  test_live_and_committed_roots_are_never_stashed    OK
+  test_active_emergency_return_does_not_enter_ordinary_stock OK
+  test_inactive_historical_emergency_dealloc_stays_out_of_reserve OK
+  test_validation_read_failure_does_not_stash_or_pop OK
+  test_write_fault_does_not_affect_write_free_metadata_stash OK
+  test_btree_partial_write_abort_restores_owned_spare OK
+  test_short_transactions_keep_legacy_and_warmup_saturates OK
+  test_metadata_warmup_resets_at_a_new_live_id       OK
+  test_ineligible_contexts_and_full_stock_use_legacy_free_path OK
+  test_deeper_free_tree_uses_legacy_free_path        OK
+  test_mounted_append_overwrite_commits_and_remount  OK
+  test_mounted_warmed_append_write_failure_cuts_preserve_commit OK
+  test_snapshot_keeps_old_data_across_overwrite_and_remount OK
+
+22 passed, 2 failed

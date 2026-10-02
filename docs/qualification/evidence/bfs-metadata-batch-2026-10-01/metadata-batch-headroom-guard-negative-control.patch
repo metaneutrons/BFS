@@ -1,0 +1,21 @@
+--- a/src/core/alloc.c
++++ b/src/core/alloc.c
+@@ -1662,18 +1662,6 @@
+         return err;
+     }
+ 
+-    /* A tail can consume its complete extent and require a delete rather
+-     * than an update. Budget the shared delete preflight for every tail,
+-     * plus the one slot retired by an initial older root. This read-only
+-     * callback is owner-bound; low headroom declines before optional writes
+-     * so the ordinary smaller allocation remains available. */
+-    uint32_t pending_budget = BFS_BTREE_DELETE_FREE_BUDGET(fs->tree.height) +
+-        (root_is_current ? 0u : 1u);
+-    if (fs->tree.free_sink.headroom(owner) < pending_budget) {
+-        free(storage);
+-        return BFS_ERR_UNSUPPORTED;
+-    }
+-
+     uint32_t original_emergency_count = bfs_be32(fs->sb->emergency_count);
+     if (fs->global_reserve == UINT32_MAX ||
+         (fs->reserve_count == 0 && original_emergency_count == 0)) {

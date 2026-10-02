@@ -3,3 +3,7 @@ engines:
   opengrep:
     exclude_paths:
       - "tests/**"
+# Retained qualification evidence is archived, checksum-pinned material
+# (copied tests, probe sources and one-off summaries), not shipped code.
+exclude_paths:
+  - "docs/qualification/evidence/**"

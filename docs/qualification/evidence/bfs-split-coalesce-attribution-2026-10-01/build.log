@@ -1,0 +1,42 @@
++ make amiga amiga-perf-probe-handler amiga-fs-compare-bench BUILD_AMIGA=/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-first
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -O2 -m68020 -noixemul -fomit-frame-pointer -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include -o /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-first/bfshandler \
+		src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s src/amiga/handler.c src/amiga/amiga_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c \
+		-nostdlib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib -lamiga -lgcc -lnix -s
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -O2 -m68020 -noixemul -fomit-frame-pointer -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include -DBFS_PERF_PROBE=1 -o /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-first/bfshandler-probe \
+		src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s src/amiga/handler.c src/amiga/amiga_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c src/amiga/perf_probe.c \
+		-nostdlib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib -lamiga -lgcc -lnix -s
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -noixemul -m68020 -O2 \
+		-Isrc/amiga \
+		-I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include \
+		-B/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/ \
+		-L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib \
+		-o /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-first/fs-compare-bench tools/fs-compare-bench.c -lamiga
++ cmp /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-first/bfshandler /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-single-block-absence/bfshandler
++ set +x
+7ec433160c6aa37c3ebbb5345097ef549638bde634dd8a3aa34e1b898a4a7d19  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-first/bfshandler
+4c5ae37e9afbc859bbe5c2d33815df50c66a9503d6c22a69575922ffd483d566  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-first/bfshandler-probe
+44581f7f8ce259b34a7521337a45f7f0957662a20a256e623730e3efb512a024  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-first/fs-compare-bench
++ make amiga amiga-perf-probe-handler amiga-fs-compare-bench BUILD_AMIGA=/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-second
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -O2 -m68020 -noixemul -fomit-frame-pointer -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include -o /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-second/bfshandler \
+		src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s src/amiga/handler.c src/amiga/amiga_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c \
+		-nostdlib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib -lamiga -lgcc -lnix -s
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -O2 -m68020 -noixemul -fomit-frame-pointer -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include -DBFS_PERF_PROBE=1 -o /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-second/bfshandler-probe \
+		src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s src/amiga/handler.c src/amiga/amiga_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c src/amiga/perf_probe.c \
+		-nostdlib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib -lamiga -lgcc -lnix -s
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -noixemul -m68020 -O2 \
+		-Isrc/amiga \
+		-I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include \
+		-B/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/ \
+		-L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib \
+		-o /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-second/fs-compare-bench tools/fs-compare-bench.c -lamiga
++ cmp /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-second/bfshandler /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-single-block-absence/bfshandler
++ set +x
+7ec433160c6aa37c3ebbb5345097ef549638bde634dd8a3aa34e1b898a4a7d19  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-second/bfshandler
+4c5ae37e9afbc859bbe5c2d33815df50c66a9503d6c22a69575922ffd483d566  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-second/bfshandler-probe
+44581f7f8ce259b34a7521337a45f7f0957662a20a256e623730e3efb512a024  /Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/amiga-split-coalesce-attribution-second/fs-compare-bench
+8c51b403bf1d064d97164189cd73219fb8cf77f51367e39a9ba43483e4c2580a  src/core/btree.c
+9460027844d8e0224860170171a0fe903fd24ae8706eb6f49a56b3013d1421ae  src/core/alloc.c
+67e8bf1e769171c4345737f291e21e5f448ea85862ed992c02ff1591385f26f2  src/amiga/perf_probe.h
+c9179beea634e146e37b3ee10f1d4c1f3882354f8f27b0910345d0e58aeca0f7  src/amiga/perf_paths.h
+9a5041041a1da521584821fdc6689e497950fde5213737544fa50f2dd51f5a93  tools/fs-compare-bench.c
+PASS: two identical diagnostic builds; both normal handlers exactly retained

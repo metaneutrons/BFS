@@ -1,0 +1,223 @@
+diff --git a/tests/test_txn_sealed_preflight.c b/tests/test_txn_sealed_preflight.c
+index fc6f9bf..555c6cf 100644
+--- a/tests/test_txn_sealed_preflight.c
++++ b/tests/test_txn_sealed_preflight.c
+@@ -852,6 +852,210 @@ static bool block_array_contains(const bfs_blk_t *blocks, uint32_t count,
+     return false;
+ }
+ 
++typedef struct {
++    uint32_t *keys;
++    uint32_t *lengths;
++    uint32_t count;
++    uint32_t capacity;
++    bfs_blk_t block_count;
++    uint64_t total_free;
++    uint32_t previous_end;
++    bool valid;
++} free_leaf_capture_t;
++
++static bool capture_valid_free_leaf_entry(const void *key, const void *value,
++                                          void *ctx)
++{
++    free_leaf_capture_t *capture = (free_leaf_capture_t *)ctx;
++    uint32_t start = bfs_load_be32(key);
++    uint32_t length = bfs_load_be32(value);
++    if (!capture->valid || capture->count >= capture->capacity ||
++        start == BFS_BLK_NULL || start >= capture->block_count || length == 0 ||
++        length > capture->block_count - start ||
++        (capture->count > 0 && start < capture->previous_end) ||
++        capture->total_free > UINT32_MAX - (uint64_t)length) {
++        capture->valid = false;
++        return false;
++    }
++
++    memcpy(&capture->keys[capture->count], key, sizeof(*capture->keys));
++    memcpy(&capture->lengths[capture->count], value,
++           sizeof(*capture->lengths));
++    capture->count++;
++    capture->previous_end = start + length;
++    capture->total_free += length;
++    return true;
++}
++
++static bool capture_valid_free_leaf(bfs_freespace_t *space,
++                                    free_leaf_capture_t *capture)
++{
++    bfs_err_t err = bfs_btree_scan(&space->tree, NULL,
++                                   capture_valid_free_leaf_entry, capture);
++    return err == BFS_OK && capture->valid && capture->count > 0 &&
++           capture->total_free == space->total_free;
++}
++
++/* Force the current live Free-Tree root through the real emergency allocator
++ * branch, while retaining its returned old root alongside the withheld stock. */
++static bool make_live_free_root_emergency_origin(fixture_t *fixture)
++{
++    bfs_fs_t *fs = &fixture->fs;
++    bfs_freespace_t *space = &fs->freespace;
++    if (!space->tree.bio || !space->sb) return false;
++    uint32_t capacity = bfs_btree_leaf_capacity(&space->tree);
++    uint32_t emergency_count = bfs_be32(space->sb->emergency_count);
++    uint32_t reserve_count = space->reserve_count;
++    bfs_blk_t old_root = space->tree.root;
++    uint64_t old_root_txn = 0;
++    if (space->tree.height != 1 || capacity == 0 ||
++        old_root == BFS_BLK_NULL || old_root >= fixture->device.bio.block_count ||
++        reserve_count > BFS_ALLOC_RESERVE_SIZE ||
++        reserve_count >= BFS_ALLOC_RESERVE_SIZE || emergency_count == 0 ||
++        emergency_count > BFS_EMERGENCY_POOL_SIZE || space->in_alloc ||
++        space->allocation_frozen || space->tree.free_sink_err != BFS_OK ||
++        fs->recovery_error != BFS_OK ||
++        fs->pending_count > bfs_fs_pending_cap(fs) ||
++        space->tree.free_sink.capacity == 0 ||
++        !space->tree.free_sink.headroom ||
++        space->tree.free_sink.headroom(space->tree.free_sink.ctx) == 0 ||
++        bfs_btree_root_leaf_txn_id(&space->tree, &old_root_txn) != BFS_OK ||
++        old_root_txn != fs->live_txn_id ||
++        fs->live_txn_id != bfs_txn_id(&fs->txn) ||
++        fs->live_txn_id <= bfs_be64(fs->txn.sb.txn_id) ||
++        old_root == bfs_be32(fs->txn.sb.free_tree_root) ||
++        old_root == bfs_be32(fs->txn.sb_new.free_tree_root) ||
++        reserve_contains(space, old_root))
++        return false;
++
++    bfs_blk_t scratch = bfs_be32(
++        space->sb->emergency_pool[emergency_count - 1u]);
++    for (uint32_t i = 0; i < emergency_count; i++)
++        if (bfs_be32(space->sb->emergency_pool[i]) == old_root) return false;
++    if (scratch == old_root || reserve_contains(space, scratch) ||
++        scratch == BFS_BLK_NULL ||
++        scratch >= fixture->device.bio.block_count ||
++        pending_contains(fs, scratch) || current_leaf_contains(fs, scratch) ||
++        root_contains(fs, scratch))
++        return false;
++
++    if ((size_t)capacity > SIZE_MAX / (4u * sizeof(uint32_t))) return false;
++    uint32_t *leaf_storage = malloc((size_t)capacity * 4u * sizeof(uint32_t));
++    if (!leaf_storage) return false;
++    free_leaf_capture_t before_leaf = {
++        .keys = leaf_storage,
++        .lengths = leaf_storage + capacity,
++        .capacity = capacity,
++        .block_count = fixture->device.bio.block_count,
++        .valid = true,
++    };
++    free_leaf_capture_t after_leaf = {
++        .keys = leaf_storage + 2u * capacity,
++        .lengths = leaf_storage + 3u * capacity,
++        .capacity = capacity,
++        .block_count = fixture->device.bio.block_count,
++        .valid = true,
++    };
++    if (!capture_valid_free_leaf(space, &before_leaf)) {
++        free(leaf_storage);
++        return false;
++    }
++
++    bfs_blk_t saved_reserve[BFS_ALLOC_RESERVE_SIZE];
++    memcpy(saved_reserve, space->reserve, sizeof(saved_reserve));
++    uint32_t pending_count = fs->pending_count;
++    uint32_t total_free = space->total_free;
++    bfs_blk_t roving = space->roving;
++    bfs_err_t free_sink_err = space->tree.free_sink_err;
++    bfs_superblock_t original_sb = *space->sb;
++    bfs_superblock_t expected_sb = original_sb;
++    expected_sb.emergency_count = bfs_be32(emergency_count - 1u);
++    uint32_t writes_before = fixture->device.writes;
++
++    /* Withhold every ordinary reserve block. The one root COW must consume the
++     * last active emergency block; its old live root returns to reserve[0]. */
++    space->reserve_count = 0;
++    space->in_alloc = true;
++    bfs_err_t replace_err = bfs_btree_replace_root_leaf(
++        &space->tree, before_leaf.keys, before_leaf.lengths, before_leaf.count);
++    space->in_alloc = false;
++
++    if (space->tree.root == old_root &&
++        space->tree.height == 1 && space->total_free == total_free &&
++        space->roving == roving && fs->pending_count == pending_count &&
++        space->tree.free_sink_err == free_sink_err) {
++        uint32_t after_emergency_count = bfs_be32(space->sb->emergency_count);
++        bool scratch_returned = space->reserve_count == 1 &&
++            space->reserve[0] == scratch &&
++            after_emergency_count == emergency_count - 1u;
++        bool allocation_unchanged = space->reserve_count == 0 &&
++            after_emergency_count == emergency_count;
++        bool superblock_unchanged = allocation_unchanged &&
++            memcmp(space->sb, &original_sb, sizeof(original_sb)) == 0;
++        bool superblock_scratch_withdrawn = scratch_returned &&
++            memcmp(space->sb, &expected_sb, sizeof(expected_sb)) == 0;
++        if ((superblock_unchanged || superblock_scratch_withdrawn) &&
++            fs->pending_count == pending_count) {
++            *space->sb = original_sb;
++            memcpy(space->reserve, saved_reserve, sizeof(saved_reserve));
++            space->reserve_count = reserve_count;
++        }
++        free(leaf_storage);
++        return false;
++    }
++
++    bool returned_old_root = space->reserve_count == 1 &&
++        space->reserve[0] == old_root;
++    bool emergency_root_installed = replace_err == BFS_OK &&
++        space->tree.root == scratch && space->tree.root != old_root &&
++        space->tree.height == 1 && returned_old_root &&
++        memcmp(space->sb, &expected_sb, sizeof(expected_sb)) == 0 &&
++        space->total_free == total_free && space->roving == roving &&
++        fs->pending_count == pending_count &&
++        space->tree.free_sink_err == free_sink_err &&
++        fixture->device.writes - writes_before == 1;
++    if (!returned_old_root ||
++        block_array_contains(saved_reserve, reserve_count, old_root)) {
++        free(leaf_storage);
++        return false;
++    }
++
++    /* The live old root was returned once. Restore all saved reserve ownership
++     * and append that root in the newly available slot instead of dropping it. */
++    memcpy(space->reserve, saved_reserve, sizeof(saved_reserve));
++    space->reserve[reserve_count] = old_root;
++    space->reserve_count = reserve_count + 1u;
++    bool reserve_merged = space->reserve_count <= BFS_ALLOC_RESERVE_SIZE &&
++        space->reserve[reserve_count] == old_root &&
++        memcmp(space->reserve, saved_reserve,
++               (size_t)reserve_count * sizeof(*saved_reserve)) == 0;
++
++    bool historical_scratch = false;
++    for (uint32_t i = emergency_count - 1u;
++         i < BFS_EMERGENCY_POOL_SIZE; i++)
++        if (bfs_be32(space->sb->emergency_pool[i]) == scratch)
++            historical_scratch = true;
++    uint64_t new_root_txn = 0;
++    bool same_leaf = capture_valid_free_leaf(space, &after_leaf) &&
++        after_leaf.count == before_leaf.count &&
++        after_leaf.total_free == before_leaf.total_free &&
++        memcmp(before_leaf.keys, after_leaf.keys,
++               (size_t)before_leaf.count * sizeof(*before_leaf.keys)) == 0 &&
++        memcmp(before_leaf.lengths, after_leaf.lengths,
++               (size_t)before_leaf.count * sizeof(*before_leaf.lengths)) == 0;
++    bool exact_live_root =
++        bfs_btree_root_leaf_txn_id(&space->tree, &new_root_txn) == BFS_OK &&
++        new_root_txn == fs->live_txn_id;
++    bool success = emergency_root_installed && reserve_merged &&
++        historical_scratch && same_leaf &&
++        exact_live_root && space->reserve_count == reserve_count + 1u &&
++        bfs_be32(space->sb->emergency_count) == emergency_count - 1u &&
++        space->total_free == total_free && space->roving == roving;
++
++    free(leaf_storage);
++    return success;
++}
++
+ static int historical_pool_index(const bfs_blk_t pool[BFS_EMERGENCY_POOL_SIZE],
+                                  bfs_blk_t block)
+ {
+@@ -945,6 +1149,7 @@ static void test_success_seals_mixed_provenance_and_freezes_mutation(void)
+                                                &root_txn), BFS_OK);
+     TEST_ASSERT_EQ(root_txn, fs->live_txn_id);
+     TEST_ASSERT(fs->freespace.tree.height == 1);
++    TEST_ASSERT(make_live_free_root_emergency_origin(&fixture));
+ 
+     bfs_freespace_t *space = &fs->freespace;
+     uint32_t original_ec = bfs_be32(space->sb->emergency_count);

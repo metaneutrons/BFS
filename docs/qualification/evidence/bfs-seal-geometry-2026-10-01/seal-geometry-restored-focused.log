@@ -1,0 +1,13 @@
+=== Sealed commit preflight ===
+  test_snapshot_contexts_decline_without_writes      OK
+  test_older_future_deeper_and_full_leaf_shapes      OK
+  test_missing_scratch_and_inactive_pool_alias_decline OK
+  test_backup_block_and_current_root_rejections      OK
+  test_high_backup_quotients_do_not_alias_pending_blocks OK
+  test_high_backup_quotients_cast_only_for_old_leaf_checks OK
+  test_invalid_candidates_fail_before_write          OK
+  test_cross_source_duplicates_and_bounds_fail_before_write OK
+  test_success_seals_mixed_provenance_and_freezes_mutation OK
+  test_api_error_is_caller_latched                   OK
+
+10 passed, 0 failed

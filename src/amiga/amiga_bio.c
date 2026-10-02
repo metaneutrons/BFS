@@ -19,6 +19,9 @@
 #include <devices/trackdisk.h>
 #include <proto/exec.h>
 #include "amiga_bio.h"
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 /* ── Constants for 64-bit extensions ───────────────────────── */
 
@@ -85,7 +88,18 @@ static bfs_err_t amiga_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
     if (ab->access_mode != ACCESS_STD)
         req->iotd_Req.io_Actual = (ULONG)(byte_off >> 32);
 
-    if (DoIO((struct IORequest *)req) || req->iotd_Req.io_Actual != bio->block_size)
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.bio_read_calls++;
+    BOOL data_io = bfs_perf_probe_data_depth != 0;
+    struct EClockVal started = {0};
+    if (data_io) bfs_perf_probe_counters.data_read_calls++;
+    bfs_perf_probe_begin(&started);
+#endif
+    LONG io_error = DoIO((struct IORequest *)req);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_end(BFS_PERF_IO_READ, data_io, &started);
+#endif
+    if (io_error || req->iotd_Req.io_Actual != bio->block_size)
         return BFS_ERR_IO;
     return BFS_OK;
 }
@@ -117,7 +131,18 @@ static bfs_err_t amiga_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
     if (ab->access_mode != ACCESS_STD)
         req->iotd_Req.io_Actual = (ULONG)(byte_off >> 32);
 
-    if (DoIO((struct IORequest *)req) || req->iotd_Req.io_Actual != bio->block_size)
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.bio_write_calls++;
+    BOOL data_io = bfs_perf_probe_data_depth != 0;
+    struct EClockVal started = {0};
+    if (data_io) bfs_perf_probe_counters.data_write_calls++;
+    bfs_perf_probe_begin(&started);
+#endif
+    LONG io_error = DoIO((struct IORequest *)req);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_end(BFS_PERF_IO_WRITE, data_io, &started);
+#endif
+    if (io_error || req->iotd_Req.io_Actual != bio->block_size)
         return BFS_ERR_IO;
     return BFS_OK;
 }
@@ -134,7 +159,16 @@ static bfs_err_t amiga_sync(bfs_bio_t *bio)
     req->iotd_Req.io_Length = 0;
     req->iotd_Req.io_Offset = 0;
     req->iotd_Req.io_Actual = 0;
-    if (DoIO((struct IORequest *)req) != 0)
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.bio_update_calls++;
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+#endif
+    LONG io_error = DoIO((struct IORequest *)req);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_end(BFS_PERF_IO_UPDATE, FALSE, &started);
+#endif
+    if (io_error != 0)
         return BFS_ERR_IO;
 
     /* Turn off the floppy motor if applicable (standard Amiga behavior) */

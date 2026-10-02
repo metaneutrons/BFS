@@ -1,0 +1,88 @@
+=== File I/O ===
+  test_write_read                                    OK
+  test_cross_block_write                             OK
+  test_seek                                          OK
+  test_truncate                                      OK
+  test_large_file                                    OK
+  test_truncate_regrow_zeroes_tail                   OK
+  test_shared_handles_refresh_inode_state            OK
+  test_append_uses_current_end_of_file               OK
+  test_batch_append_single_contiguous_extent         OK
+  test_append_unaligned_eof_multiblock               OK
+  test_checksum_append_uses_per_block_extents        OK
+  test_batch_append_checks_scratch_capacity          OK
+  test_unlinked_open_file_lifetime_and_mount_recovery OK
+
+13 passed, 0 failed
+=== Filesystem ===
+  test_format_mount                                  OK
+  test_format_rejects_invalid_volume_names           OK
+  test_format_create_remount                         OK
+  test_crash_recovery                                OK
+  test_abandon_discards_uncommitted_state            OK
+  test_multiple_syncs                                OK
+  test_superblock_alternation                        OK
+  test_format_both_copies_mountable                  OK
+  test_readonly_mount_does_not_commit                OK
+
+9 passed, 0 failed
+=== Hardware Failure Simulation ===
+  test_torn_write_superblock                         OK
+  test_torn_write_btree_node                         OK
+  test_read_error_during_lookup                      OK
+  test_read_error_during_scan                        OK
+  test_alloc_failure_during_split                    OK
+  test_double_free                                   OK
+  test_scan_after_insert_before_cursor               OK
+  test_max_tree_depth                                OK
+  test_both_superblocks_torn                         OK
+  test_format_dirty_partition                        OK
+  test_extent_read_error_is_not_a_sparse_hole        OK
+  test_delete_inode_read_error_preserves_entry       OK
+  test_delete_extent_read_error_preserves_entry      OK
+  test_snapshot_refcount_read_error_blocks_overwrite OK
+  test_ordered_sync_error_propagates                 OK
+  test_failed_cow_write_preserves_tree               OK
+  test_mount_propagates_superblock_io_error          OK
+  test_recovery_invalidates_open_handles             OK
+  test_failed_recovery_blocks_operations             OK
+  test_persistent_delete_failure_requires_remount    OK
+  test_failed_extent_rollback_marks_ownership_uncertain OK
+  test_delete_write_failures_preserve_comment        OK
+  test_rmdir_write_failures_preserve_committed_directory OK
+  test_rename_write_failures_preserve_committed_paths OK
+  test_mkdir_write_failures_preserve_committed_tree  OK
+  test_comment_write_failures_preserve_committed_value OK
+  test_snapshot_delete_write_failure_recovery        OK
+  test_allocator_refill_failure_can_retry_free       OK
+  test_reserve_return_root_fold_reactivates_emergency_root OK
+  test_reserve_return_root_fold_returns_ordinary_root OK
+  test_reserve_return_root_fold_first_write_failure_restores OK
+  test_reserve_return_root_fold_without_emergency_scratch_falls_back OK
+  test_reserve_return_root_fold_rejects_future_root  OK
+  test_reserve_return_root_fold_rejects_committed_root OK
+  test_reserve_return_fold_falls_back_for_inactive_pool_alias OK
+  test_reserve_return_fold_rejects_active_pool_alias OK
+  test_reserve_return_batch_fragmented_accounting    OK
+  test_reserve_return_batch_first_write_failure_is_retryable OK
+  test_reserve_return_batch_later_write_failure_keeps_ownership OK
+  test_reserve_return_mixed_batch_reactivates_emergency_slot OK
+  test_reserve_return_mixed_batch_first_write_failure_restores OK
+  test_reserve_return_mixed_batch_second_write_failure_keeps_ownership OK
+  test_reserve_return_write_failures_preserve_committed_tree OK
+  test_batch_leaf_write_failure_preserves_root       OK
+  test_short_write_publishes_inode                   OK
+  test_append_data_write_failure_publishes_prefix    OK
+  test_append_extent_write_failure_preserves_old_file OK
+
+47 passed, 0 failed
+=== Snapshots ===
+  test_create_snapshot                               OK
+  test_snapshot_preserves_data                       OK
+  test_multiple_snapshots                            OK
+  test_snapshot_name_validation                      OK
+  test_no_snapshot_overhead                          OK
+  test_delete_preflights_large_inode                 OK
+  test_interrupted_deletion_resume                   OK
+
+7 passed, 0 failed

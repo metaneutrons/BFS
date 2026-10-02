@@ -1,0 +1,10 @@
+847d809f16b63c9893d956ea6e26803e1dd6ad3add7b4765be4cfe31f817e096  tests/test_btree_scratch_lifetime.c
+2322570d8fc5103aadd2c5d638e0eef098b5071ecf581df4970b712f0b0e6b23  build/host-memory-copy-short/libbfs.a
++ cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -Iinclude -Itests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L tests/test_btree_scratch_lifetime.c build/host-memory-copy-short/libbfs.a -o build/test_btree_scratch_lifetime_baseline
++ build/test_btree_scratch_lifetime_baseline
+=== B-tree scratch lifetime ===
+  test_full_width_multilevel_search_and_scan         OK
+  test_crc_valid_child_with_wrong_inherited_bound    OK
+  test_multilevel_update_abort_restores_root_mapping_and_ownership OK
+
+3 passed, 0 failed

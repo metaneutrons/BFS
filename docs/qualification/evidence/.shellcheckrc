@@ -1,0 +1,5 @@
+# Retained evidence scripts are checksum-pinned and must keep their bytes.
+# Their EXIT-trap cleanup functions already disable SC2329, the code newer
+# ShellCheck uses for indirectly invoked functions; ShellCheck 0.9.0 on the
+# CI runner reports the same case as SC2317.
+disable=SC2317

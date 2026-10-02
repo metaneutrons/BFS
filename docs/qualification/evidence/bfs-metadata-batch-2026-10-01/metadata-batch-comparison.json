@@ -1,0 +1,457 @@
+{
+  "prefix": "metadata-batch",
+  "pairs": [
+    [
+      "baseline-bfs-first",
+      "candidate-bfs-first"
+    ],
+    [
+      "baseline-pfs3-first",
+      "candidate-pfs3-first"
+    ],
+    [
+      "repeat-baseline-pfs3-first",
+      "repeat-candidate-pfs3-first"
+    ],
+    [
+      "repeat-baseline-bfs-first",
+      "repeat-candidate-bfs-first"
+    ]
+  ],
+  "data": {
+    "baseline-bfs-first": {
+      "bfs": {
+        "SMALL_CREATE_40_US": 199805,
+        "LOOKUP_400_US": 113394,
+        "SMALL_READ_40_US": 50433,
+        "SEQ_WRITE_8M_US": 395198,
+        "SEQ_READ_8M_US": 481151,
+        "SMALL_DELETE_40_US": 165374
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16960,
+        "LOOKUP_400_US": 66814,
+        "SMALL_READ_40_US": 13824,
+        "SEQ_WRITE_8M_US": 33856,
+        "SEQ_READ_8M_US": 255998,
+        "SMALL_DELETE_40_US": 7808
+      }
+    },
+    "candidate-bfs-first": {
+      "bfs": {
+        "SMALL_CREATE_40_US": 323391,
+        "LOOKUP_400_US": 167871,
+        "SMALL_READ_40_US": 46337,
+        "SEQ_WRITE_8M_US": 454014,
+        "SEQ_READ_8M_US": 475199,
+        "SMALL_DELETE_40_US": 232766
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16448,
+        "LOOKUP_400_US": 65216,
+        "SMALL_READ_40_US": 14335,
+        "SEQ_WRITE_8M_US": 34688,
+        "SEQ_READ_8M_US": 271101,
+        "SMALL_DELETE_40_US": 7872
+      }
+    },
+    "baseline-pfs3-first": {
+      "bfs": {
+        "SMALL_CREATE_40_US": 189951,
+        "LOOKUP_400_US": 105919,
+        "SMALL_READ_40_US": 47423,
+        "SEQ_WRITE_8M_US": 366664,
+        "SEQ_READ_8M_US": 485949,
+        "SMALL_DELETE_40_US": 165822
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16063,
+        "LOOKUP_400_US": 72448,
+        "SMALL_READ_40_US": 15168,
+        "SEQ_WRITE_8M_US": 36031,
+        "SEQ_READ_8M_US": 260159,
+        "SMALL_DELETE_40_US": 7808
+      }
+    },
+    "candidate-pfs3-first": {
+      "bfs": {
+        "SMALL_CREATE_40_US": 286334,
+        "LOOKUP_400_US": 119231,
+        "SMALL_READ_40_US": 60480,
+        "SEQ_WRITE_8M_US": 484734,
+        "SEQ_READ_8M_US": 487932,
+        "SMALL_DELETE_40_US": 226368
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16127,
+        "LOOKUP_400_US": 65278,
+        "SMALL_READ_40_US": 15168,
+        "SEQ_WRITE_8M_US": 34303,
+        "SEQ_READ_8M_US": 262397,
+        "SMALL_DELETE_40_US": 7935
+      }
+    },
+    "repeat-baseline-pfs3-first": {
+      "bfs": {
+        "SMALL_CREATE_40_US": 190719,
+        "LOOKUP_400_US": 105984,
+        "SMALL_READ_40_US": 47680,
+        "SEQ_WRITE_8M_US": 378238,
+        "SEQ_READ_8M_US": 508477,
+        "SMALL_DELETE_40_US": 165054
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16768,
+        "LOOKUP_400_US": 66815,
+        "SMALL_READ_40_US": 14719,
+        "SEQ_WRITE_8M_US": 34880,
+        "SEQ_READ_8M_US": 259518,
+        "SMALL_DELETE_40_US": 8065
+      }
+    },
+    "repeat-candidate-pfs3-first": {
+      "bfs": {
+        "SMALL_CREATE_40_US": 295742,
+        "LOOKUP_400_US": 103742,
+        "SMALL_READ_40_US": 44160,
+        "SEQ_WRITE_8M_US": 517308,
+        "SEQ_READ_8M_US": 514430,
+        "SMALL_DELETE_40_US": 229247
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 15355,
+        "LOOKUP_400_US": 67008,
+        "SMALL_READ_40_US": 13951,
+        "SEQ_WRITE_8M_US": 34560,
+        "SEQ_READ_8M_US": 255104,
+        "SMALL_DELETE_40_US": 7936
+      }
+    },
+    "repeat-baseline-bfs-first": {
+      "bfs": {
+        "SMALL_CREATE_40_US": 206270,
+        "LOOKUP_400_US": 106176,
+        "SMALL_READ_40_US": 42497,
+        "SEQ_WRITE_8M_US": 371709,
+        "SEQ_READ_8M_US": 520062,
+        "SMALL_DELETE_40_US": 213439
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 17280,
+        "LOOKUP_400_US": 66431,
+        "SMALL_READ_40_US": 14337,
+        "SEQ_WRITE_8M_US": 34496,
+        "SEQ_READ_8M_US": 256064,
+        "SMALL_DELETE_40_US": 7935
+      }
+    },
+    "repeat-candidate-bfs-first": {
+      "bfs": {
+        "SMALL_CREATE_40_US": 285951,
+        "LOOKUP_400_US": 102078,
+        "SMALL_READ_40_US": 46144,
+        "SEQ_WRITE_8M_US": 449214,
+        "SEQ_READ_8M_US": 490174,
+        "SMALL_DELETE_40_US": 299390
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 17473,
+        "LOOKUP_400_US": 65663,
+        "SMALL_READ_40_US": 14529,
+        "SEQ_WRITE_8M_US": 34880,
+        "SEQ_READ_8M_US": 256255,
+        "SMALL_DELETE_40_US": 7937
+      }
+    }
+  },
+  "summary": [
+    {
+      "metric": "SMALL_CREATE_40_US",
+      "baselineBfs": [
+        199805,
+        189951,
+        190719,
+        206270
+      ],
+      "candidateBfs": [
+        323391,
+        286334,
+        295742,
+        285951
+      ],
+      "baselinePfs3": [
+        16960,
+        16063,
+        16768,
+        17280
+      ],
+      "candidatePfs3": [
+        16448,
+        16127,
+        15355,
+        17473
+      ],
+      "baselineBfsMean": 196686.25,
+      "candidateBfsMean": 297854.5,
+      "baselinePfs3Mean": 16767.75,
+      "candidatePfs3Mean": 16350.75,
+      "bfsMeanChangePercent": 51.43636120979478,
+      "candidateRatioOfMeans": 18.216564989373577,
+      "candidateSameRunRatios": [
+        19.66141780155642,
+        17.75494512308551,
+        19.260306089221753,
+        16.365306472843816
+      ],
+      "candidateThresholdFailures": 4,
+      "matchedBfsChangesPercent": [
+        61.85330697429994,
+        50.74098056867298,
+        55.066878496636406,
+        38.62946623357735
+      ],
+      "matchedBfsAdverse": 4,
+      "matchedPfs3Adverse": 2
+    },
+    {
+      "metric": "LOOKUP_400_US",
+      "baselineBfs": [
+        113394,
+        105919,
+        105984,
+        106176
+      ],
+      "candidateBfs": [
+        167871,
+        119231,
+        103742,
+        102078
+      ],
+      "baselinePfs3": [
+        66814,
+        72448,
+        66815,
+        66431
+      ],
+      "candidatePfs3": [
+        65216,
+        65278,
+        67008,
+        65663
+      ],
+      "baselineBfsMean": 107868.25,
+      "candidateBfsMean": 123230.5,
+      "baselinePfs3Mean": 68127,
+      "candidatePfs3Mean": 65791.25,
+      "bfsMeanChangePercent": 14.24167908536571,
+      "candidateRatioOfMeans": 1.8730530275682558,
+      "candidateSameRunRatios": [
+        2.574076913640824,
+        1.8265112288979442,
+        1.5482031996179562,
+        1.5545741132753605
+      ],
+      "candidateThresholdFailures": 0,
+      "matchedBfsChangesPercent": [
+        48.04222445632045,
+        12.5680944872969,
+        -2.1154136473429896,
+        -3.859629294755873
+      ],
+      "matchedBfsAdverse": 2,
+      "matchedPfs3Adverse": 1
+    },
+    {
+      "metric": "SMALL_READ_40_US",
+      "baselineBfs": [
+        50433,
+        47423,
+        47680,
+        42497
+      ],
+      "candidateBfs": [
+        46337,
+        60480,
+        44160,
+        46144
+      ],
+      "baselinePfs3": [
+        13824,
+        15168,
+        14719,
+        14337
+      ],
+      "candidatePfs3": [
+        14335,
+        15168,
+        13951,
+        14529
+      ],
+      "baselineBfsMean": 47008.25,
+      "candidateBfsMean": 49280.25,
+      "baselinePfs3Mean": 14512,
+      "candidatePfs3Mean": 14495.75,
+      "bfsMeanChangePercent": 4.833194173363187,
+      "candidateRatioOfMeans": 3.399634375592846,
+      "candidateSameRunRatios": [
+        3.2324380885943493,
+        3.9873417721518987,
+        3.1653644900007167,
+        3.175992841902402
+      ],
+      "candidateThresholdFailures": 0,
+      "matchedBfsChangesPercent": [
+        -8.121666369242364,
+        27.533053581595436,
+        -7.38255033557047,
+        8.581782243452473
+      ],
+      "matchedBfsAdverse": 2,
+      "matchedPfs3Adverse": 2
+    },
+    {
+      "metric": "SEQ_WRITE_8M_US",
+      "baselineBfs": [
+        395198,
+        366664,
+        378238,
+        371709
+      ],
+      "candidateBfs": [
+        454014,
+        484734,
+        517308,
+        449214
+      ],
+      "baselinePfs3": [
+        33856,
+        36031,
+        34880,
+        34496
+      ],
+      "candidatePfs3": [
+        34688,
+        34303,
+        34560,
+        34880
+      ],
+      "baselineBfsMean": 377952.25,
+      "candidateBfsMean": 476317.5,
+      "baselinePfs3Mean": 34815.75,
+      "candidatePfs3Mean": 34607.75,
+      "bfsMeanChangePercent": 26.025840565838678,
+      "candidateRatioOfMeans": 13.763318909781768,
+      "candidateSameRunRatios": [
+        13.088503228782288,
+        14.130950645716117,
+        14.968402777777778,
+        12.878841743119265
+      ],
+      "candidateThresholdFailures": 4,
+      "matchedBfsChangesPercent": [
+        14.882666410255109,
+        32.20114328104204,
+        36.767855159978645,
+        20.85098827308458
+      ],
+      "matchedBfsAdverse": 4,
+      "matchedPfs3Adverse": 2
+    },
+    {
+      "metric": "SEQ_READ_8M_US",
+      "baselineBfs": [
+        481151,
+        485949,
+        508477,
+        520062
+      ],
+      "candidateBfs": [
+        475199,
+        487932,
+        514430,
+        490174
+      ],
+      "baselinePfs3": [
+        255998,
+        260159,
+        259518,
+        256064
+      ],
+      "candidatePfs3": [
+        271101,
+        262397,
+        255104,
+        256255
+      ],
+      "baselineBfsMean": 498909.75,
+      "candidateBfsMean": 491933.75,
+      "baselinePfs3Mean": 257934.75,
+      "candidatePfs3Mean": 261214.25,
+      "bfsMeanChangePercent": -1.3982488816865146,
+      "candidateRatioOfMeans": 1.8832577089496458,
+      "candidateSameRunRatios": [
+        1.7528485693523816,
+        1.8595182109551558,
+        2.016550112895133,
+        1.9128368226961425
+      ],
+      "candidateThresholdFailures": 0,
+      "matchedBfsChangesPercent": [
+        -1.2370336962824524,
+        0.4080675132575706,
+        1.1707510860864856,
+        -5.747007087616474
+      ],
+      "matchedBfsAdverse": 2,
+      "matchedPfs3Adverse": 3
+    },
+    {
+      "metric": "SMALL_DELETE_40_US",
+      "baselineBfs": [
+        165374,
+        165822,
+        165054,
+        213439
+      ],
+      "candidateBfs": [
+        232766,
+        226368,
+        229247,
+        299390
+      ],
+      "baselinePfs3": [
+        7808,
+        7808,
+        8065,
+        7935
+      ],
+      "candidatePfs3": [
+        7872,
+        7935,
+        7936,
+        7937
+      ],
+      "baselineBfsMean": 177422.25,
+      "candidateBfsMean": 246942.75,
+      "baselinePfs3Mean": 7904,
+      "candidatePfs3Mean": 7920,
+      "bfsMeanChangePercent": 39.183642412380635,
+      "candidateRatioOfMeans": 31.17964015151515,
+      "candidateSameRunRatios": [
+        29.56885162601626,
+        28.52778827977316,
+        28.886970766129032,
+        37.72080131031876
+      ],
+      "candidateThresholdFailures": 4,
+      "matchedBfsChangesPercent": [
+        40.75126682549857,
+        36.51264609038607,
+        38.89212015461607,
+        40.26958522107018
+      ],
+      "matchedBfsAdverse": 4,
+      "matchedPfs3Adverse": 3
+    }
+  ]
+}

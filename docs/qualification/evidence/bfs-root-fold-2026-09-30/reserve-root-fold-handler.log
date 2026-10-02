@@ -1,0 +1,5 @@
+Assertion failed: (bfs_fs_sync(&fs) == BFS_OK), function handler_delete, file test_handler_ops.c, line 68.
+=== Handler Ops ===
+  test_handler_repeated_overwrite                    OK
+  test_handler_create_delete_cycles                  OK
+  test_handler_fill_and_recover

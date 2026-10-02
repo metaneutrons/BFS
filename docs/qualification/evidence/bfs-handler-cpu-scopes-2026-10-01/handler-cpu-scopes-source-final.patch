@@ -1,0 +1,947 @@
+diff --git a/emulator-test/build-bench-image.sh b/emulator-test/build-bench-image.sh
+index 6824cb1..ca08816 100755
+--- a/emulator-test/build-bench-image.sh
++++ b/emulator-test/build-bench-image.sh
+@@ -76,7 +76,8 @@ command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
+     fi
+     exit 1
+ }
+-[ -f "$PROJECT_DIR/build/amiga/$GUEST_TOOL" ] || { echo "ERROR: run 'make amiga-$GUEST_TOOL' first"; exit 1; }
++GUEST_FILE="${BFS_BENCH_GUEST_FILE:-$PROJECT_DIR/build/amiga/$GUEST_TOOL}"
++[ -f "$GUEST_FILE" ] || { echo "ERROR: run 'make amiga-$GUEST_TOOL' first or set BFS_BENCH_GUEST_FILE"; exit 1; }
+ [ -f "$FORMATTER" ] || { echo "ERROR: build the host bfs formatter or set BFS_BENCH_FORMATTER_FILE"; exit 1; }
+ 
+ echo "=== Building BFS vs PFS3 Benchmark ==="
+@@ -90,7 +91,7 @@ mkdir -p "$WB/C" "$WB/L" "$WB/Libs" "$WB/S" "$WB/Devs" "$WB/Results"
+ cp -R "$ASSETS/C/." "$WB/C/"
+ if [ -d "$ASSETS/L" ]; then cp -R "$ASSETS/L/." "$WB/L/"; fi
+ if [ -d "$ASSETS/Libs" ]; then cp -R "$ASSETS/Libs/." "$WB/Libs/"; fi
+-cp "$PROJECT_DIR/build/amiga/$GUEST_TOOL" "$WB/C/$GUEST_TOOL"
++cp "$GUEST_FILE" "$WB/C/$GUEST_TOOL"
+ cp "$HANDLER" "$WB/L/bfshandler"
+ cp "$PFS3" "$WB/L/pfs3aio"
+ 
+diff --git a/emulator-test/verify-bench-results.sh b/emulator-test/verify-bench-results.sh
+index 2413814..b349a14 100755
+--- a/emulator-test/verify-bench-results.sh
++++ b/emulator-test/verify-bench-results.sh
+@@ -63,6 +63,12 @@ case "$mode" in
+         deep_compare_counters_v8=("${deep_compare_counters_v7[@]}" FREE_TREE_RESERVE_RETURN_SKIP_SHAPE FREE_TREE_RESERVE_RETURN_SKIP_SMALL FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY)
+         deep_compare_counters_v9=("${deep_compare_counters_v8[@]}" SEALED_COMMITS SEALED_METADATA_FENCES)
+         deep_compare_counters_v10=("${deep_compare_counters_v9[@]}" BTREE_MALLOC_CALLS BTREE_MALLOC_SAMPLES BTREE_MALLOC_SAMPLE_TICKS BTREE_FREE_CALLS BTREE_FREE_SAMPLES BTREE_FREE_SAMPLE_TICKS IFACE_ALLOC_CALLS IFACE_ALLOC_SAMPLES IFACE_ALLOC_SAMPLE_TICKS FREESPACE_ALLOC_SAMPLES FREESPACE_ALLOC_SAMPLE_TICKS)
++        deep_compare_cpu_scopes=(PACKET PACKET_OPEN PACKET_READ PACKET_WRITE PACKET_END PACKET_DELETE PACKET_FLUSH PACKET_OTHER CORE_CREATE CORE_DELETE CORE_FILE_WRITE CORE_SYNC IFACE_FREE SEAL_COMMIT)
++        deep_compare_packet_categories=(PACKET_OPEN PACKET_READ PACKET_WRITE PACKET_END PACKET_DELETE PACKET_FLUSH PACKET_OTHER)
++        deep_compare_counters_v11=("${deep_compare_counters_v10[@]}")
++        for cpu_scope in "${deep_compare_cpu_scopes[@]}"; do
++            deep_compare_counters_v11+=("${cpu_scope}_CALLS" "${cpu_scope}_SAMPLES" "${cpu_scope}_SAMPLE_TICKS")
++        done
+         deep_compare_bfs_metrics=
+         deep_compare_pfs3_metrics=
+         positive_metric_names=
+@@ -101,7 +107,7 @@ for filesystem in "${filesystems[@]}"; do
+             exit 1
+         fi
+         if [[ "$filesystem" == bfs ]]; then
+-            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 && "$observed_version" != 7 && "$observed_version" != 8 && "$observed_version" != 9 && "$observed_version" != 10 ]]; then
++            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 && "$observed_version" != 7 && "$observed_version" != 8 && "$observed_version" != 9 && "$observed_version" != 10 && "$observed_version" != 11 ]]; then
+                 printf 'ERROR: unsupported deep-compare schema version %s\n' "$observed_version" >&2
+                 exit 1
+             fi
+@@ -118,8 +124,10 @@ for filesystem in "${filesystems[@]}"; do
+                 deep_compare_counters=("${deep_compare_counters_v8[@]}")
+             elif [[ "$header_version" == 9 ]]; then
+                 deep_compare_counters=("${deep_compare_counters_v9[@]}")
+-            else
++            elif [[ "$header_version" == 10 ]]; then
+                 deep_compare_counters=("${deep_compare_counters_v10[@]}")
++            else
++                deep_compare_counters=("${deep_compare_counters_v11[@]}")
+             fi
+             deep_compare_bfs_metrics=
+             for deep_phase in "${deep_compare_phases[@]}"; do
+@@ -131,7 +139,7 @@ for filesystem in "${filesystems[@]}"; do
+             done
+             deep_compare_bfs_metrics+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
+             positive_metric_names+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
+-            if [[ "$header_version" == 10 ]]; then
++            if [[ "$header_version" == 10 || "$header_version" == 11 ]]; then
+                 deep_compare_bfs_metrics+=" CPU_SAMPLE_STRIDE"
+                 positive_metric_names+=" CPU_SAMPLE_STRIDE"
+                 fixed_metric_name2=CPU_SAMPLE_STRIDE
+@@ -153,16 +161,58 @@ for filesystem in "${filesystems[@]}"; do
+     else
+         positive_metric_names=
+     fi
+-    awk -F '\t' -v drive="$drive" -v header="$header" -v header_version="$header_version" -v metric_names="$metrics" -v metric_count="$metric_count" -v value_pattern="$value_pattern" -v positive_metric_names="${positive_metric_names:-}" -v fixed_metric_name="$fixed_metric_name" -v fixed_metric_value="$fixed_metric_value" -v fixed_metric_name2="$fixed_metric_name2" -v fixed_metric_value2="$fixed_metric_value2" -v phases="${deep_compare_phases[*]:-}" '
++    awk -F '\t' -v drive="$drive" -v header="$header" -v header_version="$header_version" -v metric_names="$metrics" -v metric_count="$metric_count" -v value_pattern="$value_pattern" -v positive_metric_names="${positive_metric_names:-}" -v fixed_metric_name="$fixed_metric_name" -v fixed_metric_value="$fixed_metric_value" -v fixed_metric_name2="$fixed_metric_name2" -v fixed_metric_value2="$fixed_metric_value2" -v phases="${deep_compare_phases[*]:-}" -v cpu_scopes="${deep_compare_cpu_scopes[*]:-}" -v packet_categories="${deep_compare_packet_categories[*]:-}" '
++        function decimal_normalize(value) {
++            while (length(value) > 1 && substr(value, 1, 1) == "0")
++                value = substr(value, 2)
++            return value
++        }
++        function decimal_compare(left, right, normalized_left, normalized_right) {
++            normalized_left = decimal_normalize(left)
++            normalized_right = decimal_normalize(right)
++            if (length(normalized_left) < length(normalized_right)) return -1
++            if (length(normalized_left) > length(normalized_right)) return 1
++            if (("x" normalized_left) < ("x" normalized_right)) return -1
++            if (("x" normalized_left) > ("x" normalized_right)) return 1
++            return 0
++        }
++        function decimal_equal(left, right) {
++            return decimal_compare(left, right) == 0
++        }
++        function decimal_leq(left, right) {
++            return decimal_compare(left, right) <= 0
++        }
++        function decimal_add(left, right, result, carry, left_index,
++                             right_index, left_digit, right_digit, digit_sum,
++                             digit) {
++            result = ""
++            carry = 0
++            left_index = length(left)
++            right_index = length(right)
++            while (left_index > 0 || right_index > 0 || carry > 0) {
++                left_digit = left_index > 0 ? substr(left, left_index, 1) + 0 : 0
++                right_digit = right_index > 0 ? substr(right, right_index, 1) + 0 : 0
++                digit_sum = left_digit + right_digit + carry
++                digit = digit_sum % 10
++                carry = int(digit_sum / 10)
++                result = sprintf("%d", digit) result
++                left_index--
++                right_index--
++            }
++            return decimal_normalize(result)
++        }
+         BEGIN {
+             split(metric_names, names, " ")
+             positive_count = split(positive_metric_names, positive_names, " ")
++            cpu_scope_count = split(cpu_scopes, cpu_scope_names, " ")
++            packet_category_count = split(packet_categories, packet_category_names, " ")
+         }
+         NR == 1 { if (NF != 2 || $1 != header || $2 != header_version) exit 1; next }
+         NR == 2 { if (NF != 2 || $1 != "DRIVE" || $2 != drive) exit 1; next }
+         NR >= 3 && NR <= metric_count + 2 {
+             if (NF != 2 || $1 != names[NR-2] || $2 !~ value_pattern) exit 1
+             metric_values[$1] = $2 + 0
++            metric_text[$1] = $2
+             for (i = 1; i <= positive_count; i++)
+                 if ($1 == positive_names[i] && $2 !~ /^[1-9][0-9]*$/) exit 1
+             if ($1 == fixed_metric_name && $2 != fixed_metric_value) exit 1
+@@ -173,7 +223,7 @@ for filesystem in "${filesystems[@]}"; do
+         { exit 1 }
+         END {
+             if (NR != metric_count + 3) exit 1
+-            if ((header_version == 5 || header_version == 6 || header_version == 7 || header_version == 8 || header_version == 9 || header_version == 10) && drive == "DH1:") {
++            if (header_version >= 5 && drive == "DH1:") {
+                 phase_count = split(phases, phase_names, " ")
+                 for (phase_index = 1; phase_index <= phase_count; phase_index++) {
+                     phase = phase_names[phase_index]
+@@ -181,7 +231,7 @@ for filesystem in "${filesystems[@]}"; do
+                     if (bucket_sum != metric_values[phase "_FREE_TREE_NODE_WRITES"]) exit 1
+                 }
+             }
+-            if ((header_version == 6 || header_version == 7 || header_version == 8 || header_version == 9 || header_version == 10) && drive == "DH1:") {
++            if (header_version >= 6 && drive == "DH1:") {
+                 for (phase_index = 1; phase_index <= phase_count; phase_index++) {
+                     phase = phase_names[phase_index]
+                     runs = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUNS"]
+@@ -193,7 +243,7 @@ for filesystem in "${filesystems[@]}"; do
+                     max_run = metric_values[phase "_FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS"]
+                     max_run_writes = metric_values[phase "_FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN"]
+                     reserve_writes = metric_values[phase "_FREE_TREE_RESERVE_RETURN_NODE_WRITES"]
+-                    if (header_version == 7 || header_version == 8 || header_version == 9 || header_version == 10) {
++                    if (header_version >= 7) {
+                         run_node_writes = metric_values[phase "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES"]
+                         batch_calls = metric_values[phase "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS"]
+                         batch_blocks = metric_values[phase "_FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS"]
+@@ -219,21 +269,21 @@ for filesystem in "${filesystems[@]}"; do
+                         if (max_run >= 8 && eight_plus == 0) exit 1
+                         if (max_run_writes > reserve_writes) exit 1
+                     }
+-                    if (header_version == 7 || header_version == 8 || header_version == 9 || header_version == 10) {
++                    if (header_version >= 7) {
+                         if (run_node_writes + batch_node_writes != reserve_writes) exit 1
+                         if (runs == 0 && run_node_writes != 0) exit 1
+                         if (max_run_writes > run_node_writes) exit 1
+                         if (batch_calls > return_calls || batch_blocks < batch_calls) exit 1
+                         if (batch_calls == 0 && (batch_blocks != 0 || batch_node_writes != 0)) exit 1
+                     }
+-                    if (header_version == 8 || header_version == 9 || header_version == 10) {
++                    if (header_version >= 8) {
+                         skip_shape = metric_values[phase "_FREE_TREE_RESERVE_RETURN_SKIP_SHAPE"]
+                         skip_small = metric_values[phase "_FREE_TREE_RESERVE_RETURN_SKIP_SMALL"]
+                         skip_emergency = metric_values[phase "_FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY"]
+                         skip_capacity = metric_values[phase "_FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY"]
+                         if (batch_calls + skip_shape + skip_small + skip_emergency + skip_capacity != return_calls) exit 1
+                     }
+-                    if (header_version == 9 || header_version == 10) {
++                    if (header_version >= 9) {
+                         sealed_commits = metric_values[phase "_SEALED_COMMITS"]
+                         metadata_fences = metric_values[phase "_SEALED_METADATA_FENCES"]
+                         bio_updates = metric_values[phase "_BIO_UPDATES"]
+@@ -248,7 +298,7 @@ for filesystem in "${filesystems[@]}"; do
+                     if (passes > txn_commits * 256 || max_passes > 256 || max_passes > passes) exit 1
+                     if ((passes == 0 && max_passes != 0) || (passes > 0 && max_passes == 0)) exit 1
+                     if (publications != txn_commits + passes) exit 1
+-                    if (header_version == 10) {
++                    if (header_version >= 10) {
+                         cpu_stride = metric_values["CPU_SAMPLE_STRIDE"]
+                         malloc_calls = metric_values[phase "_BTREE_MALLOC_CALLS"]
+                         malloc_samples = metric_values[phase "_BTREE_MALLOC_SAMPLES"]
+@@ -271,6 +321,35 @@ for filesystem in "${filesystems[@]}"; do
+                             (iface_samples == 0 && iface_ticks != 0) ||
+                             (freespace_samples == 0 && freespace_ticks != 0)) exit 1
+                     }
++                    if (header_version == 11) {
++                        for (scope_index = 1; scope_index <= cpu_scope_count; scope_index++) {
++                            scope = cpu_scope_names[scope_index]
++                            scope_calls = decimal_normalize(metric_text[phase "_" scope "_CALLS"])
++                            scope_samples = decimal_normalize(metric_text[phase "_" scope "_SAMPLES"])
++                            scope_ticks = decimal_normalize(metric_text[phase "_" scope "_SAMPLE_TICKS"])
++                            if (!decimal_leq(scope_calls, "4294967295") ||
++                                !decimal_leq(scope_samples, "4294967295") ||
++                                !decimal_leq(scope_ticks, "18446744073709551615") ||
++                                !decimal_equal(scope_samples, scope_calls) ||
++                                (decimal_equal(scope_calls, "0") &&
++                                 !decimal_equal(scope_ticks, "0"))) exit 1
++                        }
++                        packet_calls = decimal_normalize(metric_text[phase "_PACKET_CALLS"])
++                        packet_samples = decimal_normalize(metric_text[phase "_PACKET_SAMPLES"])
++                        packet_ticks = decimal_normalize(metric_text[phase "_PACKET_SAMPLE_TICKS"])
++                        category_calls = category_samples = "0"
++                        category_ticks = "0"
++                        for (category_index = 1; category_index <= packet_category_count; category_index++) {
++                            category = packet_category_names[category_index]
++                            category_calls = decimal_add(category_calls, metric_text[phase "_" category "_CALLS"])
++                            category_samples = decimal_add(category_samples, metric_text[phase "_" category "_SAMPLES"])
++                            category_ticks = decimal_add(category_ticks, metric_text[phase "_" category "_SAMPLE_TICKS"])
++                        }
++                        if (!decimal_equal(packet_calls, category_calls) ||
++                            !decimal_equal(packet_samples, category_samples) ||
++                            length(packet_ticks) != length(category_ticks) ||
++                            ("x" packet_ticks) != ("x" category_ticks)) exit 1
++                    }
+                 }
+             }
+         }
+diff --git a/src/amiga/handler.c b/src/amiga/handler.c
+index db83d9f..9956f3f 100644
+--- a/src/amiga/handler.c
++++ b/src/amiga/handler.c
+@@ -1276,7 +1276,11 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
+     return true;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static void HandlePacketWork(struct DosPacket *pkt, struct bfs_handler *h)
++#else
+ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
++#endif
+ {
+     LONG res1 = (pkt->dp_Type == ACTION_READ || pkt->dp_Type == ACTION_WRITE ||
+                  pkt->dp_Type == ACTION_SEEK || pkt->dp_Type == ACTION_SET_FILE_SIZE ||
+@@ -2760,6 +2764,47 @@ reply:
+     ReplyPacket(pkt, h);
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static enum bfs_perf_cpu_scope PacketCpuScope(LONG packet_type)
++{
++    switch (packet_type) {
++    case ACTION_FINDINPUT:
++    case ACTION_FINDOUTPUT:
++    case ACTION_FINDUPDATE:
++        return BFS_PERF_CPU_SCOPE_PACKET_OPEN;
++    case ACTION_READ:
++        return BFS_PERF_CPU_SCOPE_PACKET_READ;
++    case ACTION_WRITE:
++        return BFS_PERF_CPU_SCOPE_PACKET_WRITE;
++    case ACTION_END:
++        return BFS_PERF_CPU_SCOPE_PACKET_END;
++    case ACTION_DELETE_OBJECT:
++        return BFS_PERF_CPU_SCOPE_PACKET_DELETE;
++    case ACTION_FLUSH:
++        return BFS_PERF_CPU_SCOPE_PACKET_FLUSH;
++    default:
++        return BFS_PERF_CPU_SCOPE_PACKET_OTHER;
++    }
++}
++
++static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
++{
++    if (pkt->dp_Type == BFS_ACTION_PERF_RESET ||
++        pkt->dp_Type == BFS_ACTION_PERF_READ) {
++        HandlePacketWork(pkt, h);
++        return;
++    }
++
++    enum bfs_perf_cpu_scope packet_scope = PacketCpuScope(pkt->dp_Type);
++    struct EClockVal started = {0};
++    bfs_perf_probe_begin(&started);
++    HandlePacketWork(pkt, h);
++    uint64_t ticks = bfs_perf_probe_elapsed(&started);
++    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_PACKET, ticks);
++    bfs_perf_probe_cpu_scope_record(packet_scope, ticks);
++}
++#endif
++
+ /* ── Main handler entry ────────────────────────────────────── */
+ 
+ void EntryPointNoStack(void)
+diff --git a/src/amiga/perf_probe.c b/src/amiga/perf_probe.c
+index e71dd8f..4de7b87 100644
+--- a/src/amiga/perf_probe.c
++++ b/src/amiga/perf_probe.c
+@@ -128,6 +128,21 @@ uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start)
+            (((uint64_t)start->ev_hi << 32) | start->ev_lo);
+ }
+ 
++void bfs_perf_probe_cpu_scope_record(enum bfs_perf_cpu_scope scope,
++                                     uint64_t ticks)
++{
++    switch (scope) {
++#define BFS_PERF_CPU_SCOPE_RECORD_CASE(upper, lower) \
++    case BFS_PERF_CPU_SCOPE_##upper: \
++        bfs_perf_probe_counters.lower##_calls++; \
++        bfs_perf_probe_counters.lower##_samples++; \
++        bfs_perf_probe_counters.lower##_sample_ticks += ticks; \
++        break;
++        BFS_PERF_CPU_SCOPES(BFS_PERF_CPU_SCOPE_RECORD_CASE)
++#undef BFS_PERF_CPU_SCOPE_RECORD_CASE
++    }
++}
++
+ /* Direct B-tree buffer heap calls only. These diagnostic intervals include
+  * the underlying allocator, but not caller-side buffer copies/initialization.
+  * They may lie inside the inclusive allocation scopes; never add them to
+diff --git a/src/amiga/perf_probe.h b/src/amiga/perf_probe.h
+index b5307d2..fd97d7d 100644
+--- a/src/amiga/perf_probe.h
++++ b/src/amiga/perf_probe.h
+@@ -9,10 +9,27 @@
+ 
+ #define BFS_ACTION_PERF_RESET 3010
+ #define BFS_ACTION_PERF_READ  3011
+-#define BFS_PERF_PROBE_VERSION 11
++#define BFS_PERF_PROBE_VERSION 12
+ #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
+ #define BFS_PERF_CPU_SAMPLE_STRIDE 1u
+ 
++/* One source of truth for the diagnostic CPU-scope ABI and guest schema. */
++#define BFS_PERF_CPU_SCOPES(X) \
++    X(PACKET, packet) \
++    X(PACKET_OPEN, packet_open) \
++    X(PACKET_READ, packet_read) \
++    X(PACKET_WRITE, packet_write) \
++    X(PACKET_END, packet_end) \
++    X(PACKET_DELETE, packet_delete) \
++    X(PACKET_FLUSH, packet_flush) \
++    X(PACKET_OTHER, packet_other) \
++    X(CORE_CREATE, core_create) \
++    X(CORE_DELETE, core_delete) \
++    X(CORE_FILE_WRITE, core_file_write) \
++    X(CORE_SYNC, core_sync) \
++    X(IFACE_FREE, iface_free) \
++    X(SEAL_COMMIT, seal_commit)
++
+ typedef struct bfs_perf_probe_snapshot {
+     ULONG version;
+     ULONG size;
+@@ -94,6 +111,13 @@ typedef struct bfs_perf_probe_snapshot {
+     ULONG freespace_alloc_samples;
+     // cppcheck-suppress unusedStructMember
+     uint64_t freespace_alloc_sample_ticks;
++
++#define BFS_PERF_CPU_SCOPE_FIELDS(upper, lower) \
++    ULONG lower##_calls; \
++    ULONG lower##_samples; \
++    /* cppcheck-suppress unusedStructMember */ uint64_t lower##_sample_ticks;
++    BFS_PERF_CPU_SCOPES(BFS_PERF_CPU_SCOPE_FIELDS)
++#undef BFS_PERF_CPU_SCOPE_FIELDS
+ } bfs_perf_probe_snapshot_t;
+ 
+ #ifdef BFS_PERF_PROBE
+@@ -117,6 +141,12 @@ enum bfs_perf_io_kind {
+     BFS_PERF_IO_UPDATE
+ };
+ 
++enum bfs_perf_cpu_scope {
++#define BFS_PERF_CPU_SCOPE_ENUM(upper, lower) BFS_PERF_CPU_SCOPE_##upper,
++    BFS_PERF_CPU_SCOPES(BFS_PERF_CPU_SCOPE_ENUM)
++#undef BFS_PERF_CPU_SCOPE_ENUM
++};
++
+ void bfs_perf_probe_init(struct MsgPort *port);
+ void bfs_perf_probe_close(void);
+ void bfs_perf_probe_reset(void);
+@@ -131,6 +161,8 @@ void bfs_perf_probe_begin(struct EClockVal *start);
+ uint64_t bfs_perf_probe_elapsed(const struct EClockVal *start);
+ void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,
+                         const struct EClockVal *start);
++void bfs_perf_probe_cpu_scope_record(enum bfs_perf_cpu_scope scope,
++                                     uint64_t ticks);
+ #endif
+ 
+ #endif /* BFS_AMIGA_PERF_PROBE_H */
+diff --git a/src/core/alloc.c b/src/core/alloc.c
+index 00bb7f5..f790b7e 100644
+--- a/src/core/alloc.c
++++ b/src/core/alloc.c
+@@ -263,7 +263,11 @@ static bfs_blk_t iface_alloc(bfs_allocator_t *a)
+ }
+ #endif
+ 
++#ifdef BFS_PERF_PROBE
++static bfs_err_t iface_free_work(bfs_allocator_t *a, bfs_blk_t blk)
++#else
+ static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
++#endif
+ {
+     if (!a || !a->ctx) return BFS_ERR_INVAL;
+     bfs_freespace_t *fs = (bfs_freespace_t *)a->ctx;
+@@ -290,6 +294,21 @@ static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
+     return bfs_freespace_free(fs, blk, 1);
+ }
+ 
++#ifdef BFS_PERF_PROBE
++/* Recursive reserve returns are inside their outer allocator scope. */
++static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
++{
++    if (a && a->ctx && ((bfs_freespace_t *)a->ctx)->in_alloc)
++        return iface_free_work(a, blk);
++    struct EClockVal started = {0};
++    bfs_perf_probe_begin(&started);
++    bfs_err_t result = iface_free_work(a, blk);
++    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_IFACE_FREE,
++                                    bfs_perf_probe_elapsed(&started));
++    return result;
++}
++#endif
++
+ static bfs_err_t iface_error(bfs_allocator_t *a)
+ {
+     if (!a || !a->ctx) return BFS_ERR_INVAL;
+@@ -1408,7 +1427,11 @@ static bfs_err_t prepare_seal_leaf(bfs_fs_t *owner,
+     return next->count == 0 ? BFS_ERR_UNSUPPORTED : BFS_OK;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static bfs_err_t freespace_seal_commit_work(bfs_fs_t *owner, bool *sealed)
++#else
+ bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
++#endif
+ {
+     if (!owner || !sealed || !owner->bio) return BFS_ERR_INVAL;
+     *sealed = false;
+@@ -1518,6 +1541,18 @@ done:
+     return err;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
++{
++    struct EClockVal started = {0};
++    bfs_perf_probe_begin(&started);
++    bfs_err_t result = freespace_seal_commit_work(owner, sealed);
++    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_SEAL_COMMIT,
++                                    bfs_perf_probe_elapsed(&started));
++    return result;
++}
++#endif
++
+ static bfs_err_t restore_failed_reserve_root_fold(bfs_freespace_t *fs,
+                                                   const reserve_root_fold_t *batch,
+                                                   bfs_err_t err)
+diff --git a/src/core/file.c b/src/core/file.c
+index ea390e5..97b2691 100644
+--- a/src/core/file.c
++++ b/src/core/file.c
+@@ -727,7 +727,11 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len)
+     return err;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static int32_t file_write_operation_work(bfs_file_t *f, const void *buf, uint32_t len,
++#else
+ static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len,
++#endif
+                                      const file_write_metadata_t *metadata)
+ {
+     if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf))
+@@ -740,6 +744,19 @@ static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len
+     return err;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len,
++                                     const file_write_metadata_t *metadata)
++{
++    struct EClockVal started = {0};
++    bfs_perf_probe_begin(&started);
++    int32_t result = file_write_operation_work(f, buf, len, metadata);
++    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_FILE_WRITE,
++                                    bfs_perf_probe_elapsed(&started));
++    return result;
++}
++#endif
++
+ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
+ {
+     return file_write_operation(f, buf, len, NULL);
+diff --git a/src/core/fs.c b/src/core/fs.c
+index 7d8fa74..d372f3d 100644
+--- a/src/core/fs.c
++++ b/src/core/fs.c
+@@ -10,6 +10,9 @@
+ #include "bfs_snapshot.h"
+ #include <string.h>
+ #include <stdlib.h>
++#ifdef BFS_PERF_PROBE
++#include "perf_probe.h"
++#endif
+ 
+ /* Global metadata-reserve sizing (blocks held back so delete/rename/COW never
+  * hit ENOSPC mid-transaction): target ~1/20 of the volume, but at least
+@@ -507,7 +510,11 @@ bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree)
+ 
+ /* ── Sync ──────────────────────────────────────────────────── */
+ 
++#ifdef BFS_PERF_PROBE
++static bfs_err_t fs_sync_work(bfs_fs_t *fs)
++#else
+ bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
++#endif
+ {
+     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
+     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+@@ -518,6 +525,18 @@ bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
+     return err;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
++{
++    struct EClockVal started = {0};
++    bfs_perf_probe_begin(&started);
++    bfs_err_t result = fs_sync_work(fs);
++    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_SYNC,
++                                    bfs_perf_probe_elapsed(&started));
++    return result;
++}
++#endif
++
+ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
+ {
+     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
+diff --git a/src/core/namespace.c b/src/core/namespace.c
+index 7cb9597..0d87019 100644
+--- a/src/core/namespace.c
++++ b/src/core/namespace.c
+@@ -16,6 +16,9 @@
+ #include "bfs_snapshot.h"
+ #include <string.h>
+ #include <stdlib.h>
++#ifdef BFS_PERF_PROBE
++#include "perf_probe.h"
++#endif
+ 
+ typedef struct {
+     char name[80];
+@@ -925,7 +928,11 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
+                                          NULL, NULL, ino_out);
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static bfs_err_t fs_create_file_with_stamp_work(bfs_fs_t *fs, uint32_t parent_ino,
++#else
+ bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
++#endif
+                                        const char *name, uint8_t name_len,
+                                        bfs_inode_stamp_fn stamp_fn,
+                                        void *stamp_context, uint32_t *ino_out)
+@@ -944,6 +951,22 @@ bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
+     return err;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
++                                       const char *name, uint8_t name_len,
++                                       bfs_inode_stamp_fn stamp_fn,
++                                       void *stamp_context, uint32_t *ino_out)
++{
++    struct EClockVal started = {0};
++    bfs_perf_probe_begin(&started);
++    bfs_err_t result = fs_create_file_with_stamp_work(fs, parent_ino, name,
++                         name_len, stamp_fn, stamp_context, ino_out);
++    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_CREATE,
++                                    bfs_perf_probe_elapsed(&started));
++    return result;
++}
++#endif
++
+ bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
+ {
+     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+@@ -959,7 +982,11 @@ bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
+     return err;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static bfs_err_t fs_delete_file_work(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
++#else
+ bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
++#endif
+ {
+     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
+     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+@@ -974,6 +1001,19 @@ bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
+     return err;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name,
++                             uint8_t name_len)
++{
++    struct EClockVal started = {0};
++    bfs_perf_probe_begin(&started);
++    bfs_err_t result = fs_delete_file_work(fs, parent_ino, name, name_len);
++    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_DELETE,
++                                    bfs_perf_probe_elapsed(&started));
++    return result;
++}
++#endif
++
+ bfs_err_t bfs_fs_unlink_open_file(bfs_fs_t *fs, uint32_t parent_ino,
+                                   const char *name, uint8_t name_len,
+                                   uint32_t *orphan_ino_out)
+diff --git a/tests/quality/test_bench_verifier.py b/tests/quality/test_bench_verifier.py
+index f654c58..72da454 100644
+--- a/tests/quality/test_bench_verifier.py
++++ b/tests/quality/test_bench_verifier.py
+@@ -11,6 +11,30 @@ import unittest
+ ROOT = Path(__file__).resolve().parents[2]
+ EVIDENCE = ROOT / "docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29"
+ VERIFIER = ROOT / "emulator-test/verify-bench-results.sh"
++UINT32_MAX = 4294967295
++UINT64_MAX = 18446744073709551615
++CPU_SCOPES = (
++    "PACKET", "PACKET_OPEN", "PACKET_READ", "PACKET_WRITE", "PACKET_END",
++    "PACKET_DELETE", "PACKET_FLUSH", "PACKET_OTHER", "CORE_CREATE",
++    "CORE_DELETE", "CORE_FILE_WRITE", "CORE_SYNC", "IFACE_FREE",
++    "SEAL_COMMIT",
++)
++CPU_SCOPE_VALUES = {
++    "PACKET": (35, 35, 350),
++    "PACKET_OPEN": (2, 2, 20),
++    "PACKET_READ": (3, 3, 30),
++    "PACKET_WRITE": (4, 4, 40),
++    "PACKET_END": (5, 5, 50),
++    "PACKET_DELETE": (6, 6, 60),
++    "PACKET_FLUSH": (7, 7, 70),
++    "PACKET_OTHER": (8, 8, 80),
++    "CORE_CREATE": (11, 11, 101),
++    "CORE_DELETE": (0, 0, 0),
++    "CORE_FILE_WRITE": (13, 13, 131),
++    "CORE_SYNC": (17, 17, 170),
++    "IFACE_FREE": (19, 19, 190),
++    "SEAL_COMMIT": (23, 23, 230),
++}
+ 
+ 
+ class BenchVerifierTests(unittest.TestCase):
+@@ -334,6 +358,39 @@ class BenchVerifierTests(unittest.TestCase):
+         pfs_lines[0] = "FS_DEEP_COMPARE\t10"
+         pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
+ 
++    def upgrade_deep_compare_to_v11(self):
++        self.upgrade_deep_compare_to_v10()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii").splitlines()
++        self.assertEqual(original[0], "FS_DEEP_COMPARE\t10")
++        upgraded = ["FS_DEEP_COMPARE\t11"]
++        for line in original[1:]:
++            if line.startswith("PASS\t"):
++                upgraded.append(line)
++                continue
++            upgraded.append(line)
++            name = line.split("\t", 1)[0]
++            suffix = "_FREESPACE_ALLOC_SAMPLE_TICKS"
++            if not name.endswith(suffix):
++                continue
++            phase = name[:-len(suffix)]
++            # Contract-only synthetic values; these are not forecasts of
++            # workload operation counts or success-only production behavior.
++            for scope in CPU_SCOPES:
++                calls, samples, ticks = CPU_SCOPE_VALUES[scope]
++                upgraded.extend((
++                    f"{phase}_{scope}_CALLS\t{calls}",
++                    f"{phase}_{scope}_SAMPLES\t{samples}",
++                    f"{phase}_{scope}_SAMPLE_TICKS\t{ticks}",
++                ))
++        bfs.write_text("\n".join(upgraded) + "\n", encoding="ascii")
++
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
++        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t10")
++        pfs_lines[0] = "FS_DEEP_COMPARE\t11"
++        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
++
+     def upgrade_raw_deep_compare_v8_to_v9(self):
+         source = ROOT / "docs/qualification/evidence/bfs-sealed-settlement-2026-10-01/baseline-deep"
+         for name in (
+@@ -884,6 +941,227 @@ class BenchVerifierTests(unittest.TestCase):
+                 self.set_metrics(bfs, updates)
+                 self.assertNotEqual(self.verify("deep-compare").returncode, 0)
+ 
++    def test_deep_compare_v11_accepts_inclusive_cpu_scopes_and_packet_partition(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v11()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        self.assertIn("FS_DEEP_COMPARE\t11", contents)
++        self.assertIn("CPU_SAMPLE_STRIDE\t1", contents)
++        for phase in (
++            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
++            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
++        ):
++            rows = [
++                line for line in contents.splitlines()
++                if line.startswith(phase + "_")
++            ]
++            cpu_rows = [
++                line for line in rows
++                if any(line.startswith(phase + "_" + scope + "_")
++                       for scope in CPU_SCOPES)
++            ]
++            self.assertEqual(len(cpu_rows), len(CPU_SCOPES) * 3)
++            for scope, expected in CPU_SCOPE_VALUES.items():
++                self.assertEqual(
++                    tuple(self.metric_value(
++                        contents, f"{phase}_{scope}_{suffix}",
++                    ) for suffix in ("CALLS", "SAMPLES", "SAMPLE_TICKS")),
++                    expected,
++                )
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_deep_compare_v11_rejects_missing_malformed_and_duplicate_scopes(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v11()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        missing_row = "LOOKUP_400_IFACE_FREE_SAMPLE_TICKS\t190"
++        malformed_row = "SMALL_READ_40_CORE_CREATE_SAMPLE_TICKS\t101"
++        duplicate_row = "SMALL_DELETE_40_PACKET_OTHER_CALLS\t8"
++        self.assertIn(missing_row + "\n", original)
++        self.assertIn(malformed_row + "\n", original)
++        self.assertIn(duplicate_row + "\n", original)
++        cases = (
++            ("missing scope row", original.replace(missing_row + "\n", "", 1)),
++            ("malformed scope row", original.replace(
++                malformed_row + "\n",
++                "SMALL_READ_40_CORE_CREATE_SAMPLE_TICKS\tbad\n", 1,
++            )),
++            ("duplicate scope row", original.replace(
++                "PASS\t1\n", duplicate_row + "\nPASS\t1\n", 1,
++            )),
++        )
++        for label, mutated in cases:
++            with self.subTest(scope=label):
++                bfs.write_text(mutated, encoding="ascii")
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v11_rejects_sample_and_zero_call_tick_errors(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v11()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        cases = (
++            ("sample differs from call count", {
++                "SMALL_CREATE_40_CORE_CREATE_SAMPLES": 10,
++            }),
++            ("ticks with zero calls", {
++                "SMALL_CREATE_40_CORE_DELETE_SAMPLE_TICKS": 1,
++            }),
++        )
++        for label, updates in cases:
++            with self.subTest(scope=label):
++                bfs.write_text(original, encoding="ascii")
++                self.set_metrics(bfs, updates)
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v11_rejects_mixed_version_headers(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v11()
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        original = pfs3.read_text(encoding="ascii")
++        pfs3.write_text(original.replace(
++            "FS_DEEP_COMPARE\t11\n", "FS_DEEP_COMPARE\t10\n", 1,
++        ), encoding="ascii")
++        result = self.verify("deep-compare")
++        self.assertNotEqual(result.returncode, 0)
++
++    def test_deep_compare_v11_rejects_packet_partition_call_and_tick_errors(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v11()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        cases = (
++            ("packet call partition", {
++                "SMALL_CREATE_40_PACKET_CALLS": 36,
++                "SMALL_CREATE_40_PACKET_SAMPLES": 36,
++            }),
++            ("packet tick partition", {
++                "SMALL_CREATE_40_PACKET_SAMPLE_TICKS": 351,
++            }),
++            ("exact uint64 packet tick partition", {
++                "SMALL_CREATE_40_PACKET_SAMPLE_TICKS": 9007199254740993,
++                "SMALL_CREATE_40_PACKET_OPEN_SAMPLE_TICKS": 9007199254740992,
++                "SMALL_CREATE_40_PACKET_READ_SAMPLE_TICKS": 0,
++                "SMALL_CREATE_40_PACKET_WRITE_SAMPLE_TICKS": 0,
++                "SMALL_CREATE_40_PACKET_END_SAMPLE_TICKS": 0,
++                "SMALL_CREATE_40_PACKET_DELETE_SAMPLE_TICKS": 0,
++                "SMALL_CREATE_40_PACKET_FLUSH_SAMPLE_TICKS": 0,
++                "SMALL_CREATE_40_PACKET_OTHER_SAMPLE_TICKS": 0,
++            }),
++        )
++        for label, updates in cases:
++            with self.subTest(partition=label):
++                bfs.write_text(original, encoding="ascii")
++                self.set_metrics(bfs, updates)
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v11_accepts_maximum_unsigned_scope_values(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v11()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        updates = {}
++        for scope in CPU_SCOPES:
++            updates[f"SMALL_CREATE_40_{scope}_CALLS"] = UINT32_MAX
++            updates[f"SMALL_CREATE_40_{scope}_SAMPLES"] = UINT32_MAX
++            updates[f"SMALL_CREATE_40_{scope}_SAMPLE_TICKS"] = UINT64_MAX
++        updates.update({
++            "SMALL_CREATE_40_PACKET_OPEN_CALLS": UINT32_MAX,
++            "SMALL_CREATE_40_PACKET_OPEN_SAMPLES": UINT32_MAX,
++            "SMALL_CREATE_40_PACKET_OPEN_SAMPLE_TICKS": UINT64_MAX,
++            "SMALL_CREATE_40_PACKET_READ_CALLS": 0,
++            "SMALL_CREATE_40_PACKET_READ_SAMPLES": 0,
++            "SMALL_CREATE_40_PACKET_READ_SAMPLE_TICKS": 0,
++            "SMALL_CREATE_40_PACKET_WRITE_CALLS": 0,
++            "SMALL_CREATE_40_PACKET_WRITE_SAMPLES": 0,
++            "SMALL_CREATE_40_PACKET_WRITE_SAMPLE_TICKS": 0,
++            "SMALL_CREATE_40_PACKET_END_CALLS": 0,
++            "SMALL_CREATE_40_PACKET_END_SAMPLES": 0,
++            "SMALL_CREATE_40_PACKET_END_SAMPLE_TICKS": 0,
++            "SMALL_CREATE_40_PACKET_DELETE_CALLS": 0,
++            "SMALL_CREATE_40_PACKET_DELETE_SAMPLES": 0,
++            "SMALL_CREATE_40_PACKET_DELETE_SAMPLE_TICKS": 0,
++            "SMALL_CREATE_40_PACKET_FLUSH_CALLS": 0,
++            "SMALL_CREATE_40_PACKET_FLUSH_SAMPLES": 0,
++            "SMALL_CREATE_40_PACKET_FLUSH_SAMPLE_TICKS": 0,
++            "SMALL_CREATE_40_PACKET_OTHER_CALLS": 0,
++            "SMALL_CREATE_40_PACKET_OTHER_SAMPLES": 0,
++            "SMALL_CREATE_40_PACKET_OTHER_SAMPLE_TICKS": 0,
++            "SMALL_CREATE_40_PACKET_CALLS": UINT32_MAX,
++            "SMALL_CREATE_40_PACKET_SAMPLES": UINT32_MAX,
++            "SMALL_CREATE_40_PACKET_SAMPLE_TICKS": UINT64_MAX,
++        })
++        self.set_metrics(bfs, updates)
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_deep_compare_v11_rejects_unsigned_overflow_and_lossy_counts(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v11()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        cases = (
++            ("ULONG call overflow", {
++                "SMALL_CREATE_40_CORE_CREATE_CALLS": UINT32_MAX + 1,
++                "SMALL_CREATE_40_CORE_CREATE_SAMPLES": UINT32_MAX + 1,
++            }),
++            ("ULONG sample overflow", {
++                "SMALL_CREATE_40_CORE_CREATE_SAMPLES": UINT32_MAX + 1,
++            }),
++            ("uint64 tick overflow", {
++                "SMALL_CREATE_40_CORE_SYNC_SAMPLE_TICKS": UINT64_MAX + 1,
++            }),
++            ("lossy large sample mismatch", {
++                "SMALL_CREATE_40_CORE_FILE_WRITE_CALLS": 9007199254740992,
++                "SMALL_CREATE_40_CORE_FILE_WRITE_SAMPLES": 9007199254740993,
++            }),
++            ("self-consistent but out-of-range packet total", {
++                "SMALL_CREATE_40_PACKET_CALLS": 7000000000,
++                "SMALL_CREATE_40_PACKET_SAMPLES": 7000000000,
++                "SMALL_CREATE_40_PACKET_SAMPLE_TICKS": 7,
++                "SMALL_CREATE_40_PACKET_OPEN_CALLS": 1000000000,
++                "SMALL_CREATE_40_PACKET_OPEN_SAMPLES": 1000000000,
++                "SMALL_CREATE_40_PACKET_OPEN_SAMPLE_TICKS": 1,
++                "SMALL_CREATE_40_PACKET_READ_CALLS": 1000000000,
++                "SMALL_CREATE_40_PACKET_READ_SAMPLES": 1000000000,
++                "SMALL_CREATE_40_PACKET_READ_SAMPLE_TICKS": 1,
++                "SMALL_CREATE_40_PACKET_WRITE_CALLS": 1000000000,
++                "SMALL_CREATE_40_PACKET_WRITE_SAMPLES": 1000000000,
++                "SMALL_CREATE_40_PACKET_WRITE_SAMPLE_TICKS": 1,
++                "SMALL_CREATE_40_PACKET_END_CALLS": 1000000000,
++                "SMALL_CREATE_40_PACKET_END_SAMPLES": 1000000000,
++                "SMALL_CREATE_40_PACKET_END_SAMPLE_TICKS": 1,
++                "SMALL_CREATE_40_PACKET_DELETE_CALLS": 1000000000,
++                "SMALL_CREATE_40_PACKET_DELETE_SAMPLES": 1000000000,
++                "SMALL_CREATE_40_PACKET_DELETE_SAMPLE_TICKS": 1,
++                "SMALL_CREATE_40_PACKET_FLUSH_CALLS": 1000000000,
++                "SMALL_CREATE_40_PACKET_FLUSH_SAMPLES": 1000000000,
++                "SMALL_CREATE_40_PACKET_FLUSH_SAMPLE_TICKS": 1,
++                "SMALL_CREATE_40_PACKET_OTHER_CALLS": 1000000000,
++                "SMALL_CREATE_40_PACKET_OTHER_SAMPLES": 1000000000,
++                "SMALL_CREATE_40_PACKET_OTHER_SAMPLE_TICKS": 1,
++            }),
++        )
++        for label, updates in cases:
++            with self.subTest(scope=label):
++                bfs.write_text(original, encoding="ascii")
++                self.set_metrics(bfs, updates)
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v10_does_not_apply_schema11_integer_bounds(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v10()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        self.set_metrics(bfs, {
++            "SMALL_CREATE_40_BTREE_MALLOC_CALLS": UINT32_MAX + 1,
++            "SMALL_CREATE_40_BTREE_MALLOC_SAMPLES": UINT32_MAX + 1,
++            "SMALL_CREATE_40_BTREE_MALLOC_SAMPLE_TICKS": UINT64_MAX + 1,
++        })
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
+     def test_deep_compare_v10_rejects_reserve_batch_and_sealed_accounting_errors(self):
+         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+         self.upgrade_deep_compare_to_v10()
+diff --git a/tools/fs-compare-bench.c b/tools/fs-compare-bench.c
+index 3ac85d2..1460663 100644
+--- a/tools/fs-compare-bench.c
++++ b/tools/fs-compare-bench.c
+@@ -280,6 +280,13 @@ static void emit_deep_counter_rows(const char *phase,
+                     snapshot->freespace_alloc_samples);
+     prefixed_metric(phase, "FREESPACE_ALLOC_SAMPLE_TICKS",
+                     (unsigned long long)snapshot->freespace_alloc_sample_ticks);
++#define BFS_EMIT_CPU_SCOPE(UPPER, lower) \
++    prefixed_metric(phase, #UPPER "_CALLS", snapshot->lower##_calls); \
++    prefixed_metric(phase, #UPPER "_SAMPLES", snapshot->lower##_samples); \
++    prefixed_metric(phase, #UPPER "_SAMPLE_TICKS", \
++                    (unsigned long long)snapshot->lower##_sample_ticks);
++    BFS_PERF_CPU_SCOPES(BFS_EMIT_CPU_SCOPE)
++#undef BFS_EMIT_CPU_SCOPE
+ }
+ 
+ static BOOL make_path(char *path, ULONG capacity, const char *drive, const char *suffix)
+@@ -460,7 +467,7 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
+     handle = CreateDir(path);
+     if (!handle) return fail("mkdir");
+     UnLock(handle);
+-    if (deep_mode) emit("FS_DEEP_COMPARE\t10\nDRIVE\t");
++    if (deep_mode) emit("FS_DEEP_COMPARE\t11\nDRIVE\t");
+     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
+     emit(drive);
+     emit("\n");

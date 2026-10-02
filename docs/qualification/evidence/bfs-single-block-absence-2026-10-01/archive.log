@@ -1,0 +1,24 @@
+f59cb92616fb0399399fd31f78f341d2a1e24cf0261f9a2c7f6ff4bf6f0e4624  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-probe-bfs-first/system/Results/bfs.deep-compare.tsv
+2983979a86b6dff3f1da29465e0ec9f9f9e80078c6fa7fbadf73eb00d58527ae  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-probe-bfs-first/system/Results/pfs3.deep-compare.tsv
+cf92c49967d016f3141d5f5d1de9d6e158f17d59661f8df156cfdb66d68ee3bb  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-probe-pfs3-first/system/Results/bfs.deep-compare.tsv
+214e9a5e574cac8747bb458efbab05769ded16b04ae5ab24e074fa700384cf0a  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-probe-pfs3-first/system/Results/pfs3.deep-compare.tsv
+02ca7a3ee98a11e615999663885720d4bf1be2cf96771224c753cb7c2a304455  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-baseline-bfs-first/system/Results/bfs.tsv
+faf1270a98fc03592a2272e6f319dd8b1ec824d26737d71c9aee6fa67b56a75f  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-baseline-bfs-first/system/Results/pfs3.tsv
+cef2ee1301437c6e508b81d25c177ef45a91222b7934eb73dc9d61cef756a370  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-candidate-pfs3-first/system/Results/bfs.tsv
+bc35b9c719b981c55d80b161aeb263da5a75c6480eb8afdf8c60cc4adc67a6e0  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+17c8003fc9f742b6c9d1446d9790246056c60082f40d3e82e4542f73307ebef0  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-baseline-pfs3-first/system/Results/bfs.tsv
+a44abd6a99af091c7a874ea61c9679ab995c6c5d8d6a1cbe4022b0e36829f25d  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+84a2210dd6355e7f3bb57abe613ca1927905665f2f3e11ca710a81ff3e6ea822  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-candidate-bfs-first/system/Results/bfs.tsv
+38da997b23e74b6811dd71857e25c19bdde3fdb304492e539b91ffa828a97e35  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-candidate-bfs-first/system/Results/pfs3.tsv
+d31ca3eade8f17ca1ee08a705c0116133aaf949e3da09c5571d3df7dca13d6d6  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+6d3bc75d840d86e846b7a9bc3bb6f58bda2db643f540076bce046b180d82363f  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+f264d26db3e1c6c39f785b4748e0b21d6be86f974b2338ee9cd003ec83cd19a5  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+0bab9f334fbe9dc6c42ea4080e024d68ea3ec95da25d16300384623e920c5a89  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+7124b390adab08462798049949b80001afeef5a505a1a5343d6255dce321ca68  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+fbb2fa72fc717160d7e5f3331848aaa3f3ff8f4f842d3487a3b4a8fb45081c0c  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+730e420d73a44c92326efbb9bd95784f4837ccca418b5bbc423fe9e8d9854edf  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+667758ff1ff0864008a520552bf24ece6922e62152f3e8d5a1c0fd6c0d8aff0b  /home/fabian/.cache/bfs-performance/single-block-absence-2026-10-01/single-block-absence-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  3.5G  8.3G  30% /tmp
+/dev/vda2       996G  314G  682G  32% /home
+Ten completed single-block-absence images archived recoverably with identical TSV hashes

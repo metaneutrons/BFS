@@ -1,0 +1,25 @@
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: missing SMALL_CREATE_40_TXN_SEAL_CALLS
+    at integer (file:///Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/single-block-absence-probe-summary-run1.mjs:34:5)
+    at file:///Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/single-block-absence-probe-summary-run1.mjs:50:21
+    at Array.map (<anonymous>)
+    at file:///Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/single-block-absence-probe-summary-run1.mjs:49:49
+    at Array.map (<anonymous>)
+    at read (file:///Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/single-block-absence-probe-summary-run1.mjs:45:50)
+    at file:///Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/single-block-absence-probe-summary-run1.mjs:63:20
+    at Array.map (<anonymous>)
+    at file:///Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/single-block-absence-probe-summary-run1.mjs:62:43
+    at ModuleJob.run (node:internal/modules/esm/module_job:569:25) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
+}
+
+Node.js v26.8.2
+Reproduced diagnostic parser attempt1 exit=1

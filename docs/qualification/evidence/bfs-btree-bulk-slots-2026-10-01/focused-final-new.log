@@ -1,0 +1,7 @@
+=== B+tree bulk slot shifts ===
+  test_leaf_slot_positions_odd_widths                OK
+  test_leaf_io_failures_preserve_cow_root            OK
+  test_odd_width_multilevel_insert_delete            OK
+  test_max_key_multilevel_insert_delete              OK
+
+4 passed, 0 failed

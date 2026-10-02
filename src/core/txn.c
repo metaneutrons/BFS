@@ -5,8 +5,8 @@
  * COW transaction model:
  *   txn_begin   → snapshot superblock, start tracking changes
  *   (mutations  → all COW'd, tree roots updated in the working copy)
- *   txn_commit  → the single filesystem commit boundary: return reserve, gather
- *                 tree roots, write the superblock, drain the COW pending-frees
+ *   txn_commit  → seal eligible free-leaf settlement, gather matching roots,
+ *                 publish+sync; otherwise use the established reclaim loop
  *   txn_abort   → discard working copy, revert to snapshot
  *
  * bfs_txn_write_sb is the low-level "make the working superblock durable"
@@ -22,6 +22,9 @@
 #include "bfs_fs.h"
 #include <string.h>
 #include <stdlib.h>
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 bfs_err_t bfs_txn_begin(bfs_txn_t *txn, bfs_bio_t *bio)
 {
@@ -86,6 +89,9 @@ bfs_err_t bfs_txn_write_sb(bfs_txn_t *txn)
     if (next_id == UINT64_MAX) return BFS_ERR_NOSPC;
     bfs_err_t err = bfs_sb_write(txn->bio, &txn->sb_new);
     if (err != BFS_OK) return err;
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.superblock_publications++;
+#endif
     txn->sb = txn->sb_new;
     txn->sb_new.txn_id = bfs_be64(next_id + 1);
     /* active remains true: the transaction stays open for the next commit cycle.
@@ -141,9 +147,9 @@ static bool preserve_pending_tail(bfs_fs_t *fs, const bfs_blk_t *items,
 }
 
 /* The single transaction-commit boundary for a mounted filesystem: flush data
- * (data=ordered), return the reserve pool, gather the current tree roots into
- * the working superblock and write it, then drain the COW pending-free queue
- * (refcount-aware) and re-commit the free tree. Every caller that needs to make
+ * (data=ordered), seal eligible settlement without reuse until publication,
+ * or return reserve and publish before refcount-aware pending reclamation.
+ * Every caller that needs to make
  * filesystem state durable — file/snapshot/namespace mid-op, sync, unmount —
  * goes through here. */
 static bfs_err_t reclaim_shared_blocks(bfs_fs_t *fs, const bfs_blk_t *blocks,
@@ -178,7 +184,7 @@ static bfs_err_t reclaim_block_ranges(bfs_fs_t *fs, const bfs_blk_t *blocks,
     return BFS_OK;
 }
 
-static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs)
+static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
 {
     uint32_t count = fs->pending_count;
     if (count > bfs_fs_pending_cap(fs) ||
@@ -196,17 +202,38 @@ static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs)
         }
     }
     fs->pending_count = 0;
-    bfs_err_t err = fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL
-        ? reclaim_shared_blocks(fs, blocks, count)
-        : reclaim_block_ranges(fs, blocks, count);
+    bfs_err_t err;
+    if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
+        err = reclaim_shared_blocks(fs, blocks, count);
+    } else {
+        err = allow_leaf_batch && count > 1
+            ? bfs_freespace_free_sorted_blocks(&fs->freespace, blocks, count)
+            : BFS_ERR_UNSUPPORTED;
+        if (err == BFS_ERR_UNSUPPORTED)
+            err = reclaim_block_ranges(fs, blocks, count);
+    }
     free(blocks);
     return err;
 }
 
 static bfs_err_t txn_commit_working(bfs_fs_t *fs)
 {
-    bfs_err_t err = bfs_freespace_return_reserve(&fs->freespace);
+    bool sealed = false;
+    bfs_err_t err = bfs_freespace_seal_commit(fs, &sealed);
     if (err != BFS_OK) return err;
+    if (!sealed) {
+        err = bfs_freespace_return_reserve(&fs->freespace);
+        if (err != BFS_OK) return err;
+    } else {
+        /* Durable graph before publish: an unsuccessful later flush may
+         * persist only the new SB. It must never expose a missing leaf or
+         * COW/data node. Keep allocation frozen across both barriers. */
+        err = bfs_bio_sync(fs->bio);
+        if (err != BFS_OK) return err;
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_counters.sealed_metadata_fences++;
+#endif
+    }
 
     /* Update superblock with current tree roots */
     bfs_txn_set_dir_root(&fs->txn, fs->dir_tree.tree.root);
@@ -221,14 +248,50 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
     if (err != BFS_OK) return err;
     update_tree_txns(fs);
 
+    if (sealed) {
+        /* The replacement cannot be consumed before write_sb's successful
+         * sync. Only now are included retirements durably free. No callbacks
+         * or filesystem allocation occurred in the sealed interval. */
+        fs->pending_count = 0;
+        fs->freespace.allocation_frozen = false;
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_counters.sealed_commits++;
+#endif
+        return bfs_bio_sync(fs->bio);
+    }
+
     /* Process pending frees: Use a local buffer to avoid overwriting while processing */
     int sync_iterations = 0;
+#ifdef BFS_PERF_PROBE
+    ULONG post_publish_reclaim_passes = 0;
+#endif
     while (fs->pending_count > 0 && sync_iterations < 256) {
         sync_iterations++;
-        err = reclaim_pending_batch(fs);
+        /* A bulk root swap itself retires the preceding root. Limit batching
+         * to the initial reclaim pass; the ordinary path settles the resulting
+         * small tail without repeatedly swapping one root for another. */
+#ifdef BFS_PERF_PROBE
+        ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+            BFS_PERF_FREE_TREE_PHASE_POST_PUBLISH_PENDING_RECLAIM);
+#endif
+        err = reclaim_pending_batch(fs, sync_iterations == 1);
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
         if (err != BFS_OK) return err;
+#ifdef BFS_PERF_PROBE
+        post_publish_reclaim_passes++;
+        bfs_perf_probe_counters.post_publish_reclaim_passes++;
+        if (post_publish_reclaim_passes >
+            bfs_perf_probe_counters.max_post_publish_reclaim_passes_per_commit)
+            bfs_perf_probe_counters.max_post_publish_reclaim_passes_per_commit =
+                post_publish_reclaim_passes;
+#endif
 
-        err = bfs_freespace_return_reserve(&fs->freespace);
+        /* Mixed ordinary/emergency batches are useful before publication,
+         * but can perpetually create another retired ordinary root here.
+         * Keep the established settlement path for this fixed-point tail. */
+        err = bfs_freespace_settle_reserve(&fs->freespace);
         if (err != BFS_OK) return err;
 
         /* Final commit of free tree changes */
@@ -252,6 +315,11 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
     if (!fs || !fs->mounted || !fs->bio || !fs->txn.active)
         return BFS_ERR_INVAL;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.txn_commit_calls++;
+#endif
     /* An ordered-data flush has not modified commit state, so it can be retried. */
     if (fs->options & BFS_OPT_DATA_ORDERED) {
         bfs_err_t err = bfs_bio_sync(fs->bio);

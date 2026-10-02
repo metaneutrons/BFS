@@ -62,7 +62,8 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 	host-test coverage sanitize amiga amiga-stresstest clean tools stress-test bench release \
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
 	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
-	fault-qualification fault-qualification-verify
+	fault-qualification fault-qualification-verify amiga-fs-compare-bench amiga-fs-profile-bench \
+	amiga-perf-probe-handler
 
 .PHONY: fuse
 
@@ -247,6 +248,13 @@ amiga:
 		$(AMIGA_SRCS) \
 		-nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 
+# Instrumented handler for disposable emulator profiling only. Never a release artifact.
+amiga-perf-probe-handler:
+	@mkdir -p $(BUILD_AMIGA)
+	$(AMIGA_CC) $(AMIGA_CFLAGS) -DBFS_PERF_PROBE=1 -o $(BUILD_AMIGA)/bfshandler-probe \
+		$(AMIGA_SRCS) src/amiga/perf_probe.c \
+		-nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
+
 amiga-stresstest:
 	@mkdir -p $(BUILD_AMIGA)
 	$(AMIGA_CC) $(AMIGA_WARNINGS) -noixemul -m68020 -O2 -I$(AMIGA_PREFIX)/ndk-include \
@@ -342,6 +350,23 @@ emulator-test-ci: ci-test
 
 emulator-setup:
 	@tools/install-aros-rom.sh build/emulator/aros
+
+amiga-fs-compare-bench:
+	@mkdir -p $(BUILD_AMIGA)
+	$(AMIGA_CC) -std=c99 $(AMIGA_WARNINGS) -noixemul -m68020 -O2 \
+		-Isrc/amiga \
+		-I$(AMIGA_PREFIX)/ndk-include \
+		-B$(AMIGA_PREFIX)/libnix/lib/ \
+		-L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib \
+		-o $(BUILD_AMIGA)/fs-compare-bench tools/fs-compare-bench.c -lamiga
+
+amiga-fs-profile-bench:
+	@mkdir -p $(BUILD_AMIGA)
+	$(AMIGA_CC) -std=c99 $(AMIGA_WARNINGS) -noixemul -m68020 -O2 \
+		-Isrc/amiga -I$(AMIGA_PREFIX)/ndk-include \
+		-B$(AMIGA_PREFIX)/libnix/lib/ \
+		-L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib \
+		-o $(BUILD_AMIGA)/fs-profile-bench tools/fs-profile-bench.c -lamiga
 
 amiga-bench:
 	@mkdir -p $(BUILD_AMIGA)

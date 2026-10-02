@@ -1,0 +1,178 @@
+# BFS temporary block buffer reuse
+
+Decision state: retained after functional qualification and eight fresh normal
+measurements. BR1 and BR2 are complete for this increment; the overall goal
+remains unachieved. The
+[qualification report](../qualification/bfs-temporary-buffer-reuse-performance-2026-10-01.md)
+owns the decision, all timings and limitations.
+No new GitHub tracking or publication is authorized. This plan extends the
+existing performance qualification, not its acceptance target: BFS must take
+at most five times PFS3 elapsed time in every checked AmigaDOS workload, with
+unchanged durability, integrity, snapshot and recovery guarantees.
+
+## Outcome and boundaries
+
+The CPU probe records over 2200 direct B-tree heap allocations while creating
+40 files. Direct malloc and free intervals consume a material part of the
+instrumented time, but are not a prediction of normal-handler speedup.
+The [CPU attribution report](../qualification/bfs-cpu-attribution-2026-10-01.md)
+owns the measured inputs and interpretation.
+
+Reuse temporary operation buffers, not cached node bytes. Preserve all node
+reads, copies, validation, CRCs, COW ownership, writes, commit fences and flushes.
+No format change, delayed metadata write, cached validation across mutations,
+platform-specific filesystem algorithm or change to the workload is in scope.
+
+## Design and ownership
+
+Add optional paired temporary-buffer allocation/release hooks to the shared
+BIO abstraction. A backend without both hooks uses malloc/free. The shared
+read cache may retain up to four individually leased, lazily allocated buffers
+of exactly one filesystem block each. Occupied slots or other request sizes
+use ordinary heap allocation. A failed allocation returns NULL; do not mask it
+with a second allocation attempt. Release recognizes exact pool pointers and
+otherwise frees ordinary heap storage. NULL release remains a no-op.
+
+No lease may alias another active lease or any resident read-cache slot.
+Recursive allocator operations through the same BIO need distinct leases;
+exhaustion must fall back safely, not reuse a live pointer. Buffers contain no
+persistent validation state and need no clearing beyond the current callers'
+initialization. Invalidation must not release an active temporary buffer.
+Destroy/reinit occurs outside complete serialized operations and frees all
+retained buffers. A live cache is not copied, resized or destroyed during a
+lease. These are the existing cache lifecycle/serialization boundaries.
+
+B-tree operation buffers use the paired helpers. Census hash storage and scan
+continuation keys retain ordinary heap ownership. Keep all cleanup and error
+paths paired, including split/merge aborts and failed reads. No allocator state
+or tree ownership may change merely because a buffer is recycled. The maximum
+retained payload is four blocks: 16 KiB at the measured 4 KiB geometry and
+256 KiB at the maximum supported geometry, plus fixed lease metadata.
+
+An Amiga-only global arena was rejected because it would duplicate policy and
+hide cross-filesystem ownership. Borrowing resident node-cache views was
+rejected because nested reads, writes and eviction could invalidate them.
+
+## Delivery and acceptance
+
+### BR1 Shared implementation and functional qualification
+
+Dependency: the CPU attribution checkpoint and the retained sealed-settlement
+implementation. GitHub issue links remain pending; creating them is not part
+of this local experiment.
+
+- BR1-A1: Optional-hook fallback, repeated reuse, four distinct simultaneous
+  leases, overflow allocation, non-block-size allocation, NULL release,
+  invalidation, destroy/reinit and isolation from cache bytes are tested.
+- BR1-A2: Naturally nested B-tree/Free-Tree operations witness distinct live
+  leases. Read/write failure and split/merge cleanup leave no busy lease;
+  existing strict data, graph, recovery, snapshot and low-space oracles pass.
+- BR1-A3: Normal and ASan/UBSan full host suites, local quality/static checks,
+  independent source/test review and normal/probe m68k builds pass. Probe
+  metrics continue to mean direct calls in btree.c, not all backend heap use.
+
+### BR2 Fresh normal measurements and adoption decision
+
+Dependency: BR1. Use fresh baseline/candidate images in both filesystem orders,
+the same normal guest tool and unchanged formatter, PFS3, geometry, ROM and
+isolated FS-UAE configuration. Keep every sample and strict verifier result.
+
+- BR2-A1: Four normal runs per version, balanced by filesystem order, are
+  complete and data-verified. Report all six workload times, matched changes,
+  candidate/PFS3 ratios and every run above five times PFS3.
+- BR2-A2: Persist input identities, raw evidence, tests and the adoption or
+  rejection decision. Reject an unsafe or ineffective experiment; preserve its
+  evidence and restore the qualified checkpoint. A partial speedup is not
+  completion of the overall goal.
+
+## Risks and rollback
+
+Retained memory may hurt constrained Amigas. Cap it, allocate lazily, preserve
+the existing NULL/error behavior, and measure elapsed time rather than assuming
+that fewer heap requests are sufficient. Pool scans and callbacks add overhead.
+No quantitative forecast, deadline or statistical precision is promised.
+The source checkpoint before this experiment provides an exact rollback base.
+Real devices, power cuts, controller behavior, CI, push, PR and release work
+remain outside this increment.
+
+## BR3 Exact path allocation follow on
+
+Decision state: retained after functional qualification and eight additional
+fresh normal runs. BR3 is complete for this bounded increment, not the overall
+goal. The
+[exact-path qualification report](../qualification/bfs-exact-path-buffer-performance-2026-10-01.md)
+records the proof, all adverse observations and remaining threshold failures.
+
+The retained BR1/BR2 checkpoint is `2c6fa11`. Insert/delete currently reserve
+one more path block than their validated height, although every path access
+is below that height. Split-root and sibling storage is independently leased;
+update/rekey already allocate exactly height blocks. Remove only the unused
+extra block, leaving traversal bounds, COW, writes and error behavior intact.
+At height one this permits the existing recycler to handle the path buffer.
+
+Qualification requires a warm-pool allocation-fault oracle that would reject
+the previous two-block request, the complete normal/sanitizer/quality gates,
+split/merge/deeper-tree and natural nested allocator tests, and a separate
+fresh-image normal comparison against `2c6fa11`. A static access-bound review
+is not an elapsed-time prediction or completion of the performance goal.
+
+## BR4 Sealed preflight geometry follow on
+
+Decision state: experiment complete and rejected as the default. Write and
+delete were slower in all four same-order fresh-image pairs. Production is
+restored exactly to retained checkpoint `8b35eec`; additional backup-width
+tests remain. The [qualification report](../qualification/bfs-seal-geometry-performance-2026-10-01.md)
+owns the measurements, decision and limitations. The overall five-times
+target is unchanged and remains unmet.
+
+Capture the data start, device block count and both backup block quotients once
+at entry to the callback-free sealed-commit preflight. Reuse this ephemeral
+geometry for each pool entry and input block; do not cache it across mutations.
+Keep full-width 64-bit equality for individual blocks and the existing explicit
+32-bit casts for old Free-Tree range checks. Preserve every root, reserve,
+pending and all-32-slot historical-pool guard, all validation and publication
+fences. Do not restore the rejected metadata-stock policy.
+
+Qualification requires distinct working/committed backup rejection tests for
+pending, reserve, inactive pool and old Free-Tree overlaps. Artificial high-half
+offset tests must preserve the distinct comparison widths without publishing
+or remounting malformed superblocks. Run these tests on the exact baseline and
+candidate, then all normal/sanitizer/local-quality gates and actual Linux FUSE
+tests. Inspect normal m68k assembly to confirm divisions leave the per-entry
+loops; this is not a speedup estimate. Finally compare eight fresh normal runs,
+four per version with both filesystem orders, retain every adverse observation
+and persist the adoption or rejection decision with raw evidence.
+
+## BR5 Reuse a checked resident slot lookup
+
+Decision state: experiment complete and rejected for insufficient consistent
+normal-handler benefit. Production cache/header are restored exactly to
+`358f125`, whose production source is unchanged from `8b35eec`. The
+[qualification report](../qualification/bfs-cache-lookup-hint-performance-2026-10-01.md)
+owns the decision, all raw observations and limitations. The
+[post-buffer diagnostic](../qualification/bfs-after-buffer-profile-2026-10-01.md)
+records the remaining scopes and limitations; it does not time cache searches
+or predict this experiment's benefit. The measured RDB requests 30 slots.
+
+Keep an index-only hint to the most recently located resident cache slot.
+Every use checks the index against num_slots and compares the actual resident
+block ID before returning the slot. A mismatch uses the same first-match
+linear search and records its result. Read and validation callbacks can then
+reuse the immediately preceding lookup without searching the array again.
+The slot remains the sole source of bytes and validation state. No cached
+validation, COW, I/O, victim order, byte copy, fence or flush is removed.
+
+Insertion records the new resident slot; failed writes retain complete
+matching-slot invalidation and clear the hint. Invalidate/destroy/reinit clear
+it. Add one uint32_t field, no heap storage. Existing complete-operation cache
+serialization and no-reentry rules remain unchanged. This is shared cache
+code, not a platform-specific filesystem algorithm.
+
+Qualification covers hit/fallback, stale and out-of-range hints, eviction,
+both write types, failed partial writes, validation context mismatches,
+invalidation, destroy/reinit and cache isolation at several slot counts.
+Keep all existing lease, fault, byte/graph, snapshot and recovery oracles.
+Run independent review, complete normal/sanitizer/local-quality gates,
+normal/probe m68k builds and actual Linux FUSE tests before eight separate
+fresh normal comparisons. Adoption requires an evidence-backed decision;
+the overall five-times target remains unmet regardless of a partial gain.

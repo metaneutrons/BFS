@@ -1,0 +1,5 @@
+  FAIL: build/crc-nibble-review-negative/test_crc32_all_nibble.c:335: bfs_crc32_zeros(initial, length) == 1727442500, expected 1727442501
+=== CRC32 ===
+  test_crc32_zero_append_all_nibble_states           FAILED
+
+0 passed, 1 failed

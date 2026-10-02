@@ -41,6 +41,12 @@ reload itself fails, mutations, sync and file operations reject further use unti
 the filesystem is abandoned or unmounted and mounted again. An error from a
 commit does not prove that no part of the commit reached storage.
 
+A writable mount synchronizes the selected readable state before exposing
+allocation or running mount-time recovery. This also covers a newer valid
+superblock left only in volatile device storage by a failed publication flush.
+A failed mount barrier leaves the filesystem unmounted. Read-only inspection
+does not perform this synchronization or make a durability assertion.
+
 A failed namespace rollback latches a recovery error: removing the device fault
 does not make the partial namespace committable. Abandon/remount is required.
 Failed extent-remap rollback marks block ownership uncertain so the file layer
@@ -58,6 +64,14 @@ cursor. Interrupted deletion resumes on mount. Large atomic reclaim units
 reserve memory beyond the inline 16,384-entry queue before changing references.
 These operations require memory proportional to the largest reclaim unit and
 can fail with an allocation error. They do not impose a fixed 64 MiB file limit.
+
+Eligible no-snapshot, single-leaf commits settle deferred frees in a private
+replacement leaf before publication. Allocation stays frozen across a successful
+metadata fence, the superblock write and its successful flush. Thus a failed
+publication flush may persist only the SB without exposing a missing COW graph.
+Errors keep the mounted owner recovery-latched; no retired block is reused before
+successful publication. Other shapes retain the established post-publication
+reclamation path and its leak-repair behavior.
 
 Deferred frees are not a persistent reclamation journal. A crash between root
 publication and reclamation can leave allocated, unreachable blocks; offline

@@ -1,0 +1,4 @@
+031b76eacf998a52e249cbfcea15ae20253c74e0243174de8951fc879a22ced9  build/amiga/bfshandler
+b974f66cda5d143154883979272ed50c2f2fd39536ba18bc48ab0f0c52fca3bd  build/amiga/bfshandler-probe
+2c026e3a3d20910d2aaf6a0237342318a3d9aa3b496c0033168689e8df0dcd5f  src/core/crc32_zero.c
+f0a60e68fe4d4f3975a7f520f8e3e82a016d477f484c3cd7a5d026443869a4a0  tests/test_crc32.c

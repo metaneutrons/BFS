@@ -1,0 +1,414 @@
+{
+  "pairs": [
+    {
+      "order": "bfs-first",
+      "raw_sha256": {
+        "bfs": "f237d5c68deae7537870227d3c9ee1d12330bd14fb5e9a9b07c804440fc2739f",
+        "pfs3": "64027726481b46aa84a06228f4705645634622d5486fd1170b6441803b4b9ec2"
+      },
+      "schema_version": 12,
+      "phases": [
+        {
+          "phase": "SMALL_CREATE_40",
+          "nonzero": [
+            {
+              "family": "split",
+              "kind": "LEAF",
+              "role": "DIR_TREE",
+              "shape": "DEEP",
+              "events": {
+                "ATTEMPT": 3,
+                "INITIAL_WRITE": 3,
+                "RIGHT_READ": 2,
+                "RIGHT_SELECT": 2,
+                "RIGHT_WRITE": 2
+              }
+            },
+            {
+              "family": "split",
+              "kind": "LEAF",
+              "role": "DIR_TREE",
+              "shape": "ROOT",
+              "events": {
+                "ATTEMPT": 1,
+                "INITIAL_WRITE": 1,
+                "RIGHT_READ": 0,
+                "RIGHT_SELECT": 0,
+                "RIGHT_WRITE": 0
+              }
+            }
+          ],
+          "split": {
+            "ATTEMPT": 4,
+            "INITIAL_WRITE": 4,
+            "RIGHT_READ": 2,
+            "RIGHT_SELECT": 2,
+            "RIGHT_WRITE": 2
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 548,
+            "FREE_TREE_NODE_WRITES": 353,
+            "DIR_TREE_NODE_WRITES": 75,
+            "INODE_TREE_NODE_WRITES": 80,
+            "OTHER_TREE_NODE_WRITES": 40,
+            "BIO_READS": 1,
+            "BIO_WRITES": 628,
+            "NODE_CRC_READ_CALLS": 1,
+            "NODE_CRC_WRITE_CALLS": 548,
+            "FREESPACE_ALLOCS": 233
+          }
+        },
+        {
+          "phase": "LOOKUP_400",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 0,
+            "FREE_TREE_NODE_WRITES": 0,
+            "DIR_TREE_NODE_WRITES": 0,
+            "INODE_TREE_NODE_WRITES": 0,
+            "OTHER_TREE_NODE_WRITES": 0,
+            "BIO_READS": 2,
+            "BIO_WRITES": 0,
+            "NODE_CRC_READ_CALLS": 2,
+            "NODE_CRC_WRITE_CALLS": 0,
+            "FREESPACE_ALLOCS": 0
+          }
+        },
+        {
+          "phase": "SMALL_READ_40",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 0,
+            "FREE_TREE_NODE_WRITES": 0,
+            "DIR_TREE_NODE_WRITES": 0,
+            "INODE_TREE_NODE_WRITES": 0,
+            "OTHER_TREE_NODE_WRITES": 0,
+            "BIO_READS": 81,
+            "BIO_WRITES": 0,
+            "NODE_CRC_READ_CALLS": 41,
+            "NODE_CRC_WRITE_CALLS": 0,
+            "FREESPACE_ALLOCS": 0
+          }
+        },
+        {
+          "phase": "SEQ_WRITE_8M",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 401,
+            "FREE_TREE_NODE_WRITES": 142,
+            "DIR_TREE_NODE_WRITES": 2,
+            "INODE_TREE_NODE_WRITES": 129,
+            "OTHER_TREE_NODE_WRITES": 128,
+            "BIO_READS": 3,
+            "BIO_WRITES": 2450,
+            "NODE_CRC_READ_CALLS": 1,
+            "NODE_CRC_WRITE_CALLS": 401,
+            "FREESPACE_ALLOCS": 137
+          }
+        },
+        {
+          "phase": "SEQ_READ_8M",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 0,
+            "FREE_TREE_NODE_WRITES": 0,
+            "DIR_TREE_NODE_WRITES": 0,
+            "INODE_TREE_NODE_WRITES": 0,
+            "OTHER_TREE_NODE_WRITES": 0,
+            "BIO_READS": 2048,
+            "BIO_WRITES": 0,
+            "NODE_CRC_READ_CALLS": 0,
+            "NODE_CRC_WRITE_CALLS": 0,
+            "FREESPACE_ALLOCS": 0
+          }
+        },
+        {
+          "phase": "SMALL_DELETE_40",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 313,
+            "FREE_TREE_NODE_WRITES": 197,
+            "DIR_TREE_NODE_WRITES": 76,
+            "INODE_TREE_NODE_WRITES": 40,
+            "OTHER_TREE_NODE_WRITES": 0,
+            "BIO_READS": 49,
+            "BIO_WRITES": 353,
+            "NODE_CRC_READ_CALLS": 47,
+            "NODE_CRC_WRITE_CALLS": 313,
+            "FREESPACE_ALLOCS": 116
+          }
+        }
+      ]
+    },
+    {
+      "order": "pfs3-first",
+      "raw_sha256": {
+        "bfs": "90749bc2003d55fcdee538c6f5977ad09ce2c4d32e190dc47999e73cefbf439b",
+        "pfs3": "ceec6ce16106508320b74e51c83bf6ea7f56c96ec18d125de520119df06a002e"
+      },
+      "schema_version": 12,
+      "phases": [
+        {
+          "phase": "SMALL_CREATE_40",
+          "nonzero": [
+            {
+              "family": "split",
+              "kind": "LEAF",
+              "role": "DIR_TREE",
+              "shape": "DEEP",
+              "events": {
+                "ATTEMPT": 3,
+                "INITIAL_WRITE": 3,
+                "RIGHT_READ": 2,
+                "RIGHT_SELECT": 2,
+                "RIGHT_WRITE": 2
+              }
+            },
+            {
+              "family": "split",
+              "kind": "LEAF",
+              "role": "DIR_TREE",
+              "shape": "ROOT",
+              "events": {
+                "ATTEMPT": 1,
+                "INITIAL_WRITE": 1,
+                "RIGHT_READ": 0,
+                "RIGHT_SELECT": 0,
+                "RIGHT_WRITE": 0
+              }
+            }
+          ],
+          "split": {
+            "ATTEMPT": 4,
+            "INITIAL_WRITE": 4,
+            "RIGHT_READ": 2,
+            "RIGHT_SELECT": 2,
+            "RIGHT_WRITE": 2
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 548,
+            "FREE_TREE_NODE_WRITES": 353,
+            "DIR_TREE_NODE_WRITES": 75,
+            "INODE_TREE_NODE_WRITES": 80,
+            "OTHER_TREE_NODE_WRITES": 40,
+            "BIO_READS": 1,
+            "BIO_WRITES": 628,
+            "NODE_CRC_READ_CALLS": 1,
+            "NODE_CRC_WRITE_CALLS": 548,
+            "FREESPACE_ALLOCS": 233
+          }
+        },
+        {
+          "phase": "LOOKUP_400",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 0,
+            "FREE_TREE_NODE_WRITES": 0,
+            "DIR_TREE_NODE_WRITES": 0,
+            "INODE_TREE_NODE_WRITES": 0,
+            "OTHER_TREE_NODE_WRITES": 0,
+            "BIO_READS": 2,
+            "BIO_WRITES": 0,
+            "NODE_CRC_READ_CALLS": 2,
+            "NODE_CRC_WRITE_CALLS": 0,
+            "FREESPACE_ALLOCS": 0
+          }
+        },
+        {
+          "phase": "SMALL_READ_40",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 0,
+            "FREE_TREE_NODE_WRITES": 0,
+            "DIR_TREE_NODE_WRITES": 0,
+            "INODE_TREE_NODE_WRITES": 0,
+            "OTHER_TREE_NODE_WRITES": 0,
+            "BIO_READS": 81,
+            "BIO_WRITES": 0,
+            "NODE_CRC_READ_CALLS": 41,
+            "NODE_CRC_WRITE_CALLS": 0,
+            "FREESPACE_ALLOCS": 0
+          }
+        },
+        {
+          "phase": "SEQ_WRITE_8M",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 401,
+            "FREE_TREE_NODE_WRITES": 142,
+            "DIR_TREE_NODE_WRITES": 2,
+            "INODE_TREE_NODE_WRITES": 129,
+            "OTHER_TREE_NODE_WRITES": 128,
+            "BIO_READS": 3,
+            "BIO_WRITES": 2450,
+            "NODE_CRC_READ_CALLS": 1,
+            "NODE_CRC_WRITE_CALLS": 401,
+            "FREESPACE_ALLOCS": 137
+          }
+        },
+        {
+          "phase": "SEQ_READ_8M",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 0,
+            "FREE_TREE_NODE_WRITES": 0,
+            "DIR_TREE_NODE_WRITES": 0,
+            "INODE_TREE_NODE_WRITES": 0,
+            "OTHER_TREE_NODE_WRITES": 0,
+            "BIO_READS": 2048,
+            "BIO_WRITES": 0,
+            "NODE_CRC_READ_CALLS": 0,
+            "NODE_CRC_WRITE_CALLS": 0,
+            "FREESPACE_ALLOCS": 0
+          }
+        },
+        {
+          "phase": "SMALL_DELETE_40",
+          "nonzero": [],
+          "split": {
+            "ATTEMPT": 0,
+            "INITIAL_WRITE": 0,
+            "RIGHT_READ": 0,
+            "RIGHT_SELECT": 0,
+            "RIGHT_WRITE": 0
+          },
+          "coalesce": {
+            "ATTEMPT": 0,
+            "COMPLETE": 0
+          },
+          "retained_counters": {
+            "NODE_WRITES": 313,
+            "FREE_TREE_NODE_WRITES": 197,
+            "DIR_TREE_NODE_WRITES": 76,
+            "INODE_TREE_NODE_WRITES": 40,
+            "OTHER_TREE_NODE_WRITES": 0,
+            "BIO_READS": 49,
+            "BIO_WRITES": 353,
+            "NODE_CRC_READ_CALLS": 47,
+            "NODE_CRC_WRITE_CALLS": 313,
+            "FREESPACE_ALLOCS": 116
+          }
+        }
+      ]
+    }
+  ],
+  "matrices_equal": true,
+  "upper_bounds": {
+    "create_removable_split_node_read_calls": 2,
+    "create_removable_split_node_write_calls": 2,
+    "create_removable_split_write_crc_calls": 2,
+    "create_total_node_writes": 548,
+    "create_directory_node_writes": 75,
+    "create_split_write_bound_percent_of_all_node_writes": 0.36496350364963503,
+    "coalesce_shape_eligible_hits_all_phases": 0
+  },
+  "conclusion": "Neither measured path provides a substantial work bound for the six checked workloads. No optimization is accepted or implemented.",
+  "limits": "Call-count upper bounds, not elapsed savings or physical I/O. Split buffer reuse needs explicit validation/durability design. Diagnostic times are excluded from <=5x acceptance; retained controls are not contemporaneous normal timing controls."
+}

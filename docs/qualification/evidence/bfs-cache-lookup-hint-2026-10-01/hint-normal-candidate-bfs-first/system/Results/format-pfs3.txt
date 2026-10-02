@@ -1,0 +1,3 @@
+Insert disk to be formatted in device DH2
+Press RETURN to begin formatting or CTRL-C to abort: [0 p
+Initializing disk...[ p

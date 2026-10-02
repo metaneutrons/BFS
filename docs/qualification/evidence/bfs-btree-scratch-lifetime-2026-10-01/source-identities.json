@@ -1,0 +1,26 @@
+[
+  {
+    "name": "baseline.c",
+    "encoded_file": "baseline.c.b64",
+    "bytes": 84630,
+    "sha256": "5095d6dd4e9e2984eb88a68779d1f5ea3fbb7e39c3c10a22f32de0479d2cb7da"
+  },
+  {
+    "name": "candidate.c",
+    "encoded_file": "candidate.c.b64",
+    "bytes": 85184,
+    "sha256": "1069dea2be34004de74a58c8c56ebccbd75ff3ea1bf2f17f75892172aa0bcdc9"
+  },
+  {
+    "name": "negative-core.c",
+    "encoded_file": "negative-core.c.b64",
+    "bytes": 84987,
+    "sha256": "7b05112953f0d106a285136ad767f492fa6a83227139bb398d5e9033a711cdd8"
+  },
+  {
+    "name": "candidate.patch",
+    "encoded_file": "candidate.patch.b64",
+    "bytes": 5158,
+    "sha256": "290d1c605186e4be6a073236d5249641ed5b1fa5b4849c707f3efa8f863619d8"
+  }
+]

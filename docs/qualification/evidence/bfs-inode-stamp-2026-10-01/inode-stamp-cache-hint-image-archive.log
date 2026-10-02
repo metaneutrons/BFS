@@ -1,0 +1,20 @@
+8f728f344dbb536f76fabcddd90dae663897e856d7b0ec3fbb07ffe948439286  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/bfs.tsv
+1aeb4d80d52f344c249956a3a45416c4c57ad4ffe8392fe0e5b755219f3d0a67  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-baseline-bfs-first/system/Results/pfs3.tsv
+a04c81ad48ca47033542c70c6bc1b824a8b7ab039a30137dfdf2cc34e5d6d867  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/bfs.tsv
+3bafa6c958ea671e98d2675ef36320845a7db74e4cd27aa2ab6e777584d8a286  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+eccfb4277c72cf760956d7c125de29ff0ef680833fba41bc7d375bdd3114b487  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/bfs.tsv
+53d001d5c33c362aeb242d233b24559f2d7cff894be901db840b21a561238620  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+ed5ebf7f6231367f04b87f2d5bdfd0f5e47300b03f1278da56196ca2e8b6f738  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/bfs.tsv
+f1a61359b7f9fef602b11d3c43f6d088cbf9435ba3fd385f0ebc13f90d2d55bf  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-candidate-bfs-first/system/Results/pfs3.tsv
+f943b02c3d78233f94a17e0dff2811ae02327df1cda7fa23e48fdcef5e15a843  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+b3fa82da1466c5347b32ccb891c3abd2206a4d084a3830b01d000f8e85c9edd2  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+665573c181e7c7fada3b33cc107fc2e40f51d29b7d8a8de9b1cb69f1730cd569  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+adf5418c3dc54e997e01c1cfbbb723e87c779701246ae3bee39255f7abe7d6c7  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+2dae63c60c9908a1d72a6b99336867174fc5eb241e2c7857cd19582c76978c55  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+cc52e42ab9abd8dc33a73a0d97a88ce9ab1b96dd86828dd9cbecab382a723915  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+b3625767fa7a1941120fb4fc57cd3e60756e2bf5dc2080f56b0deb35d2b4ff29  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+a97d463c6277bf38f4af4a681cd68a970e7f956f912878e101b955187392ac95  /home/fabian/.cache/bfs-performance/cache-hint-2026-10-01/hint-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  4.5G  7.3G  39% /tmp
+/dev/vda2       996G  313G  683G  32% /home
+Eight completed normal images archived recoverably with identical TSV hashes

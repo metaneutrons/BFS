@@ -35,8 +35,8 @@
       "fault_point": "primary-superblock",
       "mutation": {"kind": "primary-superblock-crc-invalid"},
       "mutation_location": "primary-superblock.crc32",
-      "expected_class": "repairable-leak",
-      "expected_states": ["backup-superblock-recovery", "reclaimable-unreachable-block"],
+      "expected_class": "recoverable",
+      "expected_states": ["backup-superblock-recovery", "clean-or-repairable-unreachable-block"],
       "observers": ["oracle", "check", "repair", "check-after-repair", "oracle-after-repair"],
       "timeout_seconds": 30
     },

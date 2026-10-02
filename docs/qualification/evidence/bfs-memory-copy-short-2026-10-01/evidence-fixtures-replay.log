@@ -1,0 +1,106 @@
+9d3f1e9bcebb3c923611931b2a12dc17fd87b7ccdbf9264b420fbf885c9c83ed  /tmp/bfs-short-copy-replay.qjkoD6bJ/first/memory-copy-short-summary.mjs
+474c0e1de45de0871bca0b006f8d5f4835d754b7128ec00262a632fb3c4f31a5  /tmp/bfs-short-copy-replay.qjkoD6bJ/final/memory-copy-short-summary.mjs
+valid-synthetic: accepted as expected
+missing-row: rejected as expected
+duplicate-row: rejected as expected
+wrong-row-order: rejected as expected
+malformed-row: rejected as expected
+wrong-repeats: rejected as expected
+wrong-calls: rejected as expected
+wrong-order: rejected as expected
+wrong-sample-count: rejected as expected
+negative-count: rejected as expected
+duplicate-counter: rejected as expected
+extra-counter: rejected as expected
+counter-overflow: rejected as expected
+tick-overflow: rejected as expected
+zero-sample-tick: rejected as expected
+wrong-repeat-clamps: rejected as expected
+timing-mismatch: rejected as expected
+abi-failure: rejected as expected
+duplicate-pass: rejected as expected
+bad-done: rejected as expected
+missing-done: rejected as expected
+fail-report: rejected as expected
+truncated-report: rejected as expected
+wrong-mode: rejected as expected
+Synthetic parser checks passed (24 fixtures); no emulator timing or qualification performed.
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
+
+AssertionError [ERR_ASSERTION]: duplicate-malformed-counter: expected reject, got 0:
+
+true !== false
+
+    at file:///private/tmp/bfs-short-copy-replay.qjkoD6bJ/first/strict-red.mjs:134:12
+    at ModuleJob.run (node:internal/modules/esm/module_job:569:25)
+    at async node:internal/modules/esm/loader:650:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: true,
+  expected: false,
+  operator: 'strictEqual',
+  diff: 'simple'
+}
+
+Node.js v26.8.2
+PASS: exact first duplicate-counter fixture remains semantic RED with exit 1
+valid-synthetic: accepted as expected
+missing-row: rejected as expected
+duplicate-row: rejected as expected
+wrong-row-order: rejected as expected
+malformed-row: rejected as expected
+wrong-repeats: rejected as expected
+wrong-calls: rejected as expected
+wrong-order: rejected as expected
+wrong-sample-count: rejected as expected
+negative-count: rejected as expected
+duplicate-counter: rejected as expected
+duplicate-malformed-counter: rejected as expected
+duplicate-noncanonical-counter: rejected as expected
+expected-counter-garbage: rejected as expected
+extra-counter: rejected as expected
+extra-negative-counter: rejected as expected
+extra-overflow-counter: rejected as expected
+counter-overflow: rejected as expected
+tick-overflow: rejected as expected
+zero-sample-tick: rejected as expected
+wrong-repeat-clamps: rejected as expected
+timing-mismatch: rejected as expected
+abi-failure: rejected as expected
+duplicate-pass: rejected as expected
+bad-done: rejected as expected
+missing-done: rejected as expected
+fail-report: rejected as expected
+truncated-report: rejected as expected
+wrong-mode: rejected as expected
+Synthetic parser checks passed (29 fixtures); no emulator timing or qualification performed.
+duplicate-malformed-counter: rejected as expected
+valid-synthetic: accepted as expected
+missing-row: rejected as expected
+duplicate-row: rejected as expected
+wrong-row-order: rejected as expected
+malformed-row: rejected as expected
+wrong-repeats: rejected as expected
+wrong-calls: rejected as expected
+wrong-order: rejected as expected
+wrong-sample-count: rejected as expected
+negative-count: rejected as expected
+duplicate-counter: rejected as expected
+extra-counter: rejected as expected
+counter-overflow: rejected as expected
+tick-overflow: rejected as expected
+zero-sample-tick: rejected as expected
+wrong-repeat-clamps: rejected as expected
+timing-mismatch: rejected as expected
+abi-failure: rejected as expected
+duplicate-pass: rejected as expected
+bad-done: rejected as expected
+missing-done: rejected as expected
+fail-report: rejected as expected
+truncated-report: rejected as expected
+wrong-mode: rejected as expected
+Synthetic parser checks passed (25 fixtures); no emulator timing or qualification performed.
+PASS: offline replay preserves first 24 fixtures and semantic RED, final 29 fixtures and 25 GREEN cases

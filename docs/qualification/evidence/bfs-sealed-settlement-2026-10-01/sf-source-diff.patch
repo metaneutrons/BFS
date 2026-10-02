@@ -1,0 +1,1011 @@
+diff --git a/emulator-test/verify-bench-results.sh b/emulator-test/verify-bench-results.sh
+index ceecc2b..7b1813d 100755
+--- a/emulator-test/verify-bench-results.sh
++++ b/emulator-test/verify-bench-results.sh
+@@ -61,0 +62 @@ case "$mode" in
++        deep_compare_counters_v9=("${deep_compare_counters_v8[@]}" SEALED_COMMITS SEALED_METADATA_FENCES)
+@@ -100 +101 @@ for filesystem in "${filesystems[@]}"; do
+-            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 && "$observed_version" != 7 && "$observed_version" != 8 ]]; then
++            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 && "$observed_version" != 7 && "$observed_version" != 8 && "$observed_version" != 9 ]]; then
+@@ -113 +114 @@ for filesystem in "${filesystems[@]}"; do
+-            else
++            elif [[ "$header_version" == 8 ]]; then
+@@ -114,0 +116,2 @@ for filesystem in "${filesystems[@]}"; do
++            else
++                deep_compare_counters=("${deep_compare_counters_v9[@]}")
+@@ -161 +164 @@ for filesystem in "${filesystems[@]}"; do
+-            if ((header_version == 5 || header_version == 6 || header_version == 7 || header_version == 8) && drive == "DH1:") {
++            if ((header_version == 5 || header_version == 6 || header_version == 7 || header_version == 8 || header_version == 9) && drive == "DH1:") {
+@@ -169 +172 @@ for filesystem in "${filesystems[@]}"; do
+-            if ((header_version == 6 || header_version == 7 || header_version == 8) && drive == "DH1:") {
++            if ((header_version == 6 || header_version == 7 || header_version == 8 || header_version == 9) && drive == "DH1:") {
+@@ -181 +184 @@ for filesystem in "${filesystems[@]}"; do
+-                    if (header_version == 7 || header_version == 8) {
++                    if (header_version == 7 || header_version == 8 || header_version == 9) {
+@@ -207 +210 @@ for filesystem in "${filesystems[@]}"; do
+-                    if (header_version == 7 || header_version == 8) {
++                    if (header_version == 7 || header_version == 8 || header_version == 9) {
+@@ -214 +217 @@ for filesystem in "${filesystems[@]}"; do
+-                    if (header_version == 8) {
++                    if (header_version == 8 || header_version == 9) {
+@@ -221 +224,12 @@ for filesystem in "${filesystems[@]}"; do
+-                    if (return_calls < txn_commits) exit 1
++                    if (header_version == 9) {
++                        sealed_commits = metric_values[phase "_SEALED_COMMITS"]
++                        metadata_fences = metric_values[phase "_SEALED_METADATA_FENCES"]
++                        bio_updates = metric_values[phase "_BIO_UPDATES"]
++                        free_tree_writes = metric_values[phase "_FREE_TREE_NODE_WRITES"]
++                        if (sealed_commits > txn_commits ||
++                            metadata_fences != sealed_commits ||
++                            return_calls + sealed_commits != txn_commits + passes ||
++                            passes > (txn_commits - sealed_commits) * 256 ||
++                            bio_updates < publications + metadata_fences + txn_commits ||
++                            sealed_commits > free_tree_writes) exit 1
++                    } else if (return_calls < txn_commits) exit 1
+diff --git a/include/bfs_alloc.h b/include/bfs_alloc.h
+index 3c99ee4..eb76cff 100644
+--- a/include/bfs_alloc.h
++++ b/include/bfs_alloc.h
+@@ -29,0 +30 @@ typedef struct bfs_freespace {
++    bool allocation_frozen;         /* sealed leaf: no reuse until SB sync */
+@@ -86,0 +88,7 @@ bfs_err_t bfs_freespace_settle_reserve(bfs_freespace_t *fs);
++struct bfs_fs;
++/* Mounted commit only, under the filesystem write lock. BFS_OK/false declines
++ * before staging; every other error forbids ordinary fallback. On true, pending
++ * ownership remains recorded and allocation is frozen until successful SB sync.
++ * The caller must latch any error and abandon/recover that working state. */
++bfs_err_t bfs_freespace_seal_commit(struct bfs_fs *owner, bool *sealed);
++
+diff --git a/include/bfs_ondisk.h b/include/bfs_ondisk.h
+index 47effe3..4a18f0f 100644
+--- a/include/bfs_ondisk.h
++++ b/include/bfs_ondisk.h
+@@ -218 +218,8 @@ static inline bfs_blk_t bfs_data_start_block(uint32_t block_size)
+-/* Default backup-superblock byte offset (partition midpoint). */
++/* Recorded placement, including volumes read by fsck/extent validation. */
++static inline uint64_t bfs_sb_backup_offset(const bfs_superblock_t *sb)
++{
++    return ((uint64_t)bfs_be32(sb->sb_backup_offset_hi) << 32) |
++           bfs_be32(sb->sb_backup_offset_lo);
++}
++
++/* Default placement for newly formatted volumes. */
+diff --git a/include/bfs_txn.h b/include/bfs_txn.h
+index a4e7b84..1a6bcad 100644
+--- a/include/bfs_txn.h
++++ b/include/bfs_txn.h
+@@ -48,2 +48,4 @@ bfs_err_t bfs_txn_write_sb(bfs_txn_t *txn);
+-/* The single full-filesystem transaction-commit boundary (defined in txn.c):
+- * return reserve, gather tree roots, write the superblock, drain pending frees. */
++/* The single full-filesystem commit boundary (defined in txn.c): seal eligible
++ * settlement and publish, otherwise use the established pending-reclaim loop.
++ * Internal callers require the write lock or exclusive lifecycle/serialized
++ * handler ownership. Public bfs_fs_sync takes the filesystem write lock. */
+diff --git a/src/amiga/perf_probe.h b/src/amiga/perf_probe.h
+index 0d40ca3..7978f28 100644
+--- a/src/amiga/perf_probe.h
++++ b/src/amiga/perf_probe.h
+@@ -11 +11 @@
+-#define BFS_PERF_PROBE_VERSION 9
++#define BFS_PERF_PROBE_VERSION 10
+@@ -75,0 +76,2 @@ typedef struct bfs_perf_probe_snapshot {
++    ULONG sealed_commits;
++    ULONG sealed_metadata_fences;
+diff --git a/src/core/alloc.c b/src/core/alloc.c
+index a5be008..5937d4a 100644
+--- a/src/core/alloc.c
++++ b/src/core/alloc.c
+@@ -16,0 +17 @@
++#include "bfs_fs.h"
+@@ -80,0 +82 @@ static bfs_err_t allocator_owner_error(const bfs_freespace_t *fs)
++    if (fs->allocation_frozen) return BFS_ERR_AGAIN;
+@@ -244,0 +247,2 @@ static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
++    bfs_err_t owner_err = allocator_owner_error(fs);
++    if (owner_err != BFS_OK) return owner_err;
+@@ -299,0 +304,2 @@ bfs_err_t bfs_freespace_add(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count
++    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
++    if (owner_err != BFS_OK) return owner_err;
+@@ -697,0 +704,2 @@ bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t coun
++    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
++    if (owner_err != BFS_OK) return owner_err;
+@@ -950 +958 @@ static bfs_err_t validate_sorted_free_blocks(const bfs_freespace_t *fs,
+-static bfs_err_t merge_sorted_free_blocks(free_leaf_entries_t *old,
++static bfs_err_t merge_sorted_free_blocks(const free_leaf_entries_t *old,
+@@ -1024,0 +1033,2 @@ static bfs_err_t free_sorted_blocks(bfs_freespace_t *fs,
++    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
++    if (owner_err != BFS_OK) return owner_err;
+@@ -1077,0 +1088,2 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
++    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
++    if (owner_err != BFS_OK) return owner_err;
+@@ -1215,0 +1228,253 @@ static bfs_err_t prepare_reserve_root_fold(const bfs_freespace_t *fs,
++static bool seal_block_is_sb_root(const bfs_superblock_t *sb, bfs_blk_t blk)
++{
++    return blk == bfs_be32(sb->dir_tree_root) ||
++           blk == bfs_be32(sb->extent_tree_root) ||
++           blk == bfs_be32(sb->inode_tree_root) ||
++           blk == bfs_be32(sb->free_tree_root) ||
++           blk == bfs_be32(sb->refcount_tree_root) ||
++           blk == bfs_be32(sb->snapshot_tree_root);
++}
++
++static bool seal_block_is_current_root(const bfs_fs_t *owner, bfs_blk_t blk)
++{
++    return blk == owner->dir_tree.tree.root || blk == owner->inode_tree.root ||
++           blk == bfs_be32(owner->txn.sb_new.extent_tree_root) ||
++           blk == owner->refcount.tree.root ||
++           blk == bfs_be32(owner->txn.sb_new.snapshot_tree_root);
++}
++
++static bool seal_leaf_contains(const free_leaf_entries_t *leaf, bfs_blk_t blk)
++{
++    for (uint32_t i = 0; i < leaf->count; i++)
++        if (blk >= leaf->keys[i] && blk - leaf->keys[i] < leaf->lengths[i])
++            return true;
++    return false;
++}
++
++static bool seal_block_reserved(const bfs_fs_t *owner, bfs_blk_t blk)
++{
++    uint32_t bs = owner->bio->block_size;
++    return blk < bfs_data_start_block(bs) || blk >= owner->bio->block_count ||
++           blk == bfs_sb_backup_offset(&owner->txn.sb_new) / bs ||
++           blk == bfs_sb_backup_offset(&owner->txn.sb) / bs;
++}
++
++/* Only this mounted owner can authorize pre-publication reclamation. The
++ * ordinary allocator API must never infer this permission from a LIVE tag. */
++static bool seal_context_available(const bfs_fs_t *owner)
++{
++    const bfs_freespace_t *fs = &owner->freespace;
++    return owner->mounted && owner->txn.active && !owner->read_only &&
++           !owner->has_snapshots && !(owner->options & BFS_OPT_SNAPSHOTS) &&
++           !(bfs_be32(owner->txn.sb_new.options) & BFS_OPT_SNAPSHOTS) &&
++           !(bfs_be32(owner->txn.sb.options) & BFS_OPT_SNAPSHOTS) &&
++           owner->txn.sb_new.snapshot_tree_root == 0 &&
++           owner->txn.sb_new.refcount_tree_root == 0 &&
++           owner->txn.sb.snapshot_tree_root == 0 &&
++           owner->txn.sb.refcount_tree_root == 0 &&
++           owner->txn.sb_new.extent_tree_root == 0 &&
++           owner->txn.sb.extent_tree_root == 0 &&
++           owner->refcount.tree.root == BFS_BLK_NULL &&
++           fs->mounted_state == &owner->mounted &&
++           fs->snapshot_state == &owner->has_snapshots &&
++           fs->readonly_state == &owner->read_only &&
++           fs->recovery_state == &owner->recovery_error &&
++           fs->sb == &owner->txn.sb_new && fs->committed_sb == &owner->txn.sb &&
++           fs->tree.bio == owner->bio && owner->txn.bio == owner->bio &&
++           fs->tree.alloc == &fs->iface && fs->iface.ctx == fs &&
++           fs->iface.alloc == iface_alloc && fs->iface.dealloc == iface_free &&
++           fs->iface.error == iface_error &&
++           fs->tree.free_sink.ctx == owner &&
++           fs->tree.txn_id_ptr == &owner->live_txn_id && !fs->in_alloc &&
++           fs->tree.height == 1 && fs->tree.root != BFS_BLK_NULL &&
++           owner->live_txn_id == bfs_txn_id(&owner->txn) &&
++           owner->live_txn_id > bfs_be64(owner->txn.sb.txn_id) &&
++           !seal_block_is_sb_root(&owner->txn.sb, fs->tree.root);
++}
++
++/* No callbacks, refill or mutation in preflight. Old committed roots are valid
++ * pending inputs; they remain unavailable while the replacement is sealed. */
++static bfs_err_t prepare_seal_leaf(bfs_fs_t *owner,
++                                   const free_leaf_entries_t *old,
++                                   bfs_blk_t *blocks, uint32_t count,
++                                   free_leaf_entries_t *next,
++                                   bfs_superblock_t *planned)
++{
++    bfs_freespace_t *fs = &owner->freespace;
++    bfs_err_t err;
++    uint64_t sum = 0;
++    for (uint32_t i = 0; i < old->count; i++) {
++        if (old->keys[i] < bfs_data_start_block(owner->bio->block_size) ||
++            (i > 0 && old->keys[i] < old->keys[i - 1] + old->lengths[i - 1]))
++            return BFS_ERR_CORRUPT;
++        sum += old->lengths[i];
++    }
++    if (sum != fs->total_free) return BFS_ERR_CORRUPT;
++    if (seal_leaf_contains(old, (bfs_blk_t)(bfs_sb_backup_offset(fs->sb) /
++                                           owner->bio->block_size)) ||
++        seal_leaf_contains(old, (bfs_blk_t)(bfs_sb_backup_offset(fs->committed_sb) /
++                                           owner->bio->block_size)))
++        return BFS_ERR_CORRUPT;
++    const bfs_blk_t roots[] = {
++        owner->dir_tree.tree.root, owner->inode_tree.root,
++        owner->refcount.tree.root, bfs_be32(owner->txn.sb_new.snapshot_tree_root),
++        bfs_be32(owner->txn.sb.dir_tree_root),
++        bfs_be32(owner->txn.sb.inode_tree_root),
++        bfs_be32(owner->txn.sb.free_tree_root),
++        bfs_be32(owner->txn.sb.refcount_tree_root),
++        bfs_be32(owner->txn.sb.snapshot_tree_root),
++    };
++    for (uint32_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++)
++        if (roots[i] != BFS_BLK_NULL && seal_leaf_contains(old, roots[i]))
++            return BFS_ERR_CORRUPT;
++    uint32_t ec = bfs_be32(fs->sb->emergency_count);
++    for (uint32_t i = 0; i < BFS_EMERGENCY_POOL_SIZE; i++) {
++        bfs_blk_t blk = bfs_be32(fs->sb->emergency_pool[i]);
++        if (blk != BFS_BLK_NULL && seal_block_reserved(owner, blk))
++            return BFS_ERR_CORRUPT;
++        if (i < ec && (seal_block_is_current_root(owner, blk) ||
++                       seal_block_is_sb_root(&owner->txn.sb, blk)))
++            return BFS_ERR_CORRUPT;
++    }
++    for (uint32_t i = 0; i < count; i++) {
++        bfs_blk_t blk = blocks[i];
++        if (seal_block_reserved(owner, blk) || (i > 0 && blk == blocks[i - 1]) ||
++            seal_block_is_current_root(owner, blk) || seal_leaf_contains(old, blk))
++            return BFS_ERR_CORRUPT;
++        for (uint32_t j = 0; j < ec; j++)
++            if (bfs_be32(fs->sb->emergency_pool[j]) == blk)
++                return BFS_ERR_CORRUPT;
++    }
++    err = validate_free_leaf_pool_separation(fs, old);
++    if (err != BFS_OK) return err;
++    /* Scratch was removed only in the local plan, never from the live pool. */
++    planned->emergency_count = bfs_be32(ec - 1);
++    bfs_freespace_t pool_view = {0};
++    pool_view.sb = planned;
++    uint32_t ordinary_count = 0;
++    for (uint32_t i = 0; i < count; i++) {
++        bfs_blk_t blk = blocks[i];
++        bool handled;
++        err = return_to_emergency_pool(&pool_view, blk, &handled);
++        if (err != BFS_OK) return err;
++        if (!handled) blocks[ordinary_count++] = blk;
++    }
++    if (ordinary_count > UINT32_MAX - fs->total_free)
++        return BFS_ERR_CORRUPT;
++    /* Filtered ordinary input retains its sorted order. */
++    err = merge_sorted_free_blocks(old, next,
++                                   blocks, ordinary_count);
++    if (err != BFS_OK) return err;
++    return next->count == 0 ? BFS_ERR_UNSUPPORTED : BFS_OK;
++}
++
++bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
++{
++    if (!owner || !sealed || !owner->bio) return BFS_ERR_INVAL;
++    *sealed = false;
++    bfs_freespace_t *fs = &owner->freespace;
++    bfs_err_t err = allocator_owner_error(fs);
++    if (err != BFS_OK) return err;
++    if (!seal_context_available(owner)) return BFS_OK;
++    if (fs->reserve_count > BFS_ALLOC_RESERVE_SIZE ||
++        owner->pending_count > bfs_fs_pending_cap(owner)) return BFS_ERR_CORRUPT;
++    if (fs->tree.free_sink_err != BFS_OK) return fs->tree.free_sink_err;
++    uint64_t root_txn;
++    err = bfs_btree_root_leaf_txn_id(&fs->tree, &root_txn);
++    if (err != BFS_OK) return err;
++    if (root_txn > owner->live_txn_id) return BFS_ERR_CORRUPT;
++    if (root_txn != owner->live_txn_id) return BFS_OK;
++    err = validate_fold_pools(fs);
++    if (err != BFS_OK) return err;
++    uint32_t ec = bfs_be32(fs->sb->emergency_count);
++    if (ec == 0) return BFS_OK;
++    bfs_blk_t scratch = bfs_be32(fs->sb->emergency_pool[ec - 1]);
++    for (uint32_t i = 0; i < fs->reserve_count; i++)
++        if (seal_block_is_sb_root(&owner->txn.sb, fs->reserve[i]))
++            return BFS_ERR_CORRUPT;
++    uint32_t capacity = bfs_btree_leaf_capacity(&fs->tree);
++    uint64_t count64 = (uint64_t)owner->pending_count + fs->reserve_count + 1;
++    uint64_t words64 = count64 + owner->pending_count + 4u * (uint64_t)capacity;
++    if (capacity == 0 || count64 > UINT32_MAX) return BFS_ERR_CORRUPT;
++    if (words64 > SIZE_MAX / sizeof(uint32_t)) return BFS_ERR_NOMEM;
++    uint32_t *memory = malloc((size_t)words64 * sizeof(*memory));
++    if (!memory) return BFS_ERR_NOMEM;
++    uint32_t count = (uint32_t)count64, pending_count = owner->pending_count;
++    bfs_blk_t *blocks = memory, *pending = memory + count;
++    uint32_t *entries = pending + pending_count;
++    free_leaf_entries_t old = {
++        .keys = entries, .lengths = entries + capacity, .capacity = capacity,
++        .block_count = owner->bio->block_count, .error = BFS_OK,
++    };
++    free_leaf_entries_t next = {
++        .keys = entries + 2u * capacity, .lengths = entries + 3u * capacity,
++        .capacity = capacity, .block_count = owner->bio->block_count, .error = BFS_OK,
++    };
++    memcpy(pending, bfs_fs_pending_items(owner), pending_count * sizeof(*pending));
++    memcpy(blocks, pending, pending_count * sizeof(*blocks));
++    memcpy(blocks + pending_count, fs->reserve, fs->reserve_count * sizeof(*blocks));
++    blocks[count - 1] = fs->tree.root;
++    sort_reserve_blocks(blocks, count);
++    err = bfs_btree_scan(&fs->tree, NULL, collect_free_leaf_entry, &old);
++    if (err == BFS_OK) err = old.error;
++    if (err != BFS_OK) goto done;
++    bfs_superblock_t original_sb = *fs->sb, planned = original_sb;
++    err = prepare_seal_leaf(owner, &old, blocks, count, &next, &planned);
++    if (err == BFS_ERR_UNSUPPORTED) { err = BFS_OK; goto done; }
++    if (err != BFS_OK) goto done;
++    uint64_t added = 0;
++    for (uint32_t i = 0; i < next.count; i++) added += next.lengths[i];
++    if (added > UINT32_MAX || added < fs->total_free) {
++        err = BFS_ERR_CORRUPT;
++        goto done;
++    }
++    bfs_blk_t original_reserve[BFS_ALLOC_RESERVE_SIZE];
++    memcpy(original_reserve, fs->reserve, sizeof(original_reserve));
++    uint32_t original_count = fs->reserve_count;
++    bfs_blk_t old_root = fs->tree.root, original_roving = fs->roving;
++    uint32_t original_free = fs->total_free;
++    /* No ordinary fallback is permitted beyond this point, including an
++     * UNSUPPORTED returned by the ownership API or block device. */
++    fs->sb->emergency_count = bfs_be32(ec - 1);
++    fs->reserve[0] = scratch;
++    fs->reserve_count = 1;
++    encode_free_leaf_entries(&next);
++    fs->in_alloc = true;
++    err = bfs_btree_replace_owned_root_leaf(&fs->tree, old_root,
++                                            next.keys, next.lengths, next.count);
++    fs->in_alloc = false;
++    bfs_superblock_t staged = original_sb;
++    staged.emergency_count = bfs_be32(ec - 1);
++    bool unchanged = memcmp(fs->sb, &staged, sizeof(staged)) == 0 &&
++        owner->pending_count == pending_count &&
++        memcmp(bfs_fs_pending_items(owner), pending,
++               pending_count * sizeof(*pending)) == 0 &&
++        fs->total_free == original_free && fs->roving == original_roving;
++    if (err != BFS_OK) {
++        if (fs->tree.root == old_root && unchanged && fs->reserve_count == 1 &&
++            fs->reserve[0] == scratch) {
++            memcpy(fs->reserve, original_reserve, sizeof(original_reserve));
++            fs->reserve_count = original_count;
++            *fs->sb = original_sb;
++        } else {
++            fs->allocation_frozen = true;
++            err = BFS_ERR_CORRUPT;
++        }
++        goto done;
++    }
++    fs->allocation_frozen = true;
++    if (!unchanged || fs->tree.root != scratch || fs->reserve_count != 0) {
++        err = BFS_ERR_CORRUPT;
++        goto done;
++    }
++    memcpy(fs->sb->emergency_pool, planned.emergency_pool,
++           sizeof(planned.emergency_pool));
++    fs->sb->emergency_count = planned.emergency_count;
++    fs->total_free = (uint32_t)added;
++    *sealed = true;
++done:
++    free(memory);
++    fs->last_error = err;
++    return err;
++}
++
+@@ -1431,0 +1697,2 @@ static bfs_err_t return_reserve(bfs_freespace_t *fs, bool allow_mixed)
++    bfs_err_t owner_err = fs ? allocator_owner_error(fs) : BFS_OK;
++    if (owner_err != BFS_OK) return owner_err;
+diff --git a/src/core/extent.c b/src/core/extent.c
+index 136887c..fc049cc 100644
+--- a/src/core/extent.c
++++ b/src/core/extent.c
+@@ -40,3 +40 @@ static bool extent_range_valid(const bfs_extent_tree_t *et, bfs_blk_t disk,
+-        uint64_t backup_offset =
+-            ((uint64_t)bfs_be32(et->fs->sb->sb_backup_offset_hi) << 32) |
+-            bfs_be32(et->fs->sb->sb_backup_offset_lo);
++        uint64_t backup_offset = bfs_sb_backup_offset(et->fs->sb);
+diff --git a/src/core/fs.c b/src/core/fs.c
+index dd9309b..7d8fa74 100644
+--- a/src/core/fs.c
++++ b/src/core/fs.c
+@@ -267,0 +268,8 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
++    /* A prior publication may have reported a sync error while leaving a
++     * readable valid new SB in volatile device storage. Before exposing its
++     * reclaimed blocks to any writer (including mount recovery), make that
++     * selected state durable. Read-only inspection must remain non-mutating. */
++    if (!read_only) {
++        err = bfs_bio_sync(bio);
++        if (err != BFS_OK) goto fail;
++    }
+@@ -323 +331 @@ uint32_t bfs_fs_alloc_ino(bfs_fs_t *fs)
+-        fs->read_only ||
++        fs->read_only || fs->freespace.allocation_frozen ||
+@@ -337,0 +346 @@ bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
++    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
+@@ -357,0 +367,2 @@ static bfs_err_t fs_defer_free(void *ctx, bfs_blk_t blk)
++    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
++    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
+@@ -366 +377 @@ static uint32_t fs_free_headroom(void *ctx)
+-    if (!fs) return 0;
++    if (!fs || fs->freespace.allocation_frozen) return 0;
+@@ -395,0 +407 @@ bfs_err_t bfs_fs_reserve_pending(bfs_fs_t *fs, uint32_t slots)
++    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
+diff --git a/src/core/fsck.c b/src/core/fsck.c
+index 64082b7..edaa482 100644
+--- a/src/core/fsck.c
++++ b/src/core/fsck.c
+@@ -216,2 +216 @@ static void scan(check_state_t *state)
+-    uint64_t backup_offset = ((uint64_t)bfs_be32(superblock->sb_backup_offset_hi) << 32) |
+-                             bfs_be32(superblock->sb_backup_offset_lo);
++    uint64_t backup_offset = bfs_sb_backup_offset(superblock);
+diff --git a/src/core/superblock.c b/src/core/superblock.c
+index 78a7853..de38c30 100644
+--- a/src/core/superblock.c
++++ b/src/core/superblock.c
+@@ -20,2 +19,0 @@
+-static uint64_t get_backup_offset(const bfs_superblock_t *sb);
+-
+@@ -109 +107 @@ bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
+-    uint64_t backup_offset = get_backup_offset(sb);
++    uint64_t backup_offset = bfs_sb_backup_offset(sb);
+@@ -223,7 +220,0 @@ static bfs_err_t read_sb_at(bfs_bio_t *bio, uint64_t byte_offset, bfs_superblock
+-/* Get backup superblock offset from a superblock */
+-static uint64_t get_backup_offset(const bfs_superblock_t *sb)
+-{
+-    return ((uint64_t)bfs_be32(sb->sb_backup_offset_hi) << 32) |
+-           bfs_be32(sb->sb_backup_offset_lo);
+-}
+-
+@@ -234 +225 @@ static bool sb_matches_device(const bfs_superblock_t *sb, const bfs_bio_t *bio)
+-           get_backup_offset(sb) ==
++           bfs_sb_backup_offset(sb) ==
+@@ -257 +248 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out)
+-        b_off = get_backup_offset(&sb_a);
++        b_off = bfs_sb_backup_offset(&sb_a);
+@@ -326 +317 @@ bfs_err_t bfs_sb_write(bfs_bio_t *bio, bfs_superblock_t *sb)
+-    uint64_t backup_off = get_backup_offset(sb);
++    uint64_t backup_off = bfs_sb_backup_offset(sb);
+diff --git a/src/core/txn.c b/src/core/txn.c
+index 8c5b723..cec8a13 100644
+--- a/src/core/txn.c
++++ b/src/core/txn.c
+@@ -8,2 +8,2 @@
+- *   txn_commit  → the single filesystem commit boundary: return reserve, gather
+- *                 tree roots, write the superblock, drain the COW pending-frees
++ *   txn_commit  → seal eligible free-leaf settlement, gather matching roots,
++ *                 publish+sync; otherwise use the established reclaim loop
+@@ -150,3 +150,3 @@ static bool preserve_pending_tail(bfs_fs_t *fs, const bfs_blk_t *items,
+- * (data=ordered), return the reserve pool, gather the current tree roots into
+- * the working superblock and write it, then drain the COW pending-free queue
+- * (refcount-aware) and re-commit the free tree. Every caller that needs to make
++ * (data=ordered), seal eligible settlement without reuse until publication,
++ * or return reserve and publish before refcount-aware pending reclamation.
++ * Every caller that needs to make
+@@ -221 +221,2 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
+-    bfs_err_t err = bfs_freespace_return_reserve(&fs->freespace);
++    bool sealed = false;
++    bfs_err_t err = bfs_freespace_seal_commit(fs, &sealed);
+@@ -222,0 +224,13 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
++    if (!sealed) {
++        err = bfs_freespace_return_reserve(&fs->freespace);
++        if (err != BFS_OK) return err;
++    } else {
++        /* Durable graph before publish: an unsuccessful later flush may
++         * persist only the new SB. It must never expose a missing leaf or
++         * COW/data node. Keep allocation frozen across both barriers. */
++        err = bfs_bio_sync(fs->bio);
++        if (err != BFS_OK) return err;
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_counters.sealed_metadata_fences++;
++#endif
++    }
+@@ -236,0 +251,12 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
++    if (sealed) {
++        /* The replacement cannot be consumed before write_sb's successful
++         * sync. Only now are included retirements durably free. No callbacks
++         * or filesystem allocation occurred in the sealed interval. */
++        fs->pending_count = 0;
++        fs->freespace.allocation_frozen = false;
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_counters.sealed_commits++;
++#endif
++        return bfs_bio_sync(fs->bio);
++    }
++
+@@ -291,0 +318,2 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
++    if (fs->read_only) return BFS_ERR_UNSUPPORTED;
++    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
+diff --git a/tests/quality/test_bench_verifier.py b/tests/quality/test_bench_verifier.py
+index dddf67e..052b645 100644
+--- a/tests/quality/test_bench_verifier.py
++++ b/tests/quality/test_bench_verifier.py
+@@ -219,0 +220,204 @@ class BenchVerifierTests(unittest.TestCase):
++    def upgrade_deep_compare_to_v9(self):
++        self.upgrade_deep_compare_to_v8()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii").splitlines()
++        self.assertEqual(original[0], "FS_DEEP_COMPARE\t8")
++        upgraded = ["FS_DEEP_COMPARE\t9"]
++        for line in original[1:]:
++            upgraded.append(line)
++            name, _ = line.split("\t")
++            suffix = "_FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY"
++            if not name.endswith(suffix):
++                continue
++            phase = name[:-len(suffix)]
++            upgraded.extend((
++                f"{phase}_SEALED_COMMITS\t0",
++                f"{phase}_SEALED_METADATA_FENCES\t0",
++            ))
++        bfs.write_text("\n".join(upgraded) + "\n", encoding="ascii")
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
++        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t8")
++        pfs_lines[0] = "FS_DEEP_COMPARE\t9"
++        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
++
++        contents = bfs.read_text(encoding="ascii")
++        phases = (
++            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
++            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
++        )
++        zero_txn_return_metrics = (
++            "FREE_TREE_RESERVE_RETURN_CALLS",
++            "FREE_TREE_RESERVE_RETURN_RUNS",
++            "FREE_TREE_RESERVE_RETURN_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK",
++            "FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN",
++            "FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES",
++            "FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++            "FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
++            "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
++            "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
++            "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
++            "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
++        )
++        updates = {}
++        for phase in phases:
++            txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
++            passes = self.metric_value(
++                contents, phase + "_POST_PUBLISH_RECLAIM_PASSES",
++            )
++            return_calls = txn_commits + passes
++            batch_calls = self.metric_value(
++                contents, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++            )
++            updates[phase + "_FREE_TREE_RESERVE_RETURN_CALLS"] = return_calls
++            updates.update(self.skip_count_updates(phase, return_calls, batch_calls))
++            if return_calls == 0:
++                for metric in zero_txn_return_metrics:
++                    updates[phase + "_" + metric] = 0
++        self.set_metrics(bfs, updates)
++
++    def upgrade_raw_deep_compare_v8_to_v9(self):
++        source = ROOT / "docs/qualification/evidence/bfs-sealed-settlement-2026-10-01/baseline-deep"
++        for name in (
++            "complete.txt", "info-after-format.txt",
++            "bfs.deep-compare.tsv", "pfs3.deep-compare.tsv",
++        ):
++            shutil.copyfile(source / name, self.results / name)
++
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original_bfs = bfs.read_text(encoding="ascii").splitlines()
++        self.assertEqual(original_bfs[0], "FS_DEEP_COMPARE\t8")
++        upgraded_bfs = ["FS_DEEP_COMPARE\t9"]
++        for line in original_bfs[1:]:
++            upgraded_bfs.append(line)
++            name, _ = line.split("\t")
++            suffix = "_FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY"
++            if name.endswith(suffix):
++                phase = name[:-len(suffix)]
++                upgraded_bfs.extend((
++                    f"{phase}_SEALED_COMMITS\t0",
++                    f"{phase}_SEALED_METADATA_FENCES\t0",
++                ))
++        bfs.write_text("\n".join(upgraded_bfs) + "\n", encoding="ascii")
++
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
++        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t8")
++        pfs_lines[0] = "FS_DEEP_COMPARE\t9"
++        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
++
++    def upgrade_deep_compare_to_v9_all_sealed(self):
++        self.upgrade_deep_compare_to_v9()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        phases = (
++            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
++            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
++        )
++        return_metrics = (
++            "FREE_TREE_RESERVE_RETURN_CALLS",
++            "FREE_TREE_RESERVE_RETURN_RUNS",
++            "FREE_TREE_RESERVE_RETURN_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK",
++            "FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN",
++            "FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES",
++            "FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++            "FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS",
++            "FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
++            "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
++            "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
++            "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
++            "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
++        )
++        updates = {}
++        for phase in phases:
++            txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
++            reserve_writes = self.metric_value(
++                contents, phase + "_FREE_TREE_RESERVE_RETURN_NODE_WRITES",
++            )
++            other_writes = self.metric_value(
++                contents, phase + "_FREE_TREE_OTHER_NODE_WRITES",
++            )
++            updates[phase + "_SEALED_COMMITS"] = txn_commits
++            updates[phase + "_SEALED_METADATA_FENCES"] = txn_commits
++            updates[phase + "_POST_PUBLISH_RECLAIM_PASSES"] = 0
++            updates[phase + "_MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT"] = 0
++            updates[phase + "_SUPERBLOCK_PUBLICATIONS"] = txn_commits
++            updates[phase + "_FREE_TREE_RESERVE_RETURN_NODE_WRITES"] = 0
++            updates[phase + "_FREE_TREE_OTHER_NODE_WRITES"] = (
++                other_writes + reserve_writes
++            )
++            for metric in return_metrics:
++                updates[phase + "_" + metric] = 0
++        self.set_metrics(bfs, updates)
++
++    def upgrade_deep_compare_to_v9_mixed(self):
++        self.upgrade_deep_compare_to_v9()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        phase = "SMALL_CREATE_40"
++        txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
++        sealed_commits = txn_commits // 2
++        passes = self.metric_value(
++            contents, phase + "_POST_PUBLISH_RECLAIM_PASSES",
++        )
++        return_calls = txn_commits - sealed_commits + passes
++        batch_calls = self.metric_value(
++            contents, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++        )
++        self.assertGreater(sealed_commits, 0)
++        self.assertGreater(return_calls, 0)
++        self.assertGreaterEqual(return_calls, batch_calls)
++        updates = {
++            phase + "_SEALED_COMMITS": sealed_commits,
++            phase + "_SEALED_METADATA_FENCES": sealed_commits,
++            phase + "_FREE_TREE_RESERVE_RETURN_CALLS": return_calls,
++        }
++        updates.update(self.skip_count_updates(phase, return_calls, batch_calls))
++        self.set_metrics(bfs, updates)
++
++    def skip_count_updates(self, phase, return_calls, batch_calls):
++        skip_metrics = (
++            "FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
++            "FREE_TREE_RESERVE_RETURN_SKIP_SMALL",
++            "FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY",
++            "FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY",
++        )
++        skipped_calls = return_calls - batch_calls
++        self.assertGreaterEqual(skipped_calls, 0)
++        phases = (
++            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
++            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
++        )
++        counts = [0] * len(skip_metrics)
++        for skip_index in range(skipped_calls):
++            counts[(phases.index(phase) + skip_index) % len(skip_metrics)] += 1
++        return {
++            phase + "_" + metric: count
++            for metric, count in zip(skip_metrics, counts)
++        }
++
++    @staticmethod
++    def set_metrics(path, updates):
++        remaining = dict(updates)
++        lines = path.read_text(encoding="ascii").splitlines()
++        for index, line in enumerate(lines):
++            if "\t" not in line:
++                continue
++            name, _ = line.split("\t")
++            if name in remaining:
++                lines[index] = f"{name}\t{remaining.pop(name)}"
++        if remaining:
++            raise AssertionError(f"metrics not found: {sorted(remaining)}")
++        path.write_text("\n".join(lines) + "\n", encoding="ascii")
++
+@@ -416,0 +621,294 @@ class BenchVerifierTests(unittest.TestCase):
++    def test_deep_compare_v8_still_rejects_low_return_calls(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v8()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        phase = "SMALL_CREATE_40"
++        txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
++        return_calls = txn_commits - 1
++        batch_calls = self.metric_value(
++            contents, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++        )
++        self.assertGreater(txn_commits, 1)
++        updates = {
++            phase + "_FREE_TREE_RESERVE_RETURN_CALLS": return_calls,
++        }
++        updates.update(self.skip_count_updates(phase, return_calls, batch_calls))
++        self.set_metrics(bfs, updates)
++        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v9_accepts_all_sealed_commits_without_returns(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v9_all_sealed()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        for phase in (
++            "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40",
++            "SEQ_WRITE_8M", "SEQ_READ_8M", "SMALL_DELETE_40",
++        ):
++            txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
++            self.assertEqual(
++                self.metric_value(contents, phase + "_SEALED_COMMITS"),
++                txn_commits,
++            )
++            self.assertEqual(
++                self.metric_value(contents, phase + "_SEALED_METADATA_FENCES"),
++                txn_commits,
++            )
++            self.assertEqual(
++                self.metric_value(
++                    contents, phase + "_FREE_TREE_RESERVE_RETURN_CALLS",
++                ),
++                0,
++            )
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_deep_compare_v9_accepts_raw_baseline_with_only_seal_rows_added(self):
++        source = ROOT / "docs/qualification/evidence/bfs-sealed-settlement-2026-10-01/baseline-deep"
++        original_bfs = (source / "bfs.deep-compare.tsv").read_text(
++            encoding="ascii",
++        ).splitlines()
++        original_pfs3 = (source / "pfs3.deep-compare.tsv").read_text(
++            encoding="ascii",
++        ).splitlines()
++        self.upgrade_raw_deep_compare_v8_to_v9()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        upgraded_bfs = bfs.read_text(encoding="ascii").splitlines()
++        upgraded_pfs3 = pfs3.read_text(encoding="ascii").splitlines()
++
++        self.assertEqual(upgraded_bfs[0], "FS_DEEP_COMPARE\t9")
++        self.assertEqual(
++            [line for line in upgraded_bfs if "_SEALED_" not in line],
++            ["FS_DEEP_COMPARE\t9", *original_bfs[1:]],
++        )
++        self.assertEqual(
++            sum("_SEALED_" in line for line in upgraded_bfs), 12,
++        )
++        self.assertEqual(upgraded_pfs3, ["FS_DEEP_COMPARE\t9", *original_pfs3[1:]])
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_deep_compare_v9_accepts_mixed_sealed_and_legacy_commits(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v9_mixed()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        phase = "SMALL_CREATE_40"
++        txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
++        sealed_commits = self.metric_value(contents, phase + "_SEALED_COMMITS")
++        return_calls = self.metric_value(
++            contents, phase + "_FREE_TREE_RESERVE_RETURN_CALLS",
++        )
++        passes = self.metric_value(
++            contents, phase + "_POST_PUBLISH_RECLAIM_PASSES",
++        )
++        publications = self.metric_value(
++            contents, phase + "_SUPERBLOCK_PUBLICATIONS",
++        )
++        self.assertGreater(sealed_commits, 0)
++        self.assertLess(sealed_commits, txn_commits)
++        self.assertEqual(return_calls + sealed_commits, txn_commits + passes)
++        self.assertEqual(txn_commits + passes, publications)
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_deep_compare_v9_rejects_missing_malformed_and_duplicate_counters(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v9()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        phase = "SMALL_CREATE_40"
++        sealed_row = f"{phase}_SEALED_COMMITS\t0"
++        cases = (
++            ("omitted sealed counter", lambda lines: [
++                line for line in lines if line != sealed_row
++            ]),
++            ("malformed metadata fence", lambda lines: [
++                line.replace(f"{phase}_SEALED_METADATA_FENCES\t0",
++                             f"{phase}_SEALED_METADATA_FENCES\tbad")
++                for line in lines
++            ]),
++            ("duplicate sealed counter", lambda lines: lines[:-1] + [
++                sealed_row, lines[-1],
++            ]),
++        )
++        for label, mutate in cases:
++            with self.subTest(counter=label):
++                mutated = mutate(original.splitlines())
++                bfs.write_text("\n".join(mutated) + "\n", encoding="ascii")
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v9_rejects_seal_and_accounting_invariant_violations(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v9()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        phase = "SMALL_CREATE_40"
++        txn_commits = self.metric_value(original, phase + "_TXN_COMMITS")
++        return_calls = self.metric_value(
++            original, phase + "_FREE_TREE_RESERVE_RETURN_CALLS",
++        )
++        passes = self.metric_value(
++            original, phase + "_POST_PUBLISH_RECLAIM_PASSES",
++        )
++        free_tree_writes = self.metric_value(
++            original, phase + "_FREE_TREE_NODE_WRITES",
++        )
++        cases = (
++            ("sealed exceeds transactions", {
++                phase + "_SEALED_COMMITS": txn_commits + 1,
++                phase + "_SEALED_METADATA_FENCES": txn_commits + 1,
++            }),
++            ("missing metadata fence", {
++                phase + "_SEALED_COMMITS": 1,
++                phase + "_SEALED_METADATA_FENCES": 0,
++            }),
++            ("insufficient BIO updates", {
++                phase + "_BIO_UPDATES": 0,
++            }),
++            ("bad existing bucket", {
++                phase + "_FREE_TREE_OTHER_NODE_WRITES":
++                    self.metric_value(original,
++                                      phase + "_FREE_TREE_OTHER_NODE_WRITES") + 1,
++            }),
++            ("bad existing skip sum", {
++                phase + "_FREE_TREE_RESERVE_RETURN_SKIP_SHAPE":
++                    self.metric_value(
++                        original,
++                        phase + "_FREE_TREE_RESERVE_RETURN_SKIP_SHAPE",
++                    ) + 1,
++            }),
++            ("bad existing publication count", {
++                phase + "_SUPERBLOCK_PUBLICATIONS": txn_commits,
++            }),
++            ("missing per-pass return accounting", {
++                phase + "_FREE_TREE_RESERVE_RETURN_CALLS": txn_commits,
++                **self.skip_count_updates(
++                    phase, txn_commits,
++                    self.metric_value(
++                        original,
++                        phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++                    ),
++                ),
++            }),
++            ("excess per-pass return accounting", {
++                phase + "_FREE_TREE_RESERVE_RETURN_CALLS":
++                    txn_commits + passes + 1,
++                **self.skip_count_updates(
++                    phase, txn_commits + passes + 1,
++                    self.metric_value(
++                        original,
++                        phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++                    ),
++                ),
++            }),
++        )
++        self.assertGreater(return_calls, 0)
++        self.assertGreater(free_tree_writes, txn_commits)
++        for label, updates in cases:
++            with self.subTest(invariant=label):
++                bfs.write_text(original, encoding="ascii")
++                self.set_metrics(bfs, updates)
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v9_all_sealed()
++        contents = bfs.read_text(encoding="ascii")
++        self.assertEqual(
++            self.metric_value(contents, phase + "_FREE_TREE_RESERVE_RETURN_CALLS"),
++            0,
++        )
++        self.set_metrics(bfs, {
++            phase + "_SEALED_COMMITS": 0,
++            phase + "_SEALED_METADATA_FENCES": 0,
++        })
++        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v9_rejects_inconsistent_return_batch_accounting(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v9()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        phase = "SMALL_CREATE_40"
++        values = {
++            name: self.metric_value(original, phase + "_" + name)
++            for name in (
++                "TXN_COMMITS",
++                "FREE_TREE_RESERVE_RETURN_CALLS",
++                "FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES",
++                "FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++                "FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS",
++                "FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES",
++                "FREE_TREE_RESERVE_RETURN_NODE_WRITES",
++            )
++        }
++        cases = (
++            ("run and batch node writes do not sum to reserve writes", {
++                phase + "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES":
++                    values["FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES"] + 1,
++            }),
++            ("batch calls exceed return calls", {
++                phase + "_FREE_TREE_RESERVE_RETURN_CALLS":
++                    values["FREE_TREE_RESERVE_RETURN_BATCH_CALLS"] - 1,
++            }),
++            ("batch blocks are fewer than batch calls", {
++                phase + "_FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS":
++                    values["FREE_TREE_RESERVE_RETURN_BATCH_CALLS"] - 1,
++            }),
++        )
++        self.assertGreater(values["FREE_TREE_RESERVE_RETURN_BATCH_CALLS"], 0)
++        self.assertGreater(values["FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES"], 0)
++        for label, updates in cases:
++            with self.subTest(invariant=label):
++                bfs.write_text(original, encoding="ascii")
++                self.set_metrics(bfs, updates)
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++        # Keep the aggregate node-write total and skip-call sum valid while
++        # making the forbidden zero-call/nonzero-total state explicit.
++        batch_node_writes = 1
++        reserve_writes = values["FREE_TREE_RESERVE_RETURN_NODE_WRITES"]
++        updates = {
++            phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS": 0,
++            phase + "_FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS": 0,
++            phase + "_FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES": batch_node_writes,
++            phase + "_FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES":
++                reserve_writes - batch_node_writes,
++        }
++        updates.update(self.skip_count_updates(
++            phase, values["FREE_TREE_RESERVE_RETURN_CALLS"], 0,
++        ))
++        bfs.write_text(original, encoding="ascii")
++        self.set_metrics(bfs, updates)
++        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v9_bounds_reclaim_passes_by_unsealed_commits(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v9()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        phase = "SMALL_CREATE_40"
++        txn_commits = self.metric_value(contents, phase + "_TXN_COMMITS")
++        sealed_commits = 1
++        batch_calls = self.metric_value(
++            contents, phase + "_FREE_TREE_RESERVE_RETURN_BATCH_CALLS",
++        )
++        self.assertGreater(sealed_commits, 0)
++        passes = (txn_commits - sealed_commits) * 256 + 1
++        return_calls = txn_commits - sealed_commits + passes
++        self.assertGreater(return_calls, batch_calls)
++        publications = txn_commits + passes
++        self.set_metrics(bfs, {
++            phase + "_SEALED_COMMITS": sealed_commits,
++            phase + "_SEALED_METADATA_FENCES": sealed_commits,
++            phase + "_FREE_TREE_RESERVE_RETURN_CALLS": return_calls,
++            **self.skip_count_updates(phase, return_calls, batch_calls),
++            phase + "_POST_PUBLISH_RECLAIM_PASSES": passes,
++            phase + "_MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT": 256,
++            phase + "_SUPERBLOCK_PUBLICATIONS": publications,
++            phase + "_BIO_UPDATES": publications + sealed_commits + txn_commits,
++        })
++        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
+diff --git a/tools/fs-compare-bench.c b/tools/fs-compare-bench.c
+index 588c8db..aacb8a5 100644
+--- a/tools/fs-compare-bench.c
++++ b/tools/fs-compare-bench.c
+@@ -263,0 +264,3 @@ static void emit_deep_counter_rows(const char *phase,
++    prefixed_metric(phase, "SEALED_COMMITS", snapshot->sealed_commits);
++    prefixed_metric(phase, "SEALED_METADATA_FENCES",
++                    snapshot->sealed_metadata_fences);
+@@ -444 +447 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
+-    if (deep_mode) emit("FS_DEEP_COMPARE\t8\nDRIVE\t");
++    if (deep_mode) emit("FS_DEEP_COMPARE\t9\nDRIVE\t");

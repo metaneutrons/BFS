@@ -1,0 +1,10 @@
+=== Inode Stamps ===
+  test_create_stamp_encoding_survives_remount        OK
+  test_create_rejections_and_null_wrapper_equivalence OK
+  test_write_stamp_preserves_fresh_inode_metadata    OK
+  test_write_null_stamp_matches_legacy_and_null_mask_clears OK
+  test_zero_error_and_readonly_calls_do_not_sample   OK
+  test_snapshot_keeps_old_stamp_and_content          OK
+  test_open_unlinked_write_updates_inode_stamp       OK
+
+7 passed, 0 failed

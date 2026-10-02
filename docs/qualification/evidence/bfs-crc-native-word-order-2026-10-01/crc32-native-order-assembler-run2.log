@@ -1,0 +1,4 @@
+m68k-amigaos-gcc -m68020 -c src/amiga/crc32_68k.s -o build/crc32-native-order-candidate-run2.o
+Assembler exit status: 0
+a3dac0a8f33589b350fb11928445adb3223562c6bdce2f9de33f2c23820d92cf  src/amiga/crc32_68k.s
+dc4653a206e111bc162b40ba459a0cba518c94bd3439a27236d6ca14f015bca6  build/crc32-native-order-candidate-run2.o

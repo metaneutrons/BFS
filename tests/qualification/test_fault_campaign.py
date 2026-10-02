@@ -7,6 +7,7 @@ import subprocess  # nosec B404 - invokes the local campaign entry point
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -95,6 +96,29 @@ class FaultCampaignTests(unittest.TestCase):
                                encoding="ascii")
             with self.assertRaisesRegex(RuntimeError, "case-record digest"):
                 verify_fault_campaign.verify(output)
+
+    def test_backup_recovery_accepts_clean_or_repairable_state(self):
+        for statuses, expected_names in (
+                ([0, 0], ["oracle", "check"]),
+                ([0, 1, 1, 0, 0], ["oracle", "check", "repair",
+                                    "check-after-repair", "oracle-after-repair"])):
+            with self.subTest(statuses=statuses):
+                records = []
+                with patch.object(fault_campaign, "command_record",
+                                  side_effect=[{"name": name, "returncode": status}
+                                               for name, status in zip(expected_names, statuses)]):
+                    self.assertTrue(fault_campaign.observe_recovery(
+                        Path("fixture.bfs"), 30, records, require_repair=False))
+                self.assertEqual([record["name"] for record in records], expected_names)
+
+    def test_deliberate_leak_still_requires_repair(self):
+        records = []
+        with patch.object(fault_campaign, "command_record",
+                          side_effect=[{"name": "oracle", "returncode": 0},
+                                       {"name": "check", "returncode": 0}]):
+            self.assertFalse(fault_campaign.observe_recovery(
+                Path("fixture.bfs"), 30, records, require_repair=True))
+        self.assertEqual([record["name"] for record in records], ["oracle", "check"])
 
 
 if __name__ == "__main__":

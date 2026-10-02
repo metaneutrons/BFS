@@ -1,0 +1,9 @@
+f9ecf90f6dc4716570f2789a29bbfdc54b27a76a871376075e907b14336bc9c3  src/amiga/memcpy_68k.s
+c55343fa79edcbe808c4d0a65a87c421f84904f4fa402e343cbcc2a1d7f5a0b3  tests/amiga/memory_copy_compare_probe.c
+5095d6dd4e9e2984eb88a68779d1f5ea3fbb7e39c3c10a22f32de0479d2cb7da  src/core/btree.c
+b628d72bcc5ba0a8280c801c7ef2c769db9cb0d24523d0ff1eb81055cc06c193  src/core/alloc.c
+ad1f747822bbc8ba63b981480d93dae4fb7b7baeaf6c8d1136eaa6b92537f62e  build/amiga-memory-copy-short/bfshandler
+70ff502b9d386840a27570e6bd1a16937984ff809e081e56d9d8362b2d7f4c9c  build/amiga-memory-copy-short/bfshandler-probe
+5126e8640256e19bc2f5661d8b735f7961c4882edf3d8046b26bd2badfc86277  build/amiga-memory-copy-short/fs-compare-bench
+1fccf207c96144f81c64a8a5dd2e350b7f32787402eedad6c102b34ad0a6ec80  build/amiga/fs-compare-bench
+Both actual normal/probe handlers reproduce; both guests copied unchanged

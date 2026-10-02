@@ -1,0 +1,88 @@
+diff --git a/src/amiga/string.h b/src/amiga/string.h
+index c2c85b5..d50c311 100644
+--- a/src/amiga/string.h
++++ b/src/amiga/string.h
+@@ -7,6 +7,7 @@
+ #else
+   #include "stddef.h"
+   void *memcpy(void *dst, const void *src, size_t n);
++  void *memmove(void *dst, const void *src, size_t n);
+   void *memset(void *s, int c, size_t n);
+   int memcmp(const void *a, const void *b, size_t n);
+   size_t strlen(const char *s);
+diff --git a/src/core/btree.c b/src/core/btree.c
+index cf6650d..b4ff98b 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -673,9 +673,12 @@ static void leaf_insert_at(const bfs_btree_t *tree, uint8_t *buf,
+     uint32_t ks = tree->ops->key_size;
+     uint32_t vs = tree->ops->val_size;
+ 
+-    for (uint32_t i = n; i > idx; i--) {
+-        memcpy(node_key(tree, buf, i), node_key(tree, buf, i - 1), ks);
+-        memcpy(leaf_val(tree, buf, i), leaf_val(tree, buf, i - 1), vs);
++    uint32_t suffix = n - idx;
++    if (suffix != 0) {
++        memmove(node_key(tree, buf, idx + 1), node_key(tree, buf, idx),
++                 (size_t)suffix * ks);
++        memmove(leaf_val(tree, buf, idx + 1), leaf_val(tree, buf, idx),
++                 (size_t)suffix * vs);
+     }
+     memcpy(node_key(tree, buf, idx), key, ks);
+     memcpy(leaf_val(tree, buf, idx), val, vs);
+@@ -690,12 +693,16 @@ static void internal_insert_at(const bfs_btree_t *tree, uint8_t *buf,
+     uint32_t n = num_keys(buf);
+     uint32_t ks = tree->ops->key_size;
+ 
+-    for (uint32_t i = n; i > idx; i--)
+-        memcpy(node_key(tree, buf, i), node_key(tree, buf, i - 1), ks);
++    uint32_t suffix = n - idx;
++    if (suffix != 0)
++        memmove(node_key(tree, buf, idx + 1), node_key(tree, buf, idx),
++                 (size_t)suffix * ks);
+     memcpy(node_key(tree, buf, idx), key, ks);
+ 
+-    for (uint32_t i = n + 1; i > idx + 1; i--)
+-        set_child(tree, buf, i, get_child(tree, buf, i - 1));
++    if (suffix != 0)
++        memmove(internal_child_ptr(tree, buf, idx + 2),
++                 internal_child_ptr(tree, buf, idx + 1),
++                 (size_t)suffix * sizeof(uint32_t));
+     set_child(tree, buf, idx + 1, right_child);
+ 
+     hdr_of(buf)->num_keys = bfs_be32(n + 1);
+@@ -1428,9 +1435,12 @@ static void leaf_remove_at(const bfs_btree_t *tree, uint8_t *buf, uint32_t idx)
+     uint32_t ks = tree->ops->key_size;
+     uint32_t vs = tree->ops->val_size;
+ 
+-    for (uint32_t i = idx; i < n - 1; i++) {
+-        memcpy(node_key(tree, buf, i), node_key(tree, buf, i + 1), ks);
+-        memcpy(leaf_val(tree, buf, i), leaf_val(tree, buf, i + 1), vs);
++    uint32_t suffix = n - idx - 1;
++    if (suffix != 0) {
++        memmove(node_key(tree, buf, idx), node_key(tree, buf, idx + 1),
++                 (size_t)suffix * ks);
++        memmove(leaf_val(tree, buf, idx), leaf_val(tree, buf, idx + 1),
++                 (size_t)suffix * vs);
+     }
+     hdr_of(buf)->num_keys = bfs_be32(n - 1);
+ }
+@@ -1441,10 +1451,14 @@ static void internal_remove_at(const bfs_btree_t *tree, uint8_t *buf, uint32_t i
+     uint32_t n = num_keys(buf);
+     uint32_t ks = tree->ops->key_size;
+ 
+-    for (uint32_t i = idx; i < n - 1; i++)
+-        memcpy(node_key(tree, buf, i), node_key(tree, buf, i + 1), ks);
+-    for (uint32_t i = idx + 1; i < n; i++)
+-        set_child(tree, buf, i, get_child(tree, buf, i + 1));
++    uint32_t suffix = n - idx - 1;
++    if (suffix != 0) {
++        memmove(node_key(tree, buf, idx), node_key(tree, buf, idx + 1),
++                 (size_t)suffix * ks);
++        memmove(internal_child_ptr(tree, buf, idx + 1),
++                 internal_child_ptr(tree, buf, idx + 2),
++                 (size_t)suffix * sizeof(uint32_t));
++    }
+     hdr_of(buf)->num_keys = bfs_be32(n - 1);
+ }
+ 

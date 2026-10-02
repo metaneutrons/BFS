@@ -1,0 +1,4 @@
+tests/test_metadata_withdrawal_batch.c:1605:42: error: use of undeclared identifier 'initial'
+ 1605 |                 summary.count, capacity, initial.count, new_extents,
+      |                                          ^~~~~~~
+1 error generated.

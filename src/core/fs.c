@@ -10,6 +10,9 @@
 #include "bfs_snapshot.h"
 #include <string.h>
 #include <stdlib.h>
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 /* Global metadata-reserve sizing (blocks held back so delete/rename/COW never
  * hit ENOSPC mid-transaction): target ~1/20 of the volume, but at least
@@ -102,6 +105,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     fs.freespace.tree.txn_id_ptr = &fs.live_txn_id;
     fs.freespace.tree.free_sink = bfs_fs_free_sink(&fs);
     fs.freespace.sb = &fs.txn.sb_new;
+    fs.freespace.committed_sb = &fs.txn.sb;
 
     uint32_t epool_count = BFS_EMERGENCY_POOL_SIZE;
     if (epool_count > data_blocks / 4) epool_count = data_blocks / 4;
@@ -236,6 +240,11 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
     fs->freespace.total_free = bfs_be32(sb->free_blocks);
     fs->freespace.global_reserve = bfs_be32(sb->global_reserve);
     fs->freespace.sb = &fs->txn.sb_new;
+    fs->freespace.committed_sb = &fs->txn.sb;
+    fs->freespace.mounted_state = &fs->mounted;
+    fs->freespace.snapshot_state = &fs->has_snapshots;
+    fs->freespace.readonly_state = &fs->read_only;
+    fs->freespace.recovery_state = &fs->recovery_error;
     err = fs_open_namespace_trees(fs);
     if (err != BFS_OK) return err;
     err = fs_open_refcount_tree(fs);
@@ -259,11 +268,20 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
 
     err = fs_load_working_state(fs);
     if (err != BFS_OK) goto fail;
+    /* A prior publication may have reported a sync error while leaving a
+     * readable valid new SB in volatile device storage. Before exposing its
+     * reclaimed blocks to any writer (including mount recovery), make that
+     * selected state durable. Read-only inspection must remain non-mutating. */
+    if (!read_only) {
+        err = bfs_bio_sync(bio);
+        if (err != BFS_OK) goto fail;
+    }
     fs->mounted = true;
     fs->read_only = read_only;
 
     fs->scratch = malloc(bio->block_size);
     if (!fs->scratch) { err = BFS_ERR_NOMEM; goto fail; }
+    fs->scratch_capacity = bio->block_size;
 
     if (!read_only) {
         /* Open handles cannot survive a process crash. Reclaim their
@@ -272,6 +290,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
         if (err != BFS_OK) {
             free(fs->scratch);
             fs->scratch = NULL;
+            fs->scratch_capacity = 0;
             goto fail;
         }
         /* Resume any interrupted snapshot deletions. */
@@ -279,6 +298,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
         if (err != BFS_OK) {
             free(fs->scratch);
             fs->scratch = NULL;
+            fs->scratch_capacity = 0;
             goto fail;
         }
     }
@@ -288,6 +308,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
 fail:
     free(fs->scratch);
     fs->scratch = NULL;
+    fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
     fs->mounted = false;
@@ -310,7 +331,7 @@ bfs_err_t bfs_fs_mount_readonly(bfs_fs_t *fs, bfs_bio_t *bio)
 uint32_t bfs_fs_alloc_ino(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted || fs->recovery_error != BFS_OK ||
-        fs->read_only ||
+        fs->read_only || fs->freespace.allocation_frozen ||
         fs->next_ino <= BFS_ROOT_INO ||
         fs->next_ino >= 0x80000000u)
         return 0;
@@ -325,6 +346,7 @@ bfs_err_t bfs_fs_queue_pending_free(bfs_fs_t *fs, bfs_blk_t blk)
     if (!fs || !fs->mounted || !fs->bio) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
     if (blk == BFS_BLK_NULL) return BFS_OK;
     if (blk < bfs_data_start_block(fs->bio->block_size) ||
         blk >= fs->bio->block_count)
@@ -345,6 +367,8 @@ static bfs_err_t fs_defer_free(void *ctx, bfs_blk_t blk)
         blk >= fs->bio->block_count)
         return BFS_ERR_CORRUPT;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
+    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
     if (fs->pending_count >= bfs_fs_pending_cap(fs)) return BFS_ERR_AGAIN;
     bfs_fs_pending_items(fs)[fs->pending_count++] = blk;
     return BFS_OK;
@@ -353,7 +377,7 @@ static bfs_err_t fs_defer_free(void *ctx, bfs_blk_t blk)
 static uint32_t fs_free_headroom(void *ctx)
 {
     bfs_fs_t *fs = (bfs_fs_t *)ctx;
-    if (!fs) return 0;
+    if (!fs || fs->freespace.allocation_frozen) return 0;
     uint32_t cap = bfs_fs_pending_cap(fs);
     return fs->pending_count < cap ? cap - fs->pending_count : 0;
 }
@@ -383,6 +407,7 @@ bfs_err_t bfs_fs_reserve_pending(bfs_fs_t *fs, uint32_t slots)
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+    if (fs->freespace.allocation_frozen) return BFS_ERR_AGAIN;
     uint32_t cap = bfs_fs_pending_cap(fs);
     if (fs->pending_count > cap) return BFS_ERR_CORRUPT;
     if (slots <= cap) return BFS_OK;
@@ -485,7 +510,11 @@ bfs_err_t bfs_fs_compact_tree(bfs_fs_t *fs, bfs_btree_t *tree)
 
 /* ── Sync ──────────────────────────────────────────────────── */
 
+#ifdef BFS_PERF_PROBE
+static bfs_err_t fs_sync_work(bfs_fs_t *fs)
+#else
 bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
+#endif
 {
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
@@ -496,6 +525,18 @@ bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
     return err;
 }
 
+#ifdef BFS_PERF_PROBE
+bfs_err_t bfs_fs_sync(bfs_fs_t *fs)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    bfs_err_t result = fs_sync_work(fs);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_SYNC,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
+
 bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted) return BFS_ERR_INVAL;
@@ -503,6 +544,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
     if (fs->read_only) {
         free(fs->scratch);
         fs->scratch = NULL;
+        fs->scratch_capacity = 0;
         free(fs->pending_frees_dynamic);
         fs->pending_frees_dynamic = NULL;
         fs->mounted = false;
@@ -514,6 +556,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
         bfs_err_t recovery_error = fs->recovery_error;
         free(fs->scratch);
         fs->scratch = NULL;
+        fs->scratch_capacity = 0;
         free(fs->pending_frees_dynamic);
         fs->pending_frees_dynamic = NULL;
         fs->mounted = false;
@@ -528,6 +571,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
     }
     free(fs->scratch);
     fs->scratch = NULL;
+    fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
     fs->mounted = false;
@@ -541,6 +585,7 @@ void bfs_fs_abandon(bfs_fs_t *fs)
     if (!fs || !fs->mounted) return;
     free(fs->scratch);
     fs->scratch = NULL;
+    fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
     fs->mounted = false;

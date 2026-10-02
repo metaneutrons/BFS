@@ -6,6 +6,7 @@ static const bfs_btree_ops_t refcount_ops = {
     .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(uint32_t),
+    .cache_key_order = true,
 };
 
 bfs_err_t bfs_refcount_init(bfs_refcount_t *rc, bfs_bio_t *bio,

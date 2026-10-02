@@ -16,6 +16,9 @@
 #include "bfs_snapshot.h"
 #include <string.h>
 #include <stdlib.h>
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 typedef struct {
     char name[80];
@@ -40,6 +43,15 @@ static bfs_err_t fs_cleanup_result(bfs_fs_t *fs, bfs_err_t primary, bfs_err_t cl
 {
     if (cleanup != BFS_OK) fs->recovery_error = cleanup;
     return cleanup == BFS_OK ? primary : cleanup;
+}
+
+/* Compensating directory mutations clear the tree's transient free-sink error.
+ * Preserve an uncertain COW retirement before any such compensation begins. */
+static void fs_latch_dir_retirement_error(bfs_fs_t *fs)
+{
+    if (fs->dir_tree.tree.free_sink_err != BFS_OK &&
+        fs->recovery_error == BFS_OK)
+        fs->recovery_error = fs->dir_tree.tree.free_sink_err;
 }
 
 static bfs_err_t fs_namespace_result(bfs_fs_t *fs, bfs_err_t result)
@@ -200,7 +212,10 @@ static bfs_err_t fs_queue_extent_tree_for_delete(bfs_fs_t *fs,
     return BFS_OK;
 }
 
-static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
+static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino,
+                                         const char *name, uint8_t name_len,
+                                         bfs_inode_stamp_fn stamp_fn,
+                                         void *stamp_context, uint32_t *ino_out)
 {
     bfs_err_t err = fs_require_dir(fs, parent_ino);
     if (err != BFS_OK) return err;
@@ -212,6 +227,11 @@ static bfs_err_t fs_create_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino, cons
     inode.inode_nr = bfs_be32(ino);
     inode.type = bfs_be32(BFS_INODE_FILE);
     inode.link_count = bfs_be32(1);
+    if (stamp_fn) {
+        bfs_inode_stamp_t stamp = {0};
+        stamp_fn(stamp_context, &stamp);
+        bfs_inode_apply_stamp(&inode, &stamp, true);
+    }
     err = bfs_inode_write(&fs->inode_tree, ino, &inode);
     if (err != BFS_OK) {
         fs_release_ino_if_last(fs, ino);
@@ -252,6 +272,7 @@ static bfs_err_t fs_mkdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
     }
     err = bfs_dir_insert(&fs->dir_tree, parent_ino, name, name_len, ino, BFS_INODE_DIR);
     if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
         bfs_err_t cleanup_err = bfs_dir_remove(&fs->dir_tree, ino, "..", 2);
         if (cleanup_err == BFS_OK)
             cleanup_err = bfs_inode_delete(&fs->inode_tree, ino);
@@ -324,6 +345,7 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino,
     }
     err = bfs_dir_remove(&fs->dir_tree, parent_ino, name, name_len);
     if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
         err = fs_cleanup_result(fs, err, fs_restore_comment(fs, ino, &comment));
         goto delete_out;
     }
@@ -465,12 +487,15 @@ static bfs_err_t fs_rmdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
         if (err != BFS_OK) return err;
     }
     err = bfs_dir_remove(&fs->dir_tree, dir_ino, "..", 2);
-    if (err != BFS_OK && err != BFS_ERR_NOTFOUND)
+    if (err != BFS_OK && err != BFS_ERR_NOTFOUND) {
+        fs_latch_dir_retirement_error(fs);
         return fs_cleanup_result(fs, err, fs_restore_comment(fs, dir_ino, &comment));
+    }
     bool removed_dotdot = err == BFS_OK;
 
     err = bfs_dir_remove(&fs->dir_tree, parent_ino, name, name_len);
     if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
         bfs_err_t rollback_err = BFS_OK;
         if (removed_dotdot)
             rollback_err = bfs_dir_insert(&fs->dir_tree, dir_ino, "..", 2,
@@ -695,12 +720,16 @@ static bfs_err_t fs_rename_unlocked(bfs_fs_t *fs, const fs_rename_request_t *req
     err = fs_rename_install_destination(fs, request, &state);
     if (err != BFS_OK) return err;
     err = fs_rename_update_dotdot(fs, request, &state, request->new_parent);
-    if (err != BFS_OK) return fs_cleanup_result(fs, err,
-                                                fs_rename_restore_destination(fs, request, &state));
+    if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
+        return fs_cleanup_result(fs, err,
+                                 fs_rename_restore_destination(fs, request, &state));
+    }
 
     err = bfs_dir_remove(&fs->dir_tree, request->old_parent, request->old_name,
                          request->old_len);
     if (err != BFS_OK) {
+        fs_latch_dir_retirement_error(fs);
         bfs_err_t rollback_err = fs_rename_update_dotdot(fs, request, &state, state.old_dotdot);
         bfs_err_t destination_err = fs_rename_restore_destination(fs, request, &state);
         if (rollback_err == BFS_OK) rollback_err = destination_err;
@@ -847,6 +876,7 @@ static bfs_err_t fs_set_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
     uint32_t comment_parent = ino | 0x80000000u;
     err = bfs_dir_insert(&fs->dir_tree, comment_parent, comment, len, ino, 0);
     if (err != BFS_OK && old_comment.found) {
+        fs_latch_dir_retirement_error(fs);
         bfs_err_t rollback_err = bfs_dir_insert(&fs->dir_tree, comment_parent,
                                                 old_comment.name,
                                                 old_comment.len, ino, 0);
@@ -894,6 +924,19 @@ static bfs_err_t fs_get_comment_unlocked(bfs_fs_t *fs, uint32_t ino, char *buf, 
 }
 bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {
+    return bfs_fs_create_file_with_stamp(fs, parent_ino, name, name_len,
+                                         NULL, NULL, ino_out);
+}
+
+#ifdef BFS_PERF_PROBE
+static bfs_err_t fs_create_file_with_stamp_work(bfs_fs_t *fs, uint32_t parent_ino,
+#else
+bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
+#endif
+                                       const char *name, uint8_t name_len,
+                                       bfs_inode_stamp_fn stamp_fn,
+                                       void *stamp_context, uint32_t *ino_out)
+{
     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
     if (parent_ino == 0 || !fs_name_valid(name, name_len))
@@ -901,11 +944,28 @@ bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
     bfs_lock_write(&fs->lock);
     bfs_err_t err = bfs_fs_ensure_free_headroom(fs, BFS_FS_OP_FREE_RESERVE);
     if (err == BFS_OK)
-        err = fs_create_file_unlocked(fs, parent_ino, name, name_len, ino_out);
+        err = fs_create_file_unlocked(fs, parent_ino, name, name_len,
+                                      stamp_fn, stamp_context, ino_out);
     err = fs_namespace_result(fs, err);
     bfs_lock_unlock(&fs->lock);
     return err;
 }
+
+#ifdef BFS_PERF_PROBE
+bfs_err_t bfs_fs_create_file_with_stamp(bfs_fs_t *fs, uint32_t parent_ino,
+                                       const char *name, uint8_t name_len,
+                                       bfs_inode_stamp_fn stamp_fn,
+                                       void *stamp_context, uint32_t *ino_out)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    bfs_err_t result = fs_create_file_with_stamp_work(fs, parent_ino, name,
+                         name_len, stamp_fn, stamp_context, ino_out);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_CREATE,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
 
 bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {
@@ -922,7 +982,11 @@ bfs_err_t bfs_fs_mkdir(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint
     return err;
 }
 
+#ifdef BFS_PERF_PROBE
+static bfs_err_t fs_delete_file_work(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
+#else
 bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len)
+#endif
 {
     if (!fs_handle_valid(fs)) return BFS_ERR_INVAL;
     if (fs->read_only) return BFS_ERR_UNSUPPORTED;
@@ -936,6 +1000,19 @@ bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name
     bfs_lock_unlock(&fs->lock);
     return err;
 }
+
+#ifdef BFS_PERF_PROBE
+bfs_err_t bfs_fs_delete_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name,
+                             uint8_t name_len)
+{
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    bfs_err_t result = fs_delete_file_work(fs, parent_ino, name, name_len);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_CORE_DELETE,
+                                    bfs_perf_probe_elapsed(&started));
+    return result;
+}
+#endif
 
 bfs_err_t bfs_fs_unlink_open_file(bfs_fs_t *fs, uint32_t parent_ino,
                                   const char *name, uint8_t name_len,

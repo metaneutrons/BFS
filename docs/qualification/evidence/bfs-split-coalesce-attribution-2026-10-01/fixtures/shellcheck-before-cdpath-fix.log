@@ -1,0 +1,12 @@
+
+In build/split-coalesce-attribution-fixtures/replay.sh line 4:
+fixture_dir=$(CDPATH= cd -- "$(dirname -- "$0")" && pwd)
+                     ^-- SC1007 (warning): Remove space after = if trying to assign a value (for empty string, use var='' ... ).
+
+
+In build/split-coalesce-attribution-fixtures/replay.sh line 5:
+repo_root=$(CDPATH= cd -- "$fixture_dir/../.." && pwd)
+                   ^-- SC1007 (warning): Remove space after = if trying to assign a value (for empty string, use var='' ... ).
+
+For more information:
+  https://www.shellcheck.net/wiki/SC1007 -- Remove space after = if trying to...

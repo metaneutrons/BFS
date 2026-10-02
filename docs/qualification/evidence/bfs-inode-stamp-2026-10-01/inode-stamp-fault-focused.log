@@ -1,0 +1,5 @@
+=== Inode Stamp Publication Faults ===
+  test_combined_inode_write_failure_reloads_committed OK
+  test_combined_inode_partial_write_reloads_committed OK
+
+2 passed, 0 failed

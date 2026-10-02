@@ -316,11 +316,15 @@ def observe_rejected(image, timeout, commands, repair_refusal):
     return rejected
 
 
-def observe_repairable_leak(image, timeout, commands):
+def observe_recovery(image, timeout, commands, require_repair):
     commands.append(command_record("oracle", [sys.executable, str(ORACLE), str(image)], timeout))
     commands.append(command_record("check", [str(ROOT / "build" / "host" / "bfs"), "check",
                                                str(image)], timeout))
-    if commands[-2]["returncode"] != 0 or commands[-1]["returncode"] != 1:
+    if commands[-2]["returncode"] != 0:
+        return False
+    if commands[-1]["returncode"] == 0:
+        return not require_repair
+    if commands[-1]["returncode"] != 1:
         return False
     commands.append(command_record("repair", [str(ROOT / "build" / "host" / "bfs"), "check",
                                                str(image), "--repair"], timeout))
@@ -403,8 +407,10 @@ def observe_image_case(case, image, commands):
         matched = observe_rejected(image, case["timeout_seconds"], commands,
                                    "repair-refusal" in case["observers"])
         return mutation, "rejected" if matched else "unexpected"
-    matched = observe_repairable_leak(image, case["timeout_seconds"], commands)
-    return mutation, "repairable-leak" if matched else "unexpected"
+    expected = case["expected_class"]
+    matched = observe_recovery(image, case["timeout_seconds"], commands,
+                               require_repair=expected == "repairable-leak")
+    return mutation, expected if matched else "unexpected"
 
 
 def execute_case(case, output, geometry, identity):

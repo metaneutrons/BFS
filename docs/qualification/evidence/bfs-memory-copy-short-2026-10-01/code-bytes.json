@@ -1,0 +1,9 @@
+{
+  "gate": "PASS",
+  "inserted_bytes": 56,
+  "retained_copy_body_bytes": 84,
+  "retained_copy_body_sha256": "0200d2b0f6a497ed3159e6d8992e54f10ba24c5edf19c8fc51a646f74c227fb0",
+  "unchanged_memset_bytes": 124,
+  "unchanged_memset_sha256": "81e16fda983c93bb8d6a272b3ace49454bf69d91d61a79802545c2309c191b4a",
+  "limitation": "Decoded actual assembler opcodes prove retained body bytes, not equal runtime latency or complete target correctness."
+}

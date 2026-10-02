@@ -1,0 +1,34 @@
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c: In function 'verify_copy_result':
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:211:32: error: 'uintptr_t' undeclared (first use in this function)
+                        (ULONG)(uintptr_t)dst,
+                                ^~~~~~~~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:211:32: note: each undeclared identifier is reported only once for each function it appears in
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:211:42: error: expected ')' before 'dst'
+                        (ULONG)(uintptr_t)dst,
+                                          ^~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:210:9: error: too few arguments to function 'record_failure'
+         record_failure(kernel, "return", length, dst_offset, src_offset, 0,
+         ^~~~~~~~~~~~~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:165:13: note: declared here
+ static void record_failure(const char *kernel, const char *check,
+             ^~~~~~~~~~~~~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c: In function 'check_abi_negative_controls':
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:301:42: error: 'uintptr_t' undeclared (first use in this function)
+                     0, 0, index, (ULONG)(uintptr_t)dst,
+                                          ^~~~~~~~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:301:52: error: expected ')' before 'dst'
+                     0, 0, index, (ULONG)(uintptr_t)dst,
+                                                    ^~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:300:17: error: too few arguments to function 'record_failure'
+                 record_failure("abi-witness", "negative-control-return", 0,
+                 ^~~~~~~~~~~~~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:165:13: note: declared here
+ static void record_failure(const char *kernel, const char *check,
+             ^~~~~~~~~~~~~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c: In function 'run_timing_batch':
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:491:31: error: 'uintptr_t' undeclared (first use in this function)
+                    (uint32_t)(uintptr_t)last_return ^
+                               ^~~~~~~~~
+/Users/fabian/.codex/worktrees/bfs-append-performance/BFS/build/memory-copy-48/run.MT99aB/memory-copy-probe-source.c:491:41: error: expected ';' before 'last_return'
+                    (uint32_t)(uintptr_t)last_return ^
+                                         ^~~~~~~~~~~

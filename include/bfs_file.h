@@ -46,6 +46,15 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len);
  * BFS_ERR_UNSUPPORTED on a read-only mount. */
 int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len);
 
+/* Optional completion metadata, folded into the existing final inode COW.
+ * Samples once after positive progress and a fresh inode read, not at intermediate
+ * commits. Clears only the requested protection bits on that fresh inode.
+ * No progress means no sampling/metadata update. NULL/zero is ordinary write.
+ * The sampler follows bfs_inode_stamp_fn's no-reentry contract. */
+int32_t bfs_file_write_with_stamp(bfs_file_t *f, const void *buf, uint32_t len,
+                                  bfs_inode_stamp_fn stamp_fn,
+                                  void *stamp_context, uint32_t protection_clear);
+
 /* Append under one filesystem write lock. This is the only core entry point
  * that guarantees an end-of-file placement is atomic against other writers. */
 int32_t bfs_file_append(bfs_file_t *f, const void *buf, uint32_t len);

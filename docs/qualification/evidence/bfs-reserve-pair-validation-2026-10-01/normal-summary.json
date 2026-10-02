@@ -1,0 +1,444 @@
+{
+  "strict_gate": "PASS",
+  "runs": [
+    {
+      "label": "reserve-pair-validation-normal-baseline-bfs-first",
+      "suffix": "baseline-bfs-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 249918,
+        "LOOKUP_400_US": 110463,
+        "SMALL_READ_40_US": 51391,
+        "SEQ_WRITE_8M_US": 393791,
+        "SEQ_READ_8M_US": 564221,
+        "SMALL_DELETE_40_US": 168447
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16768,
+        "LOOKUP_400_US": 66688,
+        "SMALL_READ_40_US": 13888,
+        "SEQ_WRITE_8M_US": 34866,
+        "SEQ_READ_8M_US": 270718,
+        "SMALL_DELETE_40_US": 7935
+      }
+    },
+    {
+      "label": "reserve-pair-validation-normal-candidate-pfs3-first",
+      "suffix": "candidate-pfs3-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 189503,
+        "LOOKUP_400_US": 104384,
+        "SMALL_READ_40_US": 49537,
+        "SEQ_WRITE_8M_US": 314365,
+        "SEQ_READ_8M_US": 506941,
+        "SMALL_DELETE_40_US": 176063
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 17792,
+        "LOOKUP_400_US": 65726,
+        "SMALL_READ_40_US": 15169,
+        "SEQ_WRITE_8M_US": 36735,
+        "SEQ_READ_8M_US": 259199,
+        "SMALL_DELETE_40_US": 8000
+      }
+    },
+    {
+      "label": "reserve-pair-validation-normal-baseline-pfs3-first",
+      "suffix": "baseline-pfs3-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 187071,
+        "LOOKUP_400_US": 107071,
+        "SMALL_READ_40_US": 49600,
+        "SEQ_WRITE_8M_US": 469886,
+        "SEQ_READ_8M_US": 504061,
+        "SMALL_DELETE_40_US": 168767
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 17153,
+        "LOOKUP_400_US": 67134,
+        "SMALL_READ_40_US": 14668,
+        "SEQ_WRITE_8M_US": 33663,
+        "SEQ_READ_8M_US": 268351,
+        "SMALL_DELETE_40_US": 7809
+      }
+    },
+    {
+      "label": "reserve-pair-validation-normal-candidate-bfs-first",
+      "suffix": "candidate-bfs-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 183039,
+        "LOOKUP_400_US": 105664,
+        "SMALL_READ_40_US": 43265,
+        "SEQ_WRITE_8M_US": 300093,
+        "SEQ_READ_8M_US": 548670,
+        "SMALL_DELETE_40_US": 215487
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16128,
+        "LOOKUP_400_US": 72446,
+        "SMALL_READ_40_US": 13247,
+        "SEQ_WRITE_8M_US": 32768,
+        "SEQ_READ_8M_US": 257215,
+        "SMALL_DELETE_40_US": 7808
+      }
+    },
+    {
+      "label": "reserve-pair-validation-normal-repeat-candidate-bfs-first",
+      "suffix": "repeat-candidate-bfs-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 259264,
+        "LOOKUP_400_US": 119039,
+        "SMALL_READ_40_US": 45377,
+        "SEQ_WRITE_8M_US": 358653,
+        "SEQ_READ_8M_US": 524732,
+        "SMALL_DELETE_40_US": 181376
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 17217,
+        "LOOKUP_400_US": 66303,
+        "SMALL_READ_40_US": 15360,
+        "SEQ_WRITE_8M_US": 36735,
+        "SEQ_READ_8M_US": 259647,
+        "SMALL_DELETE_40_US": 7872
+      }
+    },
+    {
+      "label": "reserve-pair-validation-normal-repeat-baseline-pfs3-first",
+      "suffix": "repeat-baseline-pfs3-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 196479,
+        "LOOKUP_400_US": 124864,
+        "SMALL_READ_40_US": 49471,
+        "SEQ_WRITE_8M_US": 359998,
+        "SEQ_READ_8M_US": 512508,
+        "SMALL_DELETE_40_US": 167488
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16959,
+        "LOOKUP_400_US": 65728,
+        "SMALL_READ_40_US": 14272,
+        "SEQ_WRITE_8M_US": 34817,
+        "SEQ_READ_8M_US": 256319,
+        "SMALL_DELETE_40_US": 7935
+      }
+    },
+    {
+      "label": "reserve-pair-validation-normal-repeat-candidate-pfs3-first",
+      "suffix": "repeat-candidate-pfs3-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 208639,
+        "LOOKUP_400_US": 117504,
+        "SMALL_READ_40_US": 45825,
+        "SEQ_WRITE_8M_US": 333634,
+        "SEQ_READ_8M_US": 520189,
+        "SMALL_DELETE_40_US": 209626
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 36347,
+        "LOOKUP_400_US": 75200,
+        "SMALL_READ_40_US": 14350,
+        "SEQ_WRITE_8M_US": 37311,
+        "SEQ_READ_8M_US": 266110,
+        "SMALL_DELETE_40_US": 7871
+      }
+    },
+    {
+      "label": "reserve-pair-validation-normal-repeat-baseline-bfs-first",
+      "suffix": "repeat-baseline-bfs-first",
+      "verifier_output": "PASS: requested mounted-volume workload outputs are complete and data-checked",
+      "bfs": {
+        "SMALL_CREATE_40_US": 227007,
+        "LOOKUP_400_US": 105791,
+        "SMALL_READ_40_US": 48832,
+        "SEQ_WRITE_8M_US": 318590,
+        "SEQ_READ_8M_US": 526909,
+        "SMALL_DELETE_40_US": 167039
+      },
+      "pfs3": {
+        "SMALL_CREATE_40_US": 16128,
+        "LOOKUP_400_US": 66559,
+        "SMALL_READ_40_US": 13951,
+        "SEQ_WRITE_8M_US": 35967,
+        "SEQ_READ_8M_US": 261502,
+        "SMALL_DELETE_40_US": 7808
+      }
+    }
+  ],
+  "pairs": [
+    {
+      "label": "bfs-first",
+      "baseline": "reserve-pair-validation-normal-baseline-bfs-first",
+      "candidate": "reserve-pair-validation-normal-candidate-bfs-first",
+      "bfs_change_percent": {
+        "SMALL_CREATE_40_US": -26.76037740378844,
+        "LOOKUP_400_US": -4.34444112508261,
+        "SMALL_READ_40_US": -15.812107178299705,
+        "SEQ_WRITE_8M_US": -23.79383987953001,
+        "SEQ_READ_8M_US": -2.7561895073029863,
+        "SMALL_DELETE_40_US": 27.925697697198526
+      },
+      "pfs3_change_percent": {
+        "SMALL_CREATE_40_US": -3.8167938931297662,
+        "LOOKUP_400_US": 8.634237044145877,
+        "SMALL_READ_40_US": -4.615495391705071,
+        "SEQ_WRITE_8M_US": -6.0173234669879,
+        "SEQ_READ_8M_US": -4.987847132440404,
+        "SMALL_DELETE_40_US": -1.600504095778199
+      }
+    },
+    {
+      "label": "pfs3-first",
+      "baseline": "reserve-pair-validation-normal-baseline-pfs3-first",
+      "candidate": "reserve-pair-validation-normal-candidate-pfs3-first",
+      "bfs_change_percent": {
+        "SMALL_CREATE_40_US": 1.3000411608426798,
+        "LOOKUP_400_US": -2.509549738024297,
+        "SMALL_READ_40_US": -0.12701612903225357,
+        "SEQ_WRITE_8M_US": -33.097602397177184,
+        "SEQ_READ_8M_US": 0.57135941880051,
+        "SMALL_DELETE_40_US": 4.3231200412402915
+      },
+      "pfs3_change_percent": {
+        "SMALL_CREATE_40_US": 3.725295866612255,
+        "LOOKUP_400_US": -2.097297941430576,
+        "SMALL_READ_40_US": 3.415598581947088,
+        "SEQ_WRITE_8M_US": 9.125746368416365,
+        "SEQ_READ_8M_US": -3.410458690297413,
+        "SMALL_DELETE_40_US": 2.4458957613010535
+      }
+    },
+    {
+      "label": "repeat-bfs-first",
+      "baseline": "reserve-pair-validation-normal-repeat-baseline-bfs-first",
+      "candidate": "reserve-pair-validation-normal-repeat-candidate-bfs-first",
+      "bfs_change_percent": {
+        "SMALL_CREATE_40_US": 14.209693974194625,
+        "LOOKUP_400_US": 12.522804397349496,
+        "SMALL_READ_40_US": -7.075278505897775,
+        "SEQ_WRITE_8M_US": 12.575096519037011,
+        "SEQ_READ_8M_US": -0.4131643224921211,
+        "SMALL_DELETE_40_US": 8.583025520986109
+      },
+      "pfs3_change_percent": {
+        "SMALL_CREATE_40_US": 6.75223214285714,
+        "LOOKUP_400_US": -0.38462116317853345,
+        "SMALL_READ_40_US": 10.099634434807548,
+        "SEQ_WRITE_8M_US": 2.1352906831261897,
+        "SEQ_READ_8M_US": -0.7093635995135794,
+        "SMALL_DELETE_40_US": 0.8196721311475308
+      }
+    },
+    {
+      "label": "repeat-pfs3-first",
+      "baseline": "reserve-pair-validation-normal-repeat-baseline-pfs3-first",
+      "candidate": "reserve-pair-validation-normal-repeat-candidate-pfs3-first",
+      "bfs_change_percent": {
+        "SMALL_CREATE_40_US": 6.188956580601479,
+        "LOOKUP_400_US": -5.894413121476161,
+        "SMALL_READ_40_US": -7.369974328394413,
+        "SEQ_WRITE_8M_US": -7.323374018744544,
+        "SEQ_READ_8M_US": 1.4987083128458423,
+        "SMALL_DELETE_40_US": 25.15881734810852
+      },
+      "pfs3_change_percent": {
+        "SMALL_CREATE_40_US": 114.32277846571144,
+        "LOOKUP_400_US": 14.410905550146058,
+        "SMALL_READ_40_US": 0.5465246636771282,
+        "SEQ_WRITE_8M_US": 7.163167418215233,
+        "SEQ_READ_8M_US": 3.8198494844315034,
+        "SMALL_DELETE_40_US": -0.8065532451165702
+      }
+    }
+  ],
+  "summary": [
+    {
+      "phase": "SMALL_CREATE_40_US",
+      "baseline_bfs_mean_us": 215118.75,
+      "candidate_bfs_mean_us": 210111.25,
+      "bfs_change_percent": -2.327784072750516,
+      "baseline_pfs3_mean_us": 16752,
+      "candidate_pfs3_mean_us": 21871,
+      "pfs3_change_percent": 30.55754536771729,
+      "candidate_ratio_of_means": 9.606842394037766,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "reserve-pair-validation-normal-candidate-pfs3-first",
+          "ratio": 10.651022931654676
+        },
+        {
+          "label": "reserve-pair-validation-normal-candidate-bfs-first",
+          "ratio": 11.349144345238095
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-bfs-first",
+          "ratio": 15.058604867282337
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-pfs3-first",
+          "ratio": 5.7401986408782015
+        }
+      ],
+      "same_run_threshold_failures": 4,
+      "adverse_bfs_pairs": 3
+    },
+    {
+      "phase": "LOOKUP_400_US",
+      "baseline_bfs_mean_us": 112047.25,
+      "candidate_bfs_mean_us": 111647.75,
+      "bfs_change_percent": -0.3565460107231577,
+      "baseline_pfs3_mean_us": 66527.25,
+      "candidate_pfs3_mean_us": 69918.75,
+      "pfs3_change_percent": 5.09791100639212,
+      "candidate_ratio_of_means": 1.596821310449629,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "reserve-pair-validation-normal-candidate-pfs3-first",
+          "ratio": 1.5881690655144083
+        },
+        {
+          "label": "reserve-pair-validation-normal-candidate-bfs-first",
+          "ratio": 1.4585208293073462
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-bfs-first",
+          "ratio": 1.7953787913065773
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-pfs3-first",
+          "ratio": 1.5625531914893618
+        }
+      ],
+      "same_run_threshold_failures": 0,
+      "adverse_bfs_pairs": 1
+    },
+    {
+      "phase": "SMALL_READ_40_US",
+      "baseline_bfs_mean_us": 49823.5,
+      "candidate_bfs_mean_us": 46001,
+      "bfs_change_percent": -7.6720824510522085,
+      "baseline_pfs3_mean_us": 14194.75,
+      "candidate_pfs3_mean_us": 14531.5,
+      "pfs3_change_percent": 2.3723559766815283,
+      "candidate_ratio_of_means": 3.1656057530193027,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "reserve-pair-validation-normal-candidate-pfs3-first",
+          "ratio": 3.265673412881535
+        },
+        {
+          "label": "reserve-pair-validation-normal-candidate-bfs-first",
+          "ratio": 3.2660224956593944
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-bfs-first",
+          "ratio": 2.954231770833333
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-pfs3-first",
+          "ratio": 3.1933797909407664
+        }
+      ],
+      "same_run_threshold_failures": 0,
+      "adverse_bfs_pairs": 0
+    },
+    {
+      "phase": "SEQ_WRITE_8M_US",
+      "baseline_bfs_mean_us": 385566.25,
+      "candidate_bfs_mean_us": 326686.25,
+      "bfs_change_percent": -15.271046156140478,
+      "baseline_pfs3_mean_us": 34828.25,
+      "candidate_pfs3_mean_us": 35887.25,
+      "pfs3_change_percent": 3.040635116607926,
+      "candidate_ratio_of_means": 9.103128548439905,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "reserve-pair-validation-normal-candidate-pfs3-first",
+          "ratio": 8.557642575200763
+        },
+        {
+          "label": "reserve-pair-validation-normal-candidate-bfs-first",
+          "ratio": 9.158111572265625
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-bfs-first",
+          "ratio": 9.763250306247448
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-pfs3-first",
+          "ratio": 8.941974216718931
+        }
+      ],
+      "same_run_threshold_failures": 4,
+      "adverse_bfs_pairs": 1
+    },
+    {
+      "phase": "SEQ_READ_8M_US",
+      "baseline_bfs_mean_us": 526924.75,
+      "candidate_bfs_mean_us": 525133,
+      "bfs_change_percent": -0.3400390662993136,
+      "baseline_pfs3_mean_us": 264222.5,
+      "candidate_pfs3_mean_us": 260542.75,
+      "pfs3_change_percent": -1.3926709496731027,
+      "candidate_ratio_of_means": 2.015534878633161,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "reserve-pair-validation-normal-candidate-pfs3-first",
+          "ratio": 1.9557984405804034
+        },
+        {
+          "label": "reserve-pair-validation-normal-candidate-bfs-first",
+          "ratio": 2.1331182085026144
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-bfs-first",
+          "ratio": 2.0209438198785272
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-pfs3-first",
+          "ratio": 1.9547893728157528
+        }
+      ],
+      "same_run_threshold_failures": 0,
+      "adverse_bfs_pairs": 2
+    },
+    {
+      "phase": "SMALL_DELETE_40_US",
+      "baseline_bfs_mean_us": 167935.25,
+      "candidate_bfs_mean_us": 195638,
+      "bfs_change_percent": 16.49609001088217,
+      "baseline_pfs3_mean_us": 7871.75,
+      "candidate_pfs3_mean_us": 7887.75,
+      "pfs3_change_percent": 0.20325848762980936,
+      "candidate_ratio_of_means": 24.802763779277996,
+      "same_run_candidate_pfs3_ratios": [
+        {
+          "label": "reserve-pair-validation-normal-candidate-pfs3-first",
+          "ratio": 22.007875
+        },
+        {
+          "label": "reserve-pair-validation-normal-candidate-bfs-first",
+          "ratio": 27.598232581967213
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-bfs-first",
+          "ratio": 23.040650406504064
+        },
+        {
+          "label": "reserve-pair-validation-normal-repeat-candidate-pfs3-first",
+          "ratio": 26.632702324990472
+        }
+      ],
+      "same_run_threshold_failures": 4,
+      "adverse_bfs_pairs": 4
+    }
+  ],
+  "adverse_bfs_pairs": 11,
+  "same_run_threshold_failures": 12,
+  "limit": "Four normal runs per revision, balanced order/repeat. No scheduling control or causal precision; probe and microtimes are separate evidence."
+}

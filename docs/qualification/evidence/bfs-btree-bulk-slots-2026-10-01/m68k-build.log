@@ -1,0 +1,30 @@
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -O2 -m68020 -noixemul -fomit-frame-pointer -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include -o build/amiga-btree-bulk-slots/bfshandler \
+		src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s src/amiga/handler.c src/amiga/amiga_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c \
+		-nostdlib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib -lamiga -lgcc -lnix -s
+src/core/btree.c: In function 'leaf_insert_at':
+src/core/btree.c:678:9: error: implicit declaration of function 'memmove' [-Werror=implicit-function-declaration]
+         memmove(node_key(tree, buf, idx + 1), node_key(tree, buf, idx),
+         ^~~~~~~
+src/core/btree.c:678:9: error: incompatible implicit declaration of built-in function 'memmove' [-Werror]
+src/core/btree.c:678:9: note: include '<string.h>' or provide a declaration of 'memmove'
+src/core/btree.c: In function 'internal_insert_at':
+src/core/btree.c:698:9: error: incompatible implicit declaration of built-in function 'memmove' [-Werror]
+         memmove(node_key(tree, buf, idx + 1), node_key(tree, buf, idx),
+         ^~~~~~~
+src/core/btree.c:698:9: note: include '<string.h>' or provide a declaration of 'memmove'
+src/core/btree.c:703:9: error: incompatible implicit declaration of built-in function 'memmove' [-Werror]
+         memmove(internal_child_ptr(tree, buf, idx + 2),
+         ^~~~~~~
+src/core/btree.c:703:9: note: include '<string.h>' or provide a declaration of 'memmove'
+src/core/btree.c: In function 'leaf_remove_at':
+src/core/btree.c:1440:9: error: incompatible implicit declaration of built-in function 'memmove' [-Werror]
+         memmove(node_key(tree, buf, idx), node_key(tree, buf, idx + 1),
+         ^~~~~~~
+src/core/btree.c:1440:9: note: include '<string.h>' or provide a declaration of 'memmove'
+src/core/btree.c: In function 'internal_remove_at':
+src/core/btree.c:1456:9: error: incompatible implicit declaration of built-in function 'memmove' [-Werror]
+         memmove(node_key(tree, buf, idx), node_key(tree, buf, idx + 1),
+         ^~~~~~~
+src/core/btree.c:1456:9: note: include '<string.h>' or provide a declaration of 'memmove'
+cc1: all warnings being treated as errors
+make: *** [amiga] Error 1

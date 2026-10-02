@@ -1,0 +1,39 @@
+mode=AmigaOS CRC32 kernel probe
+small_vector_cases=17024
+large_vector_cases=320
+small_chain_cases=17024
+large_chain_cases=84
+null_zero_cases=4
+known_vector_cases=1
+abi_negative_control_cases=2
+abi_negative_control_passes=2
+abi_negative_control_errors=0
+baseline_crc_calls=51565
+candidate_crc_calls=51565
+baseline_abi_failures=0
+candidate_abi_failures=0
+baseline_crc_failures=0
+candidate_crc_failures=0
+timer_available=1
+clock_hz=709379
+timing_samples=48
+timing_mismatches=0
+timing_order_baseline_first=24
+timing_order_candidate_first=24
+baseline_timing_calls=651480
+candidate_timing_calls=651480
+timing_checksum=00000000
+timing_note=raw EClock ticks only; call order alternates; no speed claim
+clock_hz=709379
+timing_seed=12345678 data_offset=11
+timing_length=0 repeats=50000 samples=12848,12848,12757,13302,13166,13006 candidate_ticks=6764,6947,6901,6992,6831,7083
+timing_length=1 repeats=20000 samples=7355,6993,7173,7128,7037,7264 candidate_ticks=7900,8172,7990,7945,8081,7900
+timing_length=3 repeats=20000 samples=10170,10169,10079,10170,10090,10169 candidate_ticks=11213,10986,11259,10987,11259,10987
+timing_length=4 repeats=15000 samples=7331,7491,7310,7582,7581,7763 candidate_ticks=7718,7628,7899,7581,7945,7446
+timing_length=44 repeats=3000 samples=7445,7309,7355,7594,7355,7537 candidate_ticks=6764,6765,6765,6764,6992,6764
+timing_length=256 repeats=512 samples=6809,6537,6538,6719,6538,6765 candidate_ticks=5948,5948,5947,5902,6537,5856
+timing_length=4096 repeats=64 samples=12985,12667,12939,12939,12939,12712 candidate_ticks=11622,11713,11622,11577,11577,11623
+timing_length=65536 repeats=4 samples=12984,14029,12849,13574,12666,12712 candidate_ticks=11668,11668,11667,12146,11396,11396
+failures=0
+CRC32-PROBE-PASS
+CRC kernel guest completed within the bounded run

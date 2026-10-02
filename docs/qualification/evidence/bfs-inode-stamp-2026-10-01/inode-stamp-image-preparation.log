@@ -1,0 +1,12 @@
+Prepared inode-stamp-probe-bfs-first
+Prepared inode-stamp-probe-pfs3-first
+Prepared inode-stamp-normal-baseline-bfs-first
+Prepared inode-stamp-normal-candidate-pfs3-first
+Prepared inode-stamp-normal-baseline-pfs3-first
+Prepared inode-stamp-normal-candidate-bfs-first
+Prepared inode-stamp-normal-repeat-candidate-bfs-first
+Prepared inode-stamp-normal-repeat-baseline-pfs3-first
+Prepared inode-stamp-normal-repeat-candidate-pfs3-first
+rsync: [receiver] write failed on "/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-repeat-baseline-bfs-first/bench-pfs3.hdf": Disk quota exceeded (122)
+rsync error: error in file IO (code 11) at receiver.c(644) [receiver=3.5.0-g471e17dc]
+rsync(3037): error: unexpected end of file

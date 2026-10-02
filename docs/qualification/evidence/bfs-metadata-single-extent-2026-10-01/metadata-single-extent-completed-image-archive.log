@@ -1,0 +1,24 @@
+aaea65d556cfedf6c893c1e7953f2b6f409504f5b33c29ff7a01bbc383fbaa8e  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-probe-bfs-first/system/Results/bfs.deep-compare.tsv
+28cb46c0a570b537b100fc0995e636c110377928790098a7ed6c56faf0906e68  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-probe-bfs-first/system/Results/pfs3.deep-compare.tsv
+cbe40563f69afaea674fc0ee7317c4e399eb4f2c2633e948f408cbc77fd6bfb9  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-probe-pfs3-first/system/Results/bfs.deep-compare.tsv
+fa454b08c45d288e56046a3d142cdb60310e0d8d83eb1840f240ff4db53a246f  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-probe-pfs3-first/system/Results/pfs3.deep-compare.tsv
+80ce5046811bdbd923a87f97924ac2be8d515a5242cd9f6a271675dc6f99e67d  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-baseline-bfs-first/system/Results/bfs.tsv
+2a1d1e9e5800c717ce4572f204630703a68a0bc2663d39fc56898b12ba3c9637  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-baseline-bfs-first/system/Results/pfs3.tsv
+832bb68ef56d978cbc27658112cfbd1dfb7884cf130f11dbf0dfe10216925a35  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-candidate-pfs3-first/system/Results/bfs.tsv
+c1e03066eb3dbdac58d5693f8a18e528a2a9109b6487e65b0014ffa153ed75bf  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+15d938b391455dc4675104d3f6219d53565ec9d1363f7e6961e7e014c09f5d27  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-baseline-pfs3-first/system/Results/bfs.tsv
+318b73d9b2e0ce604bf136f99f3ea23266ecf9d97e8f71963135aac88f2341cc  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+072e3af7b2cbc7533e48c169628454ed97974c0e585729e56f54bceaa6504621  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-candidate-bfs-first/system/Results/bfs.tsv
+c69a287c6a17547343702ba3397ff96dee856f229f43d27fce102f1d500dd1cb  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-candidate-bfs-first/system/Results/pfs3.tsv
+5fa805173b72094effa76f1b7e5e1c5e21857a2f4ff7fad1317370bce65fcc9f  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+3cd63ef154e1c527d047f3f41051d85e52a49438d9498ededba22594bb53a027  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+e8691c29b13b4445cbbef04e04ae1033b47e5f2032d267236ad0ccc71765ec0a  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+abcd294b6c9f16d30bcf9dbc8b855903f81f90f71dc18c661dcac607f9b26f8b  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+676a632d21613c53e0facc45ef93deba954d7793233c40ad608685402da9be38  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+3a2135dd4c3b1cb62ea6fa7c12b5351f47275e7076f205f0a6dd61646e542244  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+31dd5543a0db32d006adf1983ba25cf2319fe43f13ab792e0bd5b191df26311c  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+4fb412e4251e1234bc3b62ae92e8851934ec052537ad06993c143b6bb3bcc725  /home/fabian/.cache/bfs-performance/metadata-single-extent-2026-10-01/metadata-single-extent-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  3.5G  8.3G  30% /tmp
+/dev/vda2       996G  313G  682G  32% /home
+Ten completed metadata-single-extent images archived recoverably with identical TSV hashes

@@ -1,0 +1,15 @@
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  9.3G  2.5G  79% /tmp
+/dev/vda2       996G  313G  683G  32% /home
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-baseline-bfs-first
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-baseline-pfs3-first
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-candidate-bfs-first
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-candidate-pfs3-first
+256M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-repeat-baseline-bfs-first
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-repeat-baseline-pfs3-first
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-repeat-candidate-bfs-first
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-normal-repeat-candidate-pfs3-first
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-probe-bfs-first
+514M	/tmp/bfs-perf-crc.UBHsLz/inode-stamp-probe-pfs3-first
+514M	/tmp/bfs-perf-crc.UBHsLz/after-buffer-probe-bfs-first
+514M	/tmp/bfs-perf-crc.UBHsLz/after-buffer-probe-pfs3-first

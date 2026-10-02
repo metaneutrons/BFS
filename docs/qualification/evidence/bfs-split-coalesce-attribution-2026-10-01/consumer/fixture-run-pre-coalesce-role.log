@@ -1,0 +1,148 @@
+{
+  "cases": 22,
+  "failed": 0,
+  "passed": 22,
+  "results": [
+    {
+      "case": "valid_acceptance",
+      "detail": "schema, projections, matrix, aggregates",
+      "expected": "accept",
+      "result": "PASS"
+    },
+    {
+      "case": "missing_path_row",
+      "detail": "ERROR: bfs.deep-compare.tsv has missing, reordered, or unknown path rows in SMALL_CREATE_40",
+      "expected": "reject: missing, reordered, or unknown path rows",
+      "result": "PASS"
+    },
+    {
+      "case": "reordered_path_rows",
+      "detail": "ERROR: bfs.deep-compare.tsv has missing, reordered, or unknown path rows in SMALL_CREATE_40",
+      "expected": "reject: missing, reordered, or unknown path rows",
+      "result": "PASS"
+    },
+    {
+      "case": "duplicate_path_row",
+      "detail": "ERROR: bfs.deep-compare.tsv:111 duplicates field SMALL_CREATE_40_SPLIT_LEAF_FREE_TREE_ROOT_ATTEMPT",
+      "expected": "reject: duplicates field",
+      "result": "PASS"
+    },
+    {
+      "case": "wrong_bfs_schema_version",
+      "detail": "ERROR: bfs.deep-compare.tsv must declare FS_DEEP_COMPARE schema 12",
+      "expected": "reject: schema 12",
+      "result": "PASS"
+    },
+    {
+      "case": "wrong_pfs_schema_version",
+      "detail": "ERROR: pfs3.deep-compare.tsv must declare FS_DEEP_COMPARE schema 12",
+      "expected": "reject: schema 12",
+      "result": "PASS"
+    },
+    {
+      "case": "path_u32_overflow",
+      "detail": "ERROR: SMALL_CREATE_40_SPLIT_LEAF_FREE_TREE_ROOT_ATTEMPT exceeds unsigned 32-bit range",
+      "expected": "reject: unsigned 32-bit",
+      "result": "PASS"
+    },
+    {
+      "case": "split_chain_mismatch",
+      "detail": "ERROR: SMALL_CREATE_40 LEAF/FREE_TREE/ROOT: right select/read/rewrite counts differ",
+      "expected": "reject: right select/read/rewrite",
+      "result": "PASS"
+    },
+    {
+      "case": "split_role_node_write_budget",
+      "detail": "ERROR: SMALL_CREATE_40 FREE_TREE: split write events 354 exceed role node writes 353",
+      "expected": "reject: split write events",
+      "result": "PASS"
+    },
+    {
+      "case": "coalesce_completion_mismatch",
+      "detail": "ERROR: SMALL_CREATE_40 TWO_SIDED/FREE_TREE/ROOT: coalesce attempt/complete counts differ",
+      "expected": "reject: attempt/complete",
+      "result": "PASS"
+    },
+    {
+      "case": "pfs3_forbidden_counter",
+      "detail": "ERROR: pfs3 schema 12 must contain exactly the six elapsed rows and no counters",
+      "expected": "reject: exactly the six elapsed rows",
+      "result": "PASS"
+    },
+    {
+      "case": "bad_completion_marker",
+      "detail": "ERROR: original schema-11 verifier rejected projection: ERROR: guest completion marker is absent or invalid",
+      "expected": "reject: completion marker",
+      "result": "PASS"
+    },
+    {
+      "case": "missing_legacy_counter",
+      "detail": "ERROR: original schema-11 verifier rejected projection: ERROR: invalid or incomplete bfs workload output",
+      "expected": "reject: original schema-11 verifier rejected projection",
+      "result": "PASS"
+    },
+    {
+      "case": "unknown_legacy_field",
+      "detail": "ERROR: original schema-11 verifier rejected projection: ERROR: invalid or incomplete bfs workload output",
+      "expected": "reject: original schema-11 verifier rejected projection",
+      "result": "PASS"
+    },
+    {
+      "case": "legacy_cpu_partition_mismatch",
+      "detail": "ERROR: original schema-11 verifier rejected projection: ERROR: invalid or incomplete bfs workload output",
+      "expected": "reject: original schema-11 verifier rejected projection",
+      "result": "PASS"
+    },
+    {
+      "case": "elapsed_u32_overflow",
+      "detail": "ERROR: SMALL_CREATE_40_US exceeds unsigned 32-bit range",
+      "expected": "reject: unsigned 32-bit",
+      "result": "PASS"
+    },
+    {
+      "case": "tick_u64_overflow",
+      "detail": "ERROR: SMALL_CREATE_40_READ_TICKS exceeds unsigned 64-bit range",
+      "expected": "reject: unsigned 64-bit",
+      "result": "PASS"
+    },
+    {
+      "case": "clock_pair_u32_overflow",
+      "detail": "ERROR: SMALL_CREATE_40_CLOCK_PAIR_TICKS exceeds unsigned 32-bit range",
+      "expected": "reject: unsigned 32-bit",
+      "result": "PASS"
+    },
+    {
+      "case": "zero_clock",
+      "detail": "ERROR: bfs.deep-compare.tsv CLOCK_HZ must be positive",
+      "expected": "reject: CLOCK_HZ must be positive",
+      "result": "PASS"
+    },
+    {
+      "case": "wrong_sample_stride",
+      "detail": "ERROR: bfs.deep-compare.tsv has incorrect CRC_SAMPLE_STRIDE",
+      "expected": "reject: incorrect CRC_SAMPLE_STRIDE",
+      "result": "PASS"
+    },
+    {
+      "case": "missing_pass_row",
+      "detail": "ERROR: bfs.deep-compare.tsv is missing terminal PASS=1",
+      "expected": "reject: terminal PASS=1",
+      "result": "PASS"
+    },
+    {
+      "case": "bad_inventory",
+      "detail": "ERROR: original schema-11 verifier rejected projection: ERROR: BFS volume was not mounted",
+      "expected": "reject: volume was not mounted",
+      "result": "PASS"
+    }
+  ],
+  "source_sha256": {
+    "consumer": "7551b93e483e676b9d48d5da26818da6727c26e9600722308956b026dcad5cd9",
+    "fixture_harness": "591aec92dd0b727540821c2045e3799b942ef254afb0f729109381fbe81754fc",
+    "guest": "9a5041041a1da521584821fdc6689e497950fde5213737544fa50f2dd51f5a93",
+    "header": "67e8bf1e769171c4345737f291e21e5f448ea85862ed992c02ff1591385f26f2",
+    "template_bfs": "242875606afbea89a153f9dc7705ce6e878346f372d4dee8095ce5385251cdaa",
+    "template_pfs3": "d6187cf19aa0dc0056a3b53061c3ceebc225bbf55b6ea761061d7fd641f713ea",
+    "verifier": "82e82022b030b127afdf1a404ac8a8c7db308b22ef1f435f93edd56e08c1dbcf"
+  }
+}

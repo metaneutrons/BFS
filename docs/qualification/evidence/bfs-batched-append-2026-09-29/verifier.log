@@ -1,0 +1,16 @@
+Verifier: emulator-test/verify-bench-results.sh build/benchmark/<run> internal
+Paired ABBA order: baseline-1, candidate-1, candidate-2, baseline-2
+Separate validations: candidate-refactor-1 (pre-final), candidate-final-1 (post-Codacy fix)
+
+$ emulator-test/verify-bench-results.sh build/benchmark/baseline-1 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-1 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-2 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/baseline-2 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-refactor-1 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked
+$ emulator-test/verify-bench-results.sh build/benchmark/candidate-final-1 internal
+PASS: requested mounted-volume workload outputs are complete and data-checked

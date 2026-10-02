@@ -1,0 +1,2 @@
+Bundle split-coalesce-attribution-probe-pfs3-first: 36067 bytes, b9d8215e10bfe1fba63b440b6cec1db3075ad2b6db5c87f45b25e4cd2d5b1dcd
+PASS: exact bundle hash and strict schema-12 verification for split-coalesce-attribution-probe-pfs3-first

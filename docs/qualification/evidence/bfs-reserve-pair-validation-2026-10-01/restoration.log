@@ -1,0 +1,3 @@
+b628d72bcc5ba0a8280c801c7ef2c769db9cb0d24523d0ff1eb81055cc06c193  src/core/alloc.c
+cfd43be9f7161563a70d465c1feab0ea9ce1dc8d7f7e7cbf4a16b227e212f079  tests/test_alloc_metadata_reuse.c
+7ec433160c6aa37c3ebbb5345097ef549638bde634dd8a3aa34e1b898a4a7d19  build/amiga-reserve-pair-restored/bfshandler

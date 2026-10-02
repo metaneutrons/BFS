@@ -1,0 +1,738 @@
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_alloc tests/test_alloc.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_alloc_metadata_reuse tests/test_alloc_metadata_reuse.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_alloc_root_shift tests/test_alloc_root_shift.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_bio tests/test_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_btree tests/test_btree.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_btree_buffers tests/test_btree_buffers.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_btree_noop tests/test_btree_noop.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_btree_validation_cache tests/test_btree_validation_cache.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_cache tests/test_cache.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_cache_buffer_faults tests/test_cache_buffer_faults.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_cache_resident_paths tests/test_cache_resident_paths.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_compatibility tests/test_compatibility.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_concurrency tests/test_concurrency.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_corruption tests/test_corruption.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_crash_inject tests/test_crash_inject.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_crc32 tests/test_crc32.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_dir tests/test_dir.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_dirops tests/test_dirops.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_durability_patterns tests/test_durability_patterns.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_edge_cases tests/test_edge_cases.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_endian tests/test_endian.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_extent tests/test_extent.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_features tests/test_features.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_file tests/test_file.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_format_fixtures tests/test_format_fixtures.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_fs tests/test_fs.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/alloc.o src/core/alloc.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/bootstrap_alloc.o src/core/bootstrap_alloc.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/btree.o src/core/btree.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/cache.o src/core/cache.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/crc32.o src/core/crc32.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/crc32_zero.o src/core/crc32_zero.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/dir.o src/core/dir.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/extent.o src/core/extent.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/file.o src/core/file.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/fs.o src/core/fs.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/fsck.o src/core/fsck.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/inode.o src/core/inode.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/namespace.o src/core/namespace.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/refcount.o src/core/refcount.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/snapshot.o src/core/snapshot.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/superblock.o src/core/superblock.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/core/txn.o src/core/txn.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -c -o build/sanitize-reserve-pair-restored/obj/host/posix_bio.o src/host/posix_bio.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_handler_ops tests/test_handler_ops.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_hunt tests/test_hunt.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_hwfail tests/test_hwfail.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_inode_stamp tests/test_inode_stamp.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_inode_stamp_faults tests/test_inode_stamp_faults.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_integration tests/test_integration.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_invariants tests/test_invariants.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_large_reclaim tests/test_large_reclaim.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_model tests/test_model.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_pending_frees tests/test_pending_frees.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_realworld tests/test_realworld.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_robustness tests/test_robustness.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_snap_full tests/test_snap_full.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_snapshot tests/test_snapshot.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_stress tests/test_stress.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_superblock tests/test_superblock.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_txn_sealed_convergence tests/test_txn_sealed_convergence.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_txn_sealed_persistence tests/test_txn_sealed_persistence.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_txn_sealed_preflight tests/test_txn_sealed_preflight.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+ar rcs build/sanitize-reserve-pair-restored/libbfs.a build/sanitize-reserve-pair-restored/obj/core/alloc.o build/sanitize-reserve-pair-restored/obj/core/bootstrap_alloc.o build/sanitize-reserve-pair-restored/obj/core/btree.o build/sanitize-reserve-pair-restored/obj/core/cache.o build/sanitize-reserve-pair-restored/obj/core/crc32.o build/sanitize-reserve-pair-restored/obj/core/crc32_zero.o build/sanitize-reserve-pair-restored/obj/core/dir.o build/sanitize-reserve-pair-restored/obj/core/extent.o build/sanitize-reserve-pair-restored/obj/core/file.o build/sanitize-reserve-pair-restored/obj/core/fs.o build/sanitize-reserve-pair-restored/obj/core/fsck.o build/sanitize-reserve-pair-restored/obj/core/inode.o build/sanitize-reserve-pair-restored/obj/core/namespace.o build/sanitize-reserve-pair-restored/obj/core/refcount.o build/sanitize-reserve-pair-restored/obj/core/snapshot.o build/sanitize-reserve-pair-restored/obj/core/superblock.o build/sanitize-reserve-pair-restored/obj/core/txn.o
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined  -o build/sanitize-reserve-pair-restored/bfs \
+		tools/bfs_host.c tools/bfs_host_common.c  \
+		build/sanitize-reserve-pair-restored/obj/host/posix_bio.o build/sanitize-reserve-pair-restored/libbfs.a
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_posix_bio tests/test_posix_bio.c build/sanitize-reserve-pair-restored/obj/host/posix_bio.o build/sanitize-reserve-pair-restored/libbfs.a
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -DBFS_POSIX_BIO_FAULT_TEST -o build/sanitize-reserve-pair-restored/test_posix_faults \
+		tests/test_posix_faults.c tests/posix_bio_faults.c src/host/posix_bio.c build/sanitize-reserve-pair-restored/libbfs.a
+cc -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -fno-omit-frame-pointer -fsanitize=address,undefined -o build/sanitize-reserve-pair-restored/test_fsck tests/test_fsck.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+=== Running tests ===
+--- build/sanitize-reserve-pair-restored/test_alloc ---
+=== Free Space Allocator ===
+  test_alloc_basic                                   OK
+  test_alloc_multi                                   OK
+  test_free_realloc                                  OK
+  test_merge_right                                   OK
+  test_alloc_free_cycles                             OK
+  test_reserve_refill_return_cycles                  OK
+  test_reserve_cycles_preserve_tree_mutations        OK
+  test_self_hosting                                  OK
+  test_out_of_space                                  OK
+  test_double_free_preserves_accounting              OK
+  test_sorted_batch_reclaim_single_leaf              OK
+  test_sorted_batch_reclaim_full_leaf_falls_back     OK
+
+12 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_alloc_metadata_reuse ---
+=== Mounted metadata free-block reuse ===
+  test_dealloc_stashes_without_free_tree_mutation    OK
+  test_alloc_pops_stashed_suffix_above_height_one_floor OK
+  test_alloc_stashed_stock_uses_one_root_read        OK
+  test_alloc_never_spends_the_height_one_floor       OK
+  test_allocator_skips_inactive_historical_emergency_slots OK
+  test_duplicate_and_reserve_blocks_are_rejected_unchanged OK
+  test_metadata_stock_accepts_healthy_active_prefixes OK
+  test_full_healthy_metadata_stock_validates_and_pops OK
+  test_metadata_stock_fault_order_and_duplicate_positions OK
+  test_free_tree_overlap_is_rejected_unchanged       OK
+  test_single_block_absence_checks_only_the_height_one_root OK
+  test_single_block_absence_rejects_bad_root_crc_on_first_read OK
+  test_single_block_absence_rejects_bad_key_order_on_first_read OK
+  test_single_block_absence_rejects_bad_selected_extent_on_first_read OK
+  test_live_and_committed_roots_are_never_stashed    OK
+  test_active_emergency_return_does_not_enter_ordinary_stock OK
+  test_inactive_historical_emergency_dealloc_stays_out_of_reserve OK
+  test_validation_read_failure_does_not_stash_or_pop OK
+  test_write_fault_does_not_affect_write_free_metadata_stash OK
+  test_btree_partial_write_abort_restores_owned_spare OK
+  test_short_transactions_keep_legacy_and_warmup_saturates OK
+  test_metadata_warmup_resets_at_a_new_live_id       OK
+  test_ineligible_contexts_and_full_stock_use_legacy_free_path OK
+  test_deeper_free_tree_uses_legacy_free_path        OK
+  test_mounted_append_overwrite_commits_and_remount  OK
+  test_mounted_warmed_append_write_failure_cuts_preserve_commit OK
+  test_snapshot_keeps_old_data_across_overwrite_and_remount OK
+
+27 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_alloc_root_shift ---
+=== Atomic root-leaf allocator run shift ===
+  test_first_fit_run_carve_emits_one_root_leaf_write OK
+  test_roving_wrap_skips_short_first_fit_extent      OK
+  test_exact_fit_and_single_block_keep_legacy_selection OK
+  test_deeper_free_tree_keeps_legacy_mutation_path   OK
+  test_read_failure_does_not_mutate_allocator_state  OK
+  test_read_failure_cuts_cover_every_pre_swap_read   OK
+  test_partial_leaf_write_failure_is_atomic_and_retryable OK
+  test_pending_headroom_again_precedes_root_swap     OK
+  test_current_and_older_root_retirement_ownership   OK
+  test_allocator_scratch_exhaustion_preserves_root   OK
+  test_crc_valid_overlapping_leaf_is_rejected_before_write OK
+  test_mounted_retirement_defer_io_failure           OK
+  test_mounted_retirement_defer_unsupported_failure  OK
+  test_readonly_mount_rejects_single_and_run_allocations OK
+  test_large_append_sync_readonly_remount_and_strict_fsck OK
+
+15 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_bio ---
+=== Block Device Emulator ===
+  test_create_device                                 OK
+  test_invalid_block_size                            OK
+  test_invalid_block_count                           OK
+  test_write_read_roundtrip                          OK
+  test_out_of_bounds                                 OK
+  test_reopen_persistence                            OK
+  test_sync                                          OK
+
+7 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_btree ---
+=== B+tree ===
+  test_empty_tree_search                             OK
+  test_single_insert_search                          OK
+  test_duplicate_insert                              OK
+  test_sequential_inserts                            OK
+  test_reverse_inserts                               OK
+  test_scan_all                                      OK
+  test_scan_from_key                                 OK
+  test_cow_old_root_preserved                        OK
+  test_single_delete                                 OK
+  test_delete_all                                    OK
+  test_delete_reverse                                OK
+  test_insert_delete_interleaved                     OK
+  test_search_floor_empty_tree                       OK
+  test_search_floor_key_smaller_than_all             OK
+  test_search_floor_key_larger_than_all              OK
+  test_search_floor_exact_match                      OK
+  test_owned_root_leaf_transfer                      OK
+  test_owned_root_leaf_rejects_committed_root        OK
+  test_owned_root_leaf_rejects_future_root           OK
+  test_owned_root_leaf_rejects_mismatched_root       OK
+  test_owned_root_leaf_write_failure_returns_scratch OK
+  test_owned_root_leaf_bypasses_full_pending_headroom OK
+  test_legacy_leaf_padding_cow_canonicalization      OK
+  test_legacy_full_leaf_no_key_gap                   OK
+  test_legacy_internal_padding_cow_canonicalization  OK
+  test_replace_root_leaf                             OK
+  test_replace_root_leaf_rejects_order               OK
+  test_replace_root_leaf_write_failure               OK
+  test_replace_root_leaf_deeper_unsupported          OK
+  test_cached_node_crc_revalidation                  OK
+
+30 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_btree_buffers ---
+=== Cached B-tree temporary buffers ===
+  test_cached_tree_lifecycle_1024                    OK
+  test_cached_tree_lifecycle_4096                    OK
+  test_mounted_cached_free_tree_cycle_1024           OK
+  test_mounted_cached_free_tree_cycle_4096           OK
+
+4 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_btree_noop ---
+=== B+tree update no-op ===
+  test_update_same_value_leaf_noop                   OK
+  test_update_same_value_internal_noop               OK
+  test_update_changed_value_still_cows               OK
+  test_update_same_value_does_not_consume_write_fault OK
+  test_update_read_failure_precedes_equality         OK
+  test_update_crc_valid_bad_order_precedes_equality  OK
+  test_update_missing_key_returns_notfound           OK
+  test_update_equal_value_still_requires_pending_headroom OK
+
+8 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_btree_validation_cache ---
+=== B+tree structure validation cache ===
+  test_opt_in_cache_skips_repeated_key_order_scan    OK
+  test_default_stateful_comparator_revalidates_each_read OK
+  test_comparator_function_change_revalidates_node   OK
+  test_default_comparator_semantics_change_revalidates OK
+  test_mutated_ops_object_revalidates_actual_tree_read OK
+  test_validation_token_compares_each_field          OK
+  test_ordinary_write_clears_structure_and_bad_order_fails OK
+  test_trusted_write_keeps_only_crc_validation       OK
+  test_stateful_comparator_rejects_crc_valid_bad_order OK
+  test_failed_ordinary_and_trusted_writes_evict_validation OK
+  test_eviction_and_invalidate_clear_structure       OK
+  test_trusted_count_zero_is_not_structurally_cached OK
+  test_expected_level_checked_for_warmed_child       OK
+  test_parent_bounds_checked_for_warmed_child        OK
+
+14 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_cache ---
+=== Block Cache ===
+  test_raw_bio_buffer_fallback                       OK
+  test_partial_buffer_hooks_are_ignored              OK
+  test_complete_buffer_hooks_and_failed_allocation   OK
+  test_non_block_sized_buffer_requests               OK
+  test_cache_scratch_leases                          OK
+  test_cache_scratch_destroy_and_reinit              OK
+  test_cache_io_and_crc_with_leased_buffer           OK
+  test_defaults_and_limits                           OK
+  test_invalid_initialization                        OK
+  test_hit_and_invalidate                            OK
+  test_lru_eviction                                  OK
+  test_write_through                                 OK
+  test_io_errors                                     OK
+  test_verified_node_lifecycle                       OK
+  test_node_write_retention                          OK
+  test_node_write_raw_bio_fallback                   OK
+
+16 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_cache_buffer_faults ---
+=== Temporary buffer allocation faults ===
+  test_each_lazy_slot_failure                        OK
+  test_overflow_and_multiblock_failures              OK
+  test_cache_initialization_failures                 OK
+  test_replacement_second_buffer_failure_releases_first OK
+  test_height_one_mutations_reuse_warm_scratch       OK
+
+5 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_cache_resident_paths ---
+=== Cache Resident Paths ===
+  test_resident_read_hit_and_validation              OK
+  test_resident_hits_at_supported_slot_counts        OK
+  test_lru_victim_replacement                        OK
+  test_successful_write_paths_track_resident_slot    OK
+  test_failed_and_partial_writes_preserve_other_residents OK
+  test_explicit_invalidation_and_separate_caches     OK
+
+6 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_compatibility ---
+=== Format Compatibility ===
+  test_incompatible_copies_never_write               OK
+  test_damaged_version_or_options_still_recover      OK
+  test_geometry_boundaries                           OK
+  test_probe_large_geometries                        OK
+  test_probe_stops_on_incompatible_copy              OK
+  test_probe_failure_restores_geometry               OK
+  test_version_diagnostics                           OK
+
+7 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_concurrency ---
+=== Concurrency Tests ===
+  test_multithreaded_io                              OK
+
+1 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_corruption ---
+=== On-disk Corruption Robustness ===
+  test_corrupt_btree_numkeys                         OK
+  test_corrupt_extent_length                         OK
+  test_pending_count_exceeds_capacity                OK
+
+3 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_crash_inject ---
+=== Crash Injection ===
+  test_crash_during_create                           OK
+  test_crash_during_delete                           OK
+  test_crash_during_write                            OK
+  test_crash_during_batch_append                     OK
+  test_crash_during_batch_reclaim                    OK
+  test_crash_during_sync                             OK
+
+6 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_crc32 ---
+=== CRC32 ===
+  test_crc32_empty                                   OK
+  test_crc32_check_value                             OK
+  test_crc32_single_byte                             OK
+  test_crc32_chaining                                OK
+  test_crc32_all_ff                                  OK
+  test_crc32_lengths_alignments_and_seeds            OK
+  test_crc32_full_node                               OK
+  test_crc32_zero_append_oracle                      OK
+  test_crc32_zero_append_chaining                    OK
+  test_crc32_zero_append_large_lengths               OK
+  test_crc32_zero_append_independent_high_powers     OK
+  test_crc32_zero_append_all_nibble_states           OK
+
+12 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_dir ---
+=== Directory B+tree ===
+  test_dir_basic                                     OK
+  test_dir_case_insensitive                          OK
+  test_dir_intl_chars                                OK
+  test_dir_remove                                    OK
+  test_dir_scan                                      OK
+  test_dir_large                                     OK
+  test_max_filename_length                           OK
+
+7 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_dirops ---
+=== Directory Operations ===
+  test_create_file                                   OK
+  test_mkdir                                         OK
+  test_rmdir                                         OK
+  test_delete_file                                   OK
+  test_rename_same_dir                               OK
+  test_rename_cross_dir                              OK
+  test_rename_replaces_file_and_preserves_open_target OK
+  test_rename_replaces_empty_directory_and_rekeys_case OK
+
+8 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_durability_patterns ---
+=== Durability Patterns ===
+  test_txn_stale_handle_consistency                  OK
+  test_backup_sb_protection                          OK
+  test_fragmented_truncate_reclamation               OK
+  test_exall_linear_complexity                       OK
+  test_rmw_garbage_write_prevention                  OK
+  test_data_ordered_consistency                      OK
+  test_online_compaction                             OK
+
+7 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_edge_cases ---
+=== Edge Cases ===
+  test_max_filename_255_bytes                        OK
+  test_zero_length_file                              OK
+  test_single_byte_file                              OK
+  test_file_exactly_one_block                        OK
+  test_file_block_boundary_write                     OK
+  test_empty_directory_scan                          OK
+  test_delete_nonexistent                            OK
+  test_create_in_nonexistent_dir                     OK
+  test_rmdir_with_dotdot_only                        OK
+  test_fill_disk_completely                          OK
+  test_many_hardlinks_same_file                      OK
+  test_deeply_nested_path                            OK
+  test_many_small_files                              OK
+  test_large_file_many_extents                       OK
+  test_delete_frees_exact_blocks                     OK
+  test_inode_persists_after_write                    OK
+  test_hardlink_survives_remount                     OK
+  test_comment_survives_remount                      OK
+  test_random_operations_fuzz                        OK
+
+19 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_endian ---
+=== Big-Endian Encoding ===
+  test_be16_layout                                   OK
+  test_be32_layout                                   OK
+  test_be64_layout                                   OK
+  test_unaligned_access                              OK
+
+4 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_extent ---
+=== Extent Tree ===
+  test_single_extent                                 OK
+  test_map_initialized_run                           OK
+  test_fragmented_file                               OK
+  test_truncate                                      OK
+  test_truncate_all                                  OK
+  test_truncate_inside_extent                        OK
+  test_large_file                                    OK
+
+7 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_features ---
+=== New Features ===
+  test_hardlink_create                               OK
+  test_hardlink_delete_preserves_data                OK
+  test_softlink_create_read                          OK
+  test_comment_set_get                               OK
+  test_comment_get_truncates_to_buffer               OK
+  test_parent_tracking                               OK
+  test_rmdir_removes_inode_and_parent_entry          OK
+  test_rename_directory_updates_parent               OK
+  test_delete_frees_blocks                           OK
+  test_features_persist                              OK
+
+10 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_file ---
+=== File I/O ===
+  test_write_read                                    OK
+  test_cross_block_write                             OK
+  test_seek                                          OK
+  test_truncate                                      OK
+  test_large_file                                    OK
+  test_truncate_regrow_zeroes_tail                   OK
+  test_shared_handles_refresh_inode_state            OK
+  test_append_uses_current_end_of_file               OK
+  test_batch_append_single_contiguous_extent         OK
+  test_append_unaligned_eof_multiblock               OK
+  test_checksum_append_uses_per_block_extents        OK
+  test_batch_append_checks_scratch_capacity          OK
+  test_unlinked_open_file_lifetime_and_mount_recovery OK
+
+13 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_format_fixtures ---
+=== Independent Format Fixtures ===
+  test_superblock_fixture                            OK
+  test_record_fixtures                               OK
+  test_node_fixtures                                 OK
+  test_malformed_fixtures                            OK
+
+4 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_fs ---
+=== Filesystem ===
+  test_format_mount                                  OK
+  test_format_rejects_invalid_volume_names           OK
+  test_format_create_remount                         OK
+  test_crash_recovery                                OK
+  test_abandon_discards_uncommitted_state            OK
+  test_multiple_syncs                                OK
+  test_superblock_alternation                        OK
+  test_format_both_copies_mountable                  OK
+  test_readonly_mount_does_not_commit                OK
+
+9 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_fsck ---
+=== Filesystem Checker ===
+  test_clean_snapshot_and_readonly_check             OK
+  test_unsupported_format_never_repaired             OK
+  test_retained_open_inode_is_checker_visible_until_recovery OK
+  test_canonical_repair_reclaims_only_leaks          OK
+  test_data_checksum_corruption_is_not_clean         OK
+
+5 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_handler_ops ---
+=== Handler Ops ===
+  test_handler_repeated_overwrite                    OK
+  test_handler_create_delete_cycles                  OK
+  test_handler_fill_and_recover                      OK
+  test_handler_large_file                            OK
+  test_handler_many_files                            OK
+
+5 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_hunt ---
+=== Bug Hunt Tests ===
+  test_scan_start_key                                OK
+  test_scan_empty_tree                               OK
+  test_scan_single_entry                             OK
+  test_scan_after_delete                             OK
+  test_delete_merge                                  OK
+  test_extent_fragmented                             OK
+  test_alloc_fragmentation                           OK
+  test_rename_overwrite                              OK
+  test_empty_name                                    OK
+  test_inode_after_delete                            OK
+  test_scan_leaf_boundary_14                         OK
+  test_scan_leaf_boundary_15                         OK
+  test_scan_leaf_boundary_28                         OK
+  test_scan_leaf_boundary_29                         OK
+  test_floor_search_edges                            OK
+  test_concurrent_trees                              OK
+  test_cross_block_read                              OK
+  test_pending_frees                                 OK
+  test_scan_three_leaves                             OK
+  test_scan_sparse_after_delete                      OK
+  test_hash_collision_stress                         OK
+  test_rename_orphan_inode                           OK
+  test_truncate_rewrite                              OK
+  test_scan_100_verify_all                           OK
+  test_delete_middle_scan                            OK
+  test_rename_to_self                                OK
+  test_scan_three_level_tree                         OK
+  test_delete_first_leaf_entirely                    OK
+  test_multiple_dirs_scan                            OK
+  test_rename_case_change                            OK
+  test_sparse_file_large_gap                         OK
+  test_rapid_create_delete_same_name                 OK
+  test_delete_reclaims_after_sync                    OK
+  test_sync_remount_integrity                        OK
+
+34 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_hwfail ---
+=== Hardware Failure Simulation ===
+  test_torn_write_superblock                         OK
+  test_torn_write_btree_node                         OK
+  test_read_error_during_lookup                      OK
+  test_read_error_during_scan                        OK
+  test_alloc_failure_during_split                    OK
+  test_double_free                                   OK
+  test_scan_after_insert_before_cursor               OK
+  test_max_tree_depth                                OK
+  test_both_superblocks_torn                         OK
+  test_format_dirty_partition                        OK
+  test_extent_read_error_is_not_a_sparse_hole        OK
+  test_delete_inode_read_error_preserves_entry       OK
+  test_delete_extent_read_error_preserves_entry      OK
+  test_snapshot_refcount_read_error_blocks_overwrite OK
+  test_ordered_sync_error_propagates                 OK
+  test_failed_cow_write_preserves_tree               OK
+  test_mount_propagates_superblock_io_error          OK
+  test_recovery_invalidates_open_handles             OK
+  test_failed_recovery_blocks_operations             OK
+  test_persistent_delete_failure_requires_remount    OK
+  test_failed_extent_rollback_marks_ownership_uncertain OK
+  test_delete_write_failures_preserve_comment        OK
+  test_rmdir_write_failures_preserve_committed_directory OK
+  test_rename_write_failures_preserve_committed_paths OK
+  test_mkdir_write_failures_preserve_committed_tree  OK
+  test_comment_write_failures_preserve_committed_value OK
+  test_snapshot_delete_write_failure_recovery        OK
+  test_allocator_refill_failure_can_retry_free       OK
+  test_reserve_return_root_fold_reactivates_emergency_root OK
+  test_reserve_return_root_fold_returns_ordinary_root OK
+  test_reserve_return_root_fold_first_write_failure_restores OK
+  test_reserve_return_root_fold_without_emergency_scratch_falls_back OK
+  test_reserve_return_root_fold_rejects_future_root  OK
+  test_reserve_return_root_fold_rejects_committed_root OK
+  test_reserve_return_fold_falls_back_for_inactive_pool_alias OK
+  test_reserve_return_fold_rejects_active_pool_alias OK
+  test_reserve_return_batch_fragmented_accounting    OK
+  test_reserve_return_batch_first_write_failure_is_retryable OK
+  test_reserve_return_batch_later_write_failure_keeps_ownership OK
+  test_reserve_return_mixed_batch_reactivates_emergency_slot OK
+  test_reserve_return_mixed_batch_first_write_failure_restores OK
+  test_reserve_return_mixed_batch_second_write_failure_keeps_ownership OK
+  test_reserve_return_write_failures_preserve_committed_tree OK
+  test_batch_leaf_write_failure_preserves_root       OK
+  test_short_write_publishes_inode                   OK
+  test_append_data_write_failure_publishes_prefix    OK
+  test_append_extent_write_failure_preserves_old_file OK
+
+47 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_inode_stamp ---
+=== Inode Stamps ===
+  test_create_stamp_encoding_survives_remount        OK
+  test_create_rejections_and_null_wrapper_equivalence OK
+  test_write_stamp_preserves_fresh_inode_metadata    OK
+  test_write_null_stamp_matches_legacy_and_null_mask_clears OK
+  test_zero_error_and_readonly_calls_do_not_sample   OK
+  test_snapshot_keeps_old_stamp_and_content          OK
+  test_open_unlinked_write_updates_inode_stamp       OK
+
+7 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_inode_stamp_faults ---
+=== Inode Stamp Publication Faults ===
+  test_combined_inode_write_failure_reloads_committed OK
+  test_combined_inode_partial_write_reloads_committed OK
+  test_positive_prefix_gets_one_combined_stamp       OK
+  test_intermediate_commits_do_not_sample_final_stamp OK
+
+4 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_integration ---
+=== Integration Tests ===
+  test_full_workflow                                 OK
+  test_rename_persist                                OK
+  test_file_data_persist                             OK
+  test_block_sizes                                   OK
+
+4 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_invariants ---
+=== B+tree Invariants & Arithmetic Boundaries ===
+  test_invariants_after_inserts                      OK
+  test_invariants_after_deletes                      OK
+  test_invariants_random_ops                         OK
+  test_extent_near_max_block                         OK
+  test_freespace_near_max                            OK
+  test_large_inode_number                            OK
+  test_file_size_near_64bit_max                      OK
+  test_file_offset_rejects_unaddressable_block       OK
+  test_corrupt_node_detected                         OK
+  test_self_referencing_child                        OK
+  test_duplicate_child_reference                     OK
+
+11 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_large_reclaim ---
+=== Large Reclaim Units ===
+  test_large_reclaim_units                           OK
+
+1 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_model ---
+=== Property-Based Model Check ===
+  test_model_seed_1                                  OK
+  test_model_seed_2                                  OK
+  test_model_seed_3                                  OK
+  test_model_seed_4                                  OK
+  test_model_seed_5                                  OK
+  test_model_seed_6                                  OK
+  test_model_persistence                             OK
+
+7 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_pending_frees ---
+=== Pending-Free Queue (#41) ===
+  test_small_cap_delete_storm_no_leak                OK
+  test_small_cap_delete_storm_snapshots              OK
+  test_compaction_mass_free_no_leak                  OK
+  test_overflow_is_loud_not_silent                   OK
+
+4 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_posix_bio ---
+=== POSIX Block Transport ===
+  test_readonly_subrange_tracks_no_write_or_sync     OK
+  test_writable_subrange_uses_exact_offset           OK
+  test_rejects_invalid_range                         OK
+  test_lock_rejects_conflicting_alias                OK
+  test_readonly_bfs_lifecycle_uses_no_write_or_sync  OK
+
+5 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_posix_faults ---
+=== POSIX Transport Fault Probes ===
+  test_retries_eintr_and_partial_transfers           OK
+  test_propagates_io_errors                          OK
+  test_rejects_geometry_and_allocation_failures      OK
+
+3 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_realworld ---
+=== Real-World Integration ===
+  test_install_program                               OK
+  test_daily_use                                     OK
+  test_heavy_usage                                   OK
+  test_recursive_copy                                OK
+
+4 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_robustness ---
+=== Robustness ===
+  test_io_error_during_read                          OK
+  test_scan_during_delete                            OK
+  test_crc_corruption_detected                       OK
+  test_checksum_overwrite_is_cow_and_persistent      OK
+  test_rename_cross_dir_stress                       OK
+  test_truncate_extend_zeroed                        OK
+  test_softlink_self_reference                       OK
+  test_fsck_finds_leaked_blocks                      OK
+  test_fuzz_multiple_seeds                           OK
+
+9 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_snap_full ---
+=== Snapshots & Metadata ===
+  test_refcount_basic                                OK
+  test_refcount_inc_dec                              OK
+  test_snapshot_empty_fs                             OK
+  test_snapshot_after_writes                         OK
+  test_snapshot_cow_preserves_shared                 OK
+  test_snapshot_reads_original_after_overwrite       OK
+  test_multiple_snapshots_refcount                   OK
+  test_snapshot_list_order                           OK
+  test_inode_timestamps_on_create                    OK
+  test_inode_uid_gid                                 OK
+  test_inode_protection_bits                         OK
+  test_snapshot_stress                               OK
+
+12 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_snapshot ---
+=== Snapshots ===
+  test_create_snapshot                               OK
+  test_snapshot_preserves_data                       OK
+  test_multiple_snapshots                            OK
+  test_snapshot_name_validation                      OK
+  test_no_snapshot_overhead                          OK
+  test_delete_preflights_large_inode                 OK
+  test_interrupted_deletion_resume                   OK
+
+7 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_stress ---
+=== Stress Tests ===
+  test_large_directory                               OK
+  test_disk_full                                     OK
+  test_random_ops                                    OK
+  test_crash_recovery_cycles                         OK
+  test_deep_dirs                                     OK
+
+5 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_superblock ---
+=== Superblock ===
+  test_sb_roundtrip                                  OK
+  test_sb_corruption_detected                        OK
+  test_sb_both_corrupt                               OK
+  test_sb_alternating_writes                         OK
+  test_sb_recovery_after_failed_write                OK
+  test_sb_validate_bad_magic                         OK
+  test_sb_validate_bad_block_size                    OK
+  test_sb_rejects_device_geometry_mismatch           OK
+  test_sb_validate_structural_fields                 OK
+  test_sb_raw_write_bounds                           OK
+  test_sb_v2_golden_bytes                            OK
+
+11 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_txn_sealed_convergence ---
+=== Sealed transaction natural convergence ===
+  test_convergence_1024                                  1024-byte blocks: 36/36 commits witnessed; each had one frozen metadata fence, one SB write+sync, pending retained, zero non-SB frozen writes
+OK
+  test_convergence_4096                                  4096-byte blocks: 36/36 commits witnessed; each had one frozen metadata fence, one SB write+sync, pending retained, zero non-SB frozen writes
+OK
+
+2 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_txn_sealed_persistence ---
+=== Sealed transaction buffered persistence cuts ===
+  test_natural_sealed_commit_and_remount             SF primary-slot successful cut baseline: reads=7 writes=2 syncs=3 (metadata=1 publication=1)
+OK
+  test_every_read_cut_and_beyond_end                 OK
+  test_every_write_cut_and_beyond_end                OK
+  test_every_sync_cut_with_both_persistence_outcomes OK
+  test_failed_sync_partial_persistence_modes         OK
+  test_partial_backup_superblock_write               SF backup-slot partial write cut: write=2 of 2
+OK
+  test_unsupported_error_never_falls_back            OK
+  test_writable_mount_barrier_after_dropped_publication OK
+  test_failed_mount_barrier_drop_and_persist_all     OK
+  test_ordered_preflush_failure_is_retryable         OK
+
+10 passed, 0 failed
+--- build/sanitize-reserve-pair-restored/test_txn_sealed_preflight ---
+=== Sealed commit preflight ===
+  test_snapshot_contexts_decline_without_writes      OK
+  test_older_future_deeper_and_full_leaf_shapes      OK
+  test_missing_scratch_and_inactive_pool_alias_decline OK
+  test_backup_block_and_current_root_rejections      OK
+  test_high_backup_quotients_do_not_alias_pending_blocks OK
+  test_high_backup_quotients_cast_only_for_old_leaf_checks OK
+  test_invalid_candidates_fail_before_write          OK
+  test_cross_source_duplicates_and_bounds_fail_before_write OK
+  test_success_seals_mixed_provenance_and_freezes_mutation OK
+  test_api_error_is_caller_latched                   OK
+
+10 passed, 0 failed
+
+=== ALL TESTS PASSED ===

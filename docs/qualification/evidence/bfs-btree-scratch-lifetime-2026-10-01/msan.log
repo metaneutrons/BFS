@@ -1,0 +1,14 @@
+Focused MemorySanitizer: all core translation units and public fixture
+clang version 22.1.8
+Target: x86_64-pc-linux-gnu
+Thread model: posix
+InstalledDir: /usr/bin
+1069dea2be34004de74a58c8c56ebccbd75ff3ea1bf2f17f75892172aa0bcdc9  src/core/btree.c
+847d809f16b63c9893d956ea6e26803e1dd6ad3add7b4765be4cfe31f817e096  tests/test_btree_scratch_lifetime.c
+=== B-tree scratch lifetime ===
+  test_full_width_multilevel_search_and_scan         OK
+  test_crc_valid_child_with_wrong_inherited_bound    OK
+  test_multilevel_update_abort_restores_root_mapping_and_ownership OK
+
+3 passed, 0 failed
+Focused MemorySanitizer execution complete; executed paths only

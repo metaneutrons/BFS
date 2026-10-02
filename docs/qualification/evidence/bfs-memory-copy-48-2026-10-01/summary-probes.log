@@ -1,0 +1,13 @@
+valid: expected PASS, observed exit=0
+duplicate-count: expected REJECT, observed exit=1
+wrong-samples: expected REJECT, observed exit=1
+wrong-calls: expected REJECT, observed exit=1
+wrong-repeats: expected REJECT, observed exit=1
+uint64-overflow: expected REJECT, observed exit=1
+missing-row: expected REJECT, observed exit=1
+zero-batch: expected REJECT, observed exit=1
+duplicate-pass: expected REJECT, observed exit=1
+bad-done: expected REJECT, observed exit=1
+abi-failure: expected REJECT, observed exit=1
+uint32-overflow: expected REJECT, observed exit=1
+Summary verifier: 1 positive +11 isolated counter-probes PASS

@@ -1,0 +1,22 @@
+=== CRC32 ===
+  test_crc32_empty                                   OK
+  test_crc32_check_value                             OK
+  test_crc32_single_byte                             OK
+  test_crc32_chaining                                OK
+  test_crc32_all_ff                                  OK
+  test_crc32_lengths_alignments_and_seeds            OK
+  test_crc32_full_node                               OK
+  test_crc32_zero_append_oracle                      OK
+  test_crc32_zero_append_chaining                    OK
+  test_crc32_zero_append_large_lengths               OK
+  test_crc32_zero_append_independent_high_powers     OK
+  test_crc32_zero_append_all_nibble_states           OK
+
+12 passed, 0 failed
+Positive exit code: 0
+  FAIL: build/crc-nibble-review-negative/test_crc32_all_nibble.c:335: bfs_crc32_zeros(initial, length) == 1727442500, expected 1727442501
+=== CRC32 ===
+  test_crc32_zero_append_all_nibble_states           FAILED
+
+0 passed, 1 failed
+Negative exit code: 1 (expected 1)

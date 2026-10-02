@@ -1,0 +1,14 @@
+diff --git a/src/core/alloc.c b/build/metadata-single-extent-without-published-guard.c
+index 4409ed4..db61822 100644
+--- a/src/core/alloc.c
++++ b/build/metadata-single-extent-without-published-guard.c
+@@ -1686,9 +1686,6 @@ static bfs_err_t metadata_batch_withdraw(bfs_freespace_t *fs,
+     if (root_txn > live) return BFS_ERR_CORRUPT;
+     /* A forged live tag cannot authorize retirement of a published block.
+      * Refill would otherwise mask the tag and recycle that block in_alloc. */
+-    if (root_txn == live &&
+-        seal_block_is_sb_root(&owner->txn.sb, fs->tree.root))
+-        return BFS_ERR_CORRUPT;
+     bool root_is_current = root_txn == live;
+ 
+     seal_geometry_t geometry = seal_geometry(owner);

@@ -1,0 +1,21 @@
+  forged committed root was not rejected unchanged: block=0 error=-3 writes=1/0 free=4030/4057 stock=28/0 roving=4063/0 pending=0/0 root=34/35 batch=0
+  FAIL: docs/qualification/evidence/bfs-metadata-batch-2026-10-01/test_metadata_withdrawal_batch.c:837: committed_root_equal_live_tag_is_rejected_unchanged()
+=== Metadata withdrawal batch ===
+  test_first_request_batch_all_supported_block_sizes OK
+  test_owner_and_snapshot_gates_fall_back_to_normal_allocator OK
+  test_readonly_frozen_and_recovery_gates_do_not_allocate OK
+  test_future_leaf_tag_is_rejected_before_optional_write OK
+  test_crc_valid_equal_live_tag_on_committed_root_is_corrupt FAILED
+  test_live_stock_aliases_are_errors_before_write    OK
+  test_success_batch_keeps_root_and_backup_aliases_out_of_reuse OK
+  test_success_batch_protects_unsynced_directory_root OK
+  test_inactive_historical_emergency_slot_uses_ordinary_fallback OK
+  test_one_free_reserve_slot_cannot_start_a_batch    OK
+  test_low_space_uses_ordinary_allocation_without_batch_permission OK
+  test_one_pending_slot_declines_batch_but_allows_single_alloc OK
+  test_tiny_pending_capacity_rejects_before_metadata_mutation OK
+  test_repeated_create_overwrite_delete_sync         OK
+  test_deeper_free_tree_does_not_start_optional_batch OK
+  test_full_leaf_fragmentation_and_commit_fallback_converge OK
+
+15 passed, 1 failed

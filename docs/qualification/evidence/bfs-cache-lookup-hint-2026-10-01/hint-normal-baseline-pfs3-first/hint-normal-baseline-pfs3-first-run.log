@@ -1,0 +1,49 @@
+=== BFS vs PFS3 Benchmark (FS-UAE 68040) ===
+Evidence directory: /tmp/bfs-perf-crc.UBHsLz/hint-normal-baseline-pfs3-first
+Mode: compare
+Timeout: 300s
+
+
+=== Machine Info ===
+# Machine Info
+Kickstart 47.102, Workbench 47.2
+System: 68040 68040/060-FPU   (INST: Cache Burst) (DATA: NoCache NoBurst)
+Type  Available    In-Use   Maximum   Largest
+chip    2028040     52728   2080768   2027968
+fast    7716656    671952   8388608   7711576
+total   9744696    724680  10469376   7711576
+
+
+Mounted disks:
+Unit      Size       Used       Free Full Errs   Status   Name
+DF0       No disk present
+DH0      4095M    4194304    4194303  50%   0  Read/Write System
+DH1       255M         36      65372   0%   0  Read/Write BFSTest
+DH2       Not a DOS disk
+
+Volumes available:
+BFSTest [Mounted]
+System [Mounted]
+
+=== BFS Results ===
+FS_COMPARE_BENCH	1
+DRIVE	DH1:
+SMALL_CREATE_40_US	294143
+LOOKUP_400_US	106944
+SMALL_READ_40_US	49473
+SEQ_WRITE_8M_US	407165
+SEQ_READ_8M_US	547708
+SMALL_DELETE_40_US	200434
+PASS	1
+
+=== PFS3 Results ===
+FS_COMPARE_BENCH	1
+DRIVE	DH2:
+SMALL_CREATE_40_US	16256
+LOOKUP_400_US	74880
+SMALL_READ_40_US	14145
+SEQ_WRITE_8M_US	34496
+SEQ_READ_8M_US	256575
+SMALL_DELETE_40_US	8064
+PASS	1
+PASS: requested mounted-volume workload outputs are complete and data-checked

@@ -1,0 +1,9 @@
+Before split-coalesce-attribution-probe-bfs-first system/Results/bfs.deep-compare.tsv f237d5c68deae7537870227d3c9ee1d12330bd14fb5e9a9b07c804440fc2739f
+Before split-coalesce-attribution-probe-bfs-first system/Results/pfs3.deep-compare.tsv 64027726481b46aa84a06228f4705645634622d5486fd1170b6441803b4b9ec2
+f237d5c68deae7537870227d3c9ee1d12330bd14fb5e9a9b07c804440fc2739f  system/Results/bfs.deep-compare.tsv
+64027726481b46aa84a06228f4705645634622d5486fd1170b6441803b4b9ec2  system/Results/pfs3.deep-compare.tsv
+Before split-coalesce-attribution-probe-pfs3-first system/Results/bfs.deep-compare.tsv 90749bc2003d55fcdee538c6f5977ad09ce2c4d32e190dc47999e73cefbf439b
+Before split-coalesce-attribution-probe-pfs3-first system/Results/pfs3.deep-compare.tsv ceec6ce16106508320b74e51c83bf6ea7f56c96ec18d125de520119df06a002e
+90749bc2003d55fcdee538c6f5977ad09ce2c4d32e190dc47999e73cefbf439b  system/Results/bfs.deep-compare.tsv
+ceec6ce16106508320b74e51c83bf6ea7f56c96ec18d125de520119df06a002e  system/Results/pfs3.deep-compare.tsv
+PASS: both completed systems recoverably archived; all four TSV hashes unchanged

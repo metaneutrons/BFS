@@ -1,0 +1,24 @@
+7d9391df6529b74c0273b73ae362af5058ab051ed12103bffcde7978e8eaa383  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-probe-bfs-first/system/Results/bfs.deep-compare.tsv
+7902b7ed880353dbe36cbb2b3531f199ee3b6535e1ca840e582371c0713a68dd  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-probe-bfs-first/system/Results/pfs3.deep-compare.tsv
+6cc13a10667c7b7f9127a9533e6e1e5d88d978aed116a0aaf3929f2e464641a4  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-probe-pfs3-first/system/Results/bfs.deep-compare.tsv
+7268407f4753ea8bf8f05346bc0b84a9e6d61911632f60763059d4390e1c914e  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-probe-pfs3-first/system/Results/pfs3.deep-compare.tsv
+7a1fd90359295cff711991a0c3cafe672760ea28f0612880415868219c00d8e3  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-baseline-bfs-first/system/Results/bfs.tsv
+32efaa823317c60a456f818ffc08e47618e1fd38405c5fcb0b79dd0d6f11eb88  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-baseline-bfs-first/system/Results/pfs3.tsv
+b9240281968b82f40dc4cf6c61ccbb41a8e3ece1d230420b58f4e4b36f9f964e  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-candidate-pfs3-first/system/Results/bfs.tsv
+738bb80b3c18215dcc755a85ab532e4a8d19402601f8e9d90ea28c60e9b18a6d  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-candidate-pfs3-first/system/Results/pfs3.tsv
+fa867b3e0f638ff515ec003199b8e5fefae61914cd3651be63dde6717ee684ea  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-baseline-pfs3-first/system/Results/bfs.tsv
+d479ec43b15f8fca8ff2c4f9e81013ceca52fca4b04342fac1768ffd7afca6b7  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-baseline-pfs3-first/system/Results/pfs3.tsv
+b303061d4139ece669e7ede232ad4555b264f47d7987c94460c59ded56e8dea5  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-candidate-bfs-first/system/Results/bfs.tsv
+67912ba4a370278eb56eb6546baa337ee7ea2802e7554dfeb5aabebacd25d803  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-candidate-bfs-first/system/Results/pfs3.tsv
+53e2fec68c118e712a5885a68b6307b6176581ae8c33aab760d6f8ec52b57ebc  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-repeat-candidate-bfs-first/system/Results/bfs.tsv
+aeebdf1ac3af08624d84eea3f94119b60fcb99f2c823aecbce7ec3d0b877d311  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-repeat-candidate-bfs-first/system/Results/pfs3.tsv
+2ea486b9d9fd8f427b14d0fda9631b85baba705c70d7a2306bb219006da54768  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-repeat-baseline-pfs3-first/system/Results/bfs.tsv
+b8f6e345aecaeee7981dd8f14ef323e10328a12c90a7aa91e8f57f07270883c4  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-repeat-baseline-pfs3-first/system/Results/pfs3.tsv
+724fab85732bad95cc6106442301643b5fad9551e3878cdd7d532d4e5666e8aa  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-repeat-candidate-pfs3-first/system/Results/bfs.tsv
+72a63cbb9f1a4d19f32cd4a7b5c836de0f26609eda585c461cced855278fdd9b  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-repeat-candidate-pfs3-first/system/Results/pfs3.tsv
+f7e1b0e53cf3a09f4b85d3cc18cd541250f7bce4a05d91c4ac9b964719d8a4c5  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-repeat-baseline-bfs-first/system/Results/bfs.tsv
+f7c6cde739ffbd93245d5de70ef15a6830e4ffa117909eb2011556f49b9cf209  /home/fabian/.cache/bfs-performance/metadata-batch-2026-10-01/metadata-batch-normal-repeat-baseline-bfs-first/system/Results/pfs3.tsv
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  3.5G  8.3G  30% /tmp
+/dev/vda2       996G  313G  682G  32% /home
+Ten completed metadata-batch images archived recoverably with identical TSV hashes

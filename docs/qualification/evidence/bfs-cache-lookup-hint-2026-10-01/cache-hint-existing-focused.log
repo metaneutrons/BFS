@@ -1,0 +1,34 @@
+=== Block Cache ===
+  test_raw_bio_buffer_fallback                       OK
+  test_partial_buffer_hooks_are_ignored              OK
+  test_complete_buffer_hooks_and_failed_allocation   OK
+  test_non_block_sized_buffer_requests               OK
+  test_cache_scratch_leases                          OK
+  test_cache_scratch_destroy_and_reinit              OK
+  test_cache_io_and_crc_with_leased_buffer           OK
+  test_defaults_and_limits                           OK
+  test_invalid_initialization                        OK
+  test_hit_and_invalidate                            OK
+  test_lru_eviction                                  OK
+  test_write_through                                 OK
+  test_io_errors                                     OK
+  test_verified_node_lifecycle                       OK
+  test_node_write_retention                          OK
+  test_node_write_raw_bio_fallback                   OK
+
+16 passed, 0 failed
+=== Temporary buffer allocation faults ===
+  test_each_lazy_slot_failure                        OK
+  test_overflow_and_multiblock_failures              OK
+  test_cache_initialization_failures                 OK
+  test_replacement_second_buffer_failure_releases_first OK
+  test_height_one_mutations_reuse_warm_scratch       OK
+
+5 passed, 0 failed
+=== Cached B-tree temporary buffers ===
+  test_cached_tree_lifecycle_1024                    OK
+  test_cached_tree_lifecycle_4096                    OK
+  test_mounted_cached_free_tree_cycle_1024           OK
+  test_mounted_cached_free_tree_cycle_4096           OK
+
+4 passed, 0 failed

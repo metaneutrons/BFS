@@ -1,0 +1,4 @@
+92d6757ff61caba5e0467d83998224568b7cc9b4b6863408abe85e43aa3fbf7a  /opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/libm020/libnix.a
+d162e0f86c63d60cbb7daf7861c7930a5861f0e79cacac16d4f55d643e203b2c  build/btree-bulk-slots-libnix-memmove.o
+2565209408dfab1c8750d0bc2bab99bc6b9f4c6e3271da87b172a895bdb17290  build/btree-bulk-slots-libnix-bcopy.o
+Selected archive established independently by byte-identical normal-handler link map

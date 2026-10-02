@@ -1,0 +1,116 @@
+diff --git a/include/bfs_cache.h b/include/bfs_cache.h
+index ce57f51..91e43b5 100644
+--- a/include/bfs_cache.h
++++ b/include/bfs_cache.h
+@@ -51,0 +52,2 @@ typedef struct bfs_cache {
++    /* Index-only hint; every use rechecks bounds and the resident block ID. */
++    uint32_t           lookup_hint;
+diff --git a/src/core/cache.c b/src/core/cache.c
+index 4cf28e7..4d57302 100644
+--- a/src/core/cache.c
++++ b/src/core/cache.c
+@@ -11,0 +12,15 @@
++static bfs_cache_slot_t *cache_lookup(bfs_cache_t *cache, bfs_blk_t blk)
++{
++    if (cache->lookup_hint < cache->num_slots &&
++        cache->slots[cache->lookup_hint].blk == blk)
++        return &cache->slots[cache->lookup_hint];
++
++    for (uint32_t i = 0; i < cache->num_slots; i++) {
++        if (cache->slots[i].blk == blk) {
++            cache->lookup_hint = i;
++            return &cache->slots[i];
++        }
++    }
++    return NULL;
++}
++
+@@ -30,7 +45,5 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+-    /* Search cache */
+-    for (uint32_t i = 0; i < c->num_slots; i++) {
+-        if (c->slots[i].blk == blk) {
+-            memcpy(buf, c->slots[i].data, bio->block_size);
+-            c->slots[i].age = ++c->clock;
+-            return BFS_OK;
+-        }
++    bfs_cache_slot_t *slot = cache_lookup(c, blk);
++    if (slot) {
++        memcpy(buf, slot->data, bio->block_size);
++        slot->age = ++c->clock;
++        return BFS_OK;
+@@ -49,0 +63 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
++    c->lookup_hint = victim;
+@@ -69,0 +84 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
++        c->lookup_hint = UINT32_MAX;
+@@ -75,8 +90,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
+-    for (uint32_t i = 0; i < c->num_slots; i++) {
+-        if (c->slots[i].blk == blk) {
+-            memcpy(c->slots[i].data, buf, bio->block_size);
+-            c->slots[i].age = ++c->clock;
+-            c->slots[i].node_crc_valid = retain_node;
+-            c->slots[i].node_structure_valid = false;
+-            return BFS_OK;
+-        }
++    bfs_cache_slot_t *slot = cache_lookup(c, blk);
++    if (slot) {
++        memcpy(slot->data, buf, bio->block_size);
++        slot->age = ++c->clock;
++        slot->node_crc_valid = retain_node;
++        slot->node_structure_valid = false;
++        return BFS_OK;
+@@ -91,0 +106 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
++        c->lookup_hint = victim;
+@@ -123,3 +138,2 @@ static bool cache_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk)
+-    for (uint32_t i = 0; i < c->num_slots; i++)
+-        if (c->slots[i].blk == blk) return c->slots[i].node_crc_valid;
+-    return false;
++    const bfs_cache_slot_t *slot = cache_lookup(c, blk);
++    return slot && slot->node_crc_valid;
+@@ -131,5 +145,2 @@ static void cache_mark_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk)
+-    for (uint32_t i = 0; i < c->num_slots; i++)
+-        if (c->slots[i].blk == blk) {
+-            c->slots[i].node_crc_valid = true;
+-            return;
+-        }
++    bfs_cache_slot_t *slot = cache_lookup(c, blk);
++    if (slot) slot->node_crc_valid = true;
+@@ -142,12 +153,9 @@ static bool cache_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
+-    for (uint32_t i = 0; i < c->num_slots; i++) {
+-        const bfs_cache_slot_t *slot = &c->slots[i];
+-        if (slot->blk != blk) continue;
+-        const bfs_node_validation_t *known = &slot->node_validation;
+-        return slot->node_structure_valid && slot->node_crc_valid &&
+-               known->key_compare == context->key_compare &&
+-               known->key_size == context->key_size &&
+-               known->val_size == context->val_size &&
+-               known->block_size == context->block_size &&
+-               known->block_count == context->block_count;
+-    }
+-    return false;
++    const bfs_cache_slot_t *slot = cache_lookup(c, blk);
++    if (!slot) return false;
++    const bfs_node_validation_t *known = &slot->node_validation;
++    return slot->node_structure_valid && slot->node_crc_valid &&
++           known->key_compare == context->key_compare &&
++           known->key_size == context->key_size &&
++           known->val_size == context->val_size &&
++           known->block_size == context->block_size &&
++           known->block_count == context->block_count;
+@@ -160,7 +168,4 @@ static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
+-    for (uint32_t i = 0; i < c->num_slots; i++) {
+-        bfs_cache_slot_t *slot = &c->slots[i];
+-        if (slot->blk == blk && slot->node_crc_valid) {
+-            slot->node_validation = *context;
+-            slot->node_structure_valid = true;
+-            return;
+-        }
++    bfs_cache_slot_t *slot = cache_lookup(c, blk);
++    if (slot && slot->node_crc_valid) {
++        slot->node_validation = *context;
++        slot->node_structure_valid = true;
+@@ -251,0 +257 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
++    cache->lookup_hint = UINT32_MAX;
+@@ -293,0 +300 @@ void bfs_cache_destroy(bfs_cache_t *cache)
++    cache->lookup_hint = UINT32_MAX;
+@@ -304,0 +312 @@ void bfs_cache_invalidate(bfs_cache_t *cache)
++    cache->lookup_hint = UINT32_MAX;

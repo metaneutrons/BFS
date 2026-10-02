@@ -1,0 +1,23 @@
+4c5ae37e9afbc859bbe5c2d33815df50c66a9503d6c22a69575922ffd483d566  split-coalesce-attribution-probe-bfs-first/system/L/bfshandler
+44581f7f8ce259b34a7521337a45f7f0957662a20a256e623730e3efb512a024  split-coalesce-attribution-probe-bfs-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  split-coalesce-attribution-probe-bfs-first/system/L/pfs3aio
+62b54270a30bda384c8775a7810cbaef33f663cf7041c70fee7fead8cf31d252  split-coalesce-attribution-probe-bfs-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  split-coalesce-attribution-probe-bfs-first/bench-pfs3.hdf
+4c5ae37e9afbc859bbe5c2d33815df50c66a9503d6c22a69575922ffd483d566  split-coalesce-attribution-probe-pfs3-first/system/L/bfshandler
+44581f7f8ce259b34a7521337a45f7f0957662a20a256e623730e3efb512a024  split-coalesce-attribution-probe-pfs3-first/system/C/fs-compare-bench
+bc72facfdddf32e312ed3ea136849da195f2a2300f179e69599b853fe8974df7  split-coalesce-attribution-probe-pfs3-first/system/L/pfs3aio
+62b54270a30bda384c8775a7810cbaef33f663cf7041c70fee7fead8cf31d252  split-coalesce-attribution-probe-pfs3-first/bench-bfs.hdf
+e9e8cd82edfb4488d887f303d19912f0ddfa1760eb9230ab10f493d431c1948b  split-coalesce-attribution-probe-pfs3-first/bench-pfs3.hdf
+68f9d3a36c2866d054f41c29b600618642a4807dfb6bca7354d4879a36c9aa7c  /home/fabian/Amiga/kick.a1200.47.102.rom
+8c51b403bf1d064d97164189cd73219fb8cf77f51367e39a9ba43483e4c2580a  source-split-coalesce-attribution/src/core/btree.c
+9460027844d8e0224860170171a0fe903fd24ae8706eb6f49a56b3013d1421ae  source-split-coalesce-attribution/src/core/alloc.c
+67e8bf1e769171c4345737f291e21e5f448ea85862ed992c02ff1591385f26f2  source-split-coalesce-attribution/src/amiga/perf_probe.h
+c9179beea634e146e37b3ee10f1d4c1f3882354f8f27b0910345d0e58aeca0f7  source-split-coalesce-attribution/src/amiga/perf_paths.h
+9a5041041a1da521584821fdc6689e497950fde5213737544fa50f2dd51f5a93  source-split-coalesce-attribution/tools/fs-compare-bench.c
+704eeec4eb970afaff5b6778accc0ecd02b8b82389321d0398163482bb00f483  source-split-coalesce-attribution/tools/attribution-consumer/consume.py
+3.2.35
+Linux cachy 7.1.3-2-cachyos #1 SMP PREEMPT_DYNAMIC Wed, 08 Jul 2026 18:34:01 +0000 x86_64 GNU/Linux
+Filesystem      Size  Used Avail Use% Mounted on
+tmpfs            12G  4.6G  7.2G  39% /tmp
+/dev/vda2       996G  314G  681G  32% /home
+Both fresh diagnostic systems and idle preflight verified

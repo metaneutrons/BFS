@@ -1,0 +1,1104 @@
+diff --git a/include/bfs_alloc.h b/include/bfs_alloc.h
+index eb76cff..a8b7c03 100644
+--- a/include/bfs_alloc.h
++++ b/include/bfs_alloc.h
+@@ -20,0 +21,2 @@
++struct bfs_fs;
++
+@@ -30,0 +33,2 @@ typedef struct bfs_freespace {
++    bool settlement_active;         /* excludes new pre-publication stock policy */
++    struct bfs_fs *owner;           /* exact mounted owner; standalone remains NULL */
+@@ -88 +91,0 @@ bfs_err_t bfs_freespace_settle_reserve(bfs_freespace_t *fs);
+-struct bfs_fs;
+diff --git a/src/core/alloc.c b/src/core/alloc.c
+index 5937d4a..573ffed 100644
+--- a/src/core/alloc.c
++++ b/src/core/alloc.c
+@@ -26,0 +27 @@
++#define BFS_ALLOC_METADATA_STOCK_EXTRA 20u
+@@ -75,0 +77,4 @@ static bfs_err_t validate_free_tree_absence(bfs_freespace_t *fs,
++static bool mounted_leaf_context(const bfs_fs_t *owner);
++static bool seal_block_is_sb_root(const bfs_superblock_t *sb, bfs_blk_t blk);
++static bool seal_block_is_current_root(const bfs_fs_t *owner, bfs_blk_t blk);
++static bfs_err_t refill_reserve_to(bfs_freespace_t *fs, uint32_t target);
+@@ -104 +109 @@ static bool metadata_reuse_enabled(const bfs_freespace_t *fs)
+-static bool metadata_block_protected(const bfs_freespace_t *fs, bfs_blk_t blk)
++static bool metadata_stock_enabled(const bfs_freespace_t *fs)
+@@ -106 +111,27 @@ static bool metadata_block_protected(const bfs_freespace_t *fs, bfs_blk_t blk)
+-    return blk < bfs_data_start_block(fs->tree.bio->block_size) ||
++    return fs->owner && !fs->settlement_active &&
++           &fs->owner->freespace == fs && mounted_leaf_context(fs->owner);
++}
++
++typedef struct {
++    bfs_blk_t data_start;
++    uint64_t working_backup_block;
++    uint64_t committed_backup_block;
++} metadata_stock_guard_t;
++
++/* Compute invariant geometry once per validation, not for every reserve
++ * entry. Variable 64-bit division is especially expensive on 68k. */
++static metadata_stock_guard_t metadata_stock_guard(const bfs_freespace_t *fs)
++{
++    uint32_t bs = fs->tree.bio->block_size;
++    metadata_stock_guard_t guard = {
++        .data_start = bfs_data_start_block(bs),
++        .working_backup_block = bfs_sb_backup_offset(fs->sb) / bs,
++        .committed_backup_block = bfs_sb_backup_offset(fs->committed_sb) / bs,
++    };
++    return guard;
++}
++
++static bool metadata_block_protected(const bfs_freespace_t *fs, bfs_blk_t blk,
++                                      const metadata_stock_guard_t *guard)
++{
++    return blk < guard->data_start ||
+@@ -108,5 +139,5 @@ static bool metadata_block_protected(const bfs_freespace_t *fs, bfs_blk_t blk)
+-           blk == bfs_be32(fs->committed_sb->free_tree_root) ||
+-           blk == bfs_be32(fs->committed_sb->dir_tree_root) ||
+-           blk == bfs_be32(fs->committed_sb->inode_tree_root) ||
+-           blk == bfs_be32(fs->committed_sb->refcount_tree_root) ||
+-           blk == bfs_be32(fs->committed_sb->snapshot_tree_root);
++           seal_block_is_sb_root(fs->committed_sb, blk) ||
++           blk == bfs_be32(fs->sb->extent_tree_root) ||
++           blk == guard->working_backup_block ||
++           blk == guard->committed_backup_block ||
++           (fs->owner && seal_block_is_current_root(fs->owner, blk));
+@@ -119,0 +151,7 @@ static bfs_err_t validate_metadata_stock(const bfs_freespace_t *fs)
++    if (fs->reserve_count == 0) return BFS_OK;
++    metadata_stock_guard_t guard = metadata_stock_guard(fs);
++    /* Ephemeral exact set: at most 128 entries in 256 slots. Zero is never a
++     * valid stock block. Linear probing terminates even for adversarial block
++     * numbers; no cached validation survives a reserve or pool mutation. */
++    bfs_blk_t stock_set[BFS_ALLOC_RESERVE_SIZE * 2u] = {0};
++    const uint32_t set_size = BFS_ALLOC_RESERVE_SIZE * 2u;
+@@ -122,3 +160,16 @@ static bfs_err_t validate_metadata_stock(const bfs_freespace_t *fs)
+-        if (metadata_block_protected(fs, blk)) return BFS_ERR_CORRUPT;
+-        bfs_err_t err = validate_free_stock_range(fs, blk, 1, i);
+-        if (err != BFS_OK) return err;
++        if (metadata_block_protected(fs, blk, &guard)) return BFS_ERR_CORRUPT;
++        uint32_t slot = blk % set_size;
++        while (stock_set[slot] != BFS_BLK_NULL) {
++            if (stock_set[slot] == blk) return BFS_ERR_EXISTS;
++            slot = (slot + 1u) % set_size;
++        }
++        stock_set[slot] = blk;
++    }
++    uint32_t active = bfs_be32(fs->sb->emergency_count);
++    for (uint32_t i = 0; i < active; i++) {
++        bfs_blk_t blk = bfs_be32(fs->sb->emergency_pool[i]);
++        uint32_t slot = blk % set_size;
++        while (stock_set[slot] != BFS_BLK_NULL) {
++            if (stock_set[slot] == blk) return BFS_ERR_EXISTS;
++            slot = (slot + 1u) % set_size;
++        }
+@@ -134 +185 @@ static bfs_err_t take_metadata_spare(bfs_freespace_t *fs, bfs_blk_t *out)
+-    if (!metadata_reuse_enabled(fs)) return BFS_ERR_UNSUPPORTED;
++    if (!metadata_reuse_enabled(fs) && !metadata_stock_enabled(fs)) return BFS_OK;
+@@ -136 +187 @@ static bfs_err_t take_metadata_spare(bfs_freespace_t *fs, bfs_blk_t *out)
+-    if (fs->reserve_count <= floor) return BFS_ERR_UNSUPPORTED;
++    if (fs->reserve_count <= floor) return BFS_OK;
+@@ -150 +201 @@ static bfs_err_t take_metadata_spare(bfs_freespace_t *fs, bfs_blk_t *out)
+-    return BFS_ERR_UNSUPPORTED;
++    return BFS_OK;
+@@ -153 +204,2 @@ static bfs_err_t take_metadata_spare(bfs_freespace_t *fs, bfs_blk_t *out)
+-static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk)
++static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk,
++                                       bool *handled)
+@@ -155 +207,2 @@ static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk)
+-    if (!metadata_reuse_enabled(fs)) return BFS_ERR_UNSUPPORTED;
++    *handled = false;
++    if (!metadata_reuse_enabled(fs) && !metadata_stock_enabled(fs)) return BFS_OK;
+@@ -159 +212 @@ static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk)
+-        return BFS_ERR_UNSUPPORTED;
++        return BFS_OK;
+@@ -162 +215,2 @@ static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk)
+-    if (metadata_block_protected(fs, blk)) return BFS_ERR_CORRUPT;
++    metadata_stock_guard_t guard = metadata_stock_guard(fs);
++    if (metadata_block_protected(fs, blk, &guard)) return BFS_ERR_CORRUPT;
+@@ -166,0 +221 @@ static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk)
++    *handled = true;
+@@ -169,0 +225,28 @@ static bfs_err_t stash_metadata_spare(bfs_freespace_t *fs, bfs_blk_t blk)
++/* Successful refill is an ordinary accounted state transition. No error,
++ * including UNSUPPORTED from a BIO, is interpreted as a policy decline. */
++static bfs_err_t try_metadata_stock(bfs_freespace_t *fs, bfs_blk_t *out)
++{
++    *out = BFS_BLK_NULL;
++    if (!metadata_stock_enabled(fs)) return BFS_OK;
++    bfs_err_t err = take_metadata_spare(fs, out);
++    if (err != BFS_OK || *out != BFS_BLK_NULL) return err;
++    uint32_t floor = reserve_refill_target(fs);
++    if (fs->reserve_count > floor || fs->global_reserve == UINT32_MAX ||
++        fs->total_free <= fs->global_reserve + 1)
++        return BFS_OK;
++    /* Avoid changing low-space allocation policy merely to seed surplus.
++     * A successful limited refill with no ordinary spare may still use the
++     * established allocator; there is no ambiguous error to conceal. */
++    uint32_t target = floor + BFS_ALLOC_METADATA_STOCK_EXTRA;
++    if (target > BFS_ALLOC_RESERVE_SIZE) target = BFS_ALLOC_RESERVE_SIZE;
++    uint32_t surplus = fs->total_free - fs->global_reserve - 1;
++    if (surplus < target - fs->reserve_count) return BFS_OK;
++    err = validate_metadata_stock(fs);
++    if (err != BFS_OK) return err;
++    bfs_blk_t roving = fs->roving;
++    err = refill_reserve_to(fs, target);
++    fs->roving = roving;
++    if (err != BFS_OK) return err;
++    return take_metadata_spare(fs, out);
++}
++
+@@ -231,2 +314,6 @@ no_space:
+-    bfs_err_t err = take_metadata_spare(fs, &spare);
+-    if (err == BFS_OK) {
++    bfs_err_t err = try_metadata_stock(fs, &spare);
++    if (err != BFS_OK) {
++        fs->last_error = err;
++        return BFS_BLK_NULL;
++    }
++    if (spare != BFS_BLK_NULL) {
+@@ -236 +323,6 @@ no_space:
+-    if (err != BFS_ERR_UNSUPPORTED) {
++    err = take_metadata_spare(fs, &spare);
++    if (err == BFS_OK && spare != BFS_BLK_NULL) {
++        fs->last_error = BFS_OK;
++        return spare;
++    }
++    if (err != BFS_OK) {
+@@ -262,2 +354,3 @@ static bfs_err_t iface_free(bfs_allocator_t *a, bfs_blk_t blk)
+-    bfs_err_t err = stash_metadata_spare(fs, blk);
+-    if (err != BFS_ERR_UNSUPPORTED) {
++    bool handled;
++    bfs_err_t err = stash_metadata_spare(fs, blk, &handled);
++    if (err != BFS_OK || handled) {
+@@ -411,4 +504,4 @@ static bool alloc_scan_cb(const void *key, const void *val, void *ctx)
+-/* Take a tail run from the highest-key free extent with one COW mutation.
+- * Reserving adjacent blocks one by one needlessly rewrites the same tree path. */
+-static bfs_err_t alloc_tail_from_highest(bfs_freespace_t *fs, uint32_t requested,
+-                                         bfs_blk_t *result_out, uint32_t *taken_out)
++/* Shared tail withdrawal after a validated extent lookup. */
++static bfs_err_t alloc_tail_from_extent(bfs_freespace_t *fs, uint32_t requested,
++                                        uint32_t found_key, uint32_t found_len,
++                                        bfs_blk_t *result_out, uint32_t *taken_out)
+@@ -417,6 +509,0 @@ static bfs_err_t alloc_tail_from_highest(bfs_freespace_t *fs, uint32_t requested
+-    uint32_t max_key = bfs_be32(UINT32_MAX);
+-    uint32_t found_key, found_len;
+-    bfs_err_t err = bfs_btree_search_floor(&fs->tree, &max_key, &found_key,
+-                                           &found_len);
+-    if (err != BFS_OK) return err;
+-
+@@ -432,0 +520 @@ static bfs_err_t alloc_tail_from_highest(bfs_freespace_t *fs, uint32_t requested
++    bfs_err_t err;
+@@ -448,0 +537,34 @@ static bfs_err_t alloc_tail_from_highest(bfs_freespace_t *fs, uint32_t requested
++/* Take a tail run from the highest-key free extent with one COW mutation.
++ * Reserving adjacent blocks one by one needlessly rewrites the same tree path. */
++static bfs_err_t alloc_tail_from_highest(bfs_freespace_t *fs, uint32_t requested,
++                                         bfs_blk_t *result_out, uint32_t *taken_out)
++{
++    if (requested == 0) return BFS_ERR_INVAL;
++    uint32_t max_key = bfs_be32(UINT32_MAX);
++    uint32_t found_key, found_len;
++    bfs_err_t err = bfs_btree_search_floor(&fs->tree, &max_key, &found_key,
++                                           &found_len);
++    if (err != BFS_OK) return err;
++    return alloc_tail_from_extent(fs, requested, found_key, found_len,
++                                  result_out, taken_out);
++}
++
++/* Metadata seeding prefers one complete run over repeatedly removing the
++ * fragmented high-key tail. A missing run is a pure lookup decline; read or
++ * validation errors cannot fall through to another allocation strategy. */
++static bfs_err_t alloc_metadata_stock_run(bfs_freespace_t *fs, uint32_t wanted,
++                                         bfs_blk_t *start, uint32_t *taken)
++{
++    alloc_scan_ctx_t scan = {
++        .need = wanted, .found_start = BFS_BLK_NULL,
++        .block_count = fs->tree.bio->block_count, .err = BFS_OK,
++    };
++    bfs_err_t err = bfs_btree_scan(&fs->tree, NULL, alloc_scan_cb, &scan);
++    if (err != BFS_OK) return err;
++    if (scan.err != BFS_OK) return scan.err;
++    if (scan.found_start == BFS_BLK_NULL)
++        return alloc_tail_from_highest(fs, wanted, start, taken);
++    return alloc_tail_from_extent(fs, wanted, bfs_be32(scan.found_start),
++                                  bfs_be32(scan.found_len), start, taken);
++}
++
+@@ -1086 +1208 @@ bfs_err_t bfs_freespace_free_sorted_blocks(bfs_freespace_t *fs,
+-bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
++static bfs_err_t refill_reserve_to(bfs_freespace_t *fs, uint32_t target)
+@@ -1090 +1212,2 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
+-    if (!fs || !fs->tree.bio || fs->reserve_count > BFS_ALLOC_RESERVE_SIZE)
++    if (!fs || !fs->tree.bio || fs->reserve_count > BFS_ALLOC_RESERVE_SIZE ||
++        target > BFS_ALLOC_RESERVE_SIZE)
+@@ -1094 +1216,0 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
+-    uint32_t target = reserve_refill_target(fs);
+@@ -1099,0 +1222,2 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
++        bool contiguous_stock = metadata_stock_enabled(fs) &&
++                                target > reserve_refill_target(fs);
+@@ -1108 +1232,3 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
+-        bfs_err_t err = alloc_tail_from_highest(fs, wanted, &start, &taken);
++        bfs_err_t err = contiguous_stock
++            ? alloc_metadata_stock_run(fs, wanted, &start, &taken)
++            : alloc_tail_from_highest(fs, wanted, &start, &taken);
+@@ -1129,0 +1256,6 @@ bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
++bfs_err_t bfs_freespace_refill_reserve(bfs_freespace_t *fs)
++{
++    if (!fs) return BFS_ERR_INVAL;
++    return refill_reserve_to(fs, reserve_refill_target(fs));
++}
++
+@@ -1264 +1396 @@ static bool seal_block_reserved(const bfs_fs_t *owner, bfs_blk_t blk)
+-static bool seal_context_available(const bfs_fs_t *owner)
++static bool mounted_leaf_context(const bfs_fs_t *owner)
+@@ -1278 +1410 @@ static bool seal_context_available(const bfs_fs_t *owner)
+-           fs->mounted_state == &owner->mounted &&
++           fs->owner == owner && fs->mounted_state == &owner->mounted &&
+@@ -1291,2 +1423,7 @@ static bool seal_context_available(const bfs_fs_t *owner)
+-           owner->live_txn_id > bfs_be64(owner->txn.sb.txn_id) &&
+-           !seal_block_is_sb_root(&owner->txn.sb, fs->tree.root);
++           owner->live_txn_id > bfs_be64(owner->txn.sb.txn_id);
++}
++
++static bool seal_context_available(const bfs_fs_t *owner)
++{
++    return mounted_leaf_context(owner) &&
++           !seal_block_is_sb_root(&owner->txn.sb, owner->freespace.tree.root);
+diff --git a/src/core/fs.c b/src/core/fs.c
+index 7d8fa74..4c3c1ef 100644
+--- a/src/core/fs.c
++++ b/src/core/fs.c
+@@ -244,0 +245 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
++    fs->freespace.owner = fs;
+diff --git a/src/core/txn.c b/src/core/txn.c
+index cec8a13..d6ae8ba 100644
+--- a/src/core/txn.c
++++ b/src/core/txn.c
+@@ -327,0 +328,3 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
++    /* The new top-level stock policy must not participate in either branch
++     * of commit settlement; its recursive reserve floor is unchanged. */
++    fs->freespace.settlement_active = true;
+@@ -328,0 +332 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
++    fs->freespace.settlement_active = false;
+diff --git a/tests/test_txn_sealed_preflight.c b/tests/test_txn_sealed_preflight.c
+index acdb9fa..a55624e 100644
+--- a/tests/test_txn_sealed_preflight.c
++++ b/tests/test_txn_sealed_preflight.c
+@@ -726,0 +727,5 @@ static void test_success_seals_mixed_provenance_and_freezes_mutation(void)
++    /* Keep this lower-level SF provenance fixture on its original allocation
++     * policy. MS has separate natural mounted witnesses; enabling it here
++     * changes the deliberately required pool-origin current-root shape. */
++    fs->freespace.settlement_active = true;
++
+@@ -745,0 +751 @@ static void test_success_seals_mixed_provenance_and_freezes_mutation(void)
++    fs->freespace.settlement_active = false;
+diff --git a/tests/test_alloc_metadata_stock.c b/tests/test_alloc_metadata_stock.c
+new file mode 100644
+index 0000000..edf8fa3
+--- /dev/null
++++ b/tests/test_alloc_metadata_stock.c
+@@ -0,0 +1,805 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++/* Mounted tests for bounded pre-publication metadata stock. */
++
++#include "test_harness.h"
++#include "bfs_alloc.h"
++#include "bfs_fs.h"
++#include "bfs_ondisk.h"
++#include "bfs_superblock.h"
++
++#include <stdlib.h>
++
++#define TEST_BLOCK_COUNT 4096u
++#define HEIGHT_ONE_FLOOR 20u
++#define STOCK_EXTRA 20u
++
++typedef struct {
++    bfs_bio_t bio;
++    uint8_t *bytes;
++    bfs_fs_t *observed_fs;
++    uint32_t reads;
++    uint32_t writes;
++    uint32_t syncs;
++    uint32_t fail_read_at;
++    uint32_t fail_write_at;
++    uint32_t fail_sync_at;
++    bfs_err_t read_error;
++    bfs_err_t write_error;
++    bfs_err_t sync_error;
++    bool partial_write;
++    bool track_settlement;
++    uint32_t guarded_writes;
++    uint32_t unguarded_writes;
++    uint32_t guarded_syncs;
++    uint32_t unguarded_syncs;
++} memory_device_t;
++
++typedef struct {
++    memory_device_t device;
++    bfs_fs_t fs;
++} fixture_t;
++
++typedef struct {
++    bfs_superblock_t working_sb;
++    bfs_superblock_t committed_sb;
++    bfs_blk_t reserve[BFS_ALLOC_RESERVE_SIZE];
++    bfs_blk_t pending[BFS_PENDING_FREES_MAX];
++    uint32_t reserve_count;
++    uint32_t pending_count;
++    bfs_blk_t root;
++    uint32_t height;
++    uint32_t total_free;
++    bfs_blk_t roving;
++    uint64_t live_txn_id;
++    bool in_alloc;
++    bfs_err_t free_sink_error;
++    bfs_err_t recovery_error;
++} allocator_snapshot_t;
++
++static bfs_err_t memory_read(bfs_bio_t *bio, bfs_blk_t block, void *buffer)
++{
++    memory_device_t *device = (memory_device_t *)bio;
++    device->reads++;
++    if (!buffer || block >= bio->block_count) return BFS_ERR_INVAL;
++    if (device->fail_read_at == device->reads) {
++        device->fail_read_at = 0;
++        return device->read_error;
++    }
++    memcpy(buffer, device->bytes + (size_t)block * bio->block_size,
++           bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    return BFS_OK;
++}
++
++static bfs_err_t memory_write(bfs_bio_t *bio, bfs_blk_t block,
++                              const void *buffer)
++{
++    memory_device_t *device = (memory_device_t *)bio;
++    device->writes++;
++    if (!buffer || block >= bio->block_count) return BFS_ERR_INVAL;
++    if (device->track_settlement && device->observed_fs) {
++        if (device->observed_fs->freespace.settlement_active)
++            device->guarded_writes++;
++        else
++            device->unguarded_writes++;
++    }
++    if (device->fail_write_at == device->writes) {
++        device->fail_write_at = 0;
++        if (device->partial_write)
++            memcpy(device->bytes + (size_t)block * bio->block_size, buffer,
++                   bio->block_size / 2); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++        return device->write_error;
++    }
++    memcpy(device->bytes + (size_t)block * bio->block_size, buffer,
++           bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    return BFS_OK;
++}
++
++static bfs_err_t memory_sync(bfs_bio_t *bio)
++{
++    memory_device_t *device = (memory_device_t *)bio;
++    device->syncs++;
++    if (device->track_settlement && device->observed_fs) {
++        if (device->observed_fs->freespace.settlement_active)
++            device->guarded_syncs++;
++        else
++            device->unguarded_syncs++;
++    }
++    if (device->fail_sync_at == device->syncs) {
++        device->fail_sync_at = 0;
++        return device->sync_error;
++    }
++    return BFS_OK;
++}
++
++static void memory_close(bfs_bio_t *bio) { (void)bio; }
++
++static const bfs_bio_ops_t memory_ops = {
++    .read_block = memory_read,
++    .write_block = memory_write,
++    .sync = memory_sync,
++    .close = memory_close,
++};
++
++static bool fixture_init(fixture_t *fixture, uint32_t block_size)
++{
++    memset(fixture, 0, sizeof(*fixture));
++    fixture->device.bytes = calloc(TEST_BLOCK_COUNT, block_size);
++    if (!fixture->device.bytes) return false;
++    fixture->device.bio.ops = &memory_ops;
++    fixture->device.bio.block_size = block_size;
++    fixture->device.bio.block_count = TEST_BLOCK_COUNT;
++    if (bfs_fs_format(&fixture->device.bio, "MetadataStock", 0) != BFS_OK ||
++        bfs_fs_mount(&fixture->fs, &fixture->device.bio) != BFS_OK)
++        return false;
++    fixture->device.observed_fs = &fixture->fs;
++    fixture->device.reads = 0;
++    fixture->device.writes = 0;
++    fixture->device.syncs = 0;
++    return fixture->fs.mounted && !fixture->fs.read_only &&
++           fixture->fs.freespace.owner == &fixture->fs &&
++           fixture->fs.freespace.sb == &fixture->fs.txn.sb_new &&
++           fixture->fs.freespace.committed_sb == &fixture->fs.txn.sb;
++}
++
++static void fixture_destroy(fixture_t *fixture)
++{
++    if (fixture->fs.mounted) bfs_fs_abandon(&fixture->fs);
++    free(fixture->device.bytes);
++    fixture->device.bytes = NULL;
++}
++
++static bool exact_mounted_wiring(const bfs_fs_t *fs)
++{
++    const bfs_freespace_t *space = &fs->freespace;
++    return fs->mounted && !fs->read_only && space->owner == fs &&
++           space->sb == &fs->txn.sb_new &&
++           space->committed_sb == &fs->txn.sb &&
++           space->mounted_state == &fs->mounted &&
++           space->snapshot_state == &fs->has_snapshots &&
++           space->readonly_state == &fs->read_only &&
++           space->recovery_state == &fs->recovery_error &&
++           space->tree.bio == fs->bio && fs->txn.bio == fs->bio &&
++           space->tree.alloc == &space->iface &&
++           space->iface.ctx == space &&
++           space->tree.height == 1 && space->tree.root != BFS_BLK_NULL &&
++           space->tree.txn_id_ptr == &fs->live_txn_id &&
++           fs->live_txn_id > bfs_be64(fs->txn.sb.txn_id);
++}
++
++static void take_snapshot(const bfs_fs_t *fs, allocator_snapshot_t *snapshot)
++{
++    memset(snapshot, 0, sizeof(*snapshot));
++    snapshot->working_sb = fs->txn.sb_new;
++    snapshot->committed_sb = fs->txn.sb;
++    memcpy(snapshot->reserve, fs->freespace.reserve,
++           sizeof(snapshot->reserve)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    memcpy(snapshot->pending, fs->pending_frees, sizeof(snapshot->pending)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    snapshot->reserve_count = fs->freespace.reserve_count;
++    snapshot->pending_count = fs->pending_count;
++    snapshot->root = fs->freespace.tree.root;
++    snapshot->height = fs->freespace.tree.height;
++    snapshot->total_free = fs->freespace.total_free;
++    snapshot->roving = fs->freespace.roving;
++    snapshot->live_txn_id = fs->live_txn_id;
++    snapshot->in_alloc = fs->freespace.in_alloc;
++    snapshot->free_sink_error = fs->freespace.tree.free_sink_err;
++    snapshot->recovery_error = fs->recovery_error;
++}
++
++static bool snapshot_matches(const bfs_fs_t *fs,
++                             const allocator_snapshot_t *snapshot)
++{
++    return memcmp(&fs->txn.sb_new, &snapshot->working_sb,
++                  sizeof(snapshot->working_sb)) == 0 &&
++           memcmp(&fs->txn.sb, &snapshot->committed_sb,
++                  sizeof(snapshot->committed_sb)) == 0 &&
++           memcmp(fs->freespace.reserve, snapshot->reserve,
++                  sizeof(snapshot->reserve)) == 0 &&
++           memcmp(fs->pending_frees, snapshot->pending,
++                  sizeof(snapshot->pending)) == 0 &&
++           fs->freespace.reserve_count == snapshot->reserve_count &&
++           fs->pending_count == snapshot->pending_count &&
++           fs->freespace.tree.root == snapshot->root &&
++           fs->freespace.tree.height == snapshot->height &&
++           fs->freespace.total_free == snapshot->total_free &&
++           fs->freespace.roving == snapshot->roving &&
++           fs->freespace.in_alloc == snapshot->in_alloc &&
++           fs->freespace.tree.free_sink_err == snapshot->free_sink_error &&
++           fs->recovery_error == snapshot->recovery_error;
++}
++
++static bool block_is_free(const bfs_fs_t *fs, bfs_blk_t block)
++{
++    uint32_t search = bfs_be32(block), key = 0, length = 0;
++    if (bfs_btree_search_floor((bfs_btree_t *)&fs->freespace.tree, &search,
++                               &key, &length) != BFS_OK)
++        return false;
++    uint32_t start = bfs_be32(key), count = bfs_be32(length);
++    return block >= start && block - start < count;
++}
++
++static bool current_or_committed_root(const bfs_fs_t *fs, bfs_blk_t block)
++{
++    const bfs_superblock_t *working = &fs->txn.sb_new;
++    const bfs_superblock_t *committed = &fs->txn.sb;
++    const bfs_blk_t roots[] = {
++        fs->freespace.tree.root,
++        fs->dir_tree.tree.root,
++        fs->inode_tree.root,
++        fs->refcount.tree.root,
++        bfs_be32(working->snapshot_tree_root),
++        bfs_be32(working->extent_tree_root),
++        bfs_be32(committed->dir_tree_root),
++        bfs_be32(committed->inode_tree_root),
++        bfs_be32(committed->free_tree_root),
++        bfs_be32(committed->refcount_tree_root),
++        bfs_be32(committed->snapshot_tree_root),
++        bfs_be32(committed->extent_tree_root),
++    };
++    for (uint32_t i = 0; i < sizeof(roots) / sizeof(roots[0]); i++)
++        if (block == roots[i]) return true;
++    return block == (bfs_blk_t)(bfs_sb_backup_offset(working) /
++                                fs->bio->block_size) ||
++           block == (bfs_blk_t)(bfs_sb_backup_offset(committed) /
++                                fs->bio->block_size);
++}
++
++static bool owned_reserve_block(const bfs_fs_t *fs, bfs_blk_t block)
++{
++    uint32_t active = bfs_be32(fs->txn.sb_new.emergency_count);
++    if (block == BFS_BLK_NULL || block >= fs->bio->block_count ||
++        block < bfs_data_start_block(fs->bio->block_size) ||
++        active > BFS_EMERGENCY_POOL_SIZE || block_is_free(fs, block) ||
++        current_or_committed_root(fs, block))
++        return false;
++    for (uint32_t i = 0; i < active; i++)
++        if (block == bfs_be32(fs->txn.sb_new.emergency_pool[i]))
++            return false;
++    return true;
++}
++
++/* A drawn metadata spare must be ordinary, including no inactive historical
++ * emergency-slot provenance. Recursive reserve prefixes may retain inactive
++ * pool-origin scratch under their existing ownership contract. */
++static bool ordinary_metadata_block(const bfs_fs_t *fs, bfs_blk_t block)
++{
++    if (!owned_reserve_block(fs, block)) return false;
++    for (uint32_t i = 0; i < BFS_EMERGENCY_POOL_SIZE; i++)
++        if (block == bfs_be32(fs->txn.sb_new.emergency_pool[i])) return false;
++    return true;
++}
++
++static bool reserve_unique(const bfs_fs_t *fs)
++{
++    if (fs->freespace.reserve_count > BFS_ALLOC_RESERVE_SIZE) return false;
++    for (uint32_t i = 0; i < fs->freespace.reserve_count; i++) {
++        if (!owned_reserve_block(fs, fs->freespace.reserve[i])) return false;
++        for (uint32_t j = 0; j < i; j++)
++            if (fs->freespace.reserve[i] == fs->freespace.reserve[j])
++                return false;
++    }
++    return true;
++}
++
++typedef struct {
++    bfs_blk_t blocks[BFS_ALLOC_RESERVE_SIZE + BFS_EMERGENCY_POOL_SIZE];
++    uint32_t count;
++} allocator_ownership_t;
++
++static bool capture_allocator_ownership(const bfs_fs_t *fs,
++                                       allocator_ownership_t *ownership)
++{
++    memset(ownership, 0, sizeof(*ownership));
++    uint32_t active = bfs_be32(fs->txn.sb_new.emergency_count);
++    if (fs->freespace.reserve_count > BFS_ALLOC_RESERVE_SIZE ||
++        active > BFS_EMERGENCY_POOL_SIZE)
++        return false;
++    for (uint32_t i = 0; i < fs->freespace.reserve_count + active; i++) {
++        bfs_blk_t block = i < fs->freespace.reserve_count
++            ? fs->freespace.reserve[i]
++            : bfs_be32(fs->txn.sb_new.emergency_pool[
++                  i - fs->freespace.reserve_count]);
++        if (block == BFS_BLK_NULL) return false;
++        for (uint32_t j = 0; j < ownership->count; j++)
++            if (ownership->blocks[j] == block) return false;
++        ownership->blocks[ownership->count++] = block;
++    }
++    return true;
++}
++
++static bool same_allocator_ownership(const allocator_ownership_t *before,
++                                     const allocator_ownership_t *after)
++{
++    if (before->count != after->count) return false;
++    for (uint32_t i = 0; i < before->count; i++) {
++        bool found = false;
++        for (uint32_t j = 0; j < after->count; j++)
++            if (before->blocks[i] == after->blocks[j]) found = true;
++        if (!found) return false;
++    }
++    return true;
++}
++
++static void test_first_mounted_stock_draw_keeps_full_recursive_floor(void)
++{
++    const uint32_t sizes[] = { 1024u, 4096u };
++    for (uint32_t si = 0; si < sizeof(sizes) / sizeof(sizes[0]); si++) {
++        fixture_t fixture;
++        TEST_ASSERT(fixture_init(&fixture, sizes[si]));
++        TEST_ASSERT(exact_mounted_wiring(&fixture.fs));
++        TEST_ASSERT_EQ(fixture.fs.freespace.reserve_count, 0);
++        TEST_ASSERT_EQ(fixture.fs.freespace.tree.height, 1);
++
++        bfs_lock_write(&fixture.fs.lock);
++        uint32_t free_before = fixture.fs.freespace.total_free;
++        bfs_blk_t roving_before = fixture.fs.freespace.roving;
++        bfs_blk_t block = fixture.fs.freespace.iface.alloc(
++            &fixture.fs.freespace.iface);
++        TEST_ASSERT(block != BFS_BLK_NULL);
++        TEST_ASSERT(ordinary_metadata_block(&fixture.fs, block));
++        for (uint32_t i = 0; i < fixture.fs.freespace.reserve_count; i++)
++            TEST_ASSERT(block != fixture.fs.freespace.reserve[i]);
++        TEST_ASSERT(fixture.fs.freespace.reserve_count > HEIGHT_ONE_FLOOR);
++        TEST_ASSERT(fixture.fs.freespace.reserve_count <=
++                    HEIGHT_ONE_FLOOR + STOCK_EXTRA - 1);
++        TEST_ASSERT(fixture.fs.freespace.reserve_count >= HEIGHT_ONE_FLOOR);
++        TEST_ASSERT_EQ(fixture.fs.freespace.total_free,
++                       free_before - (fixture.fs.freespace.reserve_count + 1));
++        TEST_ASSERT_EQ(fixture.fs.freespace.roving, roving_before);
++        TEST_ASSERT(reserve_unique(&fixture.fs));
++
++        bfs_blk_t allocated[BFS_ALLOC_RESERVE_SIZE];
++        uint32_t allocated_count = 0;
++        allocated[allocated_count++] = block;
++        uint32_t writes_after_seed = fixture.device.writes;
++        bfs_blk_t root_after_seed = fixture.fs.freespace.tree.root;
++        uint32_t free_after_seed = fixture.fs.freespace.total_free;
++        bfs_blk_t roving_after_seed = fixture.fs.freespace.roving;
++        uint32_t pending_after_seed = fixture.fs.pending_count;
++        while (fixture.fs.freespace.reserve_count > HEIGHT_ONE_FLOOR) {
++            bfs_blk_t next = fixture.fs.freespace.iface.alloc(
++                &fixture.fs.freespace.iface);
++            TEST_ASSERT(next != BFS_BLK_NULL);
++            TEST_ASSERT(ordinary_metadata_block(&fixture.fs, next));
++            for (uint32_t i = 0; i < allocated_count; i++)
++                TEST_ASSERT(next != allocated[i]);
++            allocated[allocated_count++] = next;
++            TEST_ASSERT(reserve_unique(&fixture.fs));
++        }
++        TEST_ASSERT_EQ(fixture.fs.freespace.reserve_count, HEIGHT_ONE_FLOOR);
++        TEST_ASSERT_EQ(fixture.device.writes, writes_after_seed);
++        TEST_ASSERT_EQ(fixture.fs.freespace.tree.root, root_after_seed);
++        TEST_ASSERT_EQ(fixture.fs.freespace.total_free, free_after_seed);
++        TEST_ASSERT_EQ(fixture.fs.freespace.roving, roving_after_seed);
++        TEST_ASSERT_EQ(fixture.fs.pending_count, pending_after_seed);
++        TEST_ASSERT_EQ(allocated_count,
++                       1 + (HEIGHT_ONE_FLOOR + STOCK_EXTRA - 1 -
++                            HEIGHT_ONE_FLOOR));
++        bfs_lock_unlock(&fixture.fs.lock);
++        fixture_destroy(&fixture);
++    }
++}
++
++static void test_real_candidate_stash_and_reuse_is_write_free(void)
++{
++    fixture_t fixture;
++    TEST_ASSERT(fixture_init(&fixture, 1024u));
++    bfs_lock_write(&fixture.fs.lock);
++    bfs_blk_t first = fixture.fs.freespace.iface.alloc(
++        &fixture.fs.freespace.iface);
++    TEST_ASSERT(first != BFS_BLK_NULL);
++    TEST_ASSERT(fixture.fs.freespace.reserve_count > HEIGHT_ONE_FLOOR);
++    bfs_blk_t ordinary = bfs_freespace_alloc(&fixture.fs.freespace, 1);
++    TEST_ASSERT(ordinary != BFS_BLK_NULL);
++    TEST_ASSERT(!block_is_free(&fixture.fs, ordinary));
++
++    bfs_blk_t root_before = fixture.fs.freespace.tree.root;
++    uint32_t free_before = fixture.fs.freespace.total_free;
++    bfs_blk_t roving_before = fixture.fs.freespace.roving;
++    uint32_t reserve_before = fixture.fs.freespace.reserve_count;
++    uint32_t pending_before = fixture.fs.pending_count;
++    uint32_t writes_before = fixture.device.writes;
++    TEST_ASSERT_EQ(fixture.fs.freespace.iface.dealloc(
++                       &fixture.fs.freespace.iface, ordinary), BFS_OK);
++    TEST_ASSERT_EQ(fixture.fs.freespace.reserve_count, reserve_before + 1);
++    TEST_ASSERT_EQ(fixture.fs.freespace.tree.root, root_before);
++    TEST_ASSERT_EQ(fixture.fs.freespace.total_free, free_before);
++    TEST_ASSERT_EQ(fixture.fs.freespace.roving, roving_before);
++    TEST_ASSERT_EQ(fixture.fs.pending_count, pending_before);
++    TEST_ASSERT_EQ(fixture.device.writes, writes_before);
++
++    TEST_ASSERT_EQ(fixture.fs.freespace.iface.alloc(
++                       &fixture.fs.freespace.iface), ordinary);
++    TEST_ASSERT_EQ(fixture.fs.freespace.reserve_count, reserve_before);
++    TEST_ASSERT_EQ(fixture.fs.freespace.tree.root, root_before);
++    TEST_ASSERT_EQ(fixture.fs.freespace.total_free, free_before);
++    TEST_ASSERT_EQ(fixture.fs.freespace.roving, roving_before);
++    TEST_ASSERT_EQ(fixture.fs.pending_count, pending_before);
++    TEST_ASSERT_EQ(fixture.device.writes, writes_before);
++    bfs_lock_unlock(&fixture.fs.lock);
++    fixture_destroy(&fixture);
++}
++
++typedef struct {
++    bfs_blk_t starts[256];
++    uint32_t lengths[256];
++    uint32_t count;
++    bool overflow;
++} extent_list_t;
++
++static bool collect_extent(const void *key, const void *value, void *ctx)
++{
++    extent_list_t *list = (extent_list_t *)ctx;
++    if (list->count == sizeof(list->starts) / sizeof(list->starts[0])) {
++        list->overflow = true;
++        return false;
++    }
++    list->starts[list->count] = bfs_load_be32(key);
++    list->lengths[list->count] = bfs_load_be32(value);
++    list->count++;
++    return true;
++}
++
++static bool read_extents(bfs_fs_t *fs, extent_list_t *list)
++{
++    memset(list, 0, sizeof(*list));
++    return bfs_btree_scan(&fs->freespace.tree, NULL, collect_extent, list) ==
++               BFS_OK && !list->overflow;
++}
++
++static void test_refill_prefers_a_complete_lower_run_over_short_high_tail(void)
++{
++    fixture_t fixture;
++    TEST_ASSERT(fixture_init(&fixture, 1024u));
++    bfs_lock_write(&fixture.fs.lock);
++    bfs_blk_t carved[24];
++    for (uint32_t i = 0; i < sizeof(carved) / sizeof(carved[0]); i++) {
++        carved[i] = bfs_freespace_alloc(&fixture.fs.freespace, 1);
++        TEST_ASSERT(carved[i] != BFS_BLK_NULL);
++        if (i > 0) TEST_ASSERT_EQ(carved[i - 1], carved[i] + 1);
++    }
++    TEST_ASSERT_EQ(bfs_freespace_free(&fixture.fs.freespace, carved[7], 8),
++                   BFS_OK);
++    extent_list_t before;
++    TEST_ASSERT(read_extents(&fixture.fs, &before));
++    TEST_ASSERT(before.count >= 2);
++    uint32_t selected = before.count;
++    uint32_t short_tail = before.count;
++    for (uint32_t i = 0; i < before.count; i++) {
++        if (selected == before.count &&
++            before.lengths[i] >= HEIGHT_ONE_FLOOR + STOCK_EXTRA)
++            selected = i;
++        if (before.starts[i] == carved[7] && before.lengths[i] == 8)
++            short_tail = i;
++    }
++    TEST_ASSERT(selected < before.count);
++    TEST_ASSERT(short_tail < before.count);
++    TEST_ASSERT(selected != short_tail);
++    uint32_t low_start = before.starts[selected];
++    uint32_t low_length = before.lengths[selected];
++    uint32_t short_start = before.starts[short_tail];
++    uint32_t short_length = before.lengths[short_tail];
++    TEST_ASSERT(low_length >= HEIGHT_ONE_FLOOR + STOCK_EXTRA);
++    TEST_ASSERT(short_length < HEIGHT_ONE_FLOOR + STOCK_EXTRA);
++
++    uint32_t free_before = fixture.fs.freespace.total_free;
++    uint32_t reserve_before = fixture.fs.freespace.reserve_count;
++    TEST_ASSERT_EQ(reserve_before, HEIGHT_ONE_FLOOR);
++    bfs_blk_t block = fixture.fs.freespace.iface.alloc(
++        &fixture.fs.freespace.iface);
++    TEST_ASSERT(block != BFS_BLK_NULL);
++    TEST_ASSERT_EQ(fixture.fs.freespace.reserve_count,
++                   reserve_before + STOCK_EXTRA - 1);
++    TEST_ASSERT_EQ(fixture.fs.freespace.total_free,
++                   free_before - STOCK_EXTRA);
++    TEST_ASSERT(block >= low_start + low_length - STOCK_EXTRA &&
++                block < low_start + low_length);
++
++    extent_list_t after;
++    TEST_ASSERT(read_extents(&fixture.fs, &after));
++    TEST_ASSERT_EQ(after.count, before.count);
++    for (uint32_t i = 0; i < before.count; i++) {
++        TEST_ASSERT_EQ(after.starts[i], before.starts[i]);
++        TEST_ASSERT_EQ(after.lengths[i], before.lengths[i] -
++                       (i == selected ? STOCK_EXTRA : 0));
++    }
++    TEST_ASSERT_EQ(after.starts[short_tail], short_start);
++    TEST_ASSERT_EQ(after.lengths[short_tail], short_length);
++    TEST_ASSERT(reserve_unique(&fixture.fs));
++    bfs_lock_unlock(&fixture.fs.lock);
++    fixture_destroy(&fixture);
++}
++
++static bfs_blk_t first_free_block(bfs_fs_t *fs)
++{
++    extent_list_t extents;
++    if (!read_extents(fs, &extents) || extents.count == 0)
++        return BFS_BLK_NULL;
++    return extents.starts[0];
++}
++
++static bool rejected_candidate_is_unchanged(uint32_t mode)
++{
++    fixture_t fixture;
++    if (!fixture_init(&fixture, 1024u)) return false;
++    if (mode == 0 || mode == 5) {
++        uint32_t ino = 0;
++        if (bfs_fs_create_file(&fixture.fs, BFS_ROOT_INO, "root-change", 11,
++                               &ino) != BFS_OK || ino == 0 ||
++            fixture.fs.dir_tree.tree.root ==
++                bfs_be32(fixture.fs.txn.sb.dir_tree_root)) {
++            fixture_destroy(&fixture);
++            return false;
++        }
++    }
++    bfs_lock_write(&fixture.fs.lock);
++    bfs_blk_t seed = fixture.fs.freespace.iface.alloc(
++        &fixture.fs.freespace.iface);
++    if (seed == BFS_BLK_NULL ||
++        fixture.fs.freespace.reserve_count <= HEIGHT_ONE_FLOOR) {
++        bfs_lock_unlock(&fixture.fs.lock);
++        fixture_destroy(&fixture);
++        return false;
++    }
++    uint32_t candidate_index = fixture.fs.freespace.reserve_count - 1;
++    bfs_blk_t invalid;
++    if (mode == 0) invalid = fixture.fs.dir_tree.tree.root;
++    else if (mode == 1)
++        invalid = (bfs_blk_t)(bfs_sb_backup_offset(&fixture.fs.txn.sb_new) /
++                              fixture.fs.bio->block_size);
++    else if (mode == 2) invalid = first_free_block(&fixture.fs);
++    else if (mode == 3)
++        invalid = bfs_be32(fixture.fs.txn.sb_new.emergency_pool[0]);
++    else if (mode == 4)
++        invalid = fixture.fs.freespace.reserve[candidate_index - 1];
++    else invalid = bfs_be32(fixture.fs.txn.sb.dir_tree_root);
++    if (invalid == BFS_BLK_NULL) {
++        bfs_lock_unlock(&fixture.fs.lock);
++        fixture_destroy(&fixture);
++        return false;
++    }
++    fixture.fs.freespace.reserve[candidate_index] = invalid;
++    allocator_snapshot_t snapshot;
++    take_snapshot(&fixture.fs, &snapshot);
++    uint32_t writes_before = fixture.device.writes;
++    bfs_blk_t result = fixture.fs.freespace.iface.alloc(
++        &fixture.fs.freespace.iface);
++    bfs_err_t expected = (mode == 2 || mode == 3 || mode == 4)
++        ? BFS_ERR_EXISTS : BFS_ERR_CORRUPT;
++    bool ok = result == BFS_BLK_NULL &&
++              fixture.fs.freespace.iface.error(&fixture.fs.freespace.iface) ==
++                  expected && fixture.device.writes == writes_before &&
++              snapshot_matches(&fixture.fs, &snapshot);
++    bfs_lock_unlock(&fixture.fs.lock);
++    fixture_destroy(&fixture);
++    return ok;
++}
++
++static void test_live_root_backup_and_free_overlaps_fail_before_writes(void)
++{
++    for (uint32_t mode = 0; mode < 6; mode++)
++        TEST_ASSERT(rejected_candidate_is_unchanged(mode));
++}
++
++static bool wrapped_hash_collision_duplicate_is_unchanged(void)
++{
++    fixture_t fixture;
++    if (!fixture_init(&fixture, 1024u)) return false;
++    bfs_lock_write(&fixture.fs.lock);
++    bfs_blk_t stock = fixture.fs.freespace.iface.alloc(
++        &fixture.fs.freespace.iface);
++    if (stock == BFS_BLK_NULL ||
++        fixture.fs.freespace.reserve_count < HEIGHT_ONE_FLOOR + 3) {
++        bfs_lock_unlock(&fixture.fs.lock);
++        fixture_destroy(&fixture);
++        return false;
++    }
++
++    /* Own a real contiguous ordinary run, then arrange a 255-bucket cluster:
++     * y inserts at slot 255, x wraps to slot 0, and duplicate x must be found
++     * after probing across the table boundary. */
++    bfs_blk_t run = bfs_freespace_alloc(&fixture.fs.freespace, 512);
++    if (run == BFS_BLK_NULL) {
++        bfs_lock_unlock(&fixture.fs.lock);
++        fixture_destroy(&fixture);
++        return false;
++    }
++    uint32_t offset = (255u - (run % 256u)) % 256u;
++    bfs_blk_t x = run + offset;
++    bfs_blk_t y = x + 256u;
++    if (y >= run + 512u || !ordinary_metadata_block(&fixture.fs, x) ||
++        !ordinary_metadata_block(&fixture.fs, y)) {
++        bfs_lock_unlock(&fixture.fs.lock);
++        fixture_destroy(&fixture);
++        return false;
++    }
++    uint32_t first = HEIGHT_ONE_FLOOR;
++    fixture.fs.freespace.reserve[first] = y;
++    fixture.fs.freespace.reserve[first + 1] = x;
++    fixture.fs.freespace.reserve[first + 2] = x;
++    allocator_snapshot_t snapshot;
++    take_snapshot(&fixture.fs, &snapshot);
++    uint32_t writes_before = fixture.device.writes;
++    bfs_blk_t result = fixture.fs.freespace.iface.alloc(
++        &fixture.fs.freespace.iface);
++    bool ok = result == BFS_BLK_NULL &&
++        fixture.fs.freespace.iface.error(&fixture.fs.freespace.iface) ==
++            BFS_ERR_EXISTS && fixture.device.writes == writes_before &&
++        snapshot_matches(&fixture.fs, &snapshot);
++    bfs_lock_unlock(&fixture.fs.lock);
++    fixture_destroy(&fixture);
++    return ok;
++}
++
++static void test_stock_hash_duplicate_detection_wraps(void)
++{
++    TEST_ASSERT(wrapped_hash_collision_duplicate_is_unchanged());
++}
++
++static bool failed_refill_propagates(bfs_err_t injected_error,
++                                     bool partial_write)
++{
++    fixture_t fixture;
++    if (!fixture_init(&fixture, 1024u)) return false;
++    bfs_lock_write(&fixture.fs.lock);
++    allocator_snapshot_t before;
++    take_snapshot(&fixture.fs, &before);
++    allocator_ownership_t ownership_before;
++    if (partial_write &&
++        !capture_allocator_ownership(&fixture.fs, &ownership_before)) {
++        bfs_lock_unlock(&fixture.fs.lock);
++        fixture_destroy(&fixture);
++        return false;
++    }
++    fixture.device.fail_read_at = fixture.device.reads + 1;
++    fixture.device.read_error = injected_error;
++    if (partial_write) {
++        fixture.device.fail_read_at = 0;
++        fixture.device.fail_write_at = fixture.device.writes + 1;
++        fixture.device.write_error = injected_error;
++        fixture.device.partial_write = true;
++    }
++    uint32_t writes_before = fixture.device.writes;
++    bfs_blk_t result = fixture.fs.freespace.iface.alloc(
++        &fixture.fs.freespace.iface);
++    bfs_err_t last_error = fixture.fs.freespace.iface.error(
++        &fixture.fs.freespace.iface);
++    bool ok = result == BFS_BLK_NULL && last_error == injected_error;
++    if (partial_write) {
++        ok = ok && fixture.device.writes == writes_before + 1 &&
++             fixture.fs.freespace.tree.root == before.root &&
++             fixture.fs.freespace.total_free == before.total_free &&
++             fixture.fs.pending_count == before.pending_count &&
++             memcmp(fixture.fs.pending_frees, before.pending,
++                    sizeof(before.pending)) == 0 &&
++             fixture.fs.live_txn_id == before.live_txn_id &&
++             fixture.fs.txn.sb_new.txn_id == before.working_sb.txn_id &&
++             fixture.fs.txn.sb.txn_id == before.committed_sb.txn_id &&
++             fixture.fs.txn.sb_new.dir_tree_root ==
++                 before.working_sb.dir_tree_root &&
++             fixture.fs.txn.sb_new.inode_tree_root ==
++                 before.working_sb.inode_tree_root &&
++             fixture.fs.txn.sb_new.free_tree_root ==
++                 before.working_sb.free_tree_root &&
++             fixture.fs.txn.sb_new.refcount_tree_root ==
++                 before.working_sb.refcount_tree_root &&
++             fixture.fs.txn.sb_new.snapshot_tree_root ==
++                 before.working_sb.snapshot_tree_root &&
++             fixture.fs.txn.sb_new.extent_tree_root ==
++                 before.working_sb.extent_tree_root &&
++             fixture.fs.txn.sb.dir_tree_root ==
++                 before.committed_sb.dir_tree_root &&
++             fixture.fs.txn.sb.inode_tree_root ==
++                 before.committed_sb.inode_tree_root &&
++             fixture.fs.txn.sb.free_tree_root ==
++                 before.committed_sb.free_tree_root &&
++             fixture.fs.txn.sb.refcount_tree_root ==
++                 before.committed_sb.refcount_tree_root &&
++             fixture.fs.txn.sb.snapshot_tree_root ==
++                 before.committed_sb.snapshot_tree_root &&
++             fixture.fs.txn.sb.extent_tree_root ==
++                 before.committed_sb.extent_tree_root;
++        allocator_ownership_t ownership_after;
++        ok = ok && capture_allocator_ownership(&fixture.fs,
++                                                &ownership_after) &&
++             same_allocator_ownership(&ownership_before, &ownership_after);
++    } else {
++        ok = ok && fixture.device.writes == writes_before &&
++             snapshot_matches(&fixture.fs, &before);
++    }
++    bfs_lock_unlock(&fixture.fs.lock);
++    fixture_destroy(&fixture);
++    return ok;
++}
++
++static void test_refill_read_and_partial_write_errors_never_fall_back(void)
++{
++    TEST_ASSERT(failed_refill_propagates(BFS_ERR_UNSUPPORTED, false));
++    TEST_ASSERT(failed_refill_propagates(BFS_ERR_IO, true));
++}
++
++static bool first_request_uses_legacy_floor_when_ineligible(bool snapshots)
++{
++    fixture_t fixture;
++    if (!fixture_init(&fixture, 1024u)) return false;
++    if (snapshots) {
++        fixture.fs.options |= BFS_OPT_SNAPSHOTS;
++        fixture.fs.txn.sb_new.options = bfs_be32(
++            bfs_be32(fixture.fs.txn.sb_new.options) | BFS_OPT_SNAPSHOTS);
++    } else {
++        fixture.fs.has_snapshots = true;
++    }
++    bfs_lock_write(&fixture.fs.lock);
++    uint32_t free_before = fixture.fs.freespace.total_free;
++    bfs_blk_t block = fixture.fs.freespace.iface.alloc(
++        &fixture.fs.freespace.iface);
++    bool ok = block != BFS_BLK_NULL &&
++              fixture.fs.freespace.reserve_count == HEIGHT_ONE_FLOOR &&
++              fixture.fs.freespace.total_free == free_before -
++                  (HEIGHT_ONE_FLOOR + 1);
++    bfs_lock_unlock(&fixture.fs.lock);
++    fixture_destroy(&fixture);
++    return ok;
++}
++
++static void test_snapshot_transitions_decline_expanded_stock(void)
++{
++    TEST_ASSERT(first_request_uses_legacy_floor_when_ineligible(false));
++    TEST_ASSERT(first_request_uses_legacy_floor_when_ineligible(true));
++}
++
++static void test_commit_settlement_guard_is_restored_on_success_and_error(void)
++{
++    fixture_t fixture;
++    TEST_ASSERT(fixture_init(&fixture, 1024u));
++    uint32_t ino = 0;
++    TEST_ASSERT_EQ(bfs_fs_create_file(&fixture.fs, BFS_ROOT_INO, "one", 3,
++                                      &ino), BFS_OK);
++    TEST_ASSERT(ino != 0);
++
++    fixture.device.writes = 0;
++    fixture.device.syncs = 0;
++    fixture.device.guarded_writes = 0;
++    fixture.device.unguarded_writes = 0;
++    fixture.device.guarded_syncs = 0;
++    fixture.device.unguarded_syncs = 0;
++    fixture.device.track_settlement = true;
++    TEST_ASSERT_EQ(bfs_fs_sync(&fixture.fs), BFS_OK);
++    TEST_ASSERT(!fixture.fs.freespace.settlement_active);
++    TEST_ASSERT(fixture.device.writes > 0 && fixture.device.syncs > 0);
++    TEST_ASSERT_EQ(fixture.device.guarded_writes, fixture.device.writes);
++    TEST_ASSERT_EQ(fixture.device.unguarded_writes, 0);
++    TEST_ASSERT_EQ(fixture.device.guarded_syncs, fixture.device.syncs);
++    TEST_ASSERT_EQ(fixture.device.unguarded_syncs, 0);
++
++    TEST_ASSERT_EQ(bfs_fs_create_file(&fixture.fs, BFS_ROOT_INO, "two", 3,
++                                      &ino), BFS_OK);
++    fixture.device.writes = 0;
++    fixture.device.syncs = 0;
++    fixture.device.guarded_writes = 0;
++    fixture.device.unguarded_writes = 0;
++    fixture.device.guarded_syncs = 0;
++    fixture.device.unguarded_syncs = 0;
++    fixture.device.fail_sync_at = 1;
++    fixture.device.sync_error = BFS_ERR_IO;
++    TEST_ASSERT_EQ(bfs_fs_sync(&fixture.fs), BFS_ERR_IO);
++    TEST_ASSERT(!fixture.fs.freespace.settlement_active);
++    TEST_ASSERT(fixture.device.guarded_syncs > 0);
++    TEST_ASSERT_EQ(fixture.device.guarded_writes, fixture.device.writes);
++    TEST_ASSERT_EQ(fixture.device.unguarded_writes, 0);
++    TEST_ASSERT_EQ(fixture.device.unguarded_syncs, 0);
++    TEST_ASSERT_EQ(fixture.fs.recovery_error, BFS_ERR_IO);
++    fixture.device.track_settlement = false;
++    fixture_destroy(&fixture);
++}
++
++TEST_SUITE_BEGIN("Mounted metadata stock")
++    TEST_RUN(test_first_mounted_stock_draw_keeps_full_recursive_floor);
++    TEST_RUN(test_real_candidate_stash_and_reuse_is_write_free);
++    TEST_RUN(test_refill_prefers_a_complete_lower_run_over_short_high_tail);
++    TEST_RUN(test_live_root_backup_and_free_overlaps_fail_before_writes);
++    TEST_RUN(test_stock_hash_duplicate_detection_wraps);
++    TEST_RUN(test_refill_read_and_partial_write_errors_never_fall_back);
++    TEST_RUN(test_snapshot_transitions_decline_expanded_stock);
++    TEST_RUN(test_commit_settlement_guard_is_restored_on_success_and_error);
++TEST_SUITE_END()

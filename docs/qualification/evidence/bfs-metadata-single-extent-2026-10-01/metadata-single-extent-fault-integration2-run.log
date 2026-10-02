@@ -1,0 +1,12 @@
+=== Metadata Withdrawal Batch Faults ===
+  test_successful_first_request_batch_with_baseline  OK
+  test_fragmented_first_request_uses_one_cow_write   OK
+  test_full_initial_refill_write_failure_preserves_root OK
+  test_prefix_initial_refill_write_failure_preserves_root OK
+  test_no_fit_ordinary_fallback_control              OK
+  test_full_second_ordinary_tail_write_failure_after_progress OK
+  test_prefix_second_ordinary_tail_write_failure_after_progress OK
+  test_owner_capacity_contradiction_after_successful_scratch_write OK
+  test_pending_headroom_declines_without_refill_write OK
+
+9 passed, 0 failed

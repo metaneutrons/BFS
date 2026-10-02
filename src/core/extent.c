@@ -11,6 +11,9 @@
 
 #include "bfs_extent.h"
 #include <string.h>
+#ifdef BFS_PERF_PROBE
+#include "../amiga/perf_probe.h"
+#endif
 
 /* ── B+tree ops ────────────────────────────────────────────── */
 
@@ -18,6 +21,7 @@ static const bfs_btree_ops_t extent_ops = {
     .key_compare = bfs_cmp_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_extent_val_t),
+    .cache_key_order = true,
 };
 
 static bool extent_range_valid(const bfs_extent_tree_t *et, bfs_blk_t disk,
@@ -33,9 +37,7 @@ static bool extent_range_valid(const bfs_extent_tree_t *et, bfs_blk_t disk,
 
     bfs_blk_t end = disk + len;
     if (et->fs->sb) {
-        uint64_t backup_offset =
-            ((uint64_t)bfs_be32(et->fs->sb->sb_backup_offset_hi) << 32) |
-            bfs_be32(et->fs->sb->sb_backup_offset_lo);
+        uint64_t backup_offset = bfs_sb_backup_offset(et->fs->sb);
         bfs_blk_t backup = (bfs_blk_t)(backup_offset / bio->block_size);
         if (backup >= disk && backup < end)
             return false;
@@ -149,9 +151,25 @@ static bfs_err_t extent_insert_raw(bfs_extent_tree_t *et, uint32_t file_block,
 bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
                                bfs_blk_t disk_block, uint32_t crc)
 {
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.extent_map_calls++;
+#endif
     if (!et || !extent_range_valid(et, disk_block, 1))
         return BFS_ERR_INVAL;
     return extent_insert_raw(et, file_block, disk_block, 1, crc);
+}
+
+bfs_err_t bfs_extent_map_run(bfs_extent_tree_t *et, uint32_t file_block,
+                             bfs_blk_t disk_block, uint32_t count)
+{
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.extent_map_calls++;
+#endif
+    if (!et || et->data_checksums || count == 0 ||
+        count - 1 > UINT32_MAX - file_block ||
+        !extent_range_valid(et, disk_block, count))
+        return BFS_ERR_INVAL;
+    return extent_insert_raw(et, file_block, disk_block, count, 0);
 }
 
 static bfs_err_t extent_rollback_remap(bfs_extent_tree_t *et, uint32_t file_block,

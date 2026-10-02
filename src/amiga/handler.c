@@ -35,6 +35,9 @@
 #include "bfs_diagnostics.h"
 #include "amiga_bio.h"
 #include "snapshot_mount.h"
+#ifdef BFS_PERF_PROBE
+#include "perf_probe.h"
+#endif
 
 /* ── Packet number constants ────────────────────────────────── */
 /* Only define if not already provided by NDK headers */
@@ -579,6 +582,15 @@ static void ReportFormatError(struct bfs_handler *h, struct MsgPort *reply_port)
     CloseLibrary((struct Library *)IntuitionBase);
 }
 
+static bfs_err_t InitNodeCache(struct bfs_handler *h, amiga_bio_t *ab)
+{
+    bfs_err_t err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
+                                   h->dosenvec->de_NumBuffers);
+    if (err == BFS_OK)
+        bfs_cache_set_node_write_retention(&h->cache, true);
+    return err;
+}
+
 static bool TryRemountMedia(struct bfs_handler *h)
 {
     /* A snapshot root is immutable and is selected by the startup record.
@@ -596,8 +608,7 @@ static bool TryRemountMedia(struct bfs_handler *h)
     SetMountError(h, err, &sb);
     if (err != BFS_OK) return false;
 
-    err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
-                         h->dosenvec->de_NumBuffers);
+    err = InitNodeCache(h, ab);
     h->mount_error = err;
     if (err != BFS_OK) return false;
 
@@ -957,6 +968,16 @@ static LONG CheckProtection(struct bfs_handler *h, uint32_t ino, uint32_t mask)
     return 0;
 }
 
+static void SampleInodeStamp(void *context, bfs_inode_stamp_t *stamp)
+{
+    (void)context;
+    struct DateStamp ds;
+    DateStamp(&ds);
+    stamp->days = (uint16_t)ds.ds_Days;
+    stamp->mins = (uint16_t)ds.ds_Minute;
+    stamp->ticks = (uint16_t)ds.ds_Tick;
+}
+
 static LONG MarkFileChanged(struct bfs_handler *h, uint32_t ino)
 {
     h->dirty = true;
@@ -964,11 +985,9 @@ static LONG MarkFileChanged(struct bfs_handler *h, uint32_t ino)
     bfs_inode_t inode;
     bfs_err_t err = bfs_inode_read(&h->fs.inode_tree, ino, &inode);
     if (err != BFS_OK) return Pfs4ToDosError(err);
-    struct DateStamp ds;
-    DateStamp(&ds);
-    inode.modify_days = bfs_be16((uint16_t)ds.ds_Days);
-    inode.modify_mins = bfs_be16((uint16_t)ds.ds_Minute);
-    inode.modify_ticks = bfs_be16((uint16_t)ds.ds_Tick);
+    bfs_inode_stamp_t stamp;
+    SampleInodeStamp(NULL, &stamp);
+    bfs_inode_apply_stamp(&inode, &stamp, false);
     inode.protection = bfs_be32(bfs_be32(inode.protection) & ~FIBF_ARCHIVE);
     return Pfs4ToDosError(bfs_inode_write(&h->fs.inode_tree, ino, &inode));
 }
@@ -1257,7 +1276,11 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     return true;
 }
 
+#ifdef BFS_PERF_PROBE
+static void HandlePacketWork(struct DosPacket *pkt, struct bfs_handler *h)
+#else
 static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+#endif
 {
     LONG res1 = (pkt->dp_Type == ACTION_READ || pkt->dp_Type == ACTION_WRITE ||
                  pkt->dp_Type == ACTION_SEEK || pkt->dp_Type == ACTION_SET_FILE_SIZE ||
@@ -1298,6 +1321,34 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     }
 
     switch (pkt->dp_Type) {
+
+#ifdef BFS_PERF_PROBE
+    case BFS_ACTION_PERF_RESET:
+        bfs_perf_probe_reset();
+        res1 = DOSTRUE;
+        res2 = 0;
+        break;
+
+    case BFS_ACTION_PERF_READ: {
+        bfs_perf_probe_snapshot_t *target =
+            (bfs_perf_probe_snapshot_t *)pkt->dp_Arg1;
+        if (!target) {
+            res2 = ERROR_REQUIRED_ARG_MISSING;
+            break;
+        }
+        if (pkt->dp_Arg2 != (LONG)sizeof(*target)) {
+            res2 = ERROR_BAD_NUMBER;
+            break;
+        }
+        bfs_perf_probe_snapshot_t snapshot = bfs_perf_probe_counters;
+        snapshot.version = BFS_PERF_PROBE_VERSION;
+        snapshot.size = (ULONG)sizeof(snapshot);
+        *target = snapshot;
+        res1 = DOSTRUE;
+        res2 = 0;
+        break;
+    }
+#endif
 
     case BFS_ACTION_SNAPSHOT_CAPABILITY: {
         bfs_snapshot_capability_t *capability =
@@ -1479,33 +1530,13 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                 if (err != BFS_OK) {
                     FreeVec(open_file); res2 = Pfs4ToDosError(err); break;
                 }
-                err = bfs_fs_create_file(&h->fs, parent_ino, namebuf, len, &ino);
+                err = bfs_fs_create_file_with_stamp(&h->fs, parent_ino, namebuf,
+                                                    len, SampleInodeStamp,
+                                                    NULL, &ino);
                 if (err != BFS_OK) {
                     FreeVec(open_file); res2 = Pfs4ToDosError(err); break;
                 }
                 type = BFS_INODE_FILE;
-                /* Set creation/modification timestamp */
-                { struct DateStamp ds; DateStamp(&ds);
-                  bfs_inode_t ni;
-                  err = bfs_inode_read(&h->fs.inode_tree, ino, &ni);
-                  if (err == BFS_OK) {
-                      ni.create_days = bfs_be16((uint16_t)ds.ds_Days);
-                      ni.create_mins = bfs_be16((uint16_t)ds.ds_Minute);
-                      ni.create_ticks = bfs_be16((uint16_t)ds.ds_Tick);
-                      ni.modify_days = ni.create_days;
-                      ni.modify_mins = ni.create_mins;
-                      ni.modify_ticks = ni.create_ticks;
-                      err = bfs_inode_write(&h->fs.inode_tree, ino, &ni);
-                  }
-                }
-                if (err != BFS_OK) {
-                    bfs_err_t cleanup_err = bfs_fs_delete_file(&h->fs, parent_ino, namebuf, len);
-                    if (cleanup_err != BFS_OK) err = cleanup_err;
-                    FreeVec(open_file);
-                    h->dirty = true;
-                    res2 = Pfs4ToDosError(err);
-                    break;
-                }
                 h->dirty = true;
                 h->notify_pending = true;
             } else {
@@ -1608,13 +1639,18 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         res2 = CheckProtection(h, f->inode_nr, FIBF_WRITE);
         if (res2) break;
-        int32_t n = bfs_file_write(f, buf, (uint32_t)len);
+        int32_t n = bfs_file_write_with_stamp(f, buf, (uint32_t)len,
+                                             SampleInodeStamp, NULL, FIBF_ARCHIVE);
         if (n < 0) {
             res1 = -1;
             res2 = Pfs4ToDosError((bfs_err_t)n);
         } else {
-            res2 = n > 0 ? MarkFileChanged(h, f->inode_nr) : 0;
-            res1 = res2 ? -1 : n;
+            if (n > 0) {
+                h->dirty = true;
+                h->notify_pending = true;
+            }
+            res2 = 0;
+            res1 = n;
         }
         break;
     }
@@ -2483,8 +2519,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         ab->base.block_size = proposed.base.block_size;
         ab->base.block_count = proposed.base.block_count;
         bfs_cache_destroy(&h->cache);
-        err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
-                             h->dosenvec->de_NumBuffers);
+        err = InitNodeCache(h, ab);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
         err = bfs_fs_format(&h->cache.bio, volname, 0);
@@ -2729,6 +2764,47 @@ reply:
     ReplyPacket(pkt, h);
 }
 
+#ifdef BFS_PERF_PROBE
+static enum bfs_perf_cpu_scope PacketCpuScope(LONG packet_type)
+{
+    switch (packet_type) {
+    case ACTION_FINDINPUT:
+    case ACTION_FINDOUTPUT:
+    case ACTION_FINDUPDATE:
+        return BFS_PERF_CPU_SCOPE_PACKET_OPEN;
+    case ACTION_READ:
+        return BFS_PERF_CPU_SCOPE_PACKET_READ;
+    case ACTION_WRITE:
+        return BFS_PERF_CPU_SCOPE_PACKET_WRITE;
+    case ACTION_END:
+        return BFS_PERF_CPU_SCOPE_PACKET_END;
+    case ACTION_DELETE_OBJECT:
+        return BFS_PERF_CPU_SCOPE_PACKET_DELETE;
+    case ACTION_FLUSH:
+        return BFS_PERF_CPU_SCOPE_PACKET_FLUSH;
+    default:
+        return BFS_PERF_CPU_SCOPE_PACKET_OTHER;
+    }
+}
+
+static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+{
+    if (pkt->dp_Type == BFS_ACTION_PERF_RESET ||
+        pkt->dp_Type == BFS_ACTION_PERF_READ) {
+        HandlePacketWork(pkt, h);
+        return;
+    }
+
+    enum bfs_perf_cpu_scope packet_scope = PacketCpuScope(pkt->dp_Type);
+    struct EClockVal started = {0};
+    bfs_perf_probe_begin(&started);
+    HandlePacketWork(pkt, h);
+    uint64_t ticks = bfs_perf_probe_elapsed(&started);
+    bfs_perf_probe_cpu_scope_record(BFS_PERF_CPU_SCOPE_PACKET, ticks);
+    bfs_perf_probe_cpu_scope_record(packet_scope, ticks);
+}
+#endif
+
 /* ── Main handler entry ────────────────────────────────────── */
 
 void EntryPointNoStack(void)
@@ -2774,6 +2850,9 @@ void EntryPoint(void)
     }
 
     h->SysBase = SysBase;
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_fs = &h->fs;
+#endif
     DOSBase = (struct DosLibrary *)OpenLibrary("dos.library", 37);
     h->DOSBase = DOSBase;
     if (!DOSBase) {
@@ -2809,6 +2888,9 @@ void EntryPoint(void)
         pkt->dp_Res2 = ERROR_NO_FREE_STORE;
         goto fail_startup;
     }
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_init(h->devport);
+#endif
     h->request = (struct IOExtTD *)CreateIORequest(h->devport, sizeof(struct IOExtTD));
     if (!h->request) {
         pkt->dp_Res1 = DOSFALSE;
@@ -2848,8 +2930,7 @@ void EntryPoint(void)
     bfs_superblock_t sb;
     bfs_err_t mount_err = bfs_amiga_bio_probe_superblock((amiga_bio_t *)(h + 1), &sb);
     if (mount_err == BFS_OK) {
-        mount_err = bfs_cache_init(&h->cache, (bfs_bio_t *)(h + 1),
-                                   h->dosenvec->de_NumBuffers);
+        mount_err = InitNodeCache(h, (amiga_bio_t *)(h + 1));
         if (mount_err == BFS_OK) {
             mount_err = snapshot_startup ? bfs_fs_mount_readonly(&h->fs, &h->cache.bio)
                                          : bfs_fs_mount(&h->fs, &h->cache.bio);
@@ -2987,6 +3068,9 @@ void EntryPoint(void)
         RemoveVolumeNode(h);
     }
     bfs_cache_destroy(&h->cache);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_close();
+#endif
     CloseDevice((struct IORequest *)h->request);
     DeleteIORequest((struct IORequest *)h->request);
     DeleteMsgPort(h->devport);
@@ -3007,6 +3091,9 @@ fail_startup:
         else RemoveVolumeNode(h);
         if (h->fs.mounted) bfs_fs_abandon(&h->fs);
         bfs_cache_destroy(&h->cache);
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_close();
+#endif
         if (device_open) CloseDevice((struct IORequest *)h->request);
         if (h->request) DeleteIORequest((struct IORequest *)h->request);
         if (h->devport) DeleteMsgPort(h->devport);

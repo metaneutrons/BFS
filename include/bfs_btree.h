@@ -29,6 +29,9 @@
  * later replaced by the free-space-tree allocator. */
 typedef struct bfs_allocator {
     bfs_blk_t (*alloc)(struct bfs_allocator *a);
+    /* Return caller-owned, immediately reclaimable storage, including unwritten
+     * or partially written abort scratch. Older/shared nodes must be deferred
+     * by their owner instead; the allocator cannot infer ownership from bytes. */
     bfs_err_t (*dealloc)(struct bfs_allocator *a, bfs_blk_t blk);
     /* Explains a BFS_BLK_NULL allocation result. Optional allocators default to
      * BFS_ERR_NOSPC when this callback is absent. */
@@ -51,6 +54,11 @@ typedef struct bfs_btree_ops {
 
     /* Fixed size of a value in bytes (leaf only) */
     uint32_t val_size;
+
+    /* Opt in only when key_compare is pure and defines a stable order for bytes.
+     * Invalidate the BIO cache before changing comparator semantics. Default
+     * false retains full structural validation for arbitrary comparators. */
+    bool cache_key_order;
 } bfs_btree_ops_t;
 
 /* ── Engine limits ─────────────────────────────────────────── */
@@ -131,6 +139,23 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out);
 /* Insert a key/value pair. Returns BFS_OK, BFS_ERR_EXISTS, or error.
  * Updates tree->root if the root splits. */
 bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val);
+
+/* Replace a height-one tree with a complete, sorted leaf in one COW step. */
+bfs_err_t bfs_btree_replace_root_leaf(bfs_btree_t *tree, const void *keys,
+                                      const void *vals, uint32_t count);
+
+/* Read the transaction id of a valid height-one root leaf. */
+bfs_err_t bfs_btree_root_leaf_txn_id(bfs_btree_t *tree, uint64_t *txn_id_out);
+
+/* Replace the expected current root leaf without reclaiming it. On success,
+ * ownership of the old root block passes to the caller. */
+bfs_err_t bfs_btree_replace_owned_root_leaf(bfs_btree_t *tree,
+                                            bfs_blk_t expected_root,
+                                            const void *keys, const void *vals,
+                                            uint32_t count);
+
+/* Maximum entries that fit in one leaf, or zero for an invalid tree. */
+uint32_t bfs_btree_leaf_capacity(const bfs_btree_t *tree);
 
 /* Delete a key. Returns BFS_OK or BFS_ERR_NOTFOUND.
  * (Implemented in Task 5) */

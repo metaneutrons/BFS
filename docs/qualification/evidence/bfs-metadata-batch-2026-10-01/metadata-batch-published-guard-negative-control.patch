@@ -1,0 +1,14 @@
+--- a/src/core/alloc.c
++++ b/src/core/alloc.c
+@@ -1631,11 +1631,6 @@
+     bfs_err_t err = bfs_btree_root_leaf_txn_id(&fs->tree, &root_txn);
+     if (err != BFS_OK) return err;
+     if (root_txn > live) return BFS_ERR_CORRUPT;
+-    /* A forged live tag cannot authorize retirement of a published block.
+-     * Refill would otherwise mask the tag and recycle that block in_alloc. */
+-    if (root_txn == live &&
+-        seal_block_is_sb_root(&owner->txn.sb, fs->tree.root))
+-        return BFS_ERR_CORRUPT;
+     bool root_is_current = root_txn == live;
+ 
+     seal_geometry_t geometry = seal_geometry(owner);

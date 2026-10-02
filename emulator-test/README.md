@@ -57,22 +57,77 @@ emulator-test/.assets/A1200.47.102.rom
 emulator-test/.assets/C/
 emulator-test/.assets/L/
 emulator-test/.assets/Libs/
-emulator-test/.cache/DiskSpeed
 emulator-test/.cache/pfs3aio
 ```
 
-The locations can be overridden with `BFS_AMIGA_ASSETS_DIR`, `BFS_ROM_FILE`, `BFS_DISKSPEED`, and
+The locations can be overridden with `BFS_AMIGA_ASSETS_DIR`, `BFS_ROM_FILE`, and
 `BFS_PFS3_HANDLER`.
 
 ```bash
-make amiga build/host/bfs
+make amiga tools amiga-fs-compare-bench
+export BFS_BENCH_RUN_DIR="$(pwd)/build/benchmark/run-1"
+export BFS_BENCH_ORDER=bfs-first
 ./emulator-test/build-bench-image.sh
-./emulator-test/run-bench.sh
+./emulator-test/run-bench.sh 600
 ```
 
-DiskSpeed, AmigaOS ROMs, and Workbench files must come from lawfully obtained local copies. Any
+PFS3, AmigaOS ROMs, and Workbench files must come from lawfully obtained local copies. Any
 redistributable dependency added to CI must be downloaded by immutable identity and verified
 before execution.
+
+Use `pfs3-first` for `BFS_BENCH_ORDER` in a second, fresh run directory to expose order effects.
+Each run keeps its HDFs, FS-UAE configuration, format output, machine information, checked
+workload outputs, and completion marker below `BFS_BENCH_RUN_DIR`; the scripts refuse to overwrite an
+existing result. Both HDFs have equal 255.5 MiB partitions on the same virtual device type.
+The workload measures 40 × 1 KiB file creation, 400 locks, 40 checked small reads,
+8 MiB sequential write/read with byte verification, and 40 deletes. It times each phase
+using `timer.device`; write phases include `Flush` and `Close`. The run is valid only when
+both volumes were mounted, both complete TSVs passed verification, and the guest wrote its
+completion marker. Run `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR"` to
+recheck retained outputs. The result is an emulated AmigaOS comparison, not a
+native-hardware throughput claim.
+
+For diagnostic phase profiling, build `make amiga-fs-profile-bench`, set
+`BFS_BENCH_MODE=profile`, and use a new `BFS_BENCH_RUN_DIR` with the same builder and
+runner. This measures fresh-file and same-file overwrite calls separately from
+`Flush` and `Close`, then verifies an 8 MiB read. The output is
+`bfs.profile.tsv` and `pfs3.profile.tsv`; validate it with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" profile`. These numbers
+separate AmigaDOS API phases, not internal block-I/O or crash durability.
+
+For BFS-only internal call counts, build `make amiga-perf-probe-handler
+amiga-fs-profile-bench`, set `BFS_BENCH_MODE=internal` and
+`BFS_BENCH_HANDLER_FILE="$(pwd)/build/amiga/bfshandler-probe"`, and choose another
+fresh run directory. The debug handler exposes private reset/read packets and counts
+underlying device reads, writes, updates, free-space allocations and extent maps.
+The normal `make amiga` handler is unaffected; never ship the debug handler as a
+release artifact. Validate retained output with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" internal`.
+
+For paired API timings plus BFS-only I/O and timer counters, build
+`make amiga-perf-probe-handler amiga-fs-profile-bench`, set
+`BFS_BENCH_MODE=deep`, and use another fresh run directory. The builder selects
+`build/amiga/bfshandler-probe` for BFS by default; set `BFS_BENCH_HANDLER_FILE` to
+override it. Deep mode measures fresh write, same-file overwrite, and checked read on
+both BFS and PFS3. It reports device and data I/O counts, metadata and transaction
+counts, free-space and extent-map counts, elapsed timer ticks, and clock frequency for
+BFS only. Validate retained output with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" deep`.
+
+For the six-phase BFS/PFS3 comparison with per-phase BFS probe counters, build
+`make amiga-perf-probe-handler amiga-fs-compare-bench`, set
+`BFS_BENCH_MODE=deep-compare`, and use another fresh run directory. The builder selects
+`build/amiga/bfshandler-probe` for BFS by default; set `BFS_BENCH_HANDLER_FILE` to
+override it. Both filesystems run the existing checked compare workload; BFS also
+reports I/O counts and ticks after each phase. Validate retained output with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" deep-compare`.
+The v4 schema also attributes B-tree writes to the live free-space, directory,
+inode and refcount trees (remaining writes are reported as other), counts all
+B-tree CRC calls, and times every 64th CRC call. `CLOCK_PAIR_TICKS` is the
+integer mean of 256 empty timer pairs calibrated at each phase reset. Sampled
+CRC ticks are not a full CPU profile: extrapolate the mean sample duration to
+all calls, and treat the result as an estimate. Only the disposable probe
+handler contains these counters.
 
 ## Troubleshooting
 

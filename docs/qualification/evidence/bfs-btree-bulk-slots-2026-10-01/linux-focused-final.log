@@ -1,0 +1,11 @@
+d9ab6caddb8ae775638c01b0ffd1e349129843eaa846fd968346fa530252290d  src/core/btree.c
+7bc432ebb42394c0afc38f41b6e531fbbfeaae48cb8be8c54705f7ad481f66c6  src/amiga/string.h
+cf0333a3b7025ce0d4e18c6c65a70b8c5db00eda3345975ac48d366a40e607ea  tests/test_btree_bulk_slots.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_btree_bulk_slots tests/test_btree_bulk_slots.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+=== B+tree bulk slot shifts ===
+  test_leaf_slot_positions_odd_widths                OK
+  test_leaf_io_failures_preserve_cow_root            OK
+  test_odd_width_multilevel_insert_delete            OK
+  test_max_key_multilevel_insert_delete              OK
+
+4 passed, 0 failed

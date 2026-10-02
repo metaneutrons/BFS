@@ -215,7 +215,14 @@ static inline bfs_blk_t bfs_data_start_block(uint32_t block_size)
     return (BFS_DATA_OFFSET + block_size - 1) / block_size;
 }
 
-/* Default backup-superblock byte offset (partition midpoint). */
+/* Recorded placement, including volumes read by fsck/extent validation. */
+static inline uint64_t bfs_sb_backup_offset(const bfs_superblock_t *sb)
+{
+    return ((uint64_t)bfs_be32(sb->sb_backup_offset_hi) << 32) |
+           bfs_be32(sb->sb_backup_offset_lo);
+}
+
+/* Default placement for newly formatted volumes. */
 static inline uint64_t bfs_default_backup_offset(bfs_blk_t block_count,
                                                  uint32_t block_size)
 {
