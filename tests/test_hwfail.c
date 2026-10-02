@@ -875,6 +875,130 @@ static void run_delete_write_failures(uint32_t format_options,
     }
 }
 
+/* ── Live-transaction owned nodes ──────────────────────────── */
+
+static void test_owned_nodes_rewrite_in_place_until_publication(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "Owned", 0), BFS_OK);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "base", 4, &ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    bfs_blk_t committed_root = fs.dir_tree.tree.root;
+
+    /* The first change of the transaction copies the committed root. */
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "a", 1, &ino), BFS_OK);
+    bfs_blk_t owned_root = fs.dir_tree.tree.root;
+    TEST_ASSERT(owned_root != committed_root);
+    TEST_ASSERT_EQ(fs.owned_nodes.txn_id, fs.live_txn_id);
+    /* Later changes in the same transaction rewrite the owned root. */
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "b", 1, &ino), BFS_OK);
+    TEST_ASSERT_EQ(fs.dir_tree.tree.root, owned_root);
+
+    /* After publication the root is committed and copied again. */
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    uint8_t published[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, owned_root, published), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "c", 1, &ino), BFS_OK);
+    TEST_ASSERT(fs.dir_tree.tree.root != owned_root);
+    uint8_t after[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, owned_root, after), BFS_OK);
+    TEST_ASSERT_MEM_EQ(after, published, BLK_SIZE);
+
+    /* Reloading the committed state forgets the discarded transaction. */
+    TEST_ASSERT(fs.owned_nodes.used > 0);
+    TEST_ASSERT_EQ(bfs_fs_reload_committed_unlocked(&fs), BFS_OK);
+    TEST_ASSERT_EQ(fs.owned_nodes.used, 0);
+    uint32_t type;
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "b", 1, &ino, &type),
+                   BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "c", 1, &ino, &type),
+                   BFS_ERR_NOTFOUND);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    TEST_ASSERT(hwfail_fsck_clean(bio, "owned-rewrite", 0, 0));
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void run_owned_write_failures(bool delete_operation, unsigned *injected,
+                                     unsigned *successes, unsigned *recoveries,
+                                     unsigned *fsck_failures)
+{
+    for (uint32_t fail_at = 1; fail_at <= 24; fail_at++) {
+        unlink(TEST_IMG);
+        bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+        TEST_ASSERT(bio != NULL);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "OwnedFault", 0), BFS_OK);
+        failing_bio_t fb;
+        init_failing_bio(&fb, bio);
+        bfs_fs_t fs;
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, &fb.base), BFS_OK);
+        uint32_t ino;
+        TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "kept", 4, &ino), BFS_OK);
+        TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+        /* Give the live transaction owned dir, inode and free-tree nodes. */
+        TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "first", 5, &ino), BFS_OK);
+
+        fb.writes_until_failure = fail_at;
+        bfs_err_t err = delete_operation
+            ? bfs_fs_delete_file(&fs, BFS_ROOT_INO, "first", 5)
+            : bfs_fs_create_file(&fs, BFS_ROOT_INO, "second", 6, &ino);
+        // cppcheck-suppress redundantAssignment
+        fb.writes_until_failure = 0;
+        TEST_ASSERT(err == BFS_OK || err == BFS_ERR_IO);
+        TEST_ASSERT((err == BFS_OK) == (fb.failed_writes == 0));
+        bool committed_new = false;
+        if (err == BFS_OK) {
+            (*successes)++;
+            committed_new = bfs_fs_sync(&fs) == BFS_OK;
+            TEST_ASSERT(committed_new);
+        } else {
+            (*injected)++;
+            if (fs.recovery_error != BFS_OK) (*recoveries)++;
+        }
+        bfs_fs_abandon(&fs);
+
+        /* Only committed state survives; the uncommitted transaction is
+         * either fully published by the sync above or entirely absent. */
+        TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+        uint32_t type;
+        TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "kept", 4, &ino, &type),
+                       BFS_OK);
+        bfs_err_t first = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "first", 5, &ino, &type);
+        bfs_err_t second = bfs_dir_lookup(&fs.dir_tree, BFS_ROOT_INO, "second", 6, &ino, &type);
+        if (!committed_new) {
+            TEST_ASSERT_EQ(first, BFS_ERR_NOTFOUND);
+            TEST_ASSERT_EQ(second, BFS_ERR_NOTFOUND);
+        } else if (delete_operation) {
+            TEST_ASSERT_EQ(first, BFS_ERR_NOTFOUND);
+        } else {
+            TEST_ASSERT_EQ(first, BFS_OK);
+            TEST_ASSERT_EQ(second, BFS_OK);
+        }
+        TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        if (!hwfail_fsck_clean(bio, delete_operation ? "owned-delete" : "owned-create",
+                               0, fail_at))
+            (*fsck_failures)++;
+        bfs_bio_close(bio);
+    }
+}
+
+static void test_owned_write_failures_discard_only_uncommitted_state(void)
+{
+    for (uint32_t op = 0; op < 2; op++) {
+        unsigned injected = 0, successes = 0, recoveries = 0, fsck_failures = 0;
+        run_owned_write_failures(op == 1, &injected, &successes, &recoveries,
+                                 &fsck_failures);
+        TEST_ASSERT(injected > 0);
+        TEST_ASSERT(successes > 0);
+        TEST_ASSERT_EQ(fsck_failures, 0);
+    }
+    unlink(TEST_IMG);
+}
+
 static void test_delete_write_failures_preserve_comment(void)
 {
     const uint32_t format_options[] = { 0, BFS_OPT_SNAPSHOTS };
@@ -1447,6 +1571,9 @@ static bool setup_fragmented_reserve_batch(failing_bio_t *fb, bfs_bio_t **bio_ou
     init_failing_bio(fb, *bio_out);
     if (bfs_fs_mount(fs, &fb->base) != BFS_OK || bfs_fs_sync(fs) != BFS_OK)
         return false;
+    /* These fixtures build reserve layouts with direct allocator calls and
+     * fake committed roots to qualify the copy-on-write settlement path. */
+    fs->owned_nodes.disabled = true;
 
     bfs_freespace_t *freespace = &fs->freespace;
     if (freespace->tree.height != 1 || freespace->reserve_count != 0)
@@ -2520,6 +2647,8 @@ TEST_SUITE_BEGIN("Hardware Failure Simulation")
     TEST_RUN(test_failed_recovery_blocks_operations);
     TEST_RUN(test_persistent_delete_failure_requires_remount);
     TEST_RUN(test_failed_extent_rollback_marks_ownership_uncertain);
+    TEST_RUN(test_owned_nodes_rewrite_in_place_until_publication);
+    TEST_RUN(test_owned_write_failures_discard_only_uncommitted_state);
     TEST_RUN(test_delete_write_failures_preserve_comment);
     TEST_RUN(test_rmdir_write_failures_preserve_committed_directory);
     TEST_RUN(test_rename_write_failures_preserve_committed_paths);

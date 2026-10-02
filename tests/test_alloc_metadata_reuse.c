@@ -1067,6 +1067,7 @@ static void test_mounted_append_overwrite_commits_and_remount(void)
     bfs_fs_t fs;
     TEST_ASSERT(memory_init(&device, FS_BLOCK_SIZE, FS_BLOCK_COUNT));
     TEST_ASSERT(format_mount(&device, &fs, 0));
+    fs.owned_nodes.disabled = true; /* qualifies the copy-on-write stock path */
     TEST_ASSERT(fs.freespace.mounted_state == &fs.mounted);
     TEST_ASSERT(fs.freespace.snapshot_state == &fs.has_snapshots);
 
@@ -1101,6 +1102,7 @@ static void test_mounted_append_overwrite_commits_and_remount(void)
     bfs_bio_t *bio = &device.bio;
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    fs.owned_nodes.disabled = true; /* qualifies the copy-on-write stock path */
     TEST_ASSERT(fsck_clean(&fs));
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
     TEST_ASSERT_EQ(bfs_file_seek(&file, 64u * 1024u + 123, BFS_SEEK_SET),
@@ -1132,6 +1134,7 @@ static void test_mounted_warmed_append_write_failure_cuts_preserve_commit(void)
     bfs_fs_t fs;
     TEST_ASSERT(memory_init(&device, FS_BLOCK_SIZE, FS_BLOCK_COUNT));
     TEST_ASSERT(format_mount(&device, &fs, 0));
+    fs.owned_nodes.disabled = true; /* qualifies the copy-on-write stock path */
     uint32_t ino;
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "cut", 3, &ino),
                    BFS_OK);
@@ -1163,6 +1166,7 @@ static void test_mounted_warmed_append_write_failure_cuts_preserve_commit(void)
         device.failed_write_at = 0;
         device.writes = 0;
         TEST_ASSERT_EQ(bfs_fs_mount(&fs, &device.bio), BFS_OK);
+        fs.owned_nodes.disabled = true; /* qualifies the copy-on-write stock path */
         TEST_ASSERT_EQ(fs.txn.sb.txn_id, published_sb.txn_id);
 
         bfs_file_t file;
@@ -1232,12 +1236,13 @@ static void test_mounted_warmed_append_write_failure_cuts_preserve_commit(void)
     memory_destroy(&device);
 }
 
-static void snapshot_preservation_case(uint32_t options)
+static void snapshot_preservation_case(uint32_t options, bool copy_on_write)
 {
     memory_device_t device;
     bfs_fs_t fs;
     TEST_ASSERT(memory_init(&device, FS_BLOCK_SIZE, FS_BLOCK_COUNT));
     TEST_ASSERT(format_mount(&device, &fs, options));
+    fs.owned_nodes.disabled = copy_on_write;
     uint32_t ino;
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "snap", 4, &ino),
                    BFS_OK);
@@ -1251,7 +1256,8 @@ static void snapshot_preservation_case(uint32_t options)
     memset(replacement, 0xC2, sizeof(replacement));
     TEST_ASSERT_EQ(bfs_file_write(&file, original, sizeof(original)),
                    (int32_t)sizeof(original));
-    if (options == 0)
+    /* Owned rewriting avoids the metadata churn that reaches the warmup. */
+    if (options == 0 && copy_on_write)
         TEST_ASSERT_EQ(fs.freespace.metadata_requests, REUSE_WARMUP);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     TEST_ASSERT_EQ(bfs_snapshot_create(&fs, "before"), BFS_OK);
@@ -1297,8 +1303,12 @@ static void snapshot_preservation_case(uint32_t options)
 
 static void test_snapshot_keeps_old_data_across_overwrite_and_remount(void)
 {
-    snapshot_preservation_case(0); /* runtime guard, independent of option bit */
-    snapshot_preservation_case(BFS_OPT_SNAPSHOTS);
+    /* Runtime guard, independent of the option bit; with and without owned
+     * node rewriting. */
+    snapshot_preservation_case(0, true);
+    snapshot_preservation_case(BFS_OPT_SNAPSHOTS, true);
+    snapshot_preservation_case(0, false);
+    snapshot_preservation_case(BFS_OPT_SNAPSHOTS, false);
 }
 
 TEST_SUITE_BEGIN("Mounted metadata free-block reuse")

@@ -392,6 +392,112 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
     }
 }
 
+/* ── Live-transaction node ownership ───────────────────────── */
+
+#define OWNED_REMOVED UINT32_MAX
+#define OWNED_MIN_CAPACITY 64u
+
+void bfs_btree_owned_reset(bfs_btree_owned_t *owned)
+{
+    if (!owned) return;
+    if (owned->slots)
+        memset(owned->slots, 0, (size_t)owned->capacity * sizeof(*owned->slots));
+    owned->used = 0;
+    owned->txn_id = 0;
+}
+
+void bfs_btree_owned_destroy(bfs_btree_owned_t *owned)
+{
+    if (!owned) return;
+    free(owned->slots);
+    owned->slots = NULL;
+    owned->capacity = 0;
+    owned->used = 0;
+    owned->txn_id = 0;
+}
+
+static uint32_t owned_hash(bfs_blk_t blk, uint32_t capacity)
+{
+    return (uint32_t)(blk * 2654435761u) & (capacity - 1u);
+}
+
+/* Return the tree's registry for the live transaction, clearing entries that
+ * belong to an earlier one. */
+static bfs_btree_owned_t *owned_for(const bfs_btree_t *tree)
+{
+    bfs_btree_owned_t *owned = tree->free_sink.owned;
+    if (!owned || owned->disabled) return NULL;
+    uint64_t txn = bfs_btree_txn_id(tree);
+    if (owned->txn_id != txn) {
+        bfs_btree_owned_reset(owned);
+        owned->txn_id = txn;
+    }
+    return owned;
+}
+
+static bool owned_contains(const bfs_btree_t *tree, bfs_blk_t blk)
+{
+    bfs_btree_owned_t *owned = owned_for(tree);
+    if (!owned || owned->capacity == 0 || blk == BFS_BLK_NULL || blk == OWNED_REMOVED)
+        return false;
+    for (uint32_t i = owned_hash(blk, owned->capacity), n = 0;
+         n < owned->capacity; i = (i + 1u) & (owned->capacity - 1u), n++) {
+        if (owned->slots[i] == blk) return true;
+        if (owned->slots[i] == BFS_BLK_NULL) return false;
+    }
+    return false;
+}
+
+static void owned_place(bfs_btree_owned_t *owned, bfs_blk_t blk)
+{
+    uint32_t i = owned_hash(blk, owned->capacity);
+    while (owned->slots[i] != BFS_BLK_NULL && owned->slots[i] != OWNED_REMOVED &&
+           owned->slots[i] != blk)
+        i = (i + 1u) & (owned->capacity - 1u);
+    if (owned->slots[i] == blk) return;
+    if (owned->slots[i] == BFS_BLK_NULL) owned->used++;
+    owned->slots[i] = blk;
+}
+
+/* Best effort: a block that cannot be registered keeps copy-on-write. */
+static void owned_add(const bfs_btree_t *tree, bfs_blk_t blk)
+{
+    bfs_btree_owned_t *owned = owned_for(tree);
+    if (!owned || blk == BFS_BLK_NULL || blk == OWNED_REMOVED) return;
+    if (owned->capacity == 0 || (owned->used + 1u) * 2u > owned->capacity) {
+        uint32_t capacity = owned->capacity ? owned->capacity * 2u : OWNED_MIN_CAPACITY;
+        if (capacity < owned->capacity || capacity > UINT32_MAX / 2u) return;
+        bfs_blk_t *slots = calloc(capacity, sizeof(*slots));
+        if (!slots) return;
+        bfs_btree_owned_t grown = {
+            .slots = slots, .capacity = capacity, .used = 0, .txn_id = owned->txn_id,
+        };
+        for (uint32_t i = 0; i < owned->capacity; i++) {
+            bfs_blk_t entry = owned->slots[i];
+            if (entry != BFS_BLK_NULL && entry != OWNED_REMOVED)
+                owned_place(&grown, entry);
+        }
+        free(owned->slots);
+        *owned = grown;
+    }
+    owned_place(owned, blk);
+}
+
+static void owned_remove(const bfs_btree_t *tree, bfs_blk_t blk)
+{
+    bfs_btree_owned_t *owned = owned_for(tree);
+    if (!owned || owned->capacity == 0 || blk == BFS_BLK_NULL || blk == OWNED_REMOVED)
+        return;
+    for (uint32_t i = owned_hash(blk, owned->capacity), n = 0;
+         n < owned->capacity; i = (i + 1u) & (owned->capacity - 1u), n++) {
+        if (owned->slots[i] == blk) {
+            owned->slots[i] = OWNED_REMOVED;
+            return;
+        }
+        if (owned->slots[i] == BFS_BLK_NULL) return;
+    }
+}
+
 /* ── Insert helpers ────────────────────────────────────────── */
 
 #define BTREE_MUTATION_MAX_BLOCKS (4u * MAX_TREE_DEPTH + 8u)
@@ -402,6 +508,12 @@ typedef struct {
     bfs_blk_t retired_blocks[BTREE_MUTATION_MAX_BLOCKS];
     uint64_t retired_txns[BTREE_MUTATION_MAX_BLOCKS];
     uint32_t retired_count;
+    /* Owned nodes rewritten in place, published only after every fallible
+     * step. The images are private copies because path and sibling buffers
+     * are reused and released before the mutation commits. */
+    bfs_blk_t staged_blocks[BTREE_MUTATION_MAX_BLOCKS];
+    uint8_t *staged_images[BTREE_MUTATION_MAX_BLOCKS];
+    uint32_t staged_count;
 } btree_mutation_t;
 
 static bfs_err_t allocator_failure(bfs_btree_t *tree)
@@ -419,6 +531,12 @@ static void latch_reclaim_error(bfs_btree_t *tree, bfs_err_t err)
         tree->free_sink_err = err;
 }
 
+static bfs_err_t node_dealloc(bfs_btree_t *tree, bfs_blk_t blk)
+{
+    owned_remove(tree, blk);
+    return tree->alloc->dealloc(tree->alloc, blk);
+}
+
 static bfs_blk_t mutation_alloc(bfs_btree_t *tree, btree_mutation_t *mutation)
 {
     bfs_blk_t blk = tree->alloc->alloc(tree->alloc);
@@ -429,6 +547,7 @@ static bfs_blk_t mutation_alloc(bfs_btree_t *tree, btree_mutation_t *mutation)
         return BFS_BLK_NULL;
     }
     mutation->new_blocks[mutation->new_count++] = blk;
+    owned_add(tree, blk);
     return blk;
 }
 
@@ -454,20 +573,52 @@ static bfs_err_t mutation_retire(btree_mutation_t *mutation, bfs_blk_t blk,
     return mutation_retire_txn(mutation, blk, bfs_be64(hdr->txn_id));
 }
 
+static void mutation_release_staged(bfs_btree_t *tree, btree_mutation_t *mutation)
+{
+    for (uint32_t i = 0; i < mutation->staged_count; i++)
+        free_buf(tree, mutation->staged_images[i]);
+    mutation->staged_count = 0;
+}
+
 static void mutation_abort(bfs_btree_t *tree, btree_mutation_t *mutation)
 {
+    /* Staged owned images were never written; the nodes keep their old bytes. */
+    mutation_release_staged(tree, mutation);
     for (uint32_t i = 0; i < mutation->new_count; i++)
-        latch_reclaim_error(tree,
-                            tree->alloc->dealloc(tree->alloc,
-                                                 mutation->new_blocks[i]));
+        latch_reclaim_error(tree, node_dealloc(tree, mutation->new_blocks[i]));
+}
+
+static bool mutation_retires(const btree_mutation_t *mutation, bfs_blk_t blk)
+{
+    for (uint32_t i = 0; i < mutation->retired_count; i++)
+        if (mutation->retired_blocks[i] == blk) return true;
+    return false;
 }
 
 static void mutation_commit(bfs_btree_t *tree, btree_mutation_t *mutation)
 {
+    /* Every fallible step succeeded and the in-memory tree already refers to
+     * the staged images, so publish them even if a reclamation error was
+     * latched. A failed rewrite leaves the live transaction's graph uncertain:
+     * latch it here and in the owner's recovery state, so no later operation
+     * or commit can use the graph before the committed roots are reloaded.
+     * Committed nodes are never among the staged blocks. */
+    for (uint32_t i = 0; i < mutation->staged_count; i++) {
+        bfs_blk_t blk = mutation->staged_blocks[i];
+        if (mutation_retires(mutation, blk)) continue;
+        bfs_err_t err = node_write(tree, blk, mutation->staged_images[i]);
+        if (err == BFS_OK) continue;
+        latch_reclaim_error(tree, err);
+        bfs_btree_owned_t *owned = tree->free_sink.owned;
+        if (owned && owned->recovery_state && *owned->recovery_state == BFS_OK)
+            *owned->recovery_state = err;
+        break;
+    }
+    mutation_release_staged(tree, mutation);
     for (uint32_t i = 0; i < mutation->retired_count; i++) {
         bfs_blk_t blk = mutation->retired_blocks[i];
         if (mutation->retired_txns[i] >= bfs_btree_txn_id(tree)) {
-            latch_reclaim_error(tree, tree->alloc->dealloc(tree->alloc, blk));
+            latch_reclaim_error(tree, node_dealloc(tree, blk));
         } else if (tree->free_sink.defer) {
             latch_reclaim_error(tree,
                                 tree->free_sink.defer(tree->free_sink.ctx, blk));
@@ -489,7 +640,7 @@ static void btree_free_node(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *buf
 
     if (block_txn >= bfs_btree_txn_id(tree)) {
         /* Current-transaction block: free it immediately. */
-        latch_reclaim_error(tree, tree->alloc->dealloc(tree->alloc, blk));
+        latch_reclaim_error(tree, node_dealloc(tree, blk));
     } else if (tree->free_sink.defer) {
         /* Older block: it must NOT be freed mid-COW (a crash before commit would
          * corrupt the last committed state were it reused), so defer it to the
@@ -510,6 +661,27 @@ static bfs_err_t cow_node(bfs_btree_t *tree, btree_mutation_t *mutation,
 {
     const bfs_btnode_hdr_t *old_hdr = (const bfs_btnode_hdr_t *)buf;
     uint64_t old_txn = bfs_be64(old_hdr->txn_id);
+    if (old_blk != BFS_BLK_NULL && old_txn == bfs_btree_txn_id(tree) &&
+        owned_contains(tree, old_blk)) {
+        uint32_t slot = 0;
+        while (slot < mutation->staged_count && mutation->staged_blocks[slot] != old_blk)
+            slot++;
+        uint8_t *image = slot < mutation->staged_count ? mutation->staged_images[slot] :
+                         (mutation->staged_count < BTREE_MUTATION_MAX_BLOCKS ?
+                          alloc_buf(tree) : NULL);
+        if (image) {
+            /* The block size is the size of every node buffer and staged image. */
+            memcpy(image, buf, tree->bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+            if (slot == mutation->staged_count) {
+                mutation->staged_blocks[slot] = old_blk;
+                mutation->staged_images[slot] = image;
+                mutation->staged_count++;
+            }
+            *out_blk = old_blk;
+            return BFS_OK;
+        }
+        /* No staging buffer: copy on write as for any other node. */
+    }
     bfs_blk_t new_blk = mutation_alloc(tree, mutation);
     if (new_blk == BFS_BLK_NULL) return allocator_failure(tree);
 
@@ -2041,7 +2213,7 @@ static void discard_node_cb(bfs_blk_t blk, void *ctx)
 {
     discard_ctx_t *discard = (discard_ctx_t *)ctx;
     if (discard->err == BFS_OK)
-        discard->err = discard->tree->alloc->dealloc(discard->tree->alloc, blk);
+        discard->err = node_dealloc(discard->tree, blk);
 }
 
 static bfs_err_t discard_tree(bfs_btree_t *tree)

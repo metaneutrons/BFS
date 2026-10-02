@@ -62,6 +62,7 @@ typedef struct bfs_fs {
     // cppcheck-suppress unusedStructMember
     bool               has_snapshots;  /* snapshot_tree_root != 0 */
     uint64_t           live_txn_id;    /* current transaction id (host order) */
+    bfs_btree_owned_t  owned_nodes;    /* nodes the live transaction may rewrite */
     bfs_blk_t         pending_frees[BFS_PENDING_FREES_MAX];
     bfs_blk_t        *pending_frees_dynamic; /* large atomic reclaim units */
     uint32_t           pending_count;

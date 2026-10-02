@@ -78,6 +78,30 @@ typedef struct bfs_btree_ops {
 
 /* ── Deferred-free sink ────────────────────────────────────── */
 
+/* Metadata blocks that B-tree mutations allocated in the live transaction.
+ * No committed superblock or snapshot references them, so they are the only
+ * nodes the engine may rewrite in place. The on-disk txn_id alone is not proof
+ * of ownership: a damaged image can carry it on committed nodes. Entries are
+ * valid only while txn_id equals the live transaction; a different id clears
+ * the set. If the set cannot grow, a block is simply not registered and keeps
+ * the copy-on-write path. */
+typedef struct bfs_btree_owned {
+    bfs_blk_t *slots;     /* open addressing; BFS_BLK_NULL empty, UINT32_MAX removed */
+    uint32_t   capacity;  /* power of two, or 0 before first use */
+    uint32_t   used;      /* occupied plus removed slots */
+    uint64_t   txn_id;    /* transaction the entries belong to */
+    /* Keep every change copy-on-write, e.g. to qualify the reserve and
+     * metadata-stock paths that only run under copy-on-write churn. */
+    bool       disabled;
+    /* Owner's sticky recovery error, set when an in-place rewrite fails. */
+    bfs_err_t *recovery_state;
+} bfs_btree_owned_t;
+
+/* Forget every entry, e.g. after reloading the committed state. */
+void bfs_btree_owned_reset(bfs_btree_owned_t *owned);
+/* Release the set's memory. */
+void bfs_btree_owned_destroy(bfs_btree_owned_t *owned);
+
 /* During COW the engine frees blocks that belonged to an older transaction;
  * they can only return to the allocator after the current transaction commits,
  * so they are handed to this sink (the filesystem's pending-free queue). This
@@ -96,6 +120,8 @@ typedef struct {
     bfs_err_t (*reserve)(void *ctx, uint32_t slots);
     /* Fixed capacity when reserve is absent; baseline capacity otherwise. */
     uint32_t capacity;
+    /* Live-transaction node ownership; NULL keeps every change copy-on-write. */
+    bfs_btree_owned_t *owned;
 } bfs_free_sink_t;
 
 typedef struct bfs_btree {
