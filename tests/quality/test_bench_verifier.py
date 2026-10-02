@@ -536,6 +536,41 @@ class BenchVerifierTests(unittest.TestCase):
             capture_output=True, text=True, check=False,
         )  # nosec B603 - executable path and mode are fixed by this test
 
+    def load_durable_evidence(self, directory, header="FS_DURABLE_COMPARE\t1",
+                              marker="BFS-PFS3-DURABLE-COMPLETE",
+                              suffix="durable.tsv"):
+        source = EVIDENCE / directory
+        shutil.copyfile(source / "info-after-format.txt",
+                        self.results / "info-after-format.txt")
+        (self.results / "complete.txt").write_text(marker + "\n", encoding="ascii")
+        for filesystem in ("bfs", "pfs3"):
+            lines = (source / f"{filesystem}.tsv").read_text(
+                encoding="ascii").splitlines()
+            self.assertEqual(lines[0], "FS_COMPARE_BENCH\t1")
+            lines[0] = header
+            (self.results / f"{filesystem}.{suffix}").write_text(
+                "\n".join(lines) + "\n", encoding="ascii")
+
+    def test_durable_compare_evidence_passes(self):
+        for directory in ("compare-bfs-first", "compare-pfs3-first"):
+            with self.subTest(directory=directory):
+                self.load_durable_evidence(directory)
+                result = self.verify("durable-compare")
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_durable_compare_rejects_plain_compare_schema(self):
+        self.load_durable_evidence("compare-bfs-first", header="FS_COMPARE_BENCH\t1")
+        self.assertNotEqual(self.verify("durable-compare").returncode, 0)
+
+    def test_durable_compare_rejects_plain_compare_marker(self):
+        self.load_durable_evidence("compare-bfs-first", marker="BFS-PFS3-COMPLETE")
+        self.assertNotEqual(self.verify("durable-compare").returncode, 0)
+
+    def test_compare_rejects_durable_schema(self):
+        self.load_durable_evidence("compare-bfs-first", marker="BFS-PFS3-COMPLETE",
+                                   suffix="tsv")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
     def test_real_deep_compare_evidence_passes(self):
         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
         result = self.verify("deep-compare")
