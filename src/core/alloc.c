@@ -1265,9 +1265,11 @@ static bfs_err_t prepare_reserve_root_fold(const bfs_freespace_t *fs,
     batch->original_count = fs->reserve_count;
     batch->old_root = fs->tree.root;
     batch->emergency_count = bfs_be32(fs->sb->emergency_count);
-    memcpy(batch->original, fs->reserve,
+    /* return_reserve rejects reserve_count above BFS_ALLOC_RESERVE_SIZE. */
+    memcpy(batch->original, fs->reserve, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
            batch->original_count * sizeof(*batch->original));
-    memcpy(batch->emergency_pool, fs->sb->emergency_pool,
+    /* Both are BFS_EMERGENCY_POOL_SIZE superblock arrays. */
+    memcpy(batch->emergency_pool, fs->sb->emergency_pool, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
            sizeof(batch->emergency_pool));
     for (uint32_t i = 0; i < batch->original_count; i++) {
         bfs_blk_t blk = batch->original[i];
@@ -1479,9 +1481,10 @@ bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
         .keys = entries + 2u * capacity, .lengths = entries + 3u * capacity,
         .capacity = capacity, .block_count = owner->bio->block_count, .error = BFS_OK,
     };
-    memcpy(pending, bfs_fs_pending_items(owner), pending_count * sizeof(*pending));
-    memcpy(blocks, pending, pending_count * sizeof(*blocks));
-    memcpy(blocks + pending_count, fs->reserve, fs->reserve_count * sizeof(*blocks));
+    /* Counts were checked above; blocks holds pending + reserve + 1 entries. */
+    memcpy(pending, bfs_fs_pending_items(owner), pending_count * sizeof(*pending)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    memcpy(blocks, pending, pending_count * sizeof(*blocks)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    memcpy(blocks + pending_count, fs->reserve, fs->reserve_count * sizeof(*blocks)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     blocks[count - 1] = fs->tree.root;
     sort_reserve_blocks(blocks, count);
     err = bfs_btree_scan(&fs->tree, NULL, collect_free_leaf_entry, &old);
@@ -1498,7 +1501,8 @@ bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
         goto done;
     }
     bfs_blk_t original_reserve[BFS_ALLOC_RESERVE_SIZE];
-    memcpy(original_reserve, fs->reserve, sizeof(original_reserve));
+    /* Both arrays hold BFS_ALLOC_RESERVE_SIZE blocks. */
+    memcpy(original_reserve, fs->reserve, sizeof(original_reserve)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     uint32_t original_count = fs->reserve_count;
     bfs_blk_t old_root = fs->tree.root, original_roving = fs->roving;
     uint32_t original_free = fs->total_free;
@@ -1522,7 +1526,8 @@ bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
     if (err != BFS_OK) {
         if (fs->tree.root == old_root && unchanged && fs->reserve_count == 1 &&
             fs->reserve[0] == scratch) {
-            memcpy(fs->reserve, original_reserve, sizeof(original_reserve));
+            /* Both arrays hold BFS_ALLOC_RESERVE_SIZE blocks. */
+            memcpy(fs->reserve, original_reserve, sizeof(original_reserve)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
             fs->reserve_count = original_count;
             *fs->sb = original_sb;
         } else {
@@ -1536,7 +1541,8 @@ bfs_err_t bfs_freespace_seal_commit(bfs_fs_t *owner, bool *sealed)
         err = BFS_ERR_CORRUPT;
         goto done;
     }
-    memcpy(fs->sb->emergency_pool, planned.emergency_pool,
+    /* Both are BFS_EMERGENCY_POOL_SIZE superblock arrays. */
+    memcpy(fs->sb->emergency_pool, planned.emergency_pool, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
            sizeof(planned.emergency_pool));
     fs->sb->emergency_count = planned.emergency_count;
     fs->total_free = (uint32_t)added;
@@ -1572,7 +1578,8 @@ static bfs_err_t restore_failed_reserve_root_fold(bfs_freespace_t *fs,
         memcmp(fs->sb->emergency_pool, batch->emergency_pool,
                sizeof(batch->emergency_pool)) != 0)
         return err == BFS_ERR_UNSUPPORTED ? BFS_ERR_CORRUPT : err;
-    memcpy(fs->reserve, batch->original,
+    /* original_count was read from a reserve_count bounded by return_reserve. */
+    memcpy(fs->reserve, batch->original, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
            batch->original_count * sizeof(*batch->original));
     fs->reserve_count = batch->original_count;
     fs->sb->emergency_count = bfs_be32(batch->emergency_count);
@@ -1594,7 +1601,8 @@ static bfs_err_t return_fold_emergency_block(bfs_freespace_t *fs, bfs_blk_t blk)
 static bfs_err_t apply_reserve_root_fold(bfs_freespace_t *fs,
                                          const reserve_root_fold_t *batch)
 {
-    memcpy(fs->reserve, batch->retained,
+    /* retained holds at most original_count (or one pool) block. */
+    memcpy(fs->reserve, batch->retained, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
            batch->retained_count * sizeof(*batch->retained));
     fs->reserve_count = batch->retained_count;
     if (batch->scratch_from_pool)
@@ -1666,7 +1674,8 @@ static bool prepare_reserve_leaf_batch(const bfs_freespace_t *fs,
                                        bool allow_mixed)
 {
     batch->original_count = fs->reserve_count;
-    memcpy(batch->original, fs->reserve,
+    /* return_reserve rejects reserve_count above BFS_ALLOC_RESERVE_SIZE. */
+    memcpy(batch->original, fs->reserve, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
            batch->original_count * sizeof(*batch->original));
     for (uint32_t i = 0; i < batch->original_count; i++) {
         bfs_blk_t blk = batch->original[i];
@@ -1715,7 +1724,8 @@ static bool reserve_leaf_batch_shape_available(const bfs_freespace_t *fs)
 static bfs_err_t apply_reserve_leaf_batch(bfs_freespace_t *fs,
                                           const reserve_leaf_batch_t *batch)
 {
-    memcpy(fs->reserve, batch->retained,
+    /* retained holds a subset of the bounded original reserve. */
+    memcpy(fs->reserve, batch->retained, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
            batch->retained_count * sizeof(*batch->retained));
     fs->reserve_count = batch->retained_count;
 #ifdef BFS_PERF_PROBE
@@ -1749,7 +1759,8 @@ static bfs_err_t restore_failed_reserve_leaf_batch(bfs_freespace_t *fs,
         memcmp(fs->reserve, batch->retained,
                batch->retained_count * sizeof(*batch->retained)) != 0)
         return err == BFS_ERR_UNSUPPORTED ? BFS_ERR_CORRUPT : err;
-    memcpy(fs->reserve, batch->original,
+    /* original_count was read from a reserve_count bounded by return_reserve. */
+    memcpy(fs->reserve, batch->original, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
            batch->original_count * sizeof(*batch->original));
     fs->reserve_count = batch->original_count;
 #ifdef BFS_PERF_PROBE

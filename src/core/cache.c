@@ -84,7 +84,8 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
 
     if (retain_node) {
         uint32_t victim = cache_victim(c);
-        memcpy(c->slots[victim].data, buf, bio->block_size);
+        /* Every slot buffer was allocated with this cache's block_size. */
+        memcpy(c->slots[victim].data, buf, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         c->slots[victim].blk = blk;
         c->slots[victim].age = ++c->clock;
         c->slots[victim].node_crc_valid = true;
