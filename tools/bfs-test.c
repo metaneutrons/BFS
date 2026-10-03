@@ -685,35 +685,93 @@ static void test_protect(void)
 cl: DeleteFile(p);
 }
 
+static BOOL cstr_equal(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a == *b;
+}
+
+/* The comment of name in the volume root as seen by ExNext. */
+static BOOL exnext_comment(const char *name, const char *expected)
+{
+    BPTR lock = Lock(vol, SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    BOOL found = FALSE;
+    if (lock && fib && Examine(lock, fib)) {
+        while (!found && ExNext(lock, fib))
+            found = cstr_equal(fib->fib_FileName, name) &&
+                    cstr_equal(fib->fib_Comment, expected);
+    }
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    return found;
+}
+
+static BOOL examine_comment(const char *p, const char *expected)
+{
+    BPTR lock = Lock(p, SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    BOOL ok = lock && fib && Examine(lock, fib) && cstr_equal(fib->fib_Comment, expected);
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    return ok;
+}
+
+static BOOL examine_fh_comment(const char *p, const char *expected)
+{
+    BPTR fh = Open(p, MODE_OLDFILE);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    BOOL ok = fh && fib && ExamineFH(fh, fib) && cstr_equal(fib->fib_Comment, expected);
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (fh) Close(fh);
+    return ok;
+}
+
 static void test_comment(void)
 {
     const char *T = "comment_13";
-    const char *p = vpath("cmt.dat");
+    char p[128];
+    const char *path = vpath("cmt.dat");
+    if (!path || tool_strlen(path) >= (int)sizeof(p)) { fail(T, "path"); return; }
+    for (int i = 0; (p[i] = path[i]) != 0; i++) {}
     fill(databuf, 10, 0xBBBB);
     BPTR fh = Open(p, MODE_NEWFILE);
     if (!fh) { fail(T, "write"); return; }
     write_exact(fh, databuf, 10); close_checked(fh);
 
+    /* An object without a comment reports an empty one everywhere. */
+    if (!examine_comment(p, "") || !exnext_comment("cmt.dat", "")) {
+        fail(T, "empty");
+        goto cl;
+    }
     if (!SetComment(p, "BFS integrity test")) {
         fail(T, "set comment");
         goto cl;
     }
+    if (!examine_comment(p, "BFS integrity test")) { fail(T, "examine"); goto cl; }
+    if (!exnext_comment("cmt.dat", "BFS integrity test")) { fail(T, "exnext"); goto cl; }
+    if (!examine_fh_comment(p, "BFS integrity test")) { fail(T, "examinefh"); goto cl; }
 
-    BPTR lock = Lock(p, SHARED_LOCK);
-    if (!lock) { fail(T, "lock"); goto cl; }
-    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
-    if (!fib) { UnLock(lock); fail(T, "fib"); goto cl; }
-    if (!Examine(lock, fib)) {
-        FreeDosObject(DOS_FIB, fib);
-        UnLock(lock);
-        fail(T, "examine");
+    /* 79 characters is the limit and survives unchanged; 80 is refused. */
+    char longest[81];
+    for (int i = 0; i < 80; i++) longest[i] = (char)('a' + i % 26);
+    longest[80] = 0;
+    if (SetComment(p, longest) || IoErr() != ERROR_COMMENT_TOO_BIG) {
+        fail(T, "too big");
         goto cl;
     }
-    BOOL ok = (fib->fib_Comment[0] == 'B');
-    FreeDosObject(DOS_FIB, fib);
-    UnLock(lock);
+    longest[79] = 0;
+    if (!SetComment(p, longest) || !examine_comment(p, longest) ||
+        !exnext_comment("cmt.dat", longest)) {
+        fail(T, "79 characters");
+        goto cl;
+    }
 
-    if (!ok) { fail(T, "mismatch"); goto cl; }
+    /* An empty comment removes it. */
+    if (!SetComment(p, "") || !examine_comment(p, "") || !exnext_comment("cmt.dat", "")) {
+        fail(T, "clear");
+        goto cl;
+    }
     pass(T);
 cl: DeleteFile(p);
 }

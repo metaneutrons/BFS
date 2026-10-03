@@ -1176,6 +1176,36 @@ static void FillFib64(struct FileInfoBlock *fib, uint64_t size)
     if (blocks > INT32_MAX) fib->fib_NumBlocks = 0;
 }
 
+/* Read an object's comment into a C string of BFS_COMMENT_BUFFER bytes. Only
+ * an inode with HAS_COMMENT has one, so most objects need no directory
+ * lookup. *length is 0 for an object without comment. */
+#define BFS_COMMENT_BUFFER 80
+static bfs_err_t ReadComment(struct bfs_handler *h, uint32_t ino,
+                             const bfs_inode_t *inode,
+                             char buffer[BFS_COMMENT_BUFFER], int *length)
+{
+    buffer[0] = 0;
+    *length = 0;
+    if (!(bfs_be32(inode->flags) & BFS_INODE_FLAG_HAS_COMMENT)) return BFS_OK;
+    bfs_err_t err = bfs_fs_get_comment(&h->fs, ino, buffer, BFS_COMMENT_BUFFER);
+    if (err != BFS_OK) return err;
+    while (*length < BFS_COMMENT_BUFFER - 1 && buffer[*length]) (*length)++;
+    return BFS_OK;
+}
+
+/* fib_Comment is a BSTR: a length byte and at most 79 characters. */
+static bfs_err_t FillFibComment(struct bfs_handler *h, struct FileInfoBlock *fib,
+                                uint32_t ino, const bfs_inode_t *inode)
+{
+    char comment[BFS_COMMENT_BUFFER];
+    int length;
+    bfs_err_t err = ReadComment(h, ino, inode, comment, &length);
+    if (err != BFS_OK) return err;
+    fib->fib_Comment[0] = (UBYTE)length;
+    memcpy(&fib->fib_Comment[1], comment, length); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    return BFS_OK;
+}
+
 /* ── Notification helper ───────────────────────────────────── */
 
 static void SendNotifications(struct bfs_handler *h)
@@ -1463,14 +1493,14 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
         ead->ed_Ticks = bfs_be16(inode.modify_ticks);
     }
     if (ec->type >= ED_COMMENT) {
-        char cbuf[80]; cbuf[0] = 0;
-        bfs_err_t comment_err = bfs_fs_get_comment(&ec->h->fs, inode_nr,
-                                                    cbuf, 79);
-        if (comment_err != BFS_OK && comment_err != BFS_ERR_NOTFOUND) {
+        /* ED_COMMENT implies ED_SIZE, so the inode has been read. */
+        char cbuf[BFS_COMMENT_BUFFER];
+        int cl;
+        bfs_err_t comment_err = ReadComment(ec->h, inode_nr, &inode, cbuf, &cl);
+        if (comment_err != BFS_OK) {
             ec->err = comment_err;
             return false;
         }
-        int cl = 0; while (cbuf[cl]) cl++;
         memcpy(str, cbuf, cl); str[cl] = 0;
         ead->ed_Comment = str;
     }
@@ -2042,17 +2072,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         FillFib(fib, name, name_len, lk->ino, lk->type, size, prot,
                 &inode);
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_OBJECT64) FillFib64(fib, size);
-        /* Read file comment */
-        { char cb[80];
-          err = bfs_fs_get_comment(&h->fs, lk->ino, cb, 79);
-          if (err != BFS_OK && err != BFS_ERR_NOTFOUND) {
-              res2 = Pfs4ToDosError(err); break;
-          }
-          if (err == BFS_OK) {
-              int cl = 0; while (cb[cl]) cl++;
-              fib->fib_Comment[0] = cl; memcpy(&fib->fib_Comment[1], cb, cl);
-          }
-        }
+        err = FillFibComment(h, fib, lk->ino, &inode);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         /* Store scan index 0 in fib_DiskKey for EXAMINE_NEXT */
         fib->fib_DiskKey = 0;
         res1 = DOSTRUE;
@@ -2093,6 +2114,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         en_prot = bfs_be32(en_inode.protection);
         FillFib(fib, namebuf, ctx.name_len, ctx.ino_out, ctx.type_out, en_size, en_prot, &en_inode);
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_NEXT64) FillFib64(fib, en_size);
+        err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         fib->fib_DiskKey = (LONG)(ctx.skip_count + 1);
         res1 = DOSTRUE;
         res2 = 0;
@@ -2298,6 +2321,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         UBYTE *bcomment = (UBYTE *)BADDR(pkt->dp_Arg4);
         if (!bcomment) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
         uint8_t clen = bcomment[0];
+        if (clen > 79) { res2 = ERROR_COMMENT_TOO_BIG; break; }
         err = bfs_fs_set_comment(&h->fs, ino, (const char *)&bcomment[1], clen);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         res1 = DOSTRUE;
@@ -2876,6 +2900,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         uint32_t type = bfs_be32(inode.type);
         FillFib(fib, "", 0, f->inode_nr, type, size, bfs_be32(inode.protection), &inode);
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_FH64) FillFib64(fib, size);
+        err = FillFibComment(h, fib, f->inode_nr, &inode);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         fib->fib_DiskKey = 0;
         res1 = DOSTRUE;
         res2 = 0;
