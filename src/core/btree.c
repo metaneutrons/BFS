@@ -76,6 +76,8 @@ static bfs_err_t mutation_headroom(const bfs_btree_t *tree, uint32_t blocks)
 
 /* ── Node I/O ──────────────────────────────────────────────── */
 
+static uint32_t node_compute_read_crc(const bfs_btree_t *tree, uint8_t *buf);
+
 static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
 {
     if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
@@ -103,7 +105,7 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
         ULONG crc_call = ++bfs_perf_probe_counters.node_crc_read_calls;
         BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
         if (sample_crc) bfs_perf_probe_begin(&crc_started);
-        uint32_t computed_crc = node_compute_crc(tree, buf);
+        uint32_t computed_crc = node_compute_read_crc(tree, buf);
         if (sample_crc) {
             bfs_perf_probe_counters.node_crc_read_samples++;
             bfs_perf_probe_counters.node_crc_read_sample_ticks +=
@@ -111,7 +113,7 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
         }
         if (bfs_be32(hdr->crc32) != computed_crc) return BFS_ERR_CORRUPT;
 #else
-        if (bfs_be32(hdr->crc32) != node_compute_crc(tree, buf))
+        if (bfs_be32(hdr->crc32) != node_compute_read_crc(tree, buf))
             return BFS_ERR_CORRUPT;
 #endif
     }
@@ -151,17 +153,23 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
     return BFS_OK;
 }
 
-/* Unused slots have no semantic meaning, but remain covered by the on-disk
- * full-block CRC. Canonicalize them on writes and advance the exact CRC state
- * over their zero bytes; reads still hash every byte, including legacy padding. */
-static bfs_err_t node_compute_write_crc(const bfs_btree_t *tree, uint8_t *buf,
-                                         uint32_t *crc_out)
+/* Byte ranges of a node: used keys [0, prefix_end), unused key slots up to
+ * values_start, used values or children of values_length bytes, and unused
+ * value slots up to the end of the block. False if the header's level or key
+ * count cannot describe a node of this tree. */
+typedef struct {
+    uint32_t prefix_end;
+    uint32_t values_start;
+    uint32_t values_length;
+} node_ranges_t;
+
+static bool node_ranges(const bfs_btree_t *tree, uint8_t *buf, node_ranges_t *out)
 {
     uint32_t count = num_keys(buf);
     uint16_t level = node_level(buf);
     bool leaf = level == BFS_BTNODE_LEAF;
     uint32_t capacity = leaf ? leaf_max_keys(tree) : internal_max_keys(tree);
-    if (level >= MAX_TREE_DEPTH || count > capacity) return BFS_ERR_CORRUPT;
+    if (level >= MAX_TREE_DEPTH || count > capacity) return false;
     uint32_t prefix_end = (uint8_t *)node_key(tree, buf, count) - buf;
     uint8_t *values = leaf ? leaf_val(tree, buf, 0)
                           : internal_child_ptr(tree, buf, 0);
@@ -171,14 +179,86 @@ static bfs_err_t node_compute_write_crc(const bfs_btree_t *tree, uint8_t *buf,
     uint32_t block_size = tree->bio->block_size;
     if (prefix_end > values_start || values_start > block_size ||
         values_length > block_size - values_start)
-        return BFS_ERR_CORRUPT;
-    uint32_t gap = values_start - prefix_end;
-    uint32_t tail = block_size - values_start - values_length;
-    memset(buf + prefix_end, 0, gap);
-    memset(buf + values_start + values_length, 0, tail);
-    uint32_t crc = bfs_crc32(0, buf, prefix_end);
+        return false;
+    out->prefix_end = prefix_end;
+    out->values_start = values_start;
+    out->values_length = values_length;
+    return true;
+}
+
+#if defined(__GNUC__)
+/* A word type that may alias the byte buffer, so the zero test compiles to
+ * plain long-word loads instead of copies through the stack. */
+typedef uint32_t __attribute__((__may_alias__, __aligned__(1))) bfs_any_word_t;
+#endif
+
+/* True if all length bytes at p are zero. Whole words are tested where
+ * possible; on 68k that is far cheaper than the CRC table steps it saves. */
+static bool bytes_are_zero(const uint8_t *p, uint32_t length)
+{
+    for (; length >= 16; p += 16, length -= 16) {
+#if defined(__GNUC__)
+        const bfs_any_word_t *w = (const bfs_any_word_t *)(const void *)p;
+        if ((w[0] | w[1] | w[2] | w[3]) != 0) return false;
+#else
+        uint32_t w[4];
+        memcpy(w, p, sizeof(w)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+        if ((w[0] | w[1] | w[2] | w[3]) != 0) return false;
+#endif
+    }
+    while (length > 0) {
+        if (*p++ != 0) return false;
+        length--;
+    }
+    return true;
+}
+
+/* Advance crc over length bytes at p. Zero bytes only shift the CRC state, so
+ * an all-zero range uses the zero-run step instead of hashing every byte; the
+ * result is identical either way. */
+static uint32_t crc_range(uint32_t crc, const uint8_t *p, uint32_t length)
+{
+    return bytes_are_zero(p, length) ? bfs_crc32_zeros(crc, length)
+                                     : bfs_crc32(crc, p, length);
+}
+
+/* The on-disk full-block CRC of a node read from disk, bit-identical to
+ * node_compute_crc. Unused slots of nodes written by this version are zero,
+ * so only the used ranges are hashed; legacy non-zero padding and headers
+ * that describe no valid layout are hashed in full. The header only selects
+ * how bytes are hashed, never which bytes are covered. */
+static uint32_t node_compute_read_crc(const bfs_btree_t *tree, uint8_t *buf)
+{
+    node_ranges_t r;
+    if (!node_ranges(tree, buf, &r)) return node_compute_crc(tree, buf);
+    bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
+    uint32_t saved_crc = hdr->crc32;
+    hdr->crc32 = 0;
+    uint32_t values_end = r.values_start + r.values_length;
+    uint32_t crc = bfs_crc32(0, buf, r.prefix_end);
+    crc = crc_range(crc, buf + r.prefix_end, r.values_start - r.prefix_end);
+    crc = bfs_crc32(crc, buf + r.values_start, r.values_length);
+    crc = crc_range(crc, buf + values_end, tree->bio->block_size - values_end);
+    hdr->crc32 = saved_crc;
+    return crc;
+}
+
+/* Unused slots have no semantic meaning, but remain covered by the on-disk
+ * full-block CRC. Canonicalize them on writes and advance the exact CRC state
+ * over their zero bytes. */
+static bfs_err_t node_compute_write_crc(const bfs_btree_t *tree, uint8_t *buf,
+                                         uint32_t *crc_out)
+{
+    node_ranges_t r;
+    if (!node_ranges(tree, buf, &r)) return BFS_ERR_CORRUPT;
+    uint32_t gap = r.values_start - r.prefix_end;
+    uint32_t values_end = r.values_start + r.values_length;
+    uint32_t tail = tree->bio->block_size - values_end;
+    memset(buf + r.prefix_end, 0, gap);
+    memset(buf + values_end, 0, tail);
+    uint32_t crc = bfs_crc32(0, buf, r.prefix_end);
     crc = bfs_crc32_zeros(crc, gap);
-    crc = bfs_crc32(crc, buf + values_start, values_length);
+    crc = bfs_crc32(crc, buf + r.values_start, r.values_length);
     *crc_out = bfs_crc32_zeros(crc, tail);
     return BFS_OK;
 }

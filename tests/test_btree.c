@@ -1723,6 +1723,65 @@ static void test_cached_node_crc_revalidation(void)
     free(ba); bfs_bio_close(bio); unlink(TEST_IMG);
 }
 
+/* The read check hashes only used ranges of canonical nodes. It must still
+ * reject a change to any byte, and accept legacy non-zero padding. */
+static void flip_and_expect(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *good,
+                            uint32_t offset, bool recompute_crc, bfs_err_t expected)
+{
+    uint8_t bad[BLK_SIZE];
+    uint32_t key, found;
+    make_key(&key, 3);
+    memcpy(bad, good, BLK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    bad[offset] ^= 0x5a;
+    if (recompute_crc)
+        ((bfs_btnode_hdr_t *)bad)->crc32 = bfs_be32(reference_node_crc(bad, BLK_SIZE));
+    TEST_ASSERT_EQ(bfs_bio_write(tree->bio, blk, bad), BFS_OK);
+    TEST_ASSERT_EQ(bfs_btree_search(tree, &key, &found), expected);
+    TEST_ASSERT_EQ(bfs_bio_write(tree->bio, blk, good), BFS_OK);
+    TEST_ASSERT_EQ(bfs_btree_search(tree, &key, &found), BFS_OK);
+}
+
+static void test_read_crc_covers_every_byte(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    for (uint32_t i = 1; i <= 5; i++)
+        TEST_ASSERT_EQ(insert_tenfold(&tree, i), BFS_OK);
+    TEST_ASSERT_EQ(tree.height, 1);
+    uint8_t good[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, tree.root, good), BFS_OK);
+    uint32_t gap_start, values_start, values_end;
+    TEST_ASSERT(node_padding_ranges(&tree, good, &gap_start, &values_start, &values_end));
+    TEST_ASSERT(range_is_zero(good, gap_start, values_start));
+    TEST_ASSERT(range_is_zero(good, values_end, BLK_SIZE));
+
+    const uint32_t offsets[] = {
+        sizeof(bfs_btnode_hdr_t), gap_start - 1, gap_start, values_start - 1,
+        values_start, values_end - 1, values_end, values_end + 17, BLK_SIZE - 1,
+    };
+    for (uint32_t i = 0; i < sizeof(offsets) / sizeof(offsets[0]); i++)
+        flip_and_expect(&tree, tree.root, good, offsets[i], false, BFS_ERR_CORRUPT);
+    /* Non-zero padding with a full-block CRC, as older writers left it. */
+    flip_and_expect(&tree, tree.root, good, gap_start, true, BFS_OK);
+    flip_and_expect(&tree, tree.root, good, BLK_SIZE - 1, true, BFS_OK);
+
+    uint8_t legacy[BLK_SIZE];
+    TEST_ASSERT(seed_legacy_node_padding(&tree, tree.root, legacy, 7));
+    uint32_t key, found;
+    make_key(&key, 3);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_OK);
+    flip_and_expect(&tree, tree.root, legacy, BLK_SIZE - 2, false, BFS_ERR_CORRUPT);
+    flip_and_expect(&tree, tree.root, legacy, gap_start + 1, false, BFS_ERR_CORRUPT);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_empty_tree_search);
     TEST_RUN(test_single_insert_search);
@@ -1757,4 +1816,5 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_replace_root_leaf_write_failure);
     TEST_RUN(test_replace_root_leaf_deeper_unsupported);
     TEST_RUN(test_cached_node_crc_revalidation);
+    TEST_RUN(test_read_crc_covers_every_byte);
 TEST_SUITE_END()
