@@ -299,7 +299,7 @@ static void make_baseline(void)
     bfs_fs_format(bio, "Deferred", 0);
     bfs_fs_mount(&fs, bio);
     for (int i = 0; i < 6; i++) {
-        char name[8];
+        char name[16];
         int len = snprintf(name, sizeof(name), "old%d", i);
         bfs_fs_create_file(&fs, BFS_ROOT_INO, name, (uint8_t)len, &ino);
     }
@@ -359,7 +359,7 @@ static bfs_err_t run_workload(bfs_fs_t *fs)
 {
     uint32_t ino;
     for (int i = 0; i < 8; i++) {
-        char name[8];
+        char name[16];
         int len = snprintf(name, sizeof(name), "new%d", i);
         bfs_err_t err = bfs_fs_create_file(fs, BFS_ROOT_INO, name, (uint8_t)len, &ino);
         if (err != BFS_OK) return err;
@@ -370,7 +370,7 @@ static bfs_err_t run_workload(bfs_fs_t *fs)
             return BFS_ERR_IO;
     }
     for (int i = 0; i < 6; i += 2) {
-        char name[8];
+        char name[16];
         int len = snprintf(name, sizeof(name), "old%d", i);
         bfs_err_t err = bfs_fs_delete_file(fs, BFS_ROOT_INO, name, (uint8_t)len);
         if (err != BFS_OK) return err;
@@ -396,14 +396,14 @@ static int committed_state(bfs_fs_t *fs)
 {
     bool old_state = true, new_state = true;
     for (int i = 0; i < 6; i++) {
-        char name[8];
+        char name[16];
         snprintf(name, sizeof(name), "old%d", i);
         bool exists = name_exists(fs, name);
         if (!exists) old_state = false;
         if (exists != (i % 2 == 1)) new_state = false;
     }
     for (int i = 0; i < 8; i++) {
-        char name[8];
+        char name[16];
         snprintf(name, sizeof(name), "new%d", i);
         bool exists = name_exists(fs, name);
         if (exists) old_state = false;

@@ -272,7 +272,7 @@ static void test_online_compaction(void)
     setup();
     /* Create a fragmented directory tree with 500 entries */
     for (int i = 0; i < 500; i++) {
-        char name[16]; snprintf(name, sizeof(name), "file_%d", i);
+        char name[24]; snprintf(name, sizeof(name), "file_%d", i);
         bfs_fs_create_file(&g_fs, BFS_ROOT_INO, name, strlen(name), NULL);
     }
     bfs_fs_sync(&g_fs);
@@ -287,7 +287,7 @@ static void test_online_compaction(void)
 
     /* Verify all files still exist and are accessible after compaction */
     for (int i = 0; i < 500; i++) {
-        char name[16]; snprintf(name, sizeof(name), "file_%d", i);
+        char name[24]; snprintf(name, sizeof(name), "file_%d", i);
         uint32_t ino, type;
         TEST_ASSERT_EQ(bfs_dir_lookup(&g_fs.dir_tree, BFS_ROOT_INO, name, strlen(name), &ino, &type), BFS_OK);
     }
