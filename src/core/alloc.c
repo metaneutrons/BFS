@@ -46,7 +46,7 @@ static uint32_t reserve_refill_target(const bfs_freespace_t *fs)
 /* ── B+tree ops for free space tree ────────────────────────── */
 
 static const bfs_btree_ops_t free_ops = {
-    .key_compare = bfs_cmp_be32,
+    .key_compare = bfs_btree_key_compare_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(uint32_t),
     .cache_key_order = true,

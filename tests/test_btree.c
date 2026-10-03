@@ -1109,6 +1109,56 @@ static void test_search_hint_follows_changes(void)
     unlink(SCAN_IMG);
 }
 
+/* ── Test: specialized search for big-endian u32 keys ──────── */
+
+static const bfs_btree_ops_t be32_ops = {
+    .key_compare = bfs_btree_key_compare_be32,
+    .key_size = sizeof(uint32_t),
+    .val_size = sizeof(uint32_t),
+    .cache_key_order = true,
+};
+
+/* Keys spread over the whole unsigned range, including values with the top
+ * bit set, are found exactly; the gaps between them are not. */
+static void test_be32_search_matches_comparator(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    TEST_ASSERT_EQ(bfs_freespace_init(&scan_space, raw, BFS_BLK_NULL, 1), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_add(&scan_space, 2, SCAN_BLK_COUNT - 2), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&scan_space), BFS_OK);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, raw, bfs_freespace_allocator(&scan_space), &be32_ops,
+                                  BFS_BLK_NULL, 1), BFS_OK);
+    const uint32_t count = 3000;
+    const uint32_t step = 0x00155555u; /* 3000 steps cover most of 2^32 */
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t k = ((i * 1237u) % count) * step + 7u, key, val;
+        make_key(&key, k);
+        make_key(&val, k ^ 0xA5A5A5A5u);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    }
+    TEST_ASSERT(tree.height >= 2);
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t k = i * step + 7u, key, val;
+        make_key(&key, k);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+        TEST_ASSERT_EQ(read_key(&val), k ^ 0xA5A5A5A5u);
+        make_key(&key, k + 1u);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_ERR_NOTFOUND);
+        make_key(&key, k - 1u);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_ERR_NOTFOUND);
+    }
+    uint32_t key, val, found_key;
+    make_key(&key, 0x80000000u);
+    TEST_ASSERT_EQ(bfs_btree_search_floor(&tree, &key, &found_key, &val), BFS_OK);
+    TEST_ASSERT(read_key(&found_key) < 0x80000000u);
+    TEST_ASSERT(read_key(&found_key) + step > 0x80000000u);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
 /* ── Test: COW preserves old root ──────────────────────────── */
 
 static void test_cow_old_root_preserved(void)
@@ -2160,6 +2210,7 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_scan_survives_callback_changes);
     TEST_RUN(test_scan_cursor_resumes_in_leaf);
     TEST_RUN(test_search_hint_follows_changes);
+    TEST_RUN(test_be32_search_matches_comparator);
     TEST_RUN(test_cow_old_root_preserved);
     TEST_RUN(test_single_delete);
     TEST_RUN(test_delete_all);

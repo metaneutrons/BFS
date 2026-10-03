@@ -61,6 +61,10 @@ typedef struct bfs_btree_ops {
     bool cache_key_order;
 } bfs_btree_ops_t;
 
+/* Comparator for big-endian u32 keys. Trees that use it get node searches
+ * that compare the values directly instead of calling it for each step. */
+int bfs_btree_key_compare_be32(const void *a, const void *b);
+
 /* ── Engine limits ─────────────────────────────────────────── */
 
 /* Maximum B+tree height the engine traverses; a tree deeper than this is

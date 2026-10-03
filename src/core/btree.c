@@ -457,11 +457,33 @@ static void node_init(const bfs_btree_t *tree, uint8_t *buf, uint16_t level)
 
 /* ── Binary search within a node ───────────────────────────── */
 
+int bfs_btree_key_compare_be32(const void *a, const void *b)
+{
+    return bfs_cmp_be32(a, b);
+}
+
 static uint32_t node_search(const bfs_btree_t *tree, uint8_t *buf,
                             const void *search_key, bool *found)
 {
     uint32_t lo = 0, hi = num_keys(buf);
     *found = false;
+    if (tree->ops->key_compare == bfs_btree_key_compare_be32) {
+        /* The same order as the comparator, without a call per step. */
+        uint32_t wanted = bfs_load_be32(search_key);
+        while (lo < hi) {
+            uint32_t mid = lo + (hi - lo) / 2;
+            uint32_t key = bfs_load_be32(node_key(tree, buf, mid));
+            if (key < wanted)
+                lo = mid + 1;
+            else if (key > wanted)
+                hi = mid;
+            else {
+                *found = true;
+                return mid;
+            }
+        }
+        return lo;
+    }
     while (lo < hi) {
         uint32_t mid = lo + (hi - lo) / 2;
         int cmp = tree->ops->key_compare(node_key(tree, buf, mid), search_key);

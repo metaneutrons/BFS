@@ -18,7 +18,7 @@
 /* ── B+tree ops ────────────────────────────────────────────── */
 
 static const bfs_btree_ops_t extent_ops = {
-    .key_compare = bfs_cmp_be32,
+    .key_compare = bfs_btree_key_compare_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_extent_val_t),
     .cache_key_order = true,

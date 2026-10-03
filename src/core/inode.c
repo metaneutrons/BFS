@@ -20,7 +20,7 @@ void bfs_inode_apply_stamp(bfs_inode_t *inode, const bfs_inode_stamp_t *stamp,
 }
 
 static const bfs_btree_ops_t bfs_inode_ops = {
-    .key_compare = bfs_cmp_be32,
+    .key_compare = bfs_btree_key_compare_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_inode_t),
     .cache_key_order = true,
