@@ -872,10 +872,10 @@ static bool FindLockName(const char *name, uint8_t name_len,
     return false;
 }
 
-static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
-                             char *name, uint8_t *name_len)
+static bfs_err_t NameForObject(struct bfs_handler *h, uint32_t ino,
+                               uint32_t parent_ino, char *name, uint8_t *name_len)
 {
-    if (lock->ino == BFS_ROOT_INO) {
+    if (ino == BFS_ROOT_INO) {
         uint8_t len = 0;
         const char *volname = h->snapshot_startup ? h->snapshot_startup->mount_name
                                                   : (const char *)h->fs.txn.sb.volname;
@@ -888,17 +888,23 @@ static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
     }
 
     lock_name_ctx_t lookup = {
-        .ino = lock->ino,
+        .ino = ino,
         .name = name,
         .name_len = 0,
         .found = false,
     };
-    bfs_err_t err = bfs_dir_scan(&h->fs.dir_tree, lock->parent_ino,
+    bfs_err_t err = bfs_dir_scan(&h->fs.dir_tree, parent_ino,
                                  FindLockName, &lookup);
     if (err != BFS_OK) return err;
     if (!lookup.found) return BFS_ERR_NOTFOUND;
     *name_len = lookup.name_len;
     return BFS_OK;
+}
+
+static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
+                             char *name, uint8_t *name_len)
+{
+    return NameForObject(h, lock->ino, lock->parent_ino, name, name_len);
 }
 
 /* ── BSTR / path helpers ──────────────────────────────────── */
@@ -2902,7 +2908,14 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         uint64_t size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
         uint32_t type = bfs_be32(inode.type);
-        FillFib(fib, "", 0, f->inode_nr, type, size, bfs_be32(inode.protection), &inode);
+        /* Objects in use cannot be renamed, so the parent recorded at open
+         * still holds the name. */
+        char name[BFS_NAME_MAX + 1];
+        uint8_t name_len = 0;
+        err = NameForObject(h, f->inode_nr, ((bfs_open_file_t *)f)->parent_ino,
+                            name, &name_len);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        FillFib(fib, name, name_len, f->inode_nr, type, size, bfs_be32(inode.protection), &inode);
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_FH64) FillFib64(fib, size);
         err = FillFibComment(h, fib, f->inode_nr, &inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }

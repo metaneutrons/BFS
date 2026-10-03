@@ -717,11 +717,13 @@ static BOOL examine_comment(const char *p, const char *expected)
     return ok;
 }
 
-static BOOL examine_fh_comment(const char *p, const char *expected)
+/* ExamineFH reports the file's name as well as its comment. */
+static BOOL examine_fh_comment(const char *p, const char *name, const char *expected)
 {
     BPTR fh = Open(p, MODE_OLDFILE);
     struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
-    BOOL ok = fh && fib && ExamineFH(fh, fib) && cstr_equal(fib->fib_Comment, expected);
+    BOOL ok = fh && fib && ExamineFH(fh, fib) && cstr_equal(fib->fib_Comment, expected) &&
+              cstr_equal(fib->fib_FileName, name);
     if (fib) FreeDosObject(DOS_FIB, fib);
     if (fh) Close(fh);
     return ok;
@@ -750,7 +752,7 @@ static void test_comment(void)
     }
     if (!examine_comment(p, "BFS integrity test")) { fail(T, "examine"); goto cl; }
     if (!exnext_comment("cmt.dat", "BFS integrity test")) { fail(T, "exnext"); goto cl; }
-    if (!examine_fh_comment(p, "BFS integrity test")) { fail(T, "examinefh"); goto cl; }
+    if (!examine_fh_comment(p, "cmt.dat", "BFS integrity test")) { fail(T, "examinefh"); goto cl; }
 
     /* 79 characters is the limit and survives unchanged; 80 is refused. */
     char longest[81];
