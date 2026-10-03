@@ -266,6 +266,14 @@ close and every standalone metadata operation. `bfs commit DRIVE: SYNC` or
 `DELAYED` switches a mounted volume until the next mount; `bfs commit DRIVE:`
 shows the active mode.
 
+### DMA settings
+
+File data moves between the device and the caller's buffer in transfers of
+up to `MaxTransfer` bytes. BFS uses the caller's memory directly only if it
+lies within the partition's `Mask`; otherwise, or if the Mountlist gives no
+`Mask`, it copies through a one-block buffer of `BufMemType`. Set `Mask` and
+`MaxTransfer` to what the controller supports, as for FFS or PFS3.
+
 ## License
 
 [Mozilla Public License 2.0](LICENSE)
