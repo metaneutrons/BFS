@@ -1,12 +1,12 @@
 # Volume and Superblocks
 
-This chapter is normative for the v2 volume envelope. See
+This chapter is normative for the v3 volume envelope. See
 [the format entry point](../on-disk-format.md) for terminology and geometry.
 
 ## Superblock selection
 
 Each superblock occupies a 512-byte slot. Its 240-byte payload starts at byte
-zero of the slot; bytes 240 through 511 are zero on every v2 write. Slot A is
+zero of the slot; bytes 240 through 511 are zero on every write. Slot A is
 at byte zero. Slot B is at `block_count * block_size / 2`, and that exact
 offset is stored in both copies.
 
@@ -17,7 +17,7 @@ To select a committed state, a reader MUST:
 2. Verify magic and CRC before classifying version or option bits.
 3. Treat a CRC-valid, incompatible version or unknown option bit in either
    copy as `unsupported`, and refuse the volume. It MUST NOT fall back to a
-   lower transaction v2 copy.
+   lower transaction compatible copy.
 4. For compatible copies, verify their stored geometry and B offset match the
    actual device and its midpoint.
 5. Select the valid compatible copy with the greatest transaction ID. Equal
@@ -31,15 +31,15 @@ completed filesystem to both slots.
 
 All fields are big-endian. The payload CRC is the last field.
 
-| Offset | Width | Field | v2 meaning and validation |
+| Offset | Width | Field | Meaning and validation |
 | ---: | ---: | --- | --- |
 | 0 | 4 | `magic` | `0x42465300` (`BFS\0`) |
-| 4 | 4 | `version` | Exactly `2` for a compatible v2 mount |
+| 4 | 4 | `version` | Exactly `3` for a compatible mount; version 2 is an older, unsupported format |
 | 8 | 4 | `block_size` | Power of two in `[1024, 65536]` |
 | 12 | 4 | `block_count` | Physical device blocks; nonzero and matching the selected geometry |
 | 16 | 8 | `txn_id` | Nonzero monotonically increasing committed-state identifier |
 | 24 | 4 | `dir_tree_root` | Root of the global directory tree, or zero only for an empty/uninitialized tree |
-| 28 | 4 | `extent_tree_root` | Legacy global extent root. The current v2 writer leaves it zero; file extents are rooted by each inode. Readers validate its range but do not traverse it. Do not assign new semantics. |
+| 28 | 4 | `extent_tree_root` | Legacy global extent root. The writer leaves it zero; file extents live in each inode. Readers validate its range but do not traverse it. Do not assign new semantics. |
 | 32 | 4 | `free_tree_root` | Root of the free-space tree |
 | 36 | 4 | `inode_tree_root` | Root of the inode tree |
 | 40 | 4 | `refcount_tree_root` | Root of the refcount tree; must be zero when `snapshot_tree_root` is zero |
@@ -62,9 +62,9 @@ distinct; graph ownership validation belongs to the checker.
 
 ## Options
 
-| Bit | Name | v2 behavior |
+| Bit | Name | Behavior |
 | ---: | --- | --- |
-| 0 | `BFS_OPT_DATA_CHECKSUMS` | File writes record a data CRC in extent values and reads validate nonzero stored CRCs. A stored CRC of zero means no validation, including the rare case where a computed CRC is zero. |
+| 0 | `BFS_OPT_DATA_CHECKSUMS` | File writes record a data CRC in extent values or the inline extent, and reads validate nonzero stored CRCs. A stored CRC of zero means no validation, including the rare case where a computed CRC is zero. |
 | 1 | `BFS_OPT_SNAPSHOTS` | Recognized legacy option bit. Snapshot presence is determined by `snapshot_tree_root`, not this bit. The current core does not gate snapshot operations on it. |
 | 2 | `BFS_OPT_DATA_ORDERED` | The transaction path requests a block-device sync before publishing a metadata superblock. It depends on the backend honoring that barrier. |
 

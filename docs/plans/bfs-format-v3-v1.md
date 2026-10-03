@@ -1,7 +1,7 @@
 # BFS on-disk format v3: inline extents and inode flags
 
-Decision state: approved. Format v3 replaces v2; this driver will not read or
-write v2 volumes. The goal is the same as for the write-path stages: at most
+Decision state: approved and implemented on `format/v3-inline-extents`.
+Format v3 replaces v2; this driver will not read or write v2 volumes. The goal is the same as for the write-path stages: at most
 five times PFS3 elapsed time in every checked AmigaDOS workload, without
 weakening committed-state integrity, snapshot isolation or crash recovery.
 

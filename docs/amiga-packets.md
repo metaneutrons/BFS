@@ -43,14 +43,18 @@ native MorphOS, OS4 or physical Apollo hardware.
 text-buffer pointer; argument 2 is its capacity, at least `BFS_FORMAT_ERROR_MAX`
 (192 bytes). Invalid arguments return DOSFALSE / `ERROR_BAD_NUMBER` without
 writing to the buffer. Otherwise the handler writes 192 bytes, including a
-NUL-terminated diagnosis and zero padding. DOSTRUE / error 0 means an
-incompatible format was recognized; DOSFALSE / error 0 means no such diagnosis
-exists. It is available before a successful mount and while inhibited. Older
-handlers return `ERROR_ACTION_NOT_KNOWN`.
+NUL-terminated diagnosis and zero padding. DOSTRUE means an incompatible
+format was recognized; its secondary result is `BFS_FORMAT_REPLACEABLE` (1)
+when the medium holds only older BFS formats, which `ACTION_FORMAT` replaces,
+and 0 when `ACTION_FORMAT` refuses the medium. DOSFALSE / error 0 means no such
+diagnosis exists. It is available before a successful mount and while
+inhibited. Older handlers return `ERROR_ACTION_NOT_KNOWN`.
 
 Ordinary packets still use the standard numeric `ERROR_NOT_IMPLEMENTED` for an
-incompatible format. Interactive callers additionally receive a one-time
-requester naming the actual format version and supported version. The caller's
+incompatible format. So does `ACTION_FORMAT`, unless the medium is replaceable
+as defined in the [compatibility contract](format-compatibility.md#replacing-an-older-format).
+Interactive callers additionally receive a one-time requester naming the
+actual format version and supported version. The caller's
 `pr_WindowPtr == -1` suppresses this requester. Unknown option bits are reported
 separately from newer or older unsupported versions.
 

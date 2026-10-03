@@ -1,6 +1,6 @@
 # Filesystem Semantics
 
-This document defines the host-facing interpretation of BFS v2. `BFS-CAP-*`
+This document defines the host-facing interpretation of BFS v3. `BFS-CAP-*`
 identifiers refer to the capability ledger.
 
 ## Namespace and inode identity
@@ -42,11 +42,11 @@ second directory entry to its target inode and is reported with the target's
 ordinary file type and `st_nlink` value. An unknown inode type or a malformed
 inode is a corruption error, never a guessed file type.
 
-`st_size` is the v2 unsigned 64-bit size. `st_ino` is the unsigned 32-bit BFS
+`st_size` is the unsigned 64-bit inode size. `st_ino` is the unsigned 32-bit BFS
 inode number. The adapter must check conversions to the host `off_t`, `ino_t`,
 and `blkcnt_t`; an unrepresentable value is `EOVERFLOW`.
 
-v2 timestamps use the Amiga DateStamp epoch: 1978-01-01 00:00:00 UTC, with
+Timestamps use the Amiga DateStamp epoch: 1978-01-01 00:00:00 UTC, with
 days, minutes, and 1/50-second ticks. M5 exposes the stored modification time
 rounded down to seconds and exposes the creation time where the FUSE ABI has a
 field for it. A zero DateStamp is an unknown timestamp and is reported as zero,
@@ -132,7 +132,7 @@ may return `EINTR` only before the request has published a reply.
 ## Writable-v2 recovery contract
 
 M6 keeps the v2 byte layout frozen. It uses no option bit, padding, new record,
-or new inode type. A final-link unlink or a replacement of an open file changes
+or new inode type. Format v3 keeps this contract unchanged. A final-link unlink or a replacement of an open file changes
 the displaced non-directory inode's existing `link_count` to zero and removes
 its directory name as one mutable namespace state. Existing normal readers
 already reject zero-link inodes from namespace operations; the handle-aware

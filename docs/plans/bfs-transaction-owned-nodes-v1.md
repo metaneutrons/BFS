@@ -5,8 +5,9 @@ policy is the chosen default, with a synchronous mode retained as an option.
 Stage A and the measurement tooling are implemented on
 `perf/txn-owned-nodes`; stages B and C and the first data-path stage
 (multi-block transfers from the caller's buffer, honouring Mask and
-MaxTransfer) on `perf/write-path-stages`. Inline extents are not
-implemented. Stage C
+MaxTransfer) on `perf/write-path-stages`. Inline extents became part of
+on-disk format v3 ([plan](bfs-format-v3-v1.md)) on
+`format/v3-inline-extents`. Stage C
 keeps dirty nodes in the block cache rather than in the B-tree layer, so every
 reader of a block, including trees opened without the filesystem's free sink,
 sees the current image; the dirty limit is half of the cache slots instead of

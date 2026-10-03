@@ -1,6 +1,6 @@
 # Commit, Recovery, and Checker Boundaries
 
-BFS v2 publishes metadata through copy-on-write trees and an alternating
+BFS publishes metadata through copy-on-write trees and an alternating
 superblock boundary. This chapter defines the resulting observable committed
 states and the limits of that design.
 
@@ -82,7 +82,8 @@ A read-only checker may inspect the selected compatible superblock, all
 reachable B+tree nodes, keys, record constraints, and extent ranges. It MUST
 not choose an alternative state from a lower transaction ID merely because a
 newer valid copy looks unfamiliar. An intact unsupported copy requires a
-version-aware tool and must not be modified by a v2 repair pass.
+version-aware tool and must not be modified by a repair pass of another
+version.
 
 A repairing checker reconstructs allocation ownership from the selected roots,
 reserves fixed regions and the emergency pool, and then rebuilds free-space

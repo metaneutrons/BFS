@@ -1,6 +1,6 @@
 # Filesystem failure semantics
 
-The normative byte layout is [BFS v2 on-disk format](on-disk-format.md). This
+The normative byte layout is [BFS v3 on-disk format](on-disk-format.md). This
 document defines operation and recovery behavior, not an alternate layout.
 
 BFS uses copy-on-write metadata and an alternating superblock commit boundary.
@@ -22,7 +22,7 @@ the inode with `link_count == 0`. Only handles explicitly marked through
 inode with zero links. The adapter reclaims that inode after the last retained
 handle closes. No new lookup or normal file open can reach it.
 
-A zero-link inode is an intentional, recoverable v2 state, not a public
+A zero-link inode is an intentional, recoverable state, not a public
 namespace object. A writable mount reclaims every such non-directory inode
 before exposing the live namespace; a read-only mount preserves it and must
 not expose it. Thus a crash after an unlink or replacement rename may discard

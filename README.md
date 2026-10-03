@@ -73,11 +73,15 @@ The B+tree engine is shared across all metadata types, utilizing a **dynamic tra
 `data=ordered` and metadata compaction are core API capabilities. The current
 Amiga `bfs format` does not expose arbitrary format-option flags.
 
-The normative v2 byte layout is documented in [the on-disk format specification](docs/on-disk-format.md).
+The normative v3 byte layout is documented in [the on-disk format specification](docs/on-disk-format.md).
+Format v3 replaced v2 and cannot read v2 volumes: copy their data with a v0.1
+driver, then format the volume with `bfs format`, which replaces an older BFS
+format (see [format compatibility](docs/format-compatibility.md#replacing-an-older-format)).
 
 - **Directory tree** — (parent_id, hash, name) → (inode, type)
-- **Extent tree** — file_block → (disk_block, length, data CRC32)
-- **Inode tree** — inode_id → metadata
+- **Extent tree** — file_block → (disk_block, length, data CRC32); a file whose
+  content is one contiguous run keeps it in its inode instead
+- **Inode tree** — inode_id → metadata, flags and the optional inline extent
 - **Free space tree** — block_nr → length (self-hosting)
 - **Refcount tree** — block_nr → refcount (snapshot block sharing)
 - **Snapshot tree** — snapshot_id → record (tree roots + cursor + name)

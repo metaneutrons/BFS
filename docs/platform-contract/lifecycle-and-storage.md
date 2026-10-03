@@ -70,7 +70,7 @@ production transport must satisfy all of the following:
 
 The transport accepts a requested block size only after the core's validated
 superblock probe has selected it. It must not truncate a 64-bit range before
-`bfs_bio_set_geometry()` checks the v2 32-bit block-count maximum.
+`bfs_bio_set_geometry()` checks the 32-bit block-count maximum.
 
 ## Representation and boundary checks
 
