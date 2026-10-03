@@ -36,13 +36,16 @@ for dump in "$work"/cg.out.*; do
     [[ -n "$phase" && -n "$instructions" ]] || { printf 'ERROR: incomplete dump %s\n' "$dump" >&2; exit 1; }
     printf '%s_IR\t%s\n' "$phase" "$instructions"
     if (( top > 0 )) && command -v callgrind_annotate >/dev/null; then
+        # awk reads all input: exiting early would fail the pipeline.
         callgrind_annotate --threshold=100 --inclusive=no "$dump" 2>/dev/null |
-            awk -v phase="$phase" -v top="$top" '
+            awk -v phase="$phase" -v top="$top" -v root="$root/" '
                 /^ *[0-9,]+ \(/ && !/PROGRAM TOTALS|libc_start|below main|0x[0-9a-f]+/ {
+                    if (shown >= top) next
                     count = $1; gsub(",", "", count)
-                    name = $3; sub(/ \[.*/, "", name)
+                    name = $0; sub(/^[^)]*\) +/, "", name); sub(/ \[.*/, "", name)
+                    if (index(name, root) == 1) name = substr(name, length(root) + 1)
                     printf "%s_TOP\t%s\t%s\n", phase, count, name
-                    if (++shown >= top) exit
+                    shown++
                 }'
     fi
 done
