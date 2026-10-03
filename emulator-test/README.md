@@ -110,6 +110,13 @@ Schema 2 of `FS_COMPARE_BENCH` and `FS_DURABLE_COMPARE` added the two listing
 phases; the verifier still accepts schema 1 outputs, which lack them. The deep
 profile keeps its phases and does not list.
 
+To compare several handlers, `emulator-test/bench-series.sh LABEL COUNT MODE
+NAME=HANDLER...` runs COUNT fresh runs of each handler in turn, starting with
+BFS in odd runs and with PFS3 in even runs, and keeps each run below
+`build/benchmark/LABEL-NAME-I-ORDER`. `tools/bench-summary.py LABEL-NAME...`
+then prints per phase the means, their variation, the ratio of means, the
+per-run ratio range and median, and how many runs exceed five times PFS3.
+
 Set `BFS_BENCH_MODE=durable-compare` to run the same workload with an
 `ACTION_FLUSH` to the volume at the end of the create, write and delete phases,
 inside the timed region. Each filesystem then pays for its own commit within
