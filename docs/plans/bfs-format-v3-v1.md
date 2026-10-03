@@ -274,6 +274,35 @@ flag, create, small read and delete through the inline extent. Large-file
 phases should not regress; an 8 MiB file whose runs are contiguous on disk now
 needs no extent tree at all.
 
+## Results
+
+Durable-compare on FS-UAE, six fresh runs per variant, interleaved and
+alternating BFS-first and PFS3-first; every run verified. The baseline is
+`perf/write-path-stages` at `3571f04` (format v2). Times are BFS medians; the
+factor uses the PFS3 median of the same series.
+
+| Phase | Before (v2) | v3 | Change |
+| --- | ---: | ---: | ---: |
+| Create 40 | 58.0 ms (3.4x) | 42.7 ms (2.7x) | −26 % |
+| Lookup 400 | 66.6 ms (1.0x) | 62.8 ms (1.1x) | −6 % |
+| Small read 40 | 26.4 ms (1.8x) | 19.8 ms (1.5x) | −25 % |
+| Write 8 MiB | 89.9 ms (2.2x) | 74.1 ms (2.0x) | −18 % |
+| Read 8 MiB | 262.2 ms (1.0x) | 255.7 ms (1.0x) | −2 % |
+| Delete 40 | 41.2 ms (4.8x) | 25.6 ms (3.2x) | −38 % |
+
+Delete, the tightest workload, now ranges from 3.0x to 3.4x per run (before
+4.1x to 5.5x). The lookup factor rises although BFS got faster, because the
+PFS3 median of the v3 series was lower (57.7 against 67.4 ms); this is
+emulator noise between series, not a regression.
+
+One deep-compare run per variant shows the mechanism. Create 40 issues 40
+device writes instead of 74 and 45 instead of 85 allocations: only data
+blocks remain. Small read 40 reads 40 blocks instead of 72, and delete 40
+reads none instead of 35; neither verifies an extent node any more. The
+deterministic host profile of the same workload (group commit) drops by
+29.7 % (create), 5.4 % (lookup), 42.9 % (small read), 16.3 % (8 MiB write),
+3.4 % (8 MiB read) and 33.8 % (delete) instructions.
+
 ## Staging
 
 All work lands on one branch, `format/v3-inline-extents`, based on
