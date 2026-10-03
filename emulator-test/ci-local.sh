@@ -52,15 +52,11 @@ HDF="$SCRIPT_DIR/ci-test.hdf"
 rm -f "$HDF"
 PART_FILE=$(mktemp)
 PID=
-TIMER_PID=
 # Called indirectly by the EXIT trap below (SC2317 on older ShellCheck).
 # shellcheck disable=SC2329,SC2317
 cleanup() {
     if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
         if kill "$PID" 2>/dev/null; then :; fi
-    fi
-    if [ -n "$TIMER_PID" ] && kill "$TIMER_PID" 2>/dev/null; then
-        if wait "$TIMER_PID" 2>/dev/null; then :; fi
     fi
     rm -f "$PART_FILE"
 }
@@ -84,7 +80,10 @@ cat > "$WB/S/Startup-Sequence" << EOF
 C:bfs-test BFS: LOG=SYS:result.txt${FILTER_ARG}
 EOF
 
-rm -f "$WB/result.txt"
+RESULT="$WB/result.txt"
+DONE="$RESULT.done"
+# A completion record left by an earlier run would stop this one at once.
+rm -f "$RESULT" "$DONE" "$DONE.tmp"
 
 # ── Generate FS-UAE config ────────────────────────────────────
 CFG="$SCRIPT_DIR/config/ci-local.fs-uae"
@@ -116,24 +115,29 @@ echo "Starting FS-UAE..."
 
 FSEMU_AUDIO_DRIVER=null fs-uae "$CFG" &
 PID=$!
-(
-    sleep "$TIMEOUT"
-    if kill -0 "$PID" 2>/dev/null; then
-        kill "$PID" 2>/dev/null
+# The guest never shuts the emulator down. bfs-test publishes its completion
+# record once the result log is closed; stop the emulator then, or when the
+# timeout expires.
+DEADLINE=$((SECONDS + TIMEOUT))
+while kill -0 "$PID" 2>/dev/null; do
+    if [ -f "$DONE" ] || [ "$SECONDS" -ge "$DEADLINE" ]; then
+        if kill "$PID" 2>/dev/null; then :; fi
+        break
     fi
-) &
-TIMER_PID=$!
+    sleep 1
+done
 if wait "$PID" 2>/dev/null; then :; fi
 PID=
-if kill "$TIMER_PID" 2>/dev/null; then
-    if wait "$TIMER_PID" 2>/dev/null; then :; fi
-fi
-TIMER_PID=
 
 # ── Evaluate results ──────────────────────────────────────────
-RESULT="$WB/result.txt"
 if [ ! -f "$RESULT" ]; then
     echo "ERROR: No result file (handler crash or timeout)"
+    exit 1
+fi
+if [ ! -f "$DONE" ]; then
+    echo "WARNING: the guest did not complete within ${TIMEOUT}s"
+elif [ "$(cat "$DONE")" != "$(printf 'BFS-TEST-COMPLETE\t1')" ]; then
+    echo "ERROR: malformed completion record" >&2
     exit 1
 fi
 

@@ -23,9 +23,9 @@ ignoriert. Für Kickstart-Läufe und Messungen müssen vorhanden sein:
 `emulator-test/.assets/A1200.47.102.rom`, `emulator-test/.assets/{C,L,Libs}`
 mit den Workbench-3.2-Befehlen und `emulator-test/.cache/pfs3aio`.
 
-Unter Kickstart beendet sich der Emulator nach den Tests nicht selbst;
-`ci-local.sh` wertet aus, sobald der Timeout abläuft oder du das
-Emulatorfenster schließt. Das Ergebnis steht vorher schon in
+`ci-local.sh` beendet den Emulator, sobald `bfs-test` seinen
+Abschlussvermerk geschrieben hat, spätestens beim Timeout. Die ganze Reihe
+dauert in der Cloud etwa 20 Sekunden; das Ergebnis steht in
 `emulator-test/.wb32/result.txt`.
 
 Der Reset-Test (`make reset-test`) braucht Xvfb und xdotool und läuft so nur

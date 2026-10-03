@@ -62,6 +62,10 @@ python3 emulator-test/reset-test.py \
     --kickstart emulator-test/.assets/A1200.47.102.rom --workbench emulator-test/.assets
 ```
 
+`ci-local.sh` stops the emulator once `bfs-test` publishes its completion
+record next to the result log, or when the timeout expires. A run that ends
+without that record reports the timeout.
+
 Under Kickstart the reset test also requires the machine to boot again after
 the reset; the AROS ROM halts at that point, also without BFS.
 
