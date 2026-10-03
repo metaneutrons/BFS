@@ -21,7 +21,9 @@ HOST_CFLAGS  = -std=c99 -Wall -Wextra -Werror -g -O2 -pthread \
 AMIGA_PREFIX = $(shell brew --prefix amiga-gcc 2>/dev/null || echo /opt/homebrew/opt/amiga-gcc)/m68k-amigaos
 # The NDK declares STRPTR as unsigned char* in C, unlike standard C strings.
 # Suppress only that header-boundary diagnostic and reject every other warning.
-AMIGA_WARNINGS = -Wall -Wextra -Werror -Wno-pointer-sign
+# The handler runs on a 128 KiB stack shared by the packet frame and the whole
+# core call chain; a filesystem state on the stack once overflowed it.
+AMIGA_WARNINGS = -Wall -Wextra -Werror -Wno-pointer-sign -Wframe-larger-than=16384
 AMIGA_CFLAGS = -std=c99 $(AMIGA_WARNINGS) -O2 -m68020 -noixemul -fomit-frame-pointer \
                -Isrc/amiga $(INCLUDES) -DBFS_AMIGA=1 \
                -I$(AMIGA_PREFIX)/ndk-include
