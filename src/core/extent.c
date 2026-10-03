@@ -327,6 +327,24 @@ static bool extent_walk_block_cb(const void *key, const void *val, void *c)
     return true;
 }
 
+/* The combined walk passes one context to both callbacks. */
+typedef struct {
+    extent_walk_ctx_t *ec;
+    bfs_node_walk_cb node_cb;
+    void *ctx;
+} walk_ctx_both_t;
+
+static bool extent_walk_both_block_cb(const void *key, const void *val, void *c)
+{
+    return extent_walk_block_cb(key, val, ((walk_ctx_both_t *)c)->ec);
+}
+
+static void extent_walk_node_cb(bfs_blk_t blk, void *c)
+{
+    walk_ctx_both_t *both = (walk_ctx_both_t *)c;
+    both->node_cb(blk, both->ctx);
+}
+
 bfs_err_t bfs_extent_walk(bfs_bio_t *bio, bfs_freespace_t *fsp, uint64_t txn_id,
                           bfs_blk_t root, bfs_node_walk_cb node_cb,
                           bfs_node_walk_cb block_cb, void *ctx)
@@ -336,17 +354,16 @@ bfs_err_t bfs_extent_walk(bfs_bio_t *bio, bfs_freespace_t *fsp, uint64_t txn_id,
     bfs_err_t err = bfs_extent_init(&et, bio, fsp, root, txn_id);
     if (err != BFS_OK) return err;
 
-    if (block_cb) {
-        extent_walk_ctx_t ec = { &et, block_cb, ctx, BFS_OK };
+    /* One pass reads each node once; blocks and nodes may interleave. */
+    extent_walk_ctx_t ec = { &et, block_cb, ctx, BFS_OK };
+    if (!block_cb) return node_cb ? bfs_btree_walk_nodes(&et.tree, node_cb, ctx) : BFS_OK;
+    if (!node_cb) {
         err = bfs_btree_scan(&et.tree, NULL, extent_walk_block_cb, &ec);
-        if (err == BFS_OK) err = ec.err;
-        if (err != BFS_OK) return err;
+        return err != BFS_OK ? err : ec.err;
     }
-    if (node_cb) {
-        err = bfs_btree_walk_nodes(&et.tree, node_cb, ctx);
-        if (err != BFS_OK) return err;
-    }
-    return BFS_OK;
+    walk_ctx_both_t both = { .ec = &ec, .node_cb = node_cb, .ctx = ctx };
+    err = bfs_btree_walk(&et.tree, extent_walk_node_cb, extent_walk_both_block_cb, &both);
+    return err != BFS_OK ? err : ec.err;
 }
 
 /* ── Truncate ──────────────────────────────────────────────── */

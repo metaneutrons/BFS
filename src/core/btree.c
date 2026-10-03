@@ -503,6 +503,14 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
         return BFS_ERR_INVAL;
 
     if (root != BFS_BLK_NULL) {
+        if (ops->cache_key_order) {
+            bfs_node_validation_t validation = node_validation_context(tree);
+            const uint8_t *resident = bfs_bio_peek_valid_node(bio, root, &validation);
+            if (resident) {
+                tree->height = node_level((uint8_t *)resident) + 1;
+                return BFS_OK;
+            }
+        }
         uint8_t *buf = alloc_buf(tree);
         if (!buf) return BFS_ERR_NOMEM;
         bfs_err_t err = node_read(tree, root, buf);
@@ -511,6 +519,53 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
         free_buf(tree, buf);
     }
     return BFS_OK;
+}
+
+bfs_err_t bfs_btree_lower_bound(bfs_btree_t *tree, const void *key, void *key_out)
+{
+    if (!tree || !tree->bio || !tree->ops || !key || !key_out)
+        return BFS_ERR_INVAL;
+    if (tree->root == BFS_BLK_NULL)
+        return BFS_ERR_NOTFOUND;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+
+    uint8_t *buf = alloc_buf(tree);
+    if (!buf) return BFS_ERR_NOMEM;
+    bfs_blk_t blk = tree->root;
+    uint32_t depth = 0;
+    uint16_t expected_level = (uint16_t)(tree->height - 1);
+    node_bounds_t bounds = {0};
+    bfs_err_t result;
+
+    while (1) {
+        if (depth++ >= MAX_TREE_DEPTH) { result = BFS_ERR_CORRUPT; break; }
+        uint8_t *node;
+        bfs_err_t err = node_view(tree, blk, buf, expected_level, &bounds, &node);
+        if (err != BFS_OK) { result = err; break; }
+        bool found;
+        uint32_t idx = node_search(tree, node, key, &found);
+        if (is_leaf(node)) {
+            if (idx < num_keys(node)) {
+                memcpy(key_out, node_key(tree, node, idx), tree->ops->key_size);
+                result = BFS_OK;
+            } else if (bounds.have_upper) {
+                /* Every greater key lives right of this leaf: at or above the
+                 * parent separator that bounds it. */
+                memcpy(key_out, bounds.upper, tree->ops->key_size);
+                result = BFS_ERR_AGAIN;
+            } else {
+                result = BFS_ERR_NOTFOUND;
+            }
+            break;
+        }
+        if (expected_level == 0) { result = BFS_ERR_CORRUPT; break; }
+        uint32_t child = found ? idx + 1 : idx;
+        child_bounds(tree, node, child, &bounds);
+        blk = get_child(tree, node, child);
+        expected_level--;
+    }
+    free_buf(tree, buf);
+    return result;
 }
 
 bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
@@ -2224,8 +2279,15 @@ static bfs_err_t block_set_add(block_set_t *set, bfs_blk_t blk)
     return BFS_OK;
 }
 
+typedef struct {
+    bfs_node_walk_cb node_cb;    /* each node, after its subtree */
+    bfs_scan_cb entry_cb;        /* each leaf entry in key order, or NULL */
+    void *ctx;
+    bool stopped;                /* entry_cb returned false */
+} walk_visit_t;
+
 static bfs_err_t walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
-                                      bfs_node_walk_cb cb, void *ctx, int depth,
+                                      walk_visit_t *visit, int depth,
                                       uint16_t expected_level,
                                       block_set_t *seen, const void *lower,
                                       const void *upper)
@@ -2258,13 +2320,22 @@ static bfs_err_t walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
             if (expected_level == 0) { free_buf(tree, buf); return BFS_ERR_CORRUPT; }
             err = walk_nodes_recursive(
                 tree, bfs_load_be32(buf + keys_end + i * sizeof(uint32_t)),
-                cb, ctx, depth + 1, (uint16_t)(expected_level - 1), seen,
+                visit, depth + 1, (uint16_t)(expected_level - 1), seen,
                 i == 0 ? lower : node_key(tree, buf, i - 1),
                 i == n ? upper : node_key(tree, buf, i));
-            if (err != BFS_OK) { free_buf(tree, buf); return err; }
+            if (err != BFS_OK || visit->stopped) { free_buf(tree, buf); return err; }
+        }
+    } else if (visit->entry_cb) {
+        for (uint32_t i = 0; i < n; i++) {
+            if (!visit->entry_cb(node_key(tree, buf, i), leaf_val(tree, buf, i),
+                                 visit->ctx)) {
+                visit->stopped = true;
+                free_buf(tree, buf);
+                return BFS_OK;
+            }
         }
     }
-    cb(blk, ctx);
+    if (visit->node_cb) visit->node_cb(blk, visit->ctx);
     free_buf(tree, buf);
     return BFS_OK;
 }
@@ -2272,19 +2343,28 @@ static bfs_err_t walk_nodes_recursive(bfs_btree_t *tree, bfs_blk_t blk,
 /* Returns BFS_OK, or the first node-read/structural error encountered. Callers
  * that reference-count via the callback MUST check this — a swallowed read
  * failure silently skips a subtree and corrupts the counts. */
-bfs_err_t bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx)
+bfs_err_t bfs_btree_walk(bfs_btree_t *tree, bfs_node_walk_cb node_cb,
+                         bfs_scan_cb entry_cb, void *ctx)
 {
-    if (!tree || !tree->bio || !tree->ops || !cb) return BFS_ERR_INVAL;
+    if (!tree || !tree->bio || !tree->ops || (!node_cb && !entry_cb))
+        return BFS_ERR_INVAL;
     if (tree->root == BFS_BLK_NULL)
         return tree->height == 0 ? BFS_OK : BFS_ERR_CORRUPT;
     if (tree->height == 0 || tree->height > MAX_TREE_DEPTH)
         return BFS_ERR_CORRUPT;
     block_set_t seen = {0};
-    bfs_err_t err = walk_nodes_recursive(tree, tree->root, cb, ctx, 0,
+    walk_visit_t visit = { .node_cb = node_cb, .entry_cb = entry_cb, .ctx = ctx };
+    bfs_err_t err = walk_nodes_recursive(tree, tree->root, &visit, 0,
                                          (uint16_t)(tree->height - 1), &seen,
                                          NULL, NULL);
     block_set_destroy(&seen);
     return err;
+}
+
+bfs_err_t bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx)
+{
+    if (!cb) return BFS_ERR_INVAL;
+    return bfs_btree_walk(tree, cb, NULL, ctx);
 }
 
 /* ── Compaction ────────────────────────────────────────────── */

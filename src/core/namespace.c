@@ -837,7 +837,11 @@ static bfs_err_t fs_find_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
 {
     memset(key, 0, sizeof(*key));
     uint32_t comment_parent = ino | 0x80000000u;
-    bfs_err_t err = bfs_dir_scan(&fs->dir_tree, comment_parent, comment_key_cb, key);
+    /* Most objects carry no comment; rule that out without a scan. */
+    bool maybe;
+    bfs_err_t err = bfs_dir_may_have_entries(&fs->dir_tree, comment_parent, &maybe);
+    if (err != BFS_OK || !maybe) return err;
+    err = bfs_dir_scan(&fs->dir_tree, comment_parent, comment_key_cb, key);
     if (err != BFS_OK) return err;
     return key->corrupt ? BFS_ERR_CORRUPT : BFS_OK;
 }

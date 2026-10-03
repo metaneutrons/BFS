@@ -226,6 +226,25 @@ static bool dir_scan_cb(const void *key, const void *val, void *ctx)
                   inode_nr, type, sc->ctx);
 }
 
+bfs_err_t bfs_dir_may_have_entries(bfs_dir_tree_t *dt, uint32_t parent_id,
+                                   bool *maybe)
+{
+    if (!dt || !maybe) return BFS_ERR_INVAL;
+    uint8_t start_key[DIR_KEY_SIZE], found[DIR_KEY_SIZE];
+    memset(start_key, 0, DIR_KEY_SIZE);
+    bfs_store_be32(start_key, parent_id);
+    bfs_err_t err = bfs_btree_lower_bound(&dt->tree, start_key, found);
+    if (err == BFS_ERR_NOTFOUND) {
+        *maybe = false;
+        return BFS_OK;
+    }
+    if (err != BFS_OK && err != BFS_ERR_AGAIN) return err;
+    /* A found key, or the bound above which all greater keys lie: entries of
+     * parent_id are possible only if it still carries parent_id. */
+    *maybe = bfs_load_be32(found) == parent_id;
+    return BFS_OK;
+}
+
 bfs_err_t bfs_dir_scan(bfs_dir_tree_t *dt, uint32_t parent_id,
                          bfs_dir_scan_cb cb, void *ctx)
 {

@@ -225,11 +225,24 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
 bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
                                     void *key_out, void *val_out);
 
+/* Locate the first key >= key without copying resident nodes. BFS_OK: it is
+ * copied to key_out. BFS_ERR_AGAIN: the leaf that would hold it has none;
+ * every greater key is >= key_out, that leaf's exclusive upper bound.
+ * BFS_ERR_NOTFOUND: no key >= key exists. */
+bfs_err_t bfs_btree_lower_bound(bfs_btree_t *tree, const void *key, void *key_out);
+
 
 /* Walk all node blocks in the tree. Calls cb(blk, ctx) for each. Returns the
  * first node-read/structural error, or BFS_OK. Refcounting callers must check. */
 typedef void (*bfs_node_walk_cb)(bfs_blk_t blk, void *ctx);
 bfs_err_t bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx);
+
+/* One pass over the tree that reads each node once: entry_cb (optional) sees
+ * every leaf entry in key order and may stop the walk by returning false;
+ * node_cb (optional) sees each node block after its subtree. Errors as for
+ * bfs_btree_walk_nodes; a stop by entry_cb is not an error. */
+bfs_err_t bfs_btree_walk(bfs_btree_t *tree, bfs_node_walk_cb node_cb,
+                         bfs_scan_cb entry_cb, void *ctx);
 
 /* Compaction, build-and-swap half: re-pack the tree into fresh dense blocks and
  * swap tree->root to them, WITHOUT freeing the old nodes. Sets *old_root_out to

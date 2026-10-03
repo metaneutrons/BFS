@@ -1782,6 +1782,49 @@ static void test_read_crc_covers_every_byte(void)
     unlink(TEST_IMG);
 }
 
+/* lower_bound either names the first key >= the query or, when that key is
+ * in a later leaf, a bound no smaller than the query below which no key
+ * lies. */
+static void test_lower_bound_matches_reference(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    uint32_t key, val, out;
+    make_key(&key, 5);
+    TEST_ASSERT_EQ(bfs_btree_lower_bound(&tree, &key, &out), BFS_ERR_NOTFOUND);
+    const uint32_t count = 1500;
+    for (uint32_t i = 1; i <= count; i++) {
+        make_key(&key, i * 10u); val = bfs_be32(i);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    }
+    TEST_ASSERT(tree.height >= 2);
+    unsigned again = 0;
+    for (uint32_t q = 0; q <= count * 10u + 1u; q += 3u) {
+        make_key(&key, q);
+        bfs_err_t err = bfs_btree_lower_bound(&tree, &key, &out);
+        uint32_t expected = q <= 10u ? 10u : ((q + 9u) / 10u) * 10u;
+        uint32_t got = read_key(&out);
+        if (expected > count * 10u) {
+            TEST_ASSERT_EQ(err, BFS_ERR_NOTFOUND);
+        } else if (err == BFS_OK) {
+            TEST_ASSERT_EQ(got, expected);
+        } else {
+            TEST_ASSERT_EQ(err, BFS_ERR_AGAIN);
+            TEST_ASSERT(got > q && got <= expected);
+            again++;
+        }
+    }
+    TEST_ASSERT(again > 0);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_empty_tree_search);
     TEST_RUN(test_single_insert_search);
@@ -1817,4 +1860,5 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_replace_root_leaf_deeper_unsupported);
     TEST_RUN(test_cached_node_crc_revalidation);
     TEST_RUN(test_read_crc_covers_every_byte);
+    TEST_RUN(test_lower_bound_matches_reference);
 TEST_SUITE_END()
