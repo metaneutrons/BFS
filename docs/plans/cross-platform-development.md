@@ -40,8 +40,9 @@ Existing tracking is retained:
 [soak testing #29](https://github.com/metaneutrons/BFS/issues/29), and
 [README PR #30](https://github.com/metaneutrons/BFS/pull/30).
 Link relevant evidence to these records without duplicating or automatically
-closing them. Historical `HANDOFF.md` statements are not current acceptance
-evidence. Reconcile overlapping README work during delivery.
+closing them. Statements of the historical release handoff
+(`docs/qualification/release-v0.1.1-handoff-2026-09-08.md`) are not current
+acceptance evidence. Reconcile overlapping README work during delivery.
 
 ## Scope and architectural decisions
 

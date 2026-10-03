@@ -1,169 +1,160 @@
-# BFS: Uebergabe und Abschlussstand
+# BFS: Übergabe für die Weiterarbeit auf dem Mac
 
-Stand: 2026-09-08. Repository: `metaneutrons/BFS`.
+Stand: 2026-10-03, Zweig `format/v3-inline-extents`. Die vorige Übergabe zum
+Release v0.1.1 liegt unter
+`docs/qualification/release-v0.1.1-handoff-2026-09-08.md`.
 
-## 1. Ergebnis
+## 1. Sitzungsstart
 
-Die Release-Abnahme M4 ist abgeschlossen. Die Release-Codebasis steht auf
-`f2deb47b2a689bd4e8dbcef36f3de449a5265095` (`chore(main): release 0.1.1`).
-Die Abschlussdokumentation wurde danach in PR #24 und PR #25 auf dieser
-Release-Codebasis ergaenzt. Der stabile Release `v0.1.1` ist oeffentlich als
-`latest` publiziert.
+```sh
+cd ~/Source/BFS
+git status --short                  # lokale Änderungen zuerst sichern
+git fetch origin
+git switch format/v3-inline-extents
+git pull --ff-only
+make -j8 host-test                  # Host-Tests, gcc
+make amiga amiga-test               # Handler und AROS-Testprogramm
+make ci-test                        # 50 AROS-Tests im Emulator
+emulator-test/ci-local.sh 1800      # dieselben Tests unter Kickstart 3.2
+```
 
-Qualifiziert und gebaut sind Amiga-Handler fuer 68020, 68030, 68040, 68060
-und Apollo 68080. Der 68080-Build verwendet kein AMMX. Es liegt keine
-physische Apollo-Hardwarequalifikation vor.
+Die lizenzierten Dateien liegen nicht im Repository und werden von Git
+ignoriert. Für Kickstart-Läufe und Messungen müssen vorhanden sein:
+`emulator-test/.assets/A1200.47.102.rom`, `emulator-test/.assets/{C,L,Libs}`
+mit den Workbench-3.2-Befehlen und `emulator-test/.cache/pfs3aio`.
 
-Das Abschlusskriterium war:
+Unter Kickstart beendet sich der Emulator nach den Tests nicht selbst;
+`ci-local.sh` wertet aus, sobald der Timeout abläuft oder du das
+Emulatorfenster schließt. Das Ergebnis steht vorher schon in
+`emulator-test/.wb32/result.txt`.
 
-- funktionale Aenderungen reviewt, committed, gepusht und gemergt;
-- GCC, Clang, ASan/UBSan, Static Analyzer und Coverage bestanden;
-- CI inklusive `CI Success` und Amiga-FULL46 bestanden;
-- Release Please und der echte Release-Workflow end-to-end bestanden;
-- reproduzierbare Archive, SBOMs, Signaturen, Attestierungen und
-  oeffentliche Byte-Readbacks verifiziert;
-- Repo-Standard-Doctor ohne offene Findings bestanden.
+Der Reset-Test (`make reset-test`) braucht Xvfb und xdotool und läuft so nur
+unter Linux.
 
-Das ist eine belegte Release-Reife, keine Zusage allgemeiner Fehlerfreiheit.
+## 2. Ziel und Stand
 
-## 2. Gemergte Lieferungen
+Ziel: BFS in jedem geprüften AmigaDOS-Workload höchstens fünfmal so langsam
+wie PFS3, ohne Abstriche bei Integrität, Snapshots und Recovery.
 
-- PR #11 Repository-Konventionen: `13b3939`
-- PR #12 Filesystem-Core und Recovery: `cedda17f8c2fe4e6389fa9a520f1a89941695605`
-- PR #13 Amiga-Delivery: `b923962c4091ca05b951d08e985a21740d25390b`
-- PR #14 Release- und CI-Hardening: `243339acd2f575857b33095fc1a138c079e9880f`
-- PR #21 dynamische Allocator-Reserve: `b88c63d`
-- PR #22 Release-Please-Tag-/Workflow-Abgleich: `134aff5`
-- PR #23 Draft-Release-Fallback ueber die paginierte GitHub-API:
-  `23dd64e`
-- PR #4 Release Please `v0.1.1`: `f2deb47`
+Letzte Messung (je 6 Läufe, FS-UAE 3.1.66 in der Cloud, A1200/68040,
+Kickstart 47.102): kein Workload und kein Einzellauf über 5×.
 
-Die Fremdbinaries sind nicht im Repository. Toolchains, AROS-ROMs, LHA und
-Cosign werden in den Workflows geladen und dort geprueft.
+| Workload | Faktor zu PFS3 | Spanne |
+| --- | ---: | ---: |
+| Create 40 | 2,49× | 2,33–2,67× |
+| Lookup 400 | 1,09× | 1,01–1,15× |
+| Read 40 | 1,29× | 1,15–1,54× |
+| ExNext-Auflistung 400 | 2,72× | 2,16–3,13× |
+| ExAll-Auflistung 400 | 3,93× | 3,76–4,18× |
+| Write 8 MiB | 1,65× | 1,53–1,70× |
+| Read 8 MiB | 1,00× | 0,96–1,05× |
+| Delete 40 | 3,17× | 2,93–3,50× |
 
-## 3. `fill_08` und `many_03`
+Einzelheiten, Einzelwerte und Prüfsummen:
+`docs/qualification/bfs-directory-listing-performance-2026-10-03.md`.
+Die absoluten Zeiten sind mit früheren Mac-Messungen (FS-UAE 3.2.35) nicht
+vergleichbar, nur die Faktoren. Eine Bestätigungsreihe auf dem Mac steht aus.
 
-`fill_08` war ein realer Fehler in der Testdiagnostik, nicht der ausloesende
-Core-Fehler. Der Test nahm nach einem Short Write die partielle Datei nicht
-immer in das Cleanup auf. Ausserdem meldete `exnext_37` den Erfolg vor dem
-Cleanup. Beides ist korrigiert.
+## 3. Zweige
 
-Der eigentliche Laufzeitfehler lag bei `many_03`: Die feste Reserve von 96
-Bloecken bewegte bei kleinen Transaktionen unnoetig viele Bloecke durch den
-Free-Space-Baum. Die Reserve wird jetzt aus der Baumhoehe abgeleitet und
-begrenzt. Danach bestand `many_03` lokal und in GitHub; der vollstaendige
-Amiga-Lauf meldete `# SUMMARY 46 46 0`.
+- PR #82 `perf/txn-owned-nodes` nach `main` ist offen (Umschreiben
+  transaktionseigener Knoten an Ort und Stelle).
+- `perf/write-path-stages` baut darauf auf (verzögerter Gruppen-Commit,
+  verzögertes Schreiben eigener Knoten, Datenpfad).
+- `format/v3-inline-extents` baut darauf auf, 37 Commits über
+  `perf/write-path-stages` und 57 über `main`. Für diesen Zweig gibt es
+  keinen PR und damit keinen CI-Lauf; die lokalen Gates waren alle grün.
 
-## 4. Test- und Ruleset-Evidenz
+Nichts mergen ohne Fabians Freigabe. PRs nur auf ausdrücklichen Wunsch.
 
-Lokale Nachweise auf dem finalen Code:
+## 4. Inhalt des v3-Zweigs
 
-- `make host-test HOST_CC=gcc`: 31/31 Host-Binaries bestanden
-- `make host-test HOST_CC=clang`: 31/31 Host-Binaries bestanden
-- `make sanitize HOST_CC=clang`: alle Tests bestanden
-- `make analyze`: erfolgreich
-- `make coverage`: Core-Zeilen 88.4 % (`3997/4522`)
-- `make amiga-test`: erfolgreich
-- `BFS_TEST_TIMEOUT=1200 emulator-test/ci-test.sh`: `46/46`
-- Repository-Asset-Audit: keine getrackten Binaries
+Format v3 (`e68aeb2`, Plan `docs/plans/bfs-format-v3-v1.md`): Inline-Extent
+im Inode, Kommentar-Flag, v2 wird abgelehnt, `bfs format` ersetzt Medien mit
+ausschließlich älteren Formaten.
 
-GitHub-Nachweise:
+Korrekturen:
 
-- PR #23 CI [34163038783](https://github.com/metaneutrons/BFS/actions/runs/34163038783):
-  alle Checks gruen, einschliesslich Amiga und `CI Success`
-- Release-Please [34164653505](https://github.com/metaneutrons/BFS/actions/runs/34164653505):
-  App-Token-Preflight, PR-Erzeugung und Dispatch bestanden
-- finaler Main-CI [34164653510](https://github.com/metaneutrons/BFS/actions/runs/34164653510):
-  alle Checks gruen, einschliesslich Amiga und `CI Success`
-- Branch-Ruleset `22394435`: `CI Success`, Squash-only, lineare Historie,
-  aktuelle Pflichtchecks und aufgeloeste Diskussionen
-- Tag-Ruleset `22394437`: immutable Tags
+- Referenzzähler mit Snapshots sind in jedem veröffentlichten Zustand exakt
+  (`314fcf4`).
+- Nach der Reset-Warnung wird jede Änderung vor der Antwort committet
+  (`5c4eced`).
+- ExamineFH liefert den Namen (`b15bca2`); ExNext und ExAll liefern ".."
+  nicht mehr, sind linear und überspringen beim Löschen nichts (`27edbbe`).
+- FUSE-Test lehnt v2 und v4 ab (`e46289e`); der CI-Schritt mit dem
+  v0.1.3-Handler prüft jetzt dessen Ablehnung von v3-Medien (`9c40470`).
 
-Repo-Standard-Doctor:
+Leistung: Zusammenführen anschließender Extents (`b1ab322`), Hash-Index im
+Cache (`04f9e06`), Baum-Scan über Cache-Ansichten mit Änderungszähler
+(`b628193`), Blatt-Cursor für Auflistungen (`00187f0`), dichte
+ExAll-Einträge (`2fcf1b0`), Blatt-Hinweis in der Suche (`5f7f552`), direkter
+Vergleich von u32-Schlüsseln (`2652a56`), eine Namenskopie je ExAll-Eintrag
+(`cd16c4a`).
 
-- `check-repo-standard.sh metaneutrons/BFS --publishes`: 19 bestanden,
-  0 fehlgeschlagen, 2 Hinweise
-- Fixture-Test: 16 bestanden, 0 fehlgeschlagen
-- Hinweise: provider-spezifische Secret-Patterns sind fuer das Benutzerkonto
-  nicht abrufbar; die `release`-Umgebung hat bewusst kein statisches Secret.
-  Beide Hinweise sind account- bzw. OIDC-seitig und keine offenen Codebefunde.
+Werkzeuge: Auflistungsphasen im Vergleichsbenchmark, Schema 2 (`872a332`),
+Kickstart-Optionen für Reset- und Compatibility-Test (`48ca58a`),
+Messreihen (`220fce1`).
 
-## 5. Release-Evidenz
+## 5. Invarianten für neue Arbeit
 
-### Qualification
+- `bfs_btree_t.generation` ändert sich bei jedem Knotenschreiben und jeder
+  Wurzel- oder Höhenänderung. Scan-Cursor und Such-Hinweis verlassen sich
+  darauf. Wer Knoten oder Wurzel eines Baums auf einem neuen Weg ändert, muss
+  den Zähler erhöhen.
+- Ein Scan-Callback darf den Baum ändern. Der Scan sucht dann hinter dem
+  zuletzt gelieferten Schlüssel neu und liefert keine danach gelöschten
+  Schlüssel.
+- Ein Cursor gilt nur bei gleichem Baum, gleicher Wurzel und gleichem Zähler
+  und nur für Startschlüssel zwischen erstem und letztem Schlüssel seiner
+  Blattkopie. Er darf das Mounten seines Baums nicht überleben.
+- Der Such-Hinweis nutzt nur ein Blatt, das validiert im Cache liegt.
+- Bäume mit u32-Schlüsseln verwenden `bfs_btree_key_compare_be32`, sonst
+  entfällt die direkte Suche.
+- ExAll-Einträge enthalten nur die Felder bis zum angefragten Typ; ein
+  Eintrag, der nicht passt, kommt im nächsten Aufruf.
 
-Der unveraenderliche Tag `v0.1.0-qualification.3` zeigt auf Commit
-`23dd64ef1027c7037ecbca17502c4c99a8807060` und wurde mit
-[Run 34163917438](https://github.com/metaneutrons/BFS/actions/runs/34163917438)
-qualifiziert. Der Run bestand mit reproduzierbarem Build, Clean-Room-Smoke,
-SBOMs, keyless Sigstore-Signaturen, GitHub-Attestierungen, Tamper-Rejection,
-Asset-Upload und oeffentlichem Readback.
+## 6. Messen
 
-Die sechs Eintraege der Kandidaten-`SHA256SUMS` sind im oeffentlichen
-[Qualification-Release](https://github.com/metaneutrons/BFS/releases/tag/v0.1.0-qualification.3)
-verifiziert. Die zentralen Archive haben folgende Digests:
+```sh
+make amiga amiga-fs-compare-bench
+emulator-test/bench-series.sh NAME 6 compare alt=PFAD/bfshandler neu=build/amiga/bfshandler
+tools/bench-summary.py NAME-alt NAME-neu
+```
 
-| Asset | SHA-256 |
-| --- | --- |
-| `bfs-v0.1.0-qualification.3-amiga.tar.gz` | `435e15e34359c12121b782acdfc41828f2312b9762ab52d8f412f1a2dfd09e25` |
-| `bfs-v0.1.0-qualification.3-amiga.lha` | `e6f820943d8ce2f0de0f90bdc915c190d8612d56d4c024b435fb15f63fcfa439` |
-| `SHA256SUMS` | `83e0bca3f482783e8eee24c8eaeb090c904707963369cfffe8f37509742001cf` |
+Einen Vergleichs-Handler aus einem älteren Commit baut man in einem
+`git worktree` mit `make amiga`. Die Reihe wechselt die Reihenfolge von BFS
+und PFS3 und legt jeden Lauf unter `build/benchmark/` ab.
+`make core-workload-profile` liefert deterministische Instruktionszahlen pro
+Phase auf dem Host.
 
-Der vorherige Tag `v0.1.0-qualification.2` wurde wegen des API-Draft-Fehlers
-nicht wiederverwendet. Tags wurden nicht verschoben oder geloescht.
+## 7. Offene Punkte und Entscheidungen
 
-### Stable
+1. Bestätigungsmessung auf dem Mac mit `bench-series.sh`.
+2. PR-Strategie für die Kette #82, `perf/write-path-stages`, v3.
+3. Einzelblöcke werden absteigend vergeben; Dateien, die in 4-KiB-Schritten
+   wachsen, liegen dadurch rückwärts und bekommen einen Extent je Block. Eine
+   Vergabe mit Zielblock hinter dem letzten Dateiblock ist vorgeschlagen,
+   nicht umgesetzt.
+4. Feature-Masken im Superblock: Entscheidung offen.
+5. Kickstart-Job in der CI: Bis zum 6. September lud die CI über das Secret
+   `CI_TEST_ENV` ein verschlüsseltes Kickstart-Archiv; ob Secret und Archiv
+   noch existieren, ist ungeklärt.
+6. Löschen sehr großer Dateien braucht pro Block einen Eintrag in der
+   Freigabe-Warteschlange, die auf dem Amiga per malloc wächst.
+7. Nicht getestet: echte Hardware, MorphOS und OS4 nativ, andere
+   Kickstart-Versionen, 68000.
 
-Der unveraenderliche Tag `v0.1.1` zeigt auf `f2deb47b2a689bd4e8dbcef36f3de449a5265095`.
-Der echte Stable-Workflow
-[34164683697](https://github.com/metaneutrons/BFS/actions/runs/34164683697)
-bestand vollstaendig. Die Release-Promotion lief erst nach allen
-Verifikationsstufen. Der oeffentliche Release ist
-[v0.1.1](https://github.com/metaneutrons/BFS/releases/tag/v0.1.1), nicht Draft,
-nicht Prerelease und `latest`.
+## 8. Arbeitsregeln
 
-Alle sieben Stable-Assets wurden heruntergeladen und gegen `SHA256SUMS`
-geprueft:
-
-| Asset | SHA-256 |
-| --- | --- |
-| `bfs-v0.1.1-amiga.tar.gz` | `22be69b83988040e723242eda7bcaaba037008a4391d3609d93f851a76b18f5e` |
-| `bfs-v0.1.1-amiga.lha` | `33c1f9394a3913b2e4d897d94a56aa573d4f7e92c3de134fc8e54afc2953c0eb` |
-| `bfs-v0.1.1-amiga.tar.gz.spdx.json` | `13ed599790f89d216d1d48fe9243313a2627ef60467a430b052e22dac5d8ec4b` |
-| `bfs-v0.1.1-amiga.lha.spdx.json` | `dcf6271b4a10135a344435331a0e2cf7edd1251d232fb3ab549e13170fb3f989` |
-| `bfs-v0.1.1-amiga.tar.gz.sigstore.json` | `cfc97b245732de4e3f6cf1720dbf626f6a5b6a1e5e85edb48317185cbcf59f7f` |
-| `bfs-v0.1.1-amiga.lha.sigstore.json` | `6081ca406309634ea17f97978e2c68b71a84b84ab775feb63407183f278eb548` |
-| `SHA256SUMS` | `afb7250081dc2bd324c0118923713a249edf8801aaceb0f1c9120f114c6a109f` |
-
-## 6. Dokumentation und Grenzen
-
-README und Release-Readiness-Plan dokumentieren:
-
-- Default-Handler 68020 sowie die Varianten 68030, 68040, 68060 und 68080;
-- 68080 ohne AMMX und ohne daraus abgeleitete Hardwarebehauptung;
-- `make release`, `make emulator-test` und die Amiga-Mount-/Format-Schritte;
-- reproduzierbare Archive, Checksummen, SBOM-/Sigstore-Pruefung und Runtime-
-  Lizenzen;
-- die Grenze zwischen Compiler-/Emulatornachweis und echter Hardwareabnahme.
-
-Es gibt keine behauptete physische Apollo-Qualifikation und keine AMMX-
-Optimierung. Dependabot-PRs #15 bis #19 sind normale Wartungsarbeiten und
-nicht Teil dieser abgeschlossenen Release-Abnahme; bei ihrer Annahme ist die
-volle CI erneut zu bewerten.
-
-Die bereinigten beschreibbaren Refs enthalten keine Fremdbinaries. GitHub kann
-serverseitig versteckte alte PR-Refs weiterhin aufbewahren. Das ist eine
-separate Support-Angelegenheit; dafuer keine weiteren lokalen Filter-Laeufe
-oder Force-Pushes ausfuehren.
-
-## 7. Wiederaufnahme-Regeln
-
-- Keine Tags verschieben, loeschen oder wiederverwenden.
-- Fremdbinaries ausschliesslich in CI laden und dort per Hash/Identitaet
-  pruefen.
-- Keine Hardwarequalifikation aus Emulator- oder Compiler-Evidenz ableiten.
-- Neue funktionale Arbeit von aktuellem `origin/main` abzweigen und in
-  funktional gruppierten Conventional-Commits liefern.
-- Vor jeder neuen Release-Aussage alle betroffenen CI-, Asset- und Readback-
-  Nachweise mit neuer Identitaet wiederholen.
-- Keine Secrets, ROMs, HDFs oder Buildartefakte committen.
+- Commits nach Conventional Commits, auf Englisch, als
+  `metaneutrons <436979+metaneutrons@users.noreply.github.com>`, ohne
+  KI-Zuschreibung; `tools/check-commit-hygiene.sh` lässt sonst die CI
+  scheitern.
+- ROMs, Workbench-Dateien, PFS3, HDFs und Buildartefakte nie committen.
+- Shell: `cp`, `mv` und `rm` sind auf `-i` gesetzt und zsh läuft mit
+  `noclobber`. In Skripten `command cp`, `cp -f` oder Python verwenden und
+  `>!` statt `>`.
+- Vor einem Push mindestens `make -j8 host-test`, `make sanitize`,
+  `make analyze`, `make quality-gates`, `make conformance-test` und
+  `make ci-test`; bei Handler-Änderungen zusätzlich Kickstart und
+  `make compatibility-test`.
