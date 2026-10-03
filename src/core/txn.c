@@ -224,10 +224,15 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
     if (!sealed) {
         err = bfs_freespace_return_reserve(&fs->freespace);
         if (err != BFS_OK) return err;
+        /* Deferred nodes of the transaction must precede its superblock. */
+        err = bfs_bio_flush_deferred(fs->bio);
+        if (err != BFS_OK) return err;
     } else {
         /* Durable graph before publish: an unsuccessful later flush may
          * persist only the new SB. It must never expose a missing leaf or
          * COW/data node. Keep allocation frozen across both barriers. */
+        err = bfs_bio_flush_deferred(fs->bio);
+        if (err != BFS_OK) return err;
         err = bfs_bio_sync(fs->bio);
         if (err != BFS_OK) return err;
 #ifdef BFS_PERF_PROBE
@@ -292,6 +297,9 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
          * but can perpetually create another retired ordinary root here.
          * Keep the established settlement path for this fixed-point tail. */
         err = bfs_freespace_settle_reserve(&fs->freespace);
+        if (err != BFS_OK) return err;
+
+        err = bfs_bio_flush_deferred(fs->bio);
         if (err != BFS_OK) return err;
 
         /* Final commit of free tree changes */

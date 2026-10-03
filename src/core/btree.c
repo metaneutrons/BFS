@@ -263,6 +263,28 @@ static bfs_err_t node_compute_write_crc(const bfs_btree_t *tree, uint8_t *buf,
     return BFS_OK;
 }
 
+static bool owned_contains(const bfs_btree_t *tree, bfs_blk_t blk);
+
+/* Completes a deferred node image: canonical padding and the full-block CRC,
+ * exactly as a direct write would have produced them. */
+static bfs_err_t node_finalize_deferred(const void *layout, uint32_t block_size,
+                                        uint8_t *buf)
+{
+    bfs_bio_t geometry = { .block_size = block_size };
+    bfs_btree_t tree = { .bio = &geometry, .ops = layout };
+    bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
+    hdr->crc32 = 0;
+    uint32_t crc;
+    bfs_err_t err = node_compute_write_crc(&tree, buf, &crc);
+    if (err != BFS_OK) return err;
+    hdr->crc32 = bfs_be32(crc);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.node_crc_write_calls++;
+    bfs_perf_probe_counters.btree_node_writes++;
+#endif
+    return BFS_OK;
+}
+
 static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
 {
     if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
@@ -271,6 +293,14 @@ static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf
     hdr->magic = bfs_be32(BFS_NODE_MAGIC);
     hdr->txn_id = bfs_be64(bfs_btree_txn_id(tree));
     hdr->crc32 = 0;
+    /* A node the live transaction owns is unreferenced by committed state, so
+     * its bytes may stay in the cache until the commit flushes them. Later
+     * changes in the same transaction then cost neither a CRC nor a write. */
+    if (bfs_bio_can_defer_nodes(tree->bio) && owned_contains(tree, blk)) {
+        bfs_err_t err = bfs_bio_defer_node(tree->bio, blk, buf,
+                                           node_finalize_deferred, tree->ops);
+        if (err != BFS_ERR_UNSUPPORTED) return err;
+    }
 #ifdef BFS_PERF_PROBE
     struct EClockVal crc_started = {0};
     ULONG crc_call = ++bfs_perf_probe_counters.node_crc_write_calls;
@@ -614,6 +644,8 @@ static void latch_reclaim_error(bfs_btree_t *tree, bfs_err_t err)
 static bfs_err_t node_dealloc(bfs_btree_t *tree, bfs_blk_t blk)
 {
     owned_remove(tree, blk);
+    /* A freed node's deferred image must never reach the block. */
+    bfs_bio_discard_deferred(tree->bio, blk);
     return tree->alloc->dealloc(tree->alloc, blk);
 }
 

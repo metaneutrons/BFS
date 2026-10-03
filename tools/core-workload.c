@@ -3,7 +3,8 @@
  * BFS — host replica of the checked AmigaDOS compare workload.
  *
  * Drives the six fs-compare-bench phases through the core API with the calls
- * the Amiga handler issues (30 cache slots, node write retention). Mode
+ * the Amiga handler issues (30 cache slots, node write retention, deferred
+ * writes of transaction-owned nodes). Mode
  * "sync" commits after every close and delete, as the handler does today;
  * mode "group" commits once at the end of each mutating phase. Under
  * valgrind --tool=callgrind every phase is dumped separately, which gives a
@@ -192,6 +193,7 @@ int main(int argc, char **argv)
     require(bfs_fs_format(device, "BFSTest", 0), "format");
     require(bfs_cache_init(&cache, device, CACHE_SLOTS), "cache");
     bfs_cache_set_node_write_retention(&cache, true);
+    bfs_cache_set_deferred_node_limit(&cache, CACHE_SLOTS / 2);
     require(bfs_fs_mount(&fs, &cache.bio), "mount");
     require(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "perf", 4, &dir), "mkdir");
     require(bfs_fs_sync(&fs), "sync");

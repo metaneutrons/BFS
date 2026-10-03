@@ -617,8 +617,11 @@ static bfs_err_t InitNodeCache(struct bfs_handler *h, amiga_bio_t *ab)
 {
     bfs_err_t err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
                                    h->dosenvec->de_NumBuffers);
-    if (err == BFS_OK)
+    if (err == BFS_OK) {
         bfs_cache_set_node_write_retention(&h->cache, true);
+        /* Nodes of the live transaction stay dirty until its commit. */
+        bfs_cache_set_deferred_node_limit(&h->cache, h->cache.num_slots / 2);
+    }
     return err;
 }
 

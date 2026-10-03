@@ -7,7 +7,10 @@
  * search/insert/delete — caching them eliminates most disk reads.
  *
  * Write-through: writes update the cache entry if present but always
- * go to disk. This ensures crash consistency (no dirty buffers).
+ * go to disk. The only exception are deferred B-tree nodes (opt-in, see
+ * bfs_cache_set_deferred_node_limit): images of nodes that no committed
+ * superblock or snapshot references stay dirty until the transaction commit
+ * flushes them, so a crash can only lose state that was never published.
  *
  * Slot count is configurable via the AmigaOS "Buffers" mount option
  * (de_NumBuffers in DosEnvec). Default: 8. Recommended: 16-32.
@@ -35,7 +38,10 @@ typedef struct bfs_cache_slot {
     uint8_t  *data;         /* block data */
     bool      node_crc_valid; /* cached node bytes have a valid CRC */
     bool      node_structure_valid;
+    bool      dirty;          /* deferred node image not yet written */
     bfs_node_validation_t node_validation;
+    bfs_node_finalize_fn finalize; /* completes a dirty image before writing */
+    const void *layout;
 } bfs_cache_slot_t;
 
 typedef struct bfs_cache_scratch_slot {
@@ -50,6 +56,8 @@ typedef struct bfs_cache {
     uint32_t           num_slots;
     uint32_t           clock;   /* LRU clock */
     bool               retain_written_nodes;
+    uint32_t           dirty_count;  /* slots holding deferred node images */
+    uint32_t           dirty_limit;  /* 0: no deferred node writes */
     bfs_cache_scratch_slot_t scratch[BFS_CACHE_SCRATCH_SLOTS];
 } bfs_cache_t;
 
@@ -60,12 +68,18 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
  * default so ordinary write-through cache behavior remains unchanged. */
 void bfs_cache_set_node_write_retention(bfs_cache_t *cache, bool enabled);
 
+/* Hold up to limit deferred B-tree node images (at most half of the slots);
+ * 0 disables deferral, which is the default. The oldest image is written
+ * early when the limit is reached. */
+void bfs_cache_set_deferred_node_limit(bfs_cache_t *cache, uint32_t limit);
+
 /* Destroy cache (free resident and retained scratch buffers). All temporary
  * buffer leases must already be released; a live cache must not be copied. */
 void bfs_cache_destroy(bfs_cache_t *cache);
 
-/* Invalidate resident entries (call after format or fsck). Temporary leases
- * and their bytes remain independent of resident cache invalidation. */
+/* Invalidate resident entries (call after format or fsck). Deferred node
+ * images are discarded, not written. Temporary leases and their bytes remain
+ * independent of resident cache invalidation. */
 void bfs_cache_invalidate(bfs_cache_t *cache);
 
 #endif /* BFS_CACHE_H */

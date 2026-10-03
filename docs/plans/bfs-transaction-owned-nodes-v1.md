@@ -3,7 +3,12 @@
 Decision state: design approved for staged implementation. The delayed commit
 policy is the chosen default, with a synchronous mode retained as an option.
 Stage A and the measurement tooling are implemented on
-`perf/txn-owned-nodes`; stages B and C are not implemented. The prototype numbers below come
+`perf/txn-owned-nodes`; stages B and C on `perf/write-path-stages`. Stage C
+keeps dirty nodes in the block cache rather than in the B-tree layer, so every
+reader of a block, including trees opened without the filesystem's free sink,
+sees the current image; the dirty limit is half of the cache slots instead of
+an independent budget, and the oldest dirty node is written early instead of
+forcing a commit. The prototype numbers below come
 from compile-time experiments on `perf/group-commit-inplace-experiments`
 (`1d7483a`) and are indications, not qualification evidence. The goal remains
 at most five times PFS3 elapsed time in every checked AmigaDOS workload while

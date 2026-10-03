@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
 /*
- * BFS — Block read cache (LRU, 8 slots, write-through)
+ * BFS — Block read cache (LRU, write-through except deferred B-tree nodes)
  */
 
 #include "bfs_cache.h"
@@ -9,18 +9,43 @@
 
 /* ── Cache bio ops ─────────────────────────────────────────── */
 
+/* The least recently used clean slot, or UINT32_MAX if every slot is dirty.
+ * Dirty slots are never reused without being written. */
 static uint32_t cache_victim(const bfs_cache_t *cache)
 {
-    uint32_t victim = 0;
+    uint32_t victim = UINT32_MAX;
     uint32_t min_age = UINT32_MAX;
     for (uint32_t i = 0; i < cache->num_slots; i++) {
         if (cache->slots[i].blk == UINT32_MAX) return i;
-        if (cache->slots[i].age < min_age) {
+        if (!cache->slots[i].dirty && cache->slots[i].age <= min_age) {
             min_age = cache->slots[i].age;
             victim = i;
         }
     }
     return victim;
+}
+
+static void cache_drop_slot(bfs_cache_t *c, bfs_cache_slot_t *slot)
+{
+    if (slot->dirty) c->dirty_count--;
+    slot->blk = UINT32_MAX;
+    slot->dirty = false;
+    slot->node_crc_valid = false;
+    slot->node_structure_valid = false;
+}
+
+/* Complete and write a dirty node image. On failure the image stays dirty:
+ * it is the only copy of the transaction's node. */
+static bfs_err_t cache_write_back(bfs_cache_t *c, bfs_cache_slot_t *slot)
+{
+    bfs_err_t err = slot->finalize(slot->layout, c->bio.block_size, slot->data);
+    if (err == BFS_OK) err = bfs_bio_write(c->dev, slot->blk, slot->data);
+    if (err != BFS_OK) return err;
+    slot->dirty = false;
+    c->dirty_count--;
+    slot->node_crc_valid = true;
+    slot->node_structure_valid = false;
+    return BFS_OK;
 }
 
 static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
@@ -42,6 +67,7 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
 
     /* Insert into LRU slot */
     uint32_t victim = cache_victim(c);
+    if (victim == UINT32_MAX) return BFS_OK;
     memcpy(c->slots[victim].data, buf, bio->block_size);
     c->slots[victim].blk = blk;
     c->slots[victim].age = ++c->clock;
@@ -56,17 +82,14 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
 {
     bfs_cache_t *c = (bfs_cache_t *)bio;
 
-    /* Write-through: always write to device */
+    /* Write-through: always write to device. A written block supersedes any
+     * deferred image of it. */
     bfs_err_t err = bfs_bio_write(c->dev, blk, buf);
     if (err != BFS_OK) {
         /* A failed write may have reached media partially. Drop any cached
          * copy rather than retaining a validated view of uncertain contents. */
         for (uint32_t i = 0; i < c->num_slots; i++)
-            if (c->slots[i].blk == blk) {
-                c->slots[i].blk = UINT32_MAX;
-                c->slots[i].node_crc_valid = false;
-                c->slots[i].node_structure_valid = false;
-            }
+            if (c->slots[i].blk == blk) cache_drop_slot(c, &c->slots[i]);
         return err;
     }
 
@@ -76,6 +99,10 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
         if (c->slots[i].blk == blk) {
             memcpy(c->slots[i].data, buf, bio->block_size);
             c->slots[i].age = ++c->clock;
+            if (c->slots[i].dirty) {
+                c->slots[i].dirty = false;
+                c->dirty_count--;
+            }
             c->slots[i].node_crc_valid = retain_node;
             c->slots[i].node_structure_valid = false;
             return BFS_OK;
@@ -84,6 +111,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
 
     if (retain_node) {
         uint32_t victim = cache_victim(c);
+        if (victim == UINT32_MAX) return BFS_OK;
         /* Every slot buffer was allocated with this cache's block_size. */
         memcpy(c->slots[victim].data, buf, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         c->slots[victim].blk = blk;
@@ -105,6 +133,76 @@ static bfs_err_t cache_write_node(bfs_bio_t *bio, bfs_blk_t blk,
 {
     bfs_cache_t *c = (bfs_cache_t *)bio;
     return cache_write_common(bio, blk, buf, c->retain_written_nodes);
+}
+
+/* Keep a node image dirty. Its CRC is not computed yet, so the slot is marked
+ * as a trusted node: readers skip the CRC check but still validate the
+ * structure. */
+static bfs_err_t cache_defer_node(bfs_bio_t *bio, bfs_blk_t blk, const void *buf,
+                                  bfs_node_finalize_fn finalize, const void *layout)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    if (c->dirty_limit == 0) return BFS_ERR_UNSUPPORTED;
+    bfs_cache_slot_t *slot = NULL;
+    for (uint32_t i = 0; i < c->num_slots; i++)
+        if (c->slots[i].blk == blk) {
+            slot = &c->slots[i];
+            break;
+        }
+    if ((!slot || !slot->dirty) && c->dirty_count >= c->dirty_limit) {
+        bfs_cache_slot_t *oldest = NULL;
+        for (uint32_t i = 0; i < c->num_slots; i++)
+            if (c->slots[i].dirty && (!oldest || c->slots[i].age < oldest->age))
+                oldest = &c->slots[i];
+        if (oldest) {
+            bfs_err_t err = cache_write_back(c, oldest);
+            if (err != BFS_OK) return err;
+        }
+    }
+    if (!slot) {
+        uint32_t victim = cache_victim(c);
+        if (victim == UINT32_MAX) return BFS_ERR_UNSUPPORTED;
+        slot = &c->slots[victim];
+        slot->blk = blk;
+    }
+    /* Every slot buffer was allocated with this cache's block_size. */
+    memcpy(slot->data, buf, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    slot->age = ++c->clock;
+    if (!slot->dirty) {
+        slot->dirty = true;
+        c->dirty_count++;
+    }
+    slot->finalize = finalize;
+    slot->layout = layout;
+    slot->node_crc_valid = true;
+    slot->node_structure_valid = false;
+    return BFS_OK;
+}
+
+/* Write every dirty image in ascending block order. */
+static bfs_err_t cache_flush_deferred(bfs_bio_t *bio)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    while (c->dirty_count > 0) {
+        bfs_cache_slot_t *next = NULL;
+        for (uint32_t i = 0; i < c->num_slots; i++)
+            if (c->slots[i].dirty && (!next || c->slots[i].blk < next->blk))
+                next = &c->slots[i];
+        if (!next) return BFS_ERR_CORRUPT;
+        bfs_err_t err = cache_write_back(c, next);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
+static void cache_discard_deferred(bfs_bio_t *bio, bfs_blk_t blk)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    for (uint32_t i = 0; i < c->num_slots && c->dirty_count > 0; i++) {
+        bfs_cache_slot_t *slot = &c->slots[i];
+        if (slot->dirty && (blk == BFS_BLK_NULL || slot->blk == blk))
+            cache_drop_slot(c, slot);
+    }
 }
 
 static bfs_err_t cache_sync(bfs_bio_t *bio)
@@ -216,6 +314,9 @@ static const bfs_bio_ops_t cache_ops = {
     .mark_node_structure_valid = cache_mark_node_structure_valid,
     .alloc_buffer = cache_alloc_buffer,
     .free_buffer = cache_free_buffer,
+    .defer_node_block = cache_defer_node,
+    .flush_deferred = cache_flush_deferred,
+    .discard_deferred = cache_discard_deferred,
 };
 
 void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)
@@ -263,6 +364,7 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
         cache->slots[i].age = 0;
         cache->slots[i].node_crc_valid = false;
         cache->slots[i].node_structure_valid = false;
+        cache->slots[i].dirty = false;
         cache->slots[i].data = malloc(dev->block_size);
         if (!cache->slots[i].data) {
             for (uint32_t j = 0; j < i; j++) free(cache->slots[j].data);
@@ -280,6 +382,13 @@ void bfs_cache_set_node_write_retention(bfs_cache_t *cache, bool enabled)
     if (cache) cache->retain_written_nodes = enabled;
 }
 
+void bfs_cache_set_deferred_node_limit(bfs_cache_t *cache, uint32_t limit)
+{
+    if (!cache) return;
+    if (limit > cache->num_slots / 2u) limit = cache->num_slots / 2u;
+    cache->dirty_limit = limit;
+}
+
 void bfs_cache_destroy(bfs_cache_t *cache)
 {
     if (!cache) return;
@@ -292,6 +401,7 @@ void bfs_cache_destroy(bfs_cache_t *cache)
     cache->slots = NULL;
     cache->num_slots = 0;
     cache->clock = 0;
+    cache->dirty_count = 0;
 
     for (uint32_t i = 0; i < BFS_CACHE_SCRATCH_SLOTS; i++) {
         free(cache->scratch[i].data);
@@ -307,6 +417,8 @@ void bfs_cache_invalidate(bfs_cache_t *cache)
         cache->slots[i].blk = UINT32_MAX;
         cache->slots[i].node_crc_valid = false;
         cache->slots[i].node_structure_valid = false;
+        cache->slots[i].dirty = false;
     }
+    cache->dirty_count = 0;
     cache->clock = 0;
 }

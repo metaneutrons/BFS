@@ -559,6 +559,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
     }
     if (fs->recovery_error != BFS_OK) {
         bfs_err_t recovery_error = fs->recovery_error;
+        bfs_bio_discard_deferred(fs->bio, BFS_BLK_NULL);
         free(fs->scratch);
         fs->scratch = NULL;
         fs->scratch_capacity = 0;
@@ -590,6 +591,8 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
 void bfs_fs_abandon(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted) return;
+    /* Uncommitted nodes are abandoned with their transaction. */
+    bfs_bio_discard_deferred(fs->bio, BFS_BLK_NULL);
     free(fs->scratch);
     fs->scratch = NULL;
     fs->scratch_capacity = 0;
@@ -606,6 +609,8 @@ bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs)
 
     uint32_t pending_cap = fs->pending_frees_cap;
     bfs_txn_t txn;
+    /* The discarded transaction's deferred nodes must never be written. */
+    bfs_bio_discard_deferred(fs->bio, BFS_BLK_NULL);
     bfs_err_t err = bfs_bio_sync(fs->bio);
     if (err != BFS_OK) goto fail;
     if (fs->recovery_generation == UINT64_MAX) {

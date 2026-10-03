@@ -69,7 +69,14 @@ the transaction's graph uncertain: it is latched like an ownership-uncertain
 reclamation and the caller recovers the latest committed roots. Committed
 nodes are never rewritten in place; whether a node is owned is decided from an
 in-memory record of the transaction's own allocations, not from the node's
-on-disk transaction id.
+on-disk transaction id. With the Amiga handler's node cache, owned nodes are
+not written at every change: the cache keeps them dirty, at most half of its
+slots, and the commit writes every dirty node before its metadata fence and
+superblock. A dirty node may be written earlier to make room, which is safe
+because no committed state references it. A crash before the commit loses
+only the uncommitted transaction; a failed write of a dirty node fails the
+commit or the operation that needed the room, and the node stays dirty until
+recovery discards the transaction.
 Failed extent-remap rollback marks block ownership uncertain so the file layer
 recovers committed roots rather than freeing a possibly referenced replacement.
 
