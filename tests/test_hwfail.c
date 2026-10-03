@@ -482,8 +482,11 @@ static void test_extent_read_error_is_not_a_sparse_hole(void)
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "data", 4, &ino), BFS_OK);
     bfs_file_t file;
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    /* A leading hole keeps the mapping in an extent tree. */
+    TEST_ASSERT_EQ(bfs_file_seek(&file, BLK_SIZE, BFS_SEEK_SET), BLK_SIZE);
     TEST_ASSERT_EQ(bfs_file_write(&file, "payload", 7), 7);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT(file.extents.tree.root != BFS_BLK_NULL);
 
     failing_bio_t fb;
     init_failing_bio(&fb, bio);
@@ -538,8 +541,11 @@ static void test_delete_extent_read_error_preserves_entry(void)
                                       &ino), BFS_OK);
     bfs_file_t file;
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    /* A leading hole keeps the mapping in an extent tree. */
+    TEST_ASSERT_EQ(bfs_file_seek(&file, BLK_SIZE, BFS_SEEK_SET), BLK_SIZE);
     TEST_ASSERT_EQ(bfs_file_write(&file, "payload", 7), 7);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT(file.extents.tree.root != BFS_BLK_NULL);
 
     failing_bio_t fb;
     init_failing_bio(&fb, bio);
@@ -771,6 +777,8 @@ static void test_failed_extent_rollback_marks_ownership_uncertain(void)
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "file", 4, &ino), BFS_OK);
     bfs_file_t file;
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    /* A leading hole keeps the mapping in an extent tree. */
+    TEST_ASSERT_EQ(bfs_file_seek(&file, BLK_SIZE, BFS_SEEK_SET), BLK_SIZE);
     TEST_ASSERT_EQ(bfs_file_write(&file, "original", 8), 8);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&fs.freespace), BFS_OK);
@@ -778,12 +786,13 @@ static void test_failed_extent_rollback_marks_ownership_uncertain(void)
     TEST_ASSERT(replacement != BFS_BLK_NULL);
     /* Removing the sole leaf key needs no write. Both inserts then fail. */
     fb.fail_all_writes = true;
-    TEST_ASSERT_EQ(bfs_extent_remap_block(&file.extents, 0, replacement, NULL), BFS_ERR_IO);
+    TEST_ASSERT_EQ(bfs_extent_remap_block(&file.extents, 1, replacement, NULL), BFS_ERR_IO);
     TEST_ASSERT_EQ(file.extents.tree.free_sink_err, BFS_ERR_IO);
     TEST_ASSERT(fb.failed_writes >= 2);
     bfs_fs_abandon(&fs);
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_seek(&file, BLK_SIZE, BFS_SEEK_SET), BLK_SIZE);
     char data[8];
     TEST_ASSERT_EQ(bfs_file_read(&file, data, sizeof(data)), sizeof(data));
     TEST_ASSERT_MEM_EQ(data, "original", sizeof(data));
@@ -2605,15 +2614,29 @@ static void test_append_extent_write_failure_preserves_old_file(void)
     uint64_t original_size = file.size;
     bfs_blk_t original_extent_root = file.extents.tree.root;
     TEST_ASSERT_EQ(original_size, (uint64_t)BLK_SIZE);
-    TEST_ASSERT(original_extent_root != BFS_BLK_NULL);
+    /* The one-block file lives in the inode. */
+    TEST_ASSERT_EQ(original_extent_root, BFS_BLK_NULL);
+    TEST_ASSERT_EQ(file.extents.inline_length, 1);
+    bfs_blk_t original_start = file.extents.inline_start;
+
+    /* A block of another file follows the inline extent, so the append cannot
+     * extend it and must convert the mapping into a tree. */
+    uint32_t gap_ino;
+    bfs_file_t gap;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "gap", 3, &gap_ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&gap, &fs, gap_ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&gap, original, sizeof(original)), (int32_t)sizeof(original));
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
 
     /* Route only extent-tree I/O through a failing wrapper. Data and inode I/O
      * still use the filesystem BIO, whose payload matcher proves the batch data
-     * writes completed before the extent insert failed. */
+     * writes completed before the conversion failed. */
     failing_bio_t extent_fault;
     TEST_ASSERT(append_fails_extent_write_after_payloads(&fb, &file, data, 4,
                                                          &extent_fault));
     TEST_ASSERT_EQ(file.extents.tree.root, original_extent_root);
+    TEST_ASSERT_EQ(file.extents.inline_length, 1);
+    TEST_ASSERT_EQ(file.extents.inline_start, original_start);
     TEST_ASSERT_EQ(file.size, original_size);
     TEST_ASSERT_EQ(file.extents.tree.free_sink_err, BFS_OK);
     TEST_ASSERT_EQ(fs.recovery_error, BFS_OK);

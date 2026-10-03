@@ -174,6 +174,11 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out);
  * Updates tree->root if the root splits. */
 bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val);
 
+/* Give an empty tree a root leaf holding count sorted entries, in one
+ * mutation: on failure the tree stays empty. */
+bfs_err_t bfs_btree_create_root_leaf(bfs_btree_t *tree, const void *keys,
+                                     const void *vals, uint32_t count);
+
 /* Replace a height-one tree with a complete, sorted leaf in one COW step. */
 bfs_err_t bfs_btree_replace_root_leaf(bfs_btree_t *tree, const void *keys,
                                       const void *vals, uint32_t count);

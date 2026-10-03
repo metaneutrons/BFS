@@ -342,11 +342,15 @@ static bfs_err_t view_comment(const bfs_fuse_ctx_t *ctx, uint32_t inode,
                               char buffer[BFS_FUSE_COMMENT_MAX], size_t *length)
 {
     if (!ctx || !buffer || !length || inode >= 0x80000000u) return BFS_ERR_INVAL;
-    comment_view_t result = { buffer, BFS_FUSE_COMMENT_MAX, 0, false, false };
-    bfs_err_t error = bfs_dir_scan(ctx->dir_tree, inode | 0x80000000u, comment_scan, &result);
+    bfs_inode_t node;
+    bfs_err_t error = read_inode(ctx, inode, &node);
     if (error != BFS_OK) return error;
-    if (result.corrupt) return BFS_ERR_CORRUPT;
-    if (!result.found) return BFS_ERR_NOTFOUND;
+    /* The inode flag says whether the hidden comment entry exists. */
+    if (!(bfs_be32(node.flags) & BFS_INODE_FLAG_HAS_COMMENT)) return BFS_ERR_NOTFOUND;
+    comment_view_t result = { buffer, BFS_FUSE_COMMENT_MAX, 0, false, false };
+    error = bfs_dir_scan(ctx->dir_tree, inode | 0x80000000u, comment_scan, &result);
+    if (error != BFS_OK) return error;
+    if (result.corrupt || !result.found) return BFS_ERR_CORRUPT;
     *length = result.length;
     return BFS_OK;
 }

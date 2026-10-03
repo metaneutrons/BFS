@@ -1061,6 +1061,25 @@ static bool format_mount(memory_device_t *device, bfs_fs_t *fs,
            bfs_fs_mount(fs, &device->bio) == BFS_OK;
 }
 
+/* Contiguous appends stay in the inode's inline extent and leave the metadata
+ * trees alone. A filler block after each chunk breaks contiguity, so the file
+ * keeps an extent tree whose updates drive the allocation policy. */
+static void append_fragmented(bfs_file_t *file, bfs_file_t *filler,
+                              const uint8_t *chunk, uint32_t size)
+{
+    TEST_ASSERT_EQ(bfs_file_append(file, chunk, size), (int32_t)size);
+    TEST_ASSERT_EQ(bfs_file_append(filler, chunk, FS_BLOCK_SIZE),
+                   (int32_t)FS_BLOCK_SIZE);
+}
+
+static uint32_t create_filler(bfs_fs_t *fs)
+{
+    uint32_t ino = 0;
+    /* Zero makes the caller's bfs_file_open fail. */
+    if (bfs_fs_create_file(fs, BFS_ROOT_INO, "filler", 6, &ino) != BFS_OK) return 0;
+    return ino;
+}
+
 static void test_mounted_append_overwrite_commits_and_remount(void)
 {
     memory_device_t device;
@@ -1074,16 +1093,16 @@ static void test_mounted_append_overwrite_commits_and_remount(void)
     uint32_t ino;
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "append", 6, &ino),
                    BFS_OK);
-    bfs_file_t file;
+    bfs_file_t file, filler;
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&filler, &fs, create_filler(&fs)), BFS_OK);
     uint8_t *chunk = malloc(64u * 1024u);
     TEST_ASSERT(chunk != NULL);
     for (uint32_t pass = 0; pass < 3; pass++) {
         memset(chunk, (int)(0x31u + pass), 64u * 1024u);
         uint32_t chunks = pass == 0 ? 4 : 1;
         for (uint32_t i = 0; i < chunks; i++)
-            TEST_ASSERT_EQ(bfs_file_append(&file, chunk, 64u * 1024u),
-                           64u * 1024u);
+            append_fragmented(&file, &filler, chunk, 64u * 1024u);
         if (pass == 0) {
             /* Sustained append reaches the policy warmup naturally, then a
              * retired current inode seeds an ordinary suffix spare. */
@@ -1138,6 +1157,7 @@ static void test_mounted_warmed_append_write_failure_cuts_preserve_commit(void)
     uint32_t ino;
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "cut", 3, &ino),
                    BFS_OK);
+    uint32_t filler_ino = create_filler(&fs);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     TEST_ASSERT(fsck_strict_clean(&fs));
 
@@ -1169,13 +1189,12 @@ static void test_mounted_warmed_append_write_failure_cuts_preserve_commit(void)
         fs.owned_nodes.disabled = true; /* qualifies the copy-on-write stock path */
         TEST_ASSERT_EQ(fs.txn.sb.txn_id, published_sb.txn_id);
 
-        bfs_file_t file;
+        bfs_file_t file, filler;
         TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+        TEST_ASSERT_EQ(bfs_file_open(&filler, &fs, filler_ino), BFS_OK);
         memset(chunk, (int)(0x60u + cut), chunk_size);
-        for (uint32_t i = 0; i < 4; i++) {
-            TEST_ASSERT_EQ(bfs_file_append(&file, chunk, chunk_size),
-                           (int32_t)chunk_size);
-        }
+        for (uint32_t i = 0; i < 4; i++)
+            append_fragmented(&file, &filler, chunk, chunk_size);
         TEST_ASSERT_EQ(fs.freespace.metadata_requests, REUSE_WARMUP);
         TEST_ASSERT(fs.freespace.reserve_count > HEIGHT_ONE_FLOOR);
         TEST_ASSERT_EQ(fs.txn.sb.txn_id, published_sb.txn_id);
@@ -1266,16 +1285,17 @@ static void snapshot_preservation_case(uint32_t options, bool copy_on_write)
     uint32_t ino;
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "snap", 4, &ino),
                    BFS_OK);
-    bfs_file_t file;
+    bfs_file_t file, filler;
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&filler, &fs, create_filler(&fs)), BFS_OK);
     /* Enough data/metadata to exceed warmup both before snapshot creation
      * and during its graph/refcount operations on an optionless volume. */
     uint8_t original[8u * 64u * 1024u], replacement[8u * 64u * 1024u];
     uint8_t actual[8u * 64u * 1024u];
     memset(original, 0x48, sizeof(original));
     memset(replacement, 0xC2, sizeof(replacement));
-    TEST_ASSERT_EQ(bfs_file_write(&file, original, sizeof(original)),
-                   (int32_t)sizeof(original));
+    for (uint32_t i = 0; i < 8; i++)
+        append_fragmented(&file, &filler, original + i * 64u * 1024u, 64u * 1024u);
     /* Owned rewriting avoids the metadata churn that reaches the warmup. */
     if (options == 0 && copy_on_write)
         TEST_ASSERT_EQ(fs.freespace.metadata_requests, REUSE_WARMUP);

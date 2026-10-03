@@ -111,8 +111,7 @@ static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
     f->recovery_generation = fs->recovery_generation;
     f->unlinked = unlinked;
 
-    /* Read inode to get extent_root and size */
-    bfs_blk_t extent_root = BFS_BLK_NULL;
+    /* Read the inode for its extent mapping and size */
     uint64_t size = 0;
     bfs_inode_t inode;
     bfs_err_t err = unlinked ? bfs_inode_read_unlinked(inode_tree, inode_nr, &inode)
@@ -121,12 +120,11 @@ static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
     uint32_t type = bfs_be32(inode.type);
     if (type != BFS_INODE_FILE && type != BFS_INODE_SOFTLINK && type != BFS_INODE_HARDLINK)
         return BFS_ERR_INVAL;
-    extent_root = bfs_be32(inode.extent_root);
     size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
     f->size = size;
 
-    err = bfs_extent_init(&f->extents, fs->bio, &fs->freespace, extent_root,
-                     fs->live_txn_id);
+    err = bfs_extent_open(&f->extents, fs->bio, &fs->freespace, &inode,
+                          fs->live_txn_id);
     if (err != BFS_OK) return err;
     f->extents.tree.txn_id_ptr = &fs->live_txn_id;
     f->extents.data_checksums = fs->data_checksums;
@@ -150,7 +148,7 @@ static bfs_err_t file_update_inode(bfs_file_t *f,
     inode.inode_nr = bfs_be32(f->inode_nr);
     inode.size_hi = bfs_be32((uint32_t)(f->size >> 32));
     inode.size_lo = bfs_be32((uint32_t)(f->size & 0xFFFFFFFF));
-    inode.extent_root = bfs_be32(f->extents.tree.root);
+    bfs_extent_store(&f->extents, &inode);
     if (metadata) {
         if (metadata->stamp_fn) {
             bfs_inode_stamp_t stamp = {0};
@@ -167,7 +165,7 @@ static bfs_err_t file_update_inode(bfs_file_t *f,
 }
 
 /* Reached a transaction commit point in the middle of a write or truncate: the
- * inode must be made current (size + extent_root) BEFORE the commit. Otherwise a
+ * inode must be made current (size + extent mapping) BEFORE the commit. Otherwise a
  * crash — or any later error return — leaves the just-allocated extent/data
  * blocks unreferenced by the inode (orphaned and leaked), with the on-disk size
  * inconsistent with the extent map. Always flush the inode, then sync. */
@@ -672,16 +670,19 @@ bfs_err_t bfs_file_truncate_unlocked(bfs_file_t *f, uint64_t new_size)
         uint32_t first_free_blk = (uint32_t)first_free;
         bfs_err_t err;
         bfs_blk_t prev_root = BFS_BLK_NULL;
+        uint32_t prev_inline = 0;
         bool have_prev = false;
         while ((err = bfs_extent_truncate_batch(&f->extents, first_free_blk, 128)) == BFS_ERR_AGAIN) {
             /* AGAIN means the next extent's frees won't fit the deferred-free queue
              * right now; the flush+sync below drains it and the retry proceeds. But
-             * if the batch removed NO extent since the last drain (the extent-tree
-             * root is unchanged), a single extent is larger than the whole queue and
+             * if the batch removed NO extent since the last drain (the mapping is
+             * unchanged), a single extent is larger than the whole queue and
              * draining can never make it fit — fail loudly instead of spinning. */
-            if (have_prev && f->extents.tree.root == prev_root)
+            if (have_prev && f->extents.tree.root == prev_root &&
+                f->extents.inline_length == prev_inline)
                 return file_finish_truncate(f, BFS_ERR_NOSPC);
             prev_root = f->extents.tree.root;
+            prev_inline = f->extents.inline_length;
             have_prev = true;
             /* Flush the inode so it reflects the partially-truncated extent tree
              * before the commit, then sync to reclaim pending_frees — a crash
@@ -710,7 +711,8 @@ static bfs_err_t file_refresh_unlocked(bfs_file_t *f)
                       : bfs_inode_read(f->inode_tree, f->inode_nr, &inode);
     if (err != BFS_OK) return err;
     uint64_t size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
-    if (bfs_be32(inode.extent_root) == f->extents.tree.root && size == f->size)
+    /* An inline extent can grow while root and size stay the same. */
+    if (bfs_extent_matches(&f->extents, &inode) && size == f->size)
         return BFS_OK;
     /* Another handle published a new inode. Keep this handle's independent offset. */
     bfs_file_t current;

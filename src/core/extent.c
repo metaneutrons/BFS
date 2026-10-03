@@ -61,6 +61,33 @@ static bool extent_range_valid(const bfs_extent_tree_t *et, bfs_blk_t disk,
     return true;
 }
 
+static void extent_clear_inline(bfs_extent_tree_t *et)
+{
+    et->inline_start = BFS_BLK_NULL;
+    et->inline_length = 0;
+    et->inline_crc = 0;
+}
+
+/* An inline extent read from disk is untrusted until its range is checked
+ * against the device and the reserved regions, like a tree record. */
+static bool inline_valid(const bfs_extent_tree_t *et)
+{
+    return et->tree.root == BFS_BLK_NULL &&
+           extent_range_valid(et, et->inline_start, et->inline_length) &&
+           (!et->data_checksums || et->inline_length == 1);
+}
+
+/* Replace the inline extent by a tree holding the given sorted records. The
+ * tree is complete or absent: a failed build leaves the inline extent. */
+static bfs_err_t extent_convert(bfs_extent_tree_t *et, const uint32_t *keys,
+                                const bfs_extent_val_t *vals, uint32_t count)
+{
+    bfs_err_t err = bfs_btree_create_root_leaf(&et->tree, keys, vals, count);
+    /* A latched reclamation error can follow a published root. */
+    if (et->tree.root != BFS_BLK_NULL) extent_clear_inline(et);
+    return err;
+}
+
 /* ── Init ──────────────────────────────────────────────────── */
 
 bfs_err_t bfs_extent_init(bfs_extent_tree_t *et, bfs_bio_t *bio,
@@ -69,8 +96,54 @@ bfs_err_t bfs_extent_init(bfs_extent_tree_t *et, bfs_bio_t *bio,
     if (!et || !bio || !fs) return BFS_ERR_INVAL;
     et->fs = fs;
     et->data_checksums = false;
+    extent_clear_inline(et);
     return bfs_btree_init(&et->tree, bio, bfs_freespace_allocator(fs),
                     &extent_ops, root, txn_id);
+}
+
+bfs_err_t bfs_extent_open(bfs_extent_tree_t *et, bfs_bio_t *bio,
+                          bfs_freespace_t *fs, const bfs_inode_t *inode,
+                          uint64_t txn_id)
+{
+    if (!et || !inode) return BFS_ERR_INVAL;
+    bfs_blk_t root = bfs_be32(inode->extent_root);
+    if (!(bfs_be32(inode->flags) & BFS_INODE_FLAG_INLINE_EXTENT)) {
+        if (inode->inline_length != 0 || inode->inline_crc32 != 0)
+            return BFS_ERR_CORRUPT;
+        return bfs_extent_init(et, bio, fs, root, txn_id);
+    }
+    bfs_err_t err = bfs_extent_init(et, bio, fs, BFS_BLK_NULL, txn_id);
+    if (err != BFS_OK) return err;
+    et->inline_start = root;
+    et->inline_length = bfs_be32(inode->inline_length);
+    et->inline_crc = bfs_be32(inode->inline_crc32);
+    return inline_valid(et) ? BFS_OK : BFS_ERR_CORRUPT;
+}
+
+void bfs_extent_store(const bfs_extent_tree_t *et, bfs_inode_t *inode)
+{
+    uint32_t flags = bfs_be32(inode->flags) & ~BFS_INODE_FLAG_INLINE_EXTENT;
+    if (et->inline_length != 0) {
+        flags |= BFS_INODE_FLAG_INLINE_EXTENT;
+        inode->extent_root = bfs_be32(et->inline_start);
+        inode->inline_length = bfs_be32(et->inline_length);
+        inode->inline_crc32 = bfs_be32(et->inline_crc);
+    } else {
+        inode->extent_root = bfs_be32(et->tree.root);
+        inode->inline_length = 0;
+        inode->inline_crc32 = 0;
+    }
+    inode->flags = bfs_be32(flags);
+}
+
+bool bfs_extent_matches(const bfs_extent_tree_t *et, const bfs_inode_t *inode)
+{
+    bfs_inode_t stored = *inode;
+    bfs_extent_store(et, &stored);
+    return stored.extent_root == inode->extent_root &&
+           stored.flags == inode->flags &&
+           stored.inline_length == inode->inline_length &&
+           stored.inline_crc32 == inode->inline_crc32;
 }
 
 /* ── Lookup ────────────────────────────────────────────────── */
@@ -86,6 +159,13 @@ bfs_err_t bfs_extent_lookup_run(bfs_extent_tree_t *et, uint32_t file_block,
                                 bfs_blk_t *disk_block, uint32_t *run_blocks)
 {
     if (!et || !disk_block || !run_blocks) return BFS_ERR_INVAL;
+    if (et->inline_length != 0) {
+        if (!inline_valid(et)) return BFS_ERR_CORRUPT;
+        if (file_block >= et->inline_length) return BFS_ERR_NOTFOUND;
+        *disk_block = et->inline_start + file_block;
+        *run_blocks = et->inline_length - file_block;
+        return BFS_OK;
+    }
     if (et->tree.root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
 
@@ -113,6 +193,13 @@ bfs_err_t bfs_extent_lookup_val(bfs_extent_tree_t *et, uint32_t file_block,
                                   bfs_extent_val_t *val_out)
 {
     if (!et || !val_out) return BFS_ERR_INVAL;
+    if (et->inline_length != 0) {
+        if (!inline_valid(et)) return BFS_ERR_CORRUPT;
+        val_out->disk_block = bfs_be32(et->inline_start);
+        val_out->length = bfs_be32(et->inline_length);
+        val_out->data_crc32 = bfs_be32(et->inline_crc);
+        return file_block < et->inline_length ? BFS_OK : BFS_ERR_NOTFOUND;
+    }
     if (et->tree.root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
     uint32_t key = bfs_be32(file_block);
@@ -133,6 +220,13 @@ bfs_err_t bfs_extent_update_crc(bfs_extent_tree_t *et, uint32_t file_block,
                                   uint32_t crc)
 {
     if (!et || !et->tree.bio) return BFS_ERR_INVAL;
+    if (et->inline_length != 0) {
+        /* As in the tree, the CRC belongs to the record starting here. */
+        if (!inline_valid(et)) return BFS_ERR_CORRUPT;
+        if (file_block != 0) return BFS_ERR_NOTFOUND;
+        et->inline_crc = crc;
+        return BFS_OK;
+    }
     uint32_t key = bfs_be32(file_block);
     bfs_extent_val_t val;
     bfs_err_t err = bfs_btree_search(&et->tree, &key, &val);
@@ -156,6 +250,37 @@ static bfs_err_t extent_insert_raw(bfs_extent_tree_t *et, uint32_t file_block,
     return bfs_btree_insert(&et->tree, &key, &val);
 }
 
+/* Map a new run. The first run at block 0 of an empty file is stored inline;
+ * a contiguous continuation extends it; anything else needs a tree. */
+static bfs_err_t extent_map(bfs_extent_tree_t *et, uint32_t file_block,
+                            bfs_blk_t disk_block, uint32_t count, uint32_t crc)
+{
+    if (et->inline_length != 0) {
+        if (!inline_valid(et)) return BFS_ERR_CORRUPT;
+        uint32_t length = et->inline_length;
+        if (file_block < length) return BFS_ERR_EXISTS;
+        if (!et->data_checksums && file_block == length &&
+            disk_block == et->inline_start + length &&
+            count <= UINT32_MAX - length) {
+            et->inline_length = length + count;
+            return BFS_OK;
+        }
+        const uint32_t keys[2] = { 0, bfs_be32(file_block) };
+        const bfs_extent_val_t vals[2] = {
+            { bfs_be32(et->inline_start), bfs_be32(length), bfs_be32(et->inline_crc) },
+            { bfs_be32(disk_block), bfs_be32(count), bfs_be32(crc) },
+        };
+        return extent_convert(et, keys, vals, 2);
+    }
+    if (et->tree.root == BFS_BLK_NULL && file_block == 0) {
+        et->inline_start = disk_block;
+        et->inline_length = count;
+        et->inline_crc = crc;
+        return BFS_OK;
+    }
+    return extent_insert_raw(et, file_block, disk_block, count, crc);
+}
+
 bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
                                bfs_blk_t disk_block, uint32_t crc)
 {
@@ -164,7 +289,7 @@ bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
 #endif
     if (!et || !extent_range_valid(et, disk_block, 1))
         return BFS_ERR_INVAL;
-    return extent_insert_raw(et, file_block, disk_block, 1, crc);
+    return extent_map(et, file_block, disk_block, 1, crc);
 }
 
 bfs_err_t bfs_extent_map_run(bfs_extent_tree_t *et, uint32_t file_block,
@@ -177,7 +302,7 @@ bfs_err_t bfs_extent_map_run(bfs_extent_tree_t *et, uint32_t file_block,
         count - 1 > UINT32_MAX - file_block ||
         !extent_range_valid(et, disk_block, count))
         return BFS_ERR_INVAL;
-    return extent_insert_raw(et, file_block, disk_block, count, 0);
+    return extent_map(et, file_block, disk_block, count, 0);
 }
 
 static bfs_err_t extent_rollback_remap(bfs_extent_tree_t *et, uint32_t file_block,
@@ -201,12 +326,56 @@ static bfs_err_t extent_rollback_remap(bfs_extent_tree_t *et, uint32_t file_bloc
     return result;
 }
 
+/* Remap one block of the inline extent. A one-block extent stays inline;
+ * otherwise the extent splits around the block into a tree. */
+static bfs_err_t inline_remap_block(bfs_extent_tree_t *et, uint32_t file_block,
+                                    bfs_blk_t new_disk_block, uint32_t crc,
+                                    bfs_blk_t *old_disk_block_out)
+{
+    if (!inline_valid(et)) return BFS_ERR_CORRUPT;
+    uint32_t length = et->inline_length;
+    if (file_block >= length) return BFS_ERR_NOTFOUND;
+    bfs_blk_t old_disk = et->inline_start + file_block;
+    if (old_disk_block_out) *old_disk_block_out = old_disk;
+    if (old_disk == new_disk_block)
+        return bfs_extent_update_crc(et, file_block, crc);
+    if (length == 1) {
+        et->inline_start = new_disk_block;
+        et->inline_crc = crc;
+        return BFS_OK;
+    }
+
+    uint32_t keys[3];
+    bfs_extent_val_t vals[3];
+    uint32_t count = 0;
+    if (file_block > 0) {
+        keys[count] = 0;
+        vals[count] = (bfs_extent_val_t){ bfs_be32(et->inline_start),
+                                          bfs_be32(file_block), 0 };
+        count++;
+    }
+    keys[count] = bfs_be32(file_block);
+    vals[count] = (bfs_extent_val_t){ bfs_be32(new_disk_block), bfs_be32(1),
+                                      bfs_be32(crc) };
+    count++;
+    if (file_block + 1 < length) {
+        keys[count] = bfs_be32(file_block + 1);
+        vals[count] = (bfs_extent_val_t){ bfs_be32(old_disk + 1),
+                                          bfs_be32(length - file_block - 1), 0 };
+        count++;
+    }
+    return extent_convert(et, keys, vals, count);
+}
+
 bfs_err_t bfs_extent_remap_block_crc(bfs_extent_tree_t *et, uint32_t file_block,
                                      bfs_blk_t new_disk_block, uint32_t crc,
                                      bfs_blk_t *old_disk_block_out)
 {
     if (!et || !extent_range_valid(et, new_disk_block, 1))
         return BFS_ERR_INVAL;
+    if (et->inline_length != 0)
+        return inline_remap_block(et, file_block, new_disk_block, crc,
+                                  old_disk_block_out);
     if (et->tree.root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
 
@@ -284,14 +453,7 @@ bfs_err_t bfs_extent_append(bfs_extent_tree_t *et, uint32_t file_block,
     if (dblk == BFS_BLK_NULL)
         return et->fs->last_error == BFS_OK ? BFS_ERR_NOSPC : et->fs->last_error;
 
-    /* Insert extent entry */
-    uint32_t key = bfs_be32(file_block);
-    bfs_extent_val_t val = {
-        .disk_block = bfs_be32(dblk),
-        .length = bfs_be32(count),
-    };
-
-    bfs_err_t err = bfs_btree_insert(&et->tree, &key, &val);
+    bfs_err_t err = extent_map(et, file_block, dblk, count, 0);
     if (err != BFS_OK) {
         bfs_err_t cleanup_err = bfs_freespace_free(et->fs, dblk, count);
         return cleanup_err == BFS_OK ? err : cleanup_err;
@@ -346,13 +508,18 @@ static void extent_walk_node_cb(bfs_blk_t blk, void *c)
 }
 
 bfs_err_t bfs_extent_walk(bfs_bio_t *bio, bfs_freespace_t *fsp, uint64_t txn_id,
-                          bfs_blk_t root, bfs_node_walk_cb node_cb,
+                          const bfs_inode_t *inode, bfs_node_walk_cb node_cb,
                           bfs_node_walk_cb block_cb, void *ctx)
 {
-    if (root == BFS_BLK_NULL) return BFS_OK;
     bfs_extent_tree_t et;
-    bfs_err_t err = bfs_extent_init(&et, bio, fsp, root, txn_id);
+    bfs_err_t err = bfs_extent_open(&et, bio, fsp, inode, txn_id);
     if (err != BFS_OK) return err;
+    if (et.inline_length != 0) {
+        for (uint32_t i = 0; block_cb && i < et.inline_length; i++)
+            block_cb(et.inline_start + i, ctx);
+        return BFS_OK;
+    }
+    if (et.tree.root == BFS_BLK_NULL) return BFS_OK;
 
     /* One pass reads each node once; blocks and nodes may interleave. */
     extent_walk_ctx_t ec = { &et, block_cb, ctx, BFS_OK };
@@ -435,6 +602,17 @@ bfs_err_t bfs_extent_truncate_batch(bfs_extent_tree_t *et, uint32_t from_block,
 {
     if (!et || !et->tree.bio || max_ops == 0)
         return BFS_ERR_INVAL;
+    if (et->inline_length != 0) {
+        if (!inline_valid(et)) return BFS_ERR_CORRUPT;
+        if (from_block >= et->inline_length) return BFS_OK;
+        bfs_blk_t start = et->inline_start + from_block;
+        uint32_t release = et->inline_length - from_block;
+        bfs_err_t err = extent_release_preflight(et, release);
+        if (err != BFS_OK) return err;
+        if (from_block == 0) extent_clear_inline(et);
+        else et->inline_length = from_block;
+        return extent_release_blocks(et, start, release);
+    }
     if (et->tree.root == BFS_BLK_NULL)
         return BFS_OK;
 

@@ -26,8 +26,19 @@ typedef struct {
     bool reference_saturated;
 } check_state_t;
 
+/* Inode numbers that own a hidden comment entry, in ascending order. */
+typedef struct {
+    uint32_t *items;
+    size_t count;
+    size_t capacity;
+    size_t matched;
+    bool failed;
+} comment_set_t;
+
 typedef struct {
     check_state_t *state;
+    bfs_btree_t *inode_tree;
+    comment_set_t *comments;
 } check_context_t;
 
 #define BFS_REFERENCE_MAX 255u
@@ -135,36 +146,111 @@ static bool extent_data_cb(const void *key, const void *value, void *context)
     return true;
 }
 
-static void mark_extent_tree(check_state_t *state, bfs_blk_t root)
+static void mark_inode_extents(check_state_t *state, const bfs_inode_t *inode)
 {
-    if (root == BFS_BLK_NULL) return;
-
     bfs_extent_tree_t tree;
-    if (bfs_extent_init(&tree, state->fs->bio, &state->fs->freespace,
-                        root, bfs_txn_id(&state->fs->txn)) != BFS_OK) {
+    if (bfs_extent_open(&tree, state->fs->bio, &state->fs->freespace,
+                        inode, bfs_txn_id(&state->fs->txn)) != BFS_OK) {
         check_error(state);
         return;
     }
+    if (bfs_extent_is_inline(&tree)) {
+        /* One record at logical block 0, checked like a tree record. */
+        const bfs_extent_val_t extent = {
+            bfs_be32(tree.inline_start), bfs_be32(tree.inline_length),
+            bfs_be32(tree.inline_crc),
+        };
+        extent_data_cb(NULL, &extent, state);
+        return;
+    }
+    if (tree.tree.root == BFS_BLK_NULL) return;
     if (bfs_btree_walk_nodes(&tree.tree, reference_node_cb, state) != BFS_OK)
         check_error(state);
     if (bfs_btree_scan(&tree.tree, NULL, extent_data_cb, state) != BFS_OK)
         check_error(state);
 }
 
+static bool comment_set_contains(const comment_set_t *set, uint32_t ino)
+{
+    size_t low = 0, high = set->count;
+    while (low < high) {
+        size_t mid = low + (high - low) / 2;
+        if (set->items[mid] == ino) return true;
+        if (set->items[mid] < ino) low = mid + 1;
+        else high = mid;
+    }
+    return false;
+}
+
 static bool inode_extent_cb(const void *key, const void *value, void *context)
 {
-    (void)key;
     check_context_t *check = (check_context_t *)context;
     const bfs_inode_t *inode = (const bfs_inode_t *)value;
-    mark_extent_tree(check->state, bfs_be32(inode->extent_root));
+    uint32_t ino = bfs_load_be32(key);
+    if (!bfs_inode_valid(check->inode_tree, ino, inode)) check_error(check->state);
+    mark_inode_extents(check->state, inode);
+    if (check->comments && !check->comments->failed) {
+        bool flagged = (bfs_be32(inode->flags) & BFS_INODE_FLAG_HAS_COMMENT) != 0;
+        bool present = comment_set_contains(check->comments, ino);
+        if (flagged != present) check_error(check->state);
+        if (present) check->comments->matched++;
+    }
     return true;
 }
 
-static void mark_inode_payloads(check_state_t *state, bfs_btree_t *tree)
+/* Collect the hidden comment entries. Their parent IDs carry bit 31, so they
+ * sort after every directory and form one key range at the end of the tree. */
+static bool comment_entry_cb(const void *key, const void *value, void *context)
 {
-    check_context_t context = { .state = state };
+    check_context_t *check = (check_context_t *)context;
+    comment_set_t *set = check->comments;
+    const bfs_dirkey_t *dir_key = (const bfs_dirkey_t *)key;
+    uint32_t parent = bfs_be32(dir_key->parent_id);
+    uint32_t ino = parent & 0x7FFFFFFFu;
+    if (!(parent & 0x80000000u)) return true;
+    if (bfs_load_be32(value) != ino || bfs_load_be32((const uint8_t *)value + 4) != 0 ||
+        dir_key->name_len == 0 || dir_key->name_len > 79 ||
+        (set->count && set->items[set->count - 1] >= ino)) {
+        /* A second comment for one inode sorts directly after the first. */
+        check_error(check->state);
+        return true;
+    }
+    if (set->count == set->capacity) {
+        size_t capacity = set->capacity ? set->capacity * 2u : 16u;
+        uint32_t *items = capacity > SIZE_MAX / sizeof(*items) ? NULL :
+                          realloc(set->items, capacity * sizeof(*items));
+        if (!items) {
+            set->failed = true;
+            return false;
+        }
+        set->items = items;
+        set->capacity = capacity;
+    }
+    set->items[set->count++] = ino;
+    return true;
+}
+
+/* Mark the extents of every inode and check that HAS_COMMENT is set exactly
+ * for the inodes that own a hidden comment entry. */
+static void mark_inode_payloads(check_state_t *state, bfs_dir_tree_t *dir_tree,
+                                bfs_btree_t *tree)
+{
+    comment_set_t comments = {0};
+    check_context_t context = { .state = state, .inode_tree = tree,
+                                .comments = dir_tree ? &comments : NULL };
+    if (dir_tree) {
+        bfs_dirkey_t start;
+        memset(&start, 0, sizeof(start));
+        start.parent_id = bfs_be32(0x80000000u);
+        if (bfs_btree_scan(&dir_tree->tree, &start, comment_entry_cb, &context) != BFS_OK ||
+            comments.failed)
+            check_error(state);
+    }
     if (bfs_btree_scan(tree, NULL, inode_extent_cb, &context) != BFS_OK)
         check_error(state);
+    if (dir_tree && !comments.failed && comments.matched != comments.count)
+        check_error(state); /* a comment without its inode */
+    free(comments.items);
 }
 
 static bool snapshot_mark_cb(uint32_t id, const bfs_snapshot_record_t *record, void *context)
@@ -174,9 +260,12 @@ static bool snapshot_mark_cb(uint32_t id, const bfs_snapshot_record_t *record, v
     uint64_t transaction_id = bfs_snapshot_record_txn_id(record);
     bfs_dir_tree_t dir_tree;
     bfs_btree_t inode_tree;
+    bool dir_valid = bfs_dir_init(&dir_tree, state->fs->bio,
+                                  bfs_freespace_allocator(&state->fs->freespace),
+                                  bfs_be32(record->dir_tree_root),
+                                  transaction_id) == BFS_OK;
 
-    if (bfs_dir_init(&dir_tree, state->fs->bio, bfs_freespace_allocator(&state->fs->freespace),
-                     bfs_be32(record->dir_tree_root), transaction_id) != BFS_OK ||
+    if (!dir_valid ||
         bfs_btree_walk_nodes(&dir_tree.tree, reference_node_cb, state) != BFS_OK) {
         check_error(state);
     }
@@ -187,7 +276,7 @@ static bool snapshot_mark_cb(uint32_t id, const bfs_snapshot_record_t *record, v
     }
     if (bfs_btree_walk_nodes(&inode_tree, reference_node_cb, state) != BFS_OK)
         check_error(state);
-    mark_inode_payloads(state, &inode_tree);
+    mark_inode_payloads(state, dir_valid ? &dir_tree : NULL, &inode_tree);
     return true;
 }
 
@@ -246,7 +335,7 @@ static void scan(check_state_t *state)
 
     if (bfs_btree_scan(&fs->freespace.tree, NULL, free_cb, state) != BFS_OK)
         check_error(state);
-    mark_inode_payloads(state, &fs->inode_tree);
+    mark_inode_payloads(state, &fs->dir_tree, &fs->inode_tree);
     if (bfs_dir_scan(&fs->dir_tree, BFS_ROOT_INO, dir_cb, state) != BFS_OK)
         check_error(state);
 

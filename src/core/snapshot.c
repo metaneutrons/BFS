@@ -212,8 +212,8 @@ static bool snapshot_ref_inode_cb(const void *key, const void *val, void *ctx)
     const bfs_inode_t *inode = (const bfs_inode_t *)val;
     /* Refcount this inode's extent-tree node blocks AND its data blocks. */
     bfs_err_t werr = bfs_extent_walk(rc->fs->bio, &rc->fs->freespace, rc->fs->live_txn_id,
-                                     bfs_be32(inode->extent_root),
-                                     snapshot_ref_node_cb, snapshot_ref_node_cb, rc);
+                                     inode, snapshot_ref_node_cb,
+                                     snapshot_ref_node_cb, rc);
     if (rc->err == BFS_OK) rc->err = werr;
     return rc->err == BFS_OK;
 }
@@ -476,7 +476,7 @@ static bool reclaim_inode_cb(const void *key, const void *val, void *ctx)
     };
     bfs_err_t walk_err = bfs_extent_walk(
         c->fs->bio, &c->fs->freespace, c->fs->live_txn_id,
-        bfs_be32(inode->extent_root), reclaim_collect_block,
+        inode, reclaim_collect_block,
         reclaim_collect_block, &collect);
     if (walk_err != BFS_OK)
         collect.err = walk_err;

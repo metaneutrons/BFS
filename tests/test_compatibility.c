@@ -239,11 +239,16 @@ static void test_version_diagnostics(void)
     init_sparse(&sparse, 4096, 256);
     bfs_superblock_t *sb = &sparse.copies[0];
     char message[BFS_FORMAT_ERROR_MAX];
-    sb->version = bfs_be32(3);
+    sb->version = bfs_be32(4);
     sb->crc32 = bfs_be32(bfs_sb_compute_crc(sb));
     bfs_sb_describe_unsupported(sb, message);
-    TEST_ASSERT(strstr(message, "version 3 is too new") != NULL);
-    TEST_ASSERT(strstr(message, "supports version 2") != NULL);
+    TEST_ASSERT(strstr(message, "version 4 is too new") != NULL);
+    TEST_ASSERT(strstr(message, "supports version 3") != NULL);
+    sb->version = bfs_be32(2);
+    sb->crc32 = bfs_be32(bfs_sb_compute_crc(sb));
+    bfs_sb_describe_unsupported(sb, message);
+    TEST_ASSERT(strstr(message, "version 2 is not supported") != NULL);
+    TEST_ASSERT(strstr(message, "supports version 3") != NULL);
     sb->version = bfs_be32(1);
     sb->crc32 = bfs_be32(bfs_sb_compute_crc(sb));
     bfs_sb_describe_unsupported(sb, message);
@@ -256,7 +261,7 @@ static void test_version_diagnostics(void)
     sb->options = bfs_be32(0x80000000u | BFS_OPT_DATA_ORDERED);
     sb->crc32 = bfs_be32(bfs_sb_compute_crc(sb));
     bfs_sb_describe_unsupported(sb, message);
-    TEST_ASSERT(strstr(message, "version 2 uses unsupported options 0x80000000") != NULL);
+    TEST_ASSERT(strstr(message, "version 3 uses unsupported options 0x80000000") != NULL);
     sb->options = 0; /* Now the checksum is invalid: do not claim a newer format. */
     bfs_sb_describe_unsupported(sb, message);
     TEST_ASSERT_EQ(message[0], 0);

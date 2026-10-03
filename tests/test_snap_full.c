@@ -170,8 +170,8 @@ static void test_snapshot_reads_original_after_overwrite(void) {
     bfs_inode_t snap_inode;
     TEST_ASSERT_EQ(bfs_inode_read(&snap_inode_tree, ino, &snap_inode), BFS_OK);
     bfs_extent_tree_t snap_extents;
-    TEST_ASSERT_EQ(bfs_extent_init(&snap_extents, fs.bio, &fs.freespace,
-                                   bfs_be32(snap_inode.extent_root), snap_txn), BFS_OK);
+    TEST_ASSERT_EQ(bfs_extent_open(&snap_extents, fs.bio, &fs.freespace,
+                                   &snap_inode, snap_txn), BFS_OK);
     bfs_blk_t snap_block;
     TEST_ASSERT_EQ(bfs_extent_lookup(&snap_extents, 0, &snap_block), BFS_OK);
 

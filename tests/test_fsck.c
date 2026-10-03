@@ -77,7 +77,7 @@ static void test_clean_snapshot_and_readonly_check(void)
 
 static void test_unsupported_format_never_repaired(void)
 {
-    for (unsigned option = 0; option < 2; option++) {
+    for (unsigned option = 0; option < 3; option++) {
         for (unsigned slot = 0; slot < 2; slot++) {
             unlink(IMAGE);
             bfs_bio_t *bio = bio_emu_create(IMAGE, 4096, 256);
@@ -85,8 +85,8 @@ static void test_unsupported_format_never_repaired(void)
             TEST_ASSERT_EQ(bfs_fs_format(bio, "Future", 0), BFS_OK);
             bfs_superblock_t sb;
             TEST_ASSERT_EQ(bfs_sb_read(bio, &sb), BFS_OK);
-            if (option) sb.options = bfs_be32(0x80000000u);
-            else sb.version = bfs_be32(BFS_SB_VERSION + 1);
+            if (option == 1) sb.options = bfs_be32(0x80000000u);
+            else sb.version = bfs_be32(option ? BFS_SB_VERSION - 1 : BFS_SB_VERSION + 1);
             sb.crc32 = bfs_be32(bfs_sb_compute_crc(&sb));
             uint64_t offset = slot ? bfs_default_backup_offset(256, 4096) : 0;
             TEST_ASSERT_EQ(bfs_sb_write_raw(bio, offset, &sb), BFS_OK);
@@ -102,8 +102,11 @@ static void test_unsupported_format_never_repaired(void)
             char message[256];
             TEST_ASSERT(fgets(message, sizeof(message), log) != NULL);
             TEST_ASSERT_EQ(fclose(log), 0);
-            TEST_ASSERT(strstr(message, option ? "version 2 uses unsupported options 0x80000000" :
-                                                "version 3 is too new") != NULL);
+            static const char *const expected[] = {
+                "version 4 is too new", "version 3 uses unsupported options 0x80000000",
+                "version 2 is not supported",
+            };
+            TEST_ASSERT(strstr(message, expected[option]) != NULL);
             uint8_t after[4096];
             for (unsigned block = 0; block < 256; block++) {
                 TEST_ASSERT_EQ(bfs_bio_read(bio, block, after), BFS_OK);
