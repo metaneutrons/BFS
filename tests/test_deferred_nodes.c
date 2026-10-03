@@ -597,6 +597,13 @@ static const bfs_btree_ops_t u32_ops = {
     .val_size = sizeof(uint32_t),
 };
 
+static const bfs_btree_ops_t u32_cached_ops = {
+    .key_compare = u32_compare,
+    .key_size = sizeof(uint32_t),
+    .val_size = sizeof(uint32_t),
+    .cache_key_order = true,
+};
+
 typedef struct {
     bfs_allocator_t base;
     bfs_blk_t next;
@@ -688,6 +695,37 @@ static void test_owned_free_root_rewritten_in_place(void)
     unlink(TEST_IMG);
 }
 
+/* A deferred image is validated when it is written, so searches can use it in
+ * place; trees without the validation opt-in are not marked. */
+static void test_deferred_images_are_validated_on_write(void)
+{
+    const bfs_btree_ops_t *variants[] = { &u32_cached_ops, &u32_ops };
+    for (uint32_t v = 0; v < 2; v++) {
+        bfs_cache_t cache;
+        TEST_ASSERT(memory_cache(&cache, 16, 8));
+        bump_alloc_t alloc = { .base = { .alloc = bump_alloc, .dealloc = bump_dealloc },
+                               .next = 2 };
+        bfs_btree_t tree;
+        TEST_ASSERT_EQ(bfs_btree_init(&tree, &cache.bio, &alloc.base, variants[v],
+                                      BFS_BLK_NULL, 1), BFS_OK);
+        bfs_btree_owned_t owned = {0};
+        tree.free_sink.owned = &owned;
+        for (uint32_t k = 1; k <= 20; k++) TEST_ASSERT_EQ(tree_put(&tree, k, true), BFS_OK);
+        bfs_node_validation_t context = {
+            .key_compare = u32_compare, .key_size = sizeof(uint32_t),
+            .val_size = sizeof(uint32_t), .block_size = BLK_SIZE,
+            .block_count = MEM_BLOCKS,
+        };
+        TEST_ASSERT_EQ(bfs_bio_node_structure_valid(&cache.bio, tree.root, &context),
+                       v == 0);
+        uint32_t key = bfs_be32(7), val;
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+        TEST_ASSERT_EQ(bfs_load_be32(&val), 21u);
+        bfs_btree_owned_destroy(&owned);
+        bfs_cache_destroy(&cache);
+    }
+}
+
 /* Readers that do not share the transaction's registry, such as a separately
  * opened directory tree, still see the deferred nodes through the cache. */
 static void test_independent_reader_sees_deferred_nodes(void)
@@ -731,4 +769,5 @@ TEST_SUITE_BEGIN("Deferred node writes")
     TEST_RUN(test_nodes_freed_in_transaction_are_not_written);
     TEST_RUN(test_independent_reader_sees_deferred_nodes);
     TEST_RUN(test_owned_free_root_rewritten_in_place);
+    TEST_RUN(test_deferred_images_are_validated_on_write);
 TEST_SUITE_END()

@@ -90,6 +90,37 @@ static bfs_node_validation_t node_validation_context(const bfs_btree_t *tree)
     return validation;
 }
 
+/* Node-local structure: header fields, strictly ascending keys and in-range
+ * children. Parent bounds and the expected level are checked by traversals. */
+static bool node_structure_ok(const bfs_btree_t *tree, uint8_t *buf)
+{
+    const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
+    uint16_t level = bfs_be16(hdr->level);
+    uint32_t nkeys = bfs_be32(hdr->num_keys);
+    uint32_t max_keys = (level == BFS_BTNODE_LEAF)
+                        ? leaf_max_keys(tree) : internal_max_keys(tree);
+    if (level >= MAX_TREE_DEPTH || nkeys == 0 || nkeys > max_keys ||
+        bfs_be16(hdr->flags) != 0)
+        return false;
+    bfs_blk_t sibling = bfs_be32(hdr->right_sibling);
+    if (sibling != BFS_BLK_NULL &&
+        (level != BFS_BTNODE_LEAF || sibling >= tree->bio->block_count))
+        return false;
+    for (uint32_t i = 1; i < nkeys; i++) {
+        if (tree->ops->key_compare(node_key(tree, buf, i - 1),
+                                   node_key(tree, buf, i)) >= 0)
+            return false;
+    }
+    if (level != BFS_BTNODE_LEAF) {
+        for (uint32_t i = 0; i <= nkeys; i++) {
+            bfs_blk_t child = get_child(tree, buf, i);
+            if (child == BFS_BLK_NULL || child >= tree->bio->block_count)
+                return false;
+        }
+    }
+    return true;
+}
+
 static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
 {
     if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
@@ -128,31 +159,7 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
      * num_keys to index into the fixed-size block buffer. The CRC only catches
      * accidental bit-rot, not a deliberately-consistent corrupt node crafted on
      * untrusted media. */
-    {
-        uint16_t level = bfs_be16(hdr->level);
-        uint32_t nkeys = bfs_be32(hdr->num_keys);
-        uint32_t max_keys = (level == BFS_BTNODE_LEAF)
-                            ? leaf_max_keys(tree) : internal_max_keys(tree);
-        if (level >= MAX_TREE_DEPTH || nkeys == 0 || nkeys > max_keys ||
-            bfs_be16(hdr->flags) != 0)
-            return BFS_ERR_CORRUPT;
-        bfs_blk_t sibling = bfs_be32(hdr->right_sibling);
-        if (sibling != BFS_BLK_NULL &&
-            (level != BFS_BTNODE_LEAF || sibling >= tree->bio->block_count))
-            return BFS_ERR_CORRUPT;
-        for (uint32_t i = 1; i < nkeys; i++) {
-            if (tree->ops->key_compare(node_key(tree, buf, i - 1),
-                                       node_key(tree, buf, i)) >= 0)
-                return BFS_ERR_CORRUPT;
-        }
-        if (level != BFS_BTNODE_LEAF) {
-            for (uint32_t i = 0; i <= nkeys; i++) {
-                bfs_blk_t child = get_child(tree, buf, i);
-                if (child == BFS_BLK_NULL || child >= tree->bio->block_count)
-                    return BFS_ERR_CORRUPT;
-            }
-        }
-    }
+    if (!node_structure_ok(tree, buf)) return BFS_ERR_CORRUPT;
     bfs_bio_mark_node_crc_valid(tree->bio, blk);
     if (tree->ops->cache_key_order)
         bfs_bio_mark_node_structure_valid(tree->bio, blk, &validation);
@@ -305,6 +312,12 @@ static bfs_err_t node_write(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf
     if (bfs_bio_can_defer_nodes(tree->bio) && owned_contains(tree, blk)) {
         bfs_err_t err = bfs_bio_defer_node(tree->bio, blk, buf,
                                            node_finalize_deferred, tree->ops);
+        /* The resident image is exactly these bytes: validate them now, as a
+         * read would, so later searches can use the node in place. */
+        if (err == BFS_OK && tree->ops->cache_key_order && node_structure_ok(tree, buf)) {
+            bfs_node_validation_t validation = node_validation_context(tree);
+            bfs_bio_mark_node_structure_valid(tree->bio, blk, &validation);
+        }
         if (err != BFS_ERR_UNSUPPORTED) return err;
     }
 #ifdef BFS_PERF_PROBE

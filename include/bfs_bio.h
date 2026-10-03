@@ -64,7 +64,8 @@ typedef struct bfs_bio_ops {
      * for the exact resident bytes and context. This excludes parent bounds
      * and the traversal's expected level, which must be checked every time.
      * Every write (including trusted node writes), failed write, eviction and
-     * invalidation clears this result. A node write alone cannot set it.
+     * invalidation clears this result. A node write alone cannot set it; the
+     * B-tree marks a deferred node image only after validating those bytes.
      * The backend must keep resident bytes unchanged throughout the caller's
      * read/validation/mark sequence (e.g. whole-operation serialization). */
     bool (*node_structure_valid)(bfs_bio_t *bio, bfs_blk_t blk,
