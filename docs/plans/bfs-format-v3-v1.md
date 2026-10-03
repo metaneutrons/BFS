@@ -250,6 +250,11 @@ released (see open points).
   `bfs check`; v4 is "too new"; unknown options still refuse; a mixed v2/v4
   pair is not replaceable. The AROS scenario list gains a v2 case that checks
   the refusal, then formats the medium and mounts the result.
+- Older drivers: CI used to have the pinned v0.1.3 handler modify
+  Linux-written v2 images (cross-platform criterion M6-A4). Under v3 the same
+  step boots that handler on Linux-written normal and interrupted v3 images
+  and requires its "version 3 is too new" diagnosis, refusal of file access
+  and format, and byte-identical media.
 - Byte fixtures: the independent inode vector becomes 56 bytes with flags and
   an inline extent; the superblock vector moves to version 3 with its new CRC.
 - Oracle: the conformance suite compares manifests of inline and tree files.

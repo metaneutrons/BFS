@@ -343,10 +343,12 @@ $(BUILD_AMIGA)/bfs: $(TOOL_SRCS_BFS) tools/bfs_command.h \
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o $@ $(TOOL_SRCS_BFS) $(AMIGA_TOOL_LDFLAGS)
 
+$(BUILD_AMIGA)/compatibility-probe: tests/amiga/compatibility_probe.c include/bfs_diagnostics.h
+	@mkdir -p $(BUILD_AMIGA)
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) -o $@ tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
+
 .PHONY: compatibility-test reset-test
-compatibility-test: amiga $(BUILD_HOST)/bfs $(BUILD_AMIGA)/bfs
-	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/amiga/compatibility-probe tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
+compatibility-test: amiga $(BUILD_HOST)/bfs $(BUILD_AMIGA)/bfs $(BUILD_AMIGA)/compatibility-probe
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/cli-fixture tests/amiga/cli_fixture.c $(AMIGA_TOOL_LDFLAGS)
 	python3 emulator-test/compatibility-test.py

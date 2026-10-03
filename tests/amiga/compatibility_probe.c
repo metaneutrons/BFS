@@ -9,7 +9,21 @@
 
 char *strstr(const char *text, const char *needle);
 
-static BOOL check_format(LONG expected)
+/* "version N is too new" or "version N uses unsupported options" */
+static void version_text(char *out, const char *prefix, LONG version, const char *suffix)
+{
+    while (*prefix) *out++ = *prefix++;
+    char digits[12];
+    int count = 0;
+    do { digits[count++] = '0' + version % 10; version /= 10; } while (version);
+    while (count) *out++ = digits[--count];
+    while (*suffix) *out++ = *suffix++;
+    *out = 0;
+}
+
+/* expected is 0 for a compatible medium, otherwise the version on the
+ * medium; supported is the version the driver under test implements. */
+static BOOL check_format(LONG expected, LONG supported)
 {
     struct DevProc *device = GetDeviceProc("DH1:", NULL);
     if (!device) return FALSE;
@@ -22,10 +36,17 @@ static BOOL check_format(LONG expected)
     ok = ok && IoErr() == 0 && message[sizeof(message) - 1] == 0;
     message[sizeof(message) - 1] = 0;
     if (expected) {
-        /* 4: a newer version, 3: unknown options on the current version. */
-        ok = ok && result && strstr(message, expected == 4 ?
-            "version 4 is too new" : "version 3 uses unsupported options 0x80000000");
-        if (expected == 4) ok = ok && strstr(message, "supports version 3");
+        /* A newer version, or unknown options on the supported version. */
+        char needle[64];
+        if (expected > supported)
+            version_text(needle, "version ", expected, " is too new");
+        else
+            version_text(needle, "version ", expected, " uses unsupported options 0x80000000");
+        ok = ok && result && strstr(message, needle);
+        if (expected > supported) {
+            version_text(needle, "supports version ", supported, ".");
+            ok = ok && strstr(message, needle);
+        }
         BPTR diagnosis = Open("SYS:diagnosis.txt", MODE_NEWFILE);
         if (!diagnosis) ok = FALSE;
         else {
@@ -60,9 +81,10 @@ int main(void)
     struct Process *process = (struct Process *)FindTask(NULL);
     APTR old_window = process->pr_WindowPtr;
     process->pr_WindowPtr = (APTR)-1;
-    LONG args[2] = {0, 0};
-    struct RDArgs *parsed = ReadArgs("EXPECT/N/A,AFTER_FORMAT/S", args, NULL);
-    BOOL ok = parsed && (args[1] != 0 || check_format(*(LONG *)args[0]));
+    LONG args[3] = {0, 0, 0};
+    struct RDArgs *parsed = ReadArgs("EXPECT/N/A,AFTER_FORMAT/S,SUPPORTED/N/K", args, NULL);
+    LONG supported = parsed && args[2] ? *(LONG *)args[2] : 3;
+    BOOL ok = parsed && (args[1] != 0 || check_format(*(LONG *)args[0], supported));
     if (parsed) FreeArgs(parsed);
     BPTR result = Open("SYS:compatibility.result", MODE_NEWFILE);
     const char *text = ok ? "PASS\n" : "FAIL\n";

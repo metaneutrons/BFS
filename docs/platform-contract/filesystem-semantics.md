@@ -149,6 +149,7 @@ the next writable mount reclaims it before service; a read-only mount does not
 modify or reveal it; and offline ownership inspection includes its extents.
 The Linux adapter uses it only after it has recorded at least one open handle.
 Ordinary Amiga operations continue to use immediate deletion and never create
-the marker. M6 qualification must still demonstrate that the pinned baseline
-handler accepts the committed post-operation v2 image and that restart recovery
-does not publish the unnamed inode.
+the marker. M6 qualification demonstrated under format v2 that the pinned
+v0.1.3 handler accepts the committed post-operation image and that restart
+recovery does not publish the unnamed inode. That handler implements only v2;
+CI now requires it to refuse such a v3 image without writing.
