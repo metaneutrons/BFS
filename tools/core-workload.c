@@ -2,7 +2,7 @@
 /*
  * BFS — host replica of the checked AmigaDOS compare workload.
  *
- * Drives the six fs-compare-bench phases through the core API with the calls
+ * Drives the fs-compare-bench phases through the core API with the calls
  * the Amiga handler issues (30 cache slots, node write retention, deferred
  * writes of transaction-owned nodes). Mode
  * "sync" commits after every close and delete, as the handler does today;
@@ -129,6 +129,59 @@ static void read_small_files(bfs_fs_t *fs, uint32_t dir)
     }
 }
 
+/* One listed entry: the handler reads its inode for the FileInfoBlock or
+ * ExAllData and checks the comment flag. */
+typedef struct {
+    bfs_fs_t *fs;
+    uint32_t count;
+    bool stop_after_one;
+    char name[BFS_NAME_MAX];
+    uint8_t name_len;
+} list_ctx_t;
+
+static bool list_entry(const char *name, uint8_t name_len, uint32_t ino,
+                       uint32_t type, void *context)
+{
+    (void)type;
+    list_ctx_t *list = context;
+    if (name_len == 2 && name[0] == '.' && name[1] == '.') return true;
+    bfs_inode_t inode;
+    require(bfs_inode_read(&list->fs->inode_tree, ino, &inode), "list-inode");
+    if (bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT) require(BFS_ERR_CORRUPT, "list-comment");
+    memcpy(list->name, name, name_len);
+    list->name_len = name_len;
+    list->count++;
+    return !list->stop_after_one;
+}
+
+/* ExNext: one entry per call, continuing after the name returned last. */
+static void list_exnext(bfs_fs_t *fs, uint32_t dir)
+{
+    for (unsigned pass = 0; pass < 10; pass++) {
+        list_ctx_t list = { .fs = fs, .stop_after_one = true };
+        for (;;) {
+            uint32_t before = list.count;
+            if (before == 0)
+                require(bfs_dir_scan(&fs->dir_tree, dir, list_entry, &list), "exnext-first");
+            else
+                require(bfs_dir_scan_after(&fs->dir_tree, dir, list.name, list.name_len,
+                                           list_entry, &list), "exnext");
+            if (list.count == before) break;
+        }
+        if (list.count != SMALL_COUNT) require(BFS_ERR_CORRUPT, "exnext-count");
+    }
+}
+
+/* ExAll: one pass over the directory per listing. */
+static void list_exall(bfs_fs_t *fs, uint32_t dir)
+{
+    for (unsigned pass = 0; pass < 10; pass++) {
+        list_ctx_t list = { .fs = fs };
+        require(bfs_dir_scan(&fs->dir_tree, dir, list_entry, &list), "exall");
+        if (list.count != SMALL_COUNT) require(BFS_ERR_CORRUPT, "exall-count");
+    }
+}
+
 static uint32_t write_large_file(bfs_fs_t *fs, uint32_t dir)
 {
     uint32_t ino;
@@ -205,6 +258,10 @@ int main(int argc, char **argv)
     CALLGRIND_DUMP_STATS_AT("LOOKUP_400");
     read_small_files(&fs, dir);
     CALLGRIND_DUMP_STATS_AT("SMALL_READ_40");
+    list_exnext(&fs, dir);
+    CALLGRIND_DUMP_STATS_AT("LIST_EXNEXT_400");
+    list_exall(&fs, dir);
+    CALLGRIND_DUMP_STATS_AT("LIST_EXALL_400");
     uint32_t big = write_large_file(&fs, dir);
     CALLGRIND_DUMP_STATS_AT("SEQ_WRITE_8M");
     read_large_file(&fs, big);

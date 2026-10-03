@@ -14,8 +14,7 @@ case "$mode" in
         marker_text=BFS-PFS3-COMPLETE
         suffix=tsv
         header=FS_COMPARE_BENCH
-        metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
-        metric_count=6
+        versioned_compare=1
         value_pattern='^[1-9][0-9]*$'
         filesystems=(bfs pfs3)
         ;;
@@ -23,8 +22,7 @@ case "$mode" in
         marker_text=BFS-PFS3-DURABLE-COMPLETE
         suffix=durable.tsv
         header=FS_DURABLE_COMPARE
-        metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
-        metric_count=6
+        versioned_compare=1
         value_pattern='^[1-9][0-9]*$'
         filesystems=(bfs pfs3)
         ;;
@@ -109,6 +107,27 @@ for filesystem in "${filesystems[@]}"; do
         if [[ "$filesystem" == bfs ]]; then metrics=$deep_bfs_metrics; else metrics=$deep_pfs3_metrics; fi
         read -r -a metric_names_array <<<"$metrics"
         metric_count=${#metric_names_array[@]}
+    elif [[ -n "${versioned_compare:-}" ]]; then
+        # Schema 2 adds the directory listing phases after the small reads.
+        IFS=$'\t' read -r observed_header observed_version < "$output"
+        if [[ "$observed_header" != "$header" || ( "$observed_version" != 1 && "$observed_version" != 2 ) ]]; then
+            printf 'ERROR: invalid compare schema header in %s output\n' "$filesystem" >&2
+            exit 1
+        fi
+        if [[ "$filesystem" == "${filesystems[0]}" ]]; then
+            header_version=$observed_version
+        elif [[ "$observed_version" != "$header_version" ]]; then
+            printf 'ERROR: mixed compare schema versions\n' >&2
+            exit 1
+        fi
+        if [[ "$header_version" == 1 ]]; then
+            metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
+        else
+            metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US LIST_EXNEXT_400_US LIST_EXALL_400_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
+        fi
+        read -r -a metric_names_array <<<"$metrics"
+        metric_count=${#metric_names_array[@]}
+        positive_metric_names=
     elif [[ "$mode" == deep-compare ]]; then
         IFS=$'\t' read -r observed_header observed_version < "$output"
         if [[ "$observed_header" != "$header" ]]; then

@@ -5,6 +5,7 @@
 #include <exec/types.h>
 #include <devices/timer.h>
 #include <dos/dos.h>
+#include <dos/exall.h>
 #include <proto/dos.h>
 #include <proto/exec.h>
 
@@ -14,6 +15,8 @@
 #define SMALL_BYTES 1024
 #define BUFFER_BYTES 65536
 #define LARGE_BYTES (8UL * 1024UL * 1024UL)
+#define LIST_PASSES 10
+#define LIST_BUFFER_BYTES 4096
 
 static struct MsgPort *timer_port;
 static struct timerequest *timer_request;
@@ -375,6 +378,107 @@ static const char *read_small_files(const char *drive)
     return NULL;
 }
 
+/* Mark small file fNNN as listed; FALSE for another name or a repeat. */
+static BOOL mark_listed(const char *name, ULONG seen[2])
+{
+    ULONG index;
+    if (name[0] != 'f' || name[1] < '0' || name[1] > '9' || name[2] < '0' ||
+        name[2] > '9' || name[3] < '0' || name[3] > '9' || name[4] != '\0')
+        return FALSE;
+    index = (ULONG)(name[1] - '0') * 100 + (ULONG)(name[2] - '0') * 10 +
+            (ULONG)(name[3] - '0');
+    if (index >= SMALL_COUNT || (seen[index / 32] & (1UL << (index % 32))))
+        return FALSE;
+    seen[index / 32] |= 1UL << (index % 32);
+    return TRUE;
+}
+
+/* Every listing must return each small file exactly once. */
+static const char *list_exnext(const char *drive)
+{
+    char path[128];
+    const char *error = NULL;
+    ULONG pass;
+    BPTR lock;
+    struct FileInfoBlock *fib;
+    if (!make_path(path, sizeof(path), drive, "perf")) return "path";
+    lock = Lock(path, SHARED_LOCK);
+    if (!lock) return "list-lock";
+    fib = AllocDosObject(DOS_FIB, NULL);
+    if (!fib) {
+        UnLock(lock);
+        return "list-allocation";
+    }
+    for (pass = 0; pass < LIST_PASSES && !error; pass++) {
+        ULONG seen[2] = {0, 0};
+        ULONG count = 0;
+        if (!Examine(lock, fib)) {
+            error = "list-examine";
+            break;
+        }
+        while (ExNext(lock, fib)) {
+            if (!mark_listed(fib->fib_FileName, seen)) {
+                error = "list-exnext-name";
+                break;
+            }
+            count++;
+        }
+        if (!error && (IoErr() != ERROR_NO_MORE_ENTRIES || count != SMALL_COUNT))
+            error = "list-exnext-count";
+    }
+    FreeDosObject(DOS_FIB, fib);
+    UnLock(lock);
+    return error;
+}
+
+static const char *list_exall(const char *drive)
+{
+    char path[128];
+    const char *error = NULL;
+    ULONG pass;
+    BPTR lock;
+    struct ExAllControl *control;
+    if (!make_path(path, sizeof(path), drive, "perf")) return "path";
+    lock = Lock(path, SHARED_LOCK);
+    if (!lock) return "list-lock";
+    control = AllocDosObject(DOS_EXALLCONTROL, NULL);
+    if (!control) {
+        UnLock(lock);
+        return "list-allocation";
+    }
+    for (pass = 0; pass < LIST_PASSES && !error; pass++) {
+        ULONG seen[2] = {0, 0};
+        ULONG count = 0;
+        BOOL more;
+        control->eac_LastKey = 0;
+        control->eac_MatchString = NULL;
+        control->eac_MatchFunc = NULL;
+        do {
+            struct ExAllData *entry = (struct ExAllData *)received;
+            ULONG index;
+            more = ExAll(lock, entry, LIST_BUFFER_BYTES, ED_COMMENT, control);
+            if (!more && IoErr() != ERROR_NO_MORE_ENTRIES) {
+                error = "list-exall";
+                break;
+            }
+            for (index = 0; index < control->eac_Entries; index++) {
+                if (!entry || !mark_listed((const char *)entry->ed_Name, seen)) {
+                    error = "list-exall-name";
+                    break;
+                }
+                count++;
+                entry = entry->ed_Next;
+            }
+        } while (more && !error);
+        if (more) ExAllEnd(lock, (struct ExAllData *)received, LIST_BUFFER_BYTES,
+                           ED_COMMENT, control);
+        if (!error && count != SMALL_COUNT) error = "list-exall-count";
+    }
+    FreeDosObject(DOS_EXALLCONTROL, control);
+    UnLock(lock);
+    return error;
+}
+
 static const char *write_large_file(const char *drive)
 {
     char path[128];
@@ -482,8 +586,8 @@ static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
     if (!handle) return fail("mkdir");
     UnLock(handle);
     if (deep_mode) emit("FS_DEEP_COMPARE\t11\nDRIVE\t");
-    else if (durable_mode) emit("FS_DURABLE_COMPARE\t1\nDRIVE\t");
-    else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
+    else if (durable_mode) emit("FS_DURABLE_COMPARE\t2\nDRIVE\t");
+    else emit("FS_COMPARE_BENCH\t2\nDRIVE\t");
     emit(drive);
     emit("\n");
     error = run_phase(drive, "SMALL_CREATE_40", "perf-reset-create", "timer-create",
@@ -495,6 +599,15 @@ static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
     error = run_phase(drive, "SMALL_READ_40", "perf-reset-small-read", "timer-small-read",
                       probe_enabled, FALSE, &clock_hz, read_small_files);
     if (error) return fail(error);
+    /* The deep profile keeps its phase schema; listings are compared only. */
+    if (!deep_mode) {
+        error = run_phase(drive, "LIST_EXNEXT_400", "perf-reset-list", "timer-list-exnext",
+                          FALSE, FALSE, &clock_hz, list_exnext);
+        if (error) return fail(error);
+        error = run_phase(drive, "LIST_EXALL_400", "perf-reset-list", "timer-list-exall",
+                          FALSE, FALSE, &clock_hz, list_exall);
+        if (error) return fail(error);
+    }
     error = run_phase(drive, "SEQ_WRITE_8M", "perf-reset-large-write", "timer-large-write",
                       probe_enabled, durable_mode, &clock_hz, write_large_file);
     if (error) return fail(error);

@@ -98,6 +98,7 @@ Each run keeps its HDFs, FS-UAE configuration, format output, machine informatio
 workload outputs, and completion marker below `BFS_BENCH_RUN_DIR`; the scripts refuse to overwrite an
 existing result. Both HDFs have equal 255.5 MiB partitions on the same virtual device type.
 The workload measures 40 × 1 KiB file creation, 400 locks, 40 checked small reads,
+ten ExNext and ten ExAll listings of the 40 files (each must return every file once),
 8 MiB sequential write/read with byte verification, and 40 deletes. It times each phase
 using `timer.device`; write phases include `Flush` and `Close`. The run is valid only when
 both volumes were mounted, both complete TSVs passed verification, and the guest wrote its
@@ -105,17 +106,21 @@ completion marker. Run `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DI
 recheck retained outputs. The result is an emulated AmigaOS comparison, not a
 native-hardware throughput claim.
 
+Schema 2 of `FS_COMPARE_BENCH` and `FS_DURABLE_COMPARE` added the two listing
+phases; the verifier still accepts schema 1 outputs, which lack them. The deep
+profile keeps its phases and does not list.
+
 Set `BFS_BENCH_MODE=durable-compare` to run the same workload with an
 `ACTION_FLUSH` to the volume at the end of the create, write and delete phases,
 inside the timed region. Each filesystem then pays for its own commit within
 the phase that caused it; PFS3, which commits from a timer, otherwise defers
 that work past the measurement or into a later phase. The outputs are
 `bfs.durable.tsv` and `pfs3.durable.tsv` with the schema header
-`FS_DURABLE_COMPARE 1`; validate them with
+`FS_DURABLE_COMPARE 2`; validate them with
 `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" durable-compare`.
 
 For a deterministic, emulator-free view of where the core spends its work, run
-`make core-workload-profile` (requires `valgrind`). It replays the six compare
+`make core-workload-profile` (requires `valgrind`). It replays the compare
 phases through the core API with the handler's calls and cache settings and
 prints the instruction count of each phase, once with a commit after every
 close and delete (`sync`) and once with one commit per mutating phase

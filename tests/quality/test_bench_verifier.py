@@ -571,6 +571,60 @@ class BenchVerifierTests(unittest.TestCase):
                                    suffix="tsv")
         self.assertNotEqual(self.verify("compare").returncode, 0)
 
+    def upgrade_compare_to_v2(self, suffix="tsv", header="FS_COMPARE_BENCH",
+                              filesystems=("bfs", "pfs3")):
+        for filesystem in filesystems:
+            path = self.results / f"{filesystem}.{suffix}"
+            lines = path.read_text(encoding="ascii").splitlines()
+            self.assertEqual(lines[0], f"{header}\t1")
+            lines[0] = f"{header}\t2"
+            position = next(index for index, line in enumerate(lines)
+                            if line.startswith("SMALL_READ_40_US\t")) + 1
+            lines[position:position] = ["LIST_EXNEXT_400_US\t7000", "LIST_EXALL_400_US\t3000"]
+            path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+    def test_compare_v2_accepts_listing_phases(self):
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v2()
+        result = self.verify("compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_durable_compare_v2_accepts_listing_phases(self):
+        self.load_durable_evidence("compare-bfs-first")
+        self.upgrade_compare_to_v2(suffix="durable.tsv", header="FS_DURABLE_COMPARE")
+        result = self.verify("durable-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_compare_v2_rejects_mixed_versions_and_missing_listing(self):
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v2(filesystems=("bfs",))
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+        self.load_evidence("compare-bfs-first", "tsv")
+        for filesystem in ("bfs", "pfs3"):
+            path = self.results / f"{filesystem}.tsv"
+            lines = path.read_text(encoding="ascii").splitlines()
+            lines[0] = "FS_COMPARE_BENCH\t2"
+            path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v2()
+        path = self.results / "pfs3.tsv"
+        lines = path.read_text(encoding="ascii").splitlines()
+        lines = [line for line in lines if not line.startswith("LIST_EXALL_400_US")]
+        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+    def test_compare_rejects_unknown_schema_version(self):
+        self.load_evidence("compare-bfs-first", "tsv")
+        for filesystem in ("bfs", "pfs3"):
+            path = self.results / f"{filesystem}.tsv"
+            lines = path.read_text(encoding="ascii").splitlines()
+            lines[0] = "FS_COMPARE_BENCH\t3"
+            path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
     def test_real_deep_compare_evidence_passes(self):
         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
         result = self.verify("deep-compare")
