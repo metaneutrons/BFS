@@ -268,6 +268,24 @@ static void faulty_init(faulty_bio_t *f, bfs_bio_t *inner)
 
 static uint8_t payload[2 * BLK_SIZE + 100];
 
+/* Committed inline files the workload changes: "keep" is truncated from three
+ * blocks to one, "grow" gets a block behind a hole and becomes a tree. */
+#define KEEP_OLD_SIZE (3u * BLK_SIZE)
+#define KEEP_NEW_SIZE BLK_SIZE
+#define GROW_OLD_SIZE BLK_SIZE
+#define GROW_NEW_SIZE (3u * BLK_SIZE + 100u)
+static uint8_t keep_data[KEEP_OLD_SIZE];
+
+static bool write_new_file(bfs_fs_t *fs, const char *name, const uint8_t *data,
+                           uint32_t size)
+{
+    uint32_t ino;
+    bfs_file_t file;
+    return bfs_fs_create_file(fs, BFS_ROOT_INO, name, (uint8_t)strlen(name), &ino) == BFS_OK &&
+           bfs_file_open(&file, fs, ino) == BFS_OK &&
+           bfs_file_write(&file, data, size) == (int32_t)size;
+}
+
 /* A snapshot makes every commit take the refcount-aware publication path
  * instead of the sealed single-leaf settlement. */
 static bool baseline_snapshot;
@@ -285,11 +303,55 @@ static void make_baseline(void)
         int len = snprintf(name, sizeof(name), "old%d", i);
         bfs_fs_create_file(&fs, BFS_ROOT_INO, name, (uint8_t)len, &ino);
     }
+    for (uint32_t i = 0; i < sizeof(payload); i++) payload[i] = (uint8_t)(i * 13u + 5u);
+    for (uint32_t i = 0; i < sizeof(keep_data); i++) keep_data[i] = (uint8_t)(i * 7u + 3u);
+    write_new_file(&fs, "keep", keep_data, KEEP_OLD_SIZE);
+    write_new_file(&fs, "grow", payload, GROW_OLD_SIZE);
     bfs_fs_sync(&fs);
     if (baseline_snapshot) bfs_snapshot_create(&fs, "base");
     bfs_fs_unmount(&fs);
     bfs_bio_close(bio);
-    for (uint32_t i = 0; i < sizeof(payload); i++) payload[i] = (uint8_t)(i * 13u + 5u);
+}
+
+static bfs_err_t open_named(bfs_fs_t *fs, const char *name, bfs_file_t *file)
+{
+    uint32_t ino, type;
+    bfs_err_t err = bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, name,
+                                   (uint8_t)strlen(name), &ino, &type);
+    return err == BFS_OK ? bfs_file_open(file, fs, ino) : err;
+}
+
+/* Truncate an inline extent and convert another into a tree. */
+static bfs_err_t change_inline_files(bfs_fs_t *fs)
+{
+    bfs_file_t file;
+    bfs_err_t err = open_named(fs, "keep", &file);
+    if (err == BFS_OK) err = bfs_file_truncate(&file, KEEP_NEW_SIZE);
+    if (err == BFS_OK) err = open_named(fs, "grow", &file);
+    if (err != BFS_OK) return err;
+    if (bfs_file_seek(&file, 3u * BLK_SIZE, BFS_SEEK_SET) != 3 * BLK_SIZE ||
+        bfs_file_write(&file, payload, 100) != 100)
+        return BFS_ERR_IO;
+    return BFS_OK;
+}
+
+/* 1: old content, 2: new content, 0: anything else. */
+static int inline_files_state(bfs_fs_t *fs)
+{
+    static uint8_t back[GROW_NEW_SIZE + 1];
+    bfs_file_t file;
+    if (open_named(fs, "keep", &file) != BFS_OK) return 0;
+    int32_t keep = bfs_file_read(&file, back, sizeof(back));
+    bool keep_old = keep == (int32_t)KEEP_OLD_SIZE && !memcmp(back, keep_data, KEEP_OLD_SIZE);
+    bool keep_new = keep == (int32_t)KEEP_NEW_SIZE && !memcmp(back, keep_data, KEEP_NEW_SIZE);
+    if (open_named(fs, "grow", &file) != BFS_OK) return 0;
+    int32_t grow = bfs_file_read(&file, back, sizeof(back));
+    bool grow_old = grow == (int32_t)GROW_OLD_SIZE && !memcmp(back, payload, GROW_OLD_SIZE);
+    bool grow_new = grow == (int32_t)GROW_NEW_SIZE && !memcmp(back, payload, BLK_SIZE) &&
+                    !memcmp(back + 3u * BLK_SIZE, payload, 100);
+    for (uint32_t i = BLK_SIZE; grow_new && i < 3u * BLK_SIZE; i++)
+        grow_new = back[i] == 0;
+    return keep_old && grow_old ? 1 : keep_new && grow_new ? 2 : 0;
 }
 
 /* Several namespace and data changes in one transaction, then one commit. */
@@ -317,6 +379,7 @@ static bfs_err_t run_workload(bfs_fs_t *fs)
      * still deferred. */
     bfs_err_t err = bfs_fs_create_file(fs, BFS_ROOT_INO, "temp", 4, &ino);
     if (err == BFS_OK) err = bfs_fs_delete_file(fs, BFS_ROOT_INO, "temp", 4);
+    if (err == BFS_OK) err = change_inline_files(fs);
     if (err != BFS_OK) return err;
     return bfs_fs_sync(fs);
 }
@@ -357,6 +420,9 @@ static int committed_state(bfs_fs_t *fs)
         }
     }
     if (name_exists(fs, "temp")) old_state = new_state = false;
+    int files = inline_files_state(fs);
+    if (files != 1) old_state = false;
+    if (files != 2) new_state = false;
     return old_state ? 1 : new_state ? 2 : 0;
 }
 

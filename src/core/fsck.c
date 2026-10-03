@@ -347,6 +347,11 @@ static void scan(check_state_t *state)
                 check_error(state);
         }
         if (state->reference_saturated) check_warning(state);
+    } else {
+        /* Without snapshots every node and data block has one owner. */
+        for (uint32_t block = 0; block < state->block_count; block++) {
+            if (state->reference_map[block] > 1) check_error(state);
+        }
     }
 }
 
