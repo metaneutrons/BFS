@@ -253,33 +253,37 @@ bfs_err_t bfs_dir_may_have_entries(bfs_dir_tree_t *dt, uint32_t parent_id,
     return BFS_OK;
 }
 
-bfs_err_t bfs_dir_scan(bfs_dir_tree_t *dt, uint32_t parent_id,
-                         bfs_dir_scan_cb cb, void *ctx)
+bfs_err_t bfs_dir_scan_cursor(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
+                              uint32_t parent_id, const char *name,
+                              uint8_t name_len, bfs_dir_scan_cb cb, void *ctx)
 {
-    if (!dt || !cb) return BFS_ERR_INVAL;
-    /* Build a start key with parent_id and zeros for the rest */
+    if (!dt || !cb || (name_len != 0 && !name)) return BFS_ERR_INVAL;
     uint8_t start_key[DIR_KEY_SIZE];
-    memset(start_key, 0, DIR_KEY_SIZE);
-    bfs_store_be32(start_key, parent_id);
-
     dir_scan_ctx_t sc = {
         .parent_id = parent_id, .cb = cb, .ctx = ctx, .err = BFS_OK,
     };
-    bfs_err_t err = bfs_btree_scan(&dt->tree, start_key, dir_scan_cb, &sc);
+    if (name_len != 0) {
+        make_dir_key(start_key, parent_id, name, name_len);
+        sc.skip_key = start_key;
+    } else {
+        /* The parent with zeros for the rest sorts before its entries. */
+        memset(start_key, 0, DIR_KEY_SIZE);
+        bfs_store_be32(start_key, parent_id);
+    }
+    bfs_err_t err = bfs_btree_scan_cursor(&dt->tree, cursor, start_key, dir_scan_cb, &sc);
     return sc.err != BFS_OK ? sc.err : err;
+}
+
+bfs_err_t bfs_dir_scan(bfs_dir_tree_t *dt, uint32_t parent_id,
+                         bfs_dir_scan_cb cb, void *ctx)
+{
+    return bfs_dir_scan_cursor(dt, NULL, parent_id, NULL, 0, cb, ctx);
 }
 
 bfs_err_t bfs_dir_scan_after(bfs_dir_tree_t *dt, uint32_t parent_id,
                              const char *name, uint8_t name_len,
                              bfs_dir_scan_cb cb, void *ctx)
 {
-    if (!dt || !cb || !name || name_len == 0) return BFS_ERR_INVAL;
-    uint8_t start_key[DIR_KEY_SIZE];
-    make_dir_key(start_key, parent_id, name, name_len);
-    dir_scan_ctx_t sc = {
-        .parent_id = parent_id, .cb = cb, .ctx = ctx, .err = BFS_OK,
-        .skip_key = start_key,
-    };
-    bfs_err_t err = bfs_btree_scan(&dt->tree, start_key, dir_scan_cb, &sc);
-    return sc.err != BFS_OK ? sc.err : err;
+    if (!name || name_len == 0) return BFS_ERR_INVAL;
+    return bfs_dir_scan_cursor(dt, NULL, parent_id, name, name_len, cb, ctx);
 }

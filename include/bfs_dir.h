@@ -77,6 +77,13 @@ bfs_err_t bfs_dir_scan_after(bfs_dir_tree_t *dt, uint32_t parent_id,
                              const char *name, uint8_t name_len,
                              bfs_dir_scan_cb cb, void *ctx);
 
+/* bfs_dir_scan for name_len 0, bfs_dir_scan_after otherwise, resuming from
+ * the cursor's leaf copy when it still covers the start (see
+ * bfs_btree_scan_cursor). An enumeration keeps one cursor across calls. */
+bfs_err_t bfs_dir_scan_cursor(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
+                              uint32_t parent_id, const char *name,
+                              uint8_t name_len, bfs_dir_scan_cb cb, void *ctx);
+
 /* Cheap pre-check for a scan: *maybe is false only if parent_id has no
  * entries; true means it may have some. */
 bfs_err_t bfs_dir_may_have_entries(bfs_dir_tree_t *dt, uint32_t parent_id,

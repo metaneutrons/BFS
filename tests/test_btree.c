@@ -933,6 +933,126 @@ static void test_scan_survives_callback_changes(void)
     unlink(SCAN_IMG);
 }
 
+/* ── Test: resuming scans from a cursor ────────────────────── */
+
+typedef struct {
+    bfs_bio_t bio;
+    bfs_bio_t *dev;
+    unsigned reads;
+} counting_bio_t;
+
+static bfs_err_t counting_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+{
+    counting_bio_t *c = (counting_bio_t *)bio;
+    c->reads++;
+    return bfs_bio_read(c->dev, blk, buf);
+}
+
+static bfs_err_t counting_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
+{
+    return bfs_bio_write(((counting_bio_t *)bio)->dev, blk, buf);
+}
+
+static bfs_err_t counting_sync(bfs_bio_t *bio)
+{
+    return bfs_bio_sync(((counting_bio_t *)bio)->dev);
+}
+
+static void counting_close(bfs_bio_t *bio)
+{
+    (void)bio;
+}
+
+static const bfs_bio_ops_t counting_ops = {
+    .read_block = counting_read,
+    .write_block = counting_write,
+    .sync = counting_sync,
+    .close = counting_close,
+};
+
+typedef struct {
+    uint32_t key;
+    bool got;
+} next_key_t;
+
+static bool take_one_after(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    next_key_t *next = ctx;
+    next->key = read_key(key);
+    next->got = true;
+    return false;
+}
+
+/* The next key after k (exclusive), one scan call per key as ExNext does. */
+static bool cursor_next(bfs_btree_t *tree, bfs_btree_cursor_t *cursor, uint32_t k,
+                        bool first, uint32_t *out)
+{
+    uint32_t start;
+    make_key(&start, first ? 0 : k + 1);
+    next_key_t next = { 0, false };
+    if (bfs_btree_scan_cursor(tree, cursor, &start, take_one_after, &next) != BFS_OK)
+        return false;
+    *out = next.key;
+    return next.got;
+}
+
+/* Key-by-key iteration with a cursor equals a full scan, reads the device
+ * only at leaf boundaries, and stays correct when the tree changes between
+ * calls. */
+static void test_scan_cursor_resumes_in_leaf(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    counting_bio_t counting = { .bio = { .ops = &counting_ops, .block_size = SCAN_BLK_SIZE,
+                                          .block_count = SCAN_BLK_COUNT }, .dev = raw };
+    tree.bio = &counting.bio;
+    bfs_btree_cursor_t cursor;
+    bfs_btree_cursor_init(&cursor);
+
+    uint32_t k = 0, count = 0, reads_in_leaf = 0;
+    bool first = true;
+    while (cursor_next(&tree, &cursor, k, first, &k)) {
+        TEST_ASSERT_EQ(k, 2 * count);
+        count++;
+        first = false;
+        unsigned before = counting.reads;
+        uint32_t peek;
+        /* Asking again from inside the same leaf needs no device read. */
+        if (k > 0 && cursor_next(&tree, &cursor, k - 2, false, &peek)) {
+            TEST_ASSERT_EQ(peek, k);
+            if (counting.reads == before) reads_in_leaf++;
+        }
+    }
+    TEST_ASSERT_EQ(count, SCAN_KEYS);
+    /* All but the first key of each leaf are found again without a read. */
+    TEST_ASSERT(reads_in_leaf > SCAN_KEYS - SCAN_KEYS / 50);
+
+    /* A change between calls invalidates the copy. */
+    uint32_t next;
+    TEST_ASSERT(cursor_next(&tree, &cursor, 98, false, &next));
+    TEST_ASSERT_EQ(next, 100);
+    uint32_t victim;
+    make_key(&victim, 102);
+    TEST_ASSERT_EQ(bfs_btree_delete(&tree, &victim), BFS_OK);
+    TEST_ASSERT(cursor_next(&tree, &cursor, 100, false, &next));
+    TEST_ASSERT_EQ(next, 104);
+    uint32_t added, value;
+    make_key(&added, 105);
+    make_key(&value, 0);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &added, &value), BFS_OK);
+    TEST_ASSERT(cursor_next(&tree, &cursor, 104, false, &next));
+    TEST_ASSERT_EQ(next, 105);
+
+    bfs_btree_cursor_release(&cursor);
+    TEST_ASSERT(cursor.leaf == NULL);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
 /* ── Test: COW preserves old root ──────────────────────────── */
 
 static void test_cow_old_root_preserved(void)
@@ -1982,6 +2102,7 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_scan_from_key);
     TEST_RUN(test_scan_three_levels);
     TEST_RUN(test_scan_survives_callback_changes);
+    TEST_RUN(test_scan_cursor_resumes_in_leaf);
     TEST_RUN(test_cow_old_root_preserved);
     TEST_RUN(test_single_delete);
     TEST_RUN(test_delete_all);

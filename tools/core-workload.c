@@ -154,22 +154,24 @@ static bool list_entry(const char *name, uint8_t name_len, uint32_t ino,
     return !list->stop_after_one;
 }
 
-/* ExNext: one entry per call, continuing after the name returned last. */
+/* ExNext: one entry per call, continuing after the name returned last, with
+ * one cursor for the lock as the handler keeps it. */
 static void list_exnext(bfs_fs_t *fs, uint32_t dir)
 {
+    bfs_btree_cursor_t cursor;
+    bfs_btree_cursor_init(&cursor);
     for (unsigned pass = 0; pass < 10; pass++) {
         list_ctx_t list = { .fs = fs, .stop_after_one = true };
         for (;;) {
             uint32_t before = list.count;
-            if (before == 0)
-                require(bfs_dir_scan(&fs->dir_tree, dir, list_entry, &list), "exnext-first");
-            else
-                require(bfs_dir_scan_after(&fs->dir_tree, dir, list.name, list.name_len,
-                                           list_entry, &list), "exnext");
+            require(bfs_dir_scan_cursor(&fs->dir_tree, &cursor, dir, list.name,
+                                        before ? list.name_len : 0, list_entry, &list),
+                    "exnext");
             if (list.count == before) break;
         }
         if (list.count != SMALL_COUNT) require(BFS_ERR_CORRUPT, "exnext-count");
     }
+    bfs_btree_cursor_release(&cursor);
 }
 
 /* ExAll: one pass over the directory per listing. */

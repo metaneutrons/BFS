@@ -190,11 +190,12 @@ void EntryPoint(void);
  * in fib_DiskKey and eac_LastKey; when it matches, the next call continues
  * after the name in key order instead of counting from the first entry. That
  * keeps a listing linear and keeps its place when entries are deleted while
- * it runs. */
+ * it runs. The leaf copy in tree lets most calls skip the descent. */
 typedef struct {
     uint32_t position;
     uint8_t name_len;
     char name[BFS_NAME_MAX];
+    bfs_btree_cursor_t tree;
 } bfs_scan_cursor_t;
 
 typedef struct {
@@ -772,7 +773,10 @@ static bfs_lock_t *MakeLock(struct bfs_handler *h, uint32_t ino,
 
 static void DisposeLock(bfs_lock_t *lock)
 {
-    if (lock->cursor) FreeVec(lock->cursor);
+    if (lock->cursor) {
+        bfs_btree_cursor_release(&lock->cursor->tree);
+        FreeVec(lock->cursor);
+    }
     FreeVec(lock);
 }
 
@@ -1137,11 +1141,17 @@ static bool IsParentEntry(const char *name, uint8_t name_len)
     return name_len == 2 && name[0] == '.' && name[1] == '.';
 }
 
+/* Cleared memory is an initialized, empty tree cursor. */
+static bfs_scan_cursor_t *CursorFor(bfs_lock_t *lk)
+{
+    if (!lk->cursor) lk->cursor = AllocVec(sizeof(*lk->cursor), MEMF_ANY | MEMF_CLEAR);
+    return lk->cursor;
+}
+
 static void CursorRemember(bfs_lock_t *lk, uint32_t position,
                            const char *name, uint8_t name_len)
 {
-    if (!lk->cursor) lk->cursor = AllocVec(sizeof(*lk->cursor), MEMF_ANY);
-    if (!lk->cursor) return; /* the next call counts from the start */
+    if (!CursorFor(lk)) return; /* the next call counts from the start */
     lk->cursor->position = position;
     lk->cursor->name_len = name_len;
     memcpy(lk->cursor->name, name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
@@ -1153,13 +1163,15 @@ static bfs_err_t ScanDirectoryFrom(struct bfs_handler *h, bfs_lock_t *lk,
                                    uint32_t position, bfs_dir_scan_cb cb,
                                    void *ctx, uint32_t *skip)
 {
-    if (position > 0 && lk->cursor && lk->cursor->position == position) {
+    bfs_scan_cursor_t *cursor = CursorFor(lk);
+    bfs_btree_cursor_t *tree_cursor = cursor ? &cursor->tree : NULL;
+    if (position > 0 && cursor && cursor->position == position) {
         *skip = 0;
-        return bfs_dir_scan_after(&h->fs.dir_tree, lk->ino, lk->cursor->name,
-                                  lk->cursor->name_len, cb, ctx);
+        return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino, cursor->name,
+                                   cursor->name_len, cb, ctx);
     }
     *skip = position;
-    return bfs_dir_scan(&h->fs.dir_tree, lk->ino, cb, ctx);
+    return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino, NULL, 0, cb, ctx);
 }
 
 /* ── Directory scan context for EXAMINE_NEXT ──────────────── */

@@ -225,9 +225,31 @@ bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
 
 /* Scan keys >= start_key. Calls cb for each key/value pair. Traversal follows
  * parent/child links, not the on-disk right_sibling legacy leaf hint. If
- * start_key is NULL, scanning starts from the beginning. */
+ * start_key is NULL, scanning starts from the beginning. A callback may
+ * change the tree; the scan then continues after the last reported key. */
 bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
                            bfs_scan_cb cb, void *ctx);
+
+/* A copy of the leaf a scan last copied, for resuming without a descent. */
+typedef struct {
+    const bfs_btree_t *tree;
+    uint8_t *leaf;          /* block-size copy, allocated on first use */
+    uint32_t generation;    /* tree generation when the copy was taken */
+    bfs_blk_t root;
+    bool valid;
+} bfs_btree_cursor_t;
+
+void bfs_btree_cursor_init(bfs_btree_cursor_t *cursor);
+/* Free the copy. A cursor must not outlive the mount of its tree. */
+void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor);
+
+/* As bfs_btree_scan, but start in the cursor's leaf copy when the tree has
+ * not changed since it was taken and start_key lies between the copy's first
+ * and last keys: in a B+tree every key of that range is in that leaf. The
+ * scan leaves its last copied leaf in the cursor. NULL behaves as
+ * bfs_btree_scan; failing to allocate the copy only costs the shortcut. */
+bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+                                const void *start_key, bfs_scan_cb cb, void *ctx);
 
 /* Search for the largest key <= search_key.
  * Returns BFS_OK if found, BFS_ERR_NOTFOUND if tree is empty or all keys > search_key.
