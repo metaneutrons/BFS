@@ -1690,62 +1690,132 @@ static void test_owner_uid_gid(void)
     pass(T);
 }
 
-/* ── Test: ExNext enumerates all entries (hash collision regression) ── */
+/* ── Directory enumeration ──────────────────────────────── */
+
+/* dir/item_NN for item i. */
+static const char *item_path(const char *dir, int i)
+{
+    char rel[32]; char *p = rel;
+    const char *s = dir;
+    while (*s) *p++ = *s++;
+    s = "/item_";
+    while (*s) *p++ = *s++;
+    *p++ = '0' + (i / 10); *p++ = '0' + (i % 10); *p = 0;
+    return vpath(rel);
+}
+
+static BOOL make_items(const char *dir, int count)
+{
+    BPTR lock = CreateDir(vpath(dir));
+    if (!lock) return FALSE;
+    UnLock(lock);
+    for (int i = 0; i < count; i++) {
+        BPTR fh = Open(item_path(dir, i), MODE_NEWFILE);
+        if (!fh) return FALSE;
+        if (!close_checked(fh)) return FALSE;
+    }
+    return TRUE;
+}
+
+/* Remove what make_items left; items an enumeration deleted are gone. */
+static BOOL remove_items(const char *dir, int count)
+{
+    for (int i = 0; i < count; i++) DeleteFile(item_path(dir, i));
+    return DeleteFile(vpath(dir));
+}
+
+/* Mark item_NN as seen; FALSE for any other name or a repeat. */
+static BOOL mark_item(const char *name, int count, UBYTE *seen)
+{
+    if (tool_strlen(name) != 7 || tool_memcmp(name, "item_", 5) ||
+        name[5] < '0' || name[5] > '9' || name[6] < '0' || name[6] > '9')
+        return FALSE;
+    int i = (name[5] - '0') * 10 + (name[6] - '0');
+    if (i >= count || seen[i]) return FALSE;
+    seen[i] = 1;
+    return TRUE;
+}
+
+static BOOL all_seen(const UBYTE *seen, int count)
+{
+    for (int i = 0; i < count; i++) if (!seen[i]) return FALSE;
+    return TRUE;
+}
+
+/* ExNext over a subdirectory lists every file exactly once and nothing
+ * else; enough files span several leaves and hash collisions. With
+ * delete_each, every entry is deleted as soon as ExNext returns it, as a
+ * recursive delete does, and the listing must still be complete. */
+static BOOL exnext_items(const char *dir, int count, BOOL delete_each)
+{
+    UBYTE seen[64] = {0};
+    BPTR lock = Lock(vpath(dir), SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    BOOL ok = lock && fib && Examine(lock, fib);
+    while (ok && ExNext(lock, fib)) {
+        ok = mark_item(fib->fib_FileName, count, seen);
+        if (ok && delete_each) {
+            int i = (fib->fib_FileName[5] - '0') * 10 + (fib->fib_FileName[6] - '0');
+            ok = DeleteFile(item_path(dir, i));
+        }
+    }
+    if (ok) ok = IoErr() == ERROR_NO_MORE_ENTRIES && all_seen(seen, count);
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    return ok;
+}
 
 static void test_exnext_complete(void)
 {
     const char *T = "exnext_37";
-    int i;
-    int file_count = quick_mode ? 16 : 50;
-    BOOL ok = TRUE;
-    BPTR lock = CreateDir(vpath("exdir"));
-    if (!lock) { fail(T, "mkdir"); return; }
-    UnLock(lock);
+    int count = quick_mode ? 16 : 50;
+    BOOL ok = make_items("exdir", count) && exnext_items("exdir", count, FALSE);
+    if (!remove_items("exdir", count)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "listing or cleanup");
+}
 
-    /* Create 50 files — enough to span multiple leaves and trigger collisions */
-    for (i = 0; i < file_count; i++) {
-        char rel[32]; char *p = rel;
-        const char *s = "exdir/item_";
-        while (*s) *p++ = *s++;
-        *p++ = '0' + (i / 10); *p++ = '0' + (i % 10); *p = 0;
-        BPTR fh = Open(vpath(rel), MODE_NEWFILE);
-        if (!fh) { fail(T, "create"); return; }
-        close_checked(fh);
-    }
+static void test_exnext_delete(void)
+{
+    const char *T = "exnextdel_48";
+    int count = quick_mode ? 16 : 50;
+    BOOL ok = make_items("exdel", count) && exnext_items("exdel", count, TRUE);
+    if (!remove_items("exdel", count)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "listing while deleting or cleanup");
+}
 
-    /* Count entries via ExNext */
-    lock = Lock(vpath("exdir"), SHARED_LOCK);
-    if (!lock) { fail(T, "lock"); return; }
-    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocVec(sizeof(*fib), MEMF_CLEAR);
-    if (!fib) { UnLock(lock); fail(T, "alloc"); return; }
-    if (!Examine(lock, fib)) {
-        FreeVec(fib);
-        UnLock(lock);
-        fail(T, "examine");
-        return;
+/* ExAll in small batches, deleting each batch before asking for the next,
+ * returns every file once. */
+static void test_exall_delete(void)
+{
+    const char *T = "exalldel_49";
+    int count = quick_mode ? 16 : 50;
+    UBYTE seen[64] = {0};
+    ULONG storage[32];
+    int batches = 0;
+    struct ExAllControl *control = AllocDosObject(DOS_EXALLCONTROL, NULL);
+    BOOL ok = control && make_items("exalldel", count);
+    BPTR lock = ok ? Lock(vpath("exalldel"), SHARED_LOCK) : 0;
+    if (!lock) ok = FALSE;
+    BOOL more = ok;
+    while (ok && more) {
+        more = ExAll(lock, (struct ExAllData *)storage, sizeof(storage), ED_NAME, control);
+        LONG error = IoErr();
+        struct ExAllData *entry = (struct ExAllData *)storage;
+        for (ULONG n = 0; ok && n < control->eac_Entries; n++, entry = entry->ed_Next) {
+            ok = entry && mark_item((const char *)entry->ed_Name, count, seen);
+            if (ok) {
+                int i = (entry->ed_Name[5] - '0') * 10 + (entry->ed_Name[6] - '0');
+                ok = DeleteFile(item_path("exalldel", i));
+            }
+        }
+        if (!more && error != ERROR_NO_MORE_ENTRIES) ok = FALSE;
+        if (++batches > 64) ok = FALSE;
     }
-    int count = 0;
-    while (ExNext(lock, fib)) count++;
-    FreeVec(fib);
-    UnLock(lock);
-
-    /* Every file plus the '..' entry must be returned exactly once. */
-    if (count != file_count + 1) {
-        ok = FALSE;
-        put("  got="); putnum(count);
-        put(" want="); putnum(file_count + 1); put("\n");
-    }
-
-    /* Cleanup */
-    for (i = 0; i < file_count; i++) {
-        char rel[32]; char *p = rel;
-        const char *s = "exdir/item_";
-        while (*s) *p++ = *s++;
-        *p++ = '0' + (i / 10); *p++ = '0' + (i % 10); *p = 0;
-        if (!DeleteFile(vpath(rel))) ok = FALSE;
-    }
-    if (!DeleteFile(vpath("exdir"))) ok = FALSE;
-    if (ok) pass(T); else fail(T, "count or cleanup");
+    if (ok) ok = batches > 1 && all_seen(seen, count);
+    if (lock) UnLock(lock);
+    if (control) FreeDosObject(DOS_EXALLCONTROL, control);
+    if (!remove_items("exalldel", count)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "batched listing while deleting or cleanup");
 }
 
 /* ── Test table ────────────────────────────────────────────── */

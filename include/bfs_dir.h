@@ -70,6 +70,13 @@ bfs_err_t bfs_dir_remove(bfs_dir_tree_t *dt, uint32_t parent_id,
 bfs_err_t bfs_dir_scan(bfs_dir_tree_t *dt, uint32_t parent_id,
                          bfs_dir_scan_cb cb, void *ctx);
 
+/* As bfs_dir_scan, but continue after the entry with this name in key
+ * order. The entry need not exist any more, so an enumeration survives the
+ * removal of the entry it stopped at. */
+bfs_err_t bfs_dir_scan_after(bfs_dir_tree_t *dt, uint32_t parent_id,
+                             const char *name, uint8_t name_len,
+                             bfs_dir_scan_cb cb, void *ctx);
+
 /* Cheap pre-check for a scan: *maybe is false only if parent_id has no
  * entries; true means it may have some. */
 bfs_err_t bfs_dir_may_have_entries(bfs_dir_tree_t *dt, uint32_t parent_id,

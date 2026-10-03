@@ -168,6 +168,64 @@ static void test_dir_scan(void)
     unlink(TEST_IMG);
 }
 
+/* ── Test: resume a scan after a name ─────────────────────── */
+
+static uint8_t entry_name(char name[8], uint32_t inode_nr)
+{
+    return (uint8_t)snprintf(name, 8, "e%02u", inode_nr - 100);
+}
+
+static void test_dir_scan_after(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    bfs_freespace_t *fs = make_fs(bio);
+
+    bfs_dir_tree_t dt;
+    bfs_dir_init(&dt, bio, bfs_freespace_allocator(fs), BFS_BLK_NULL, 1);
+
+    char name[8];
+    for (uint32_t i = 0; i < 40; i++) {
+        uint8_t len = entry_name(name, 100 + i);
+        TEST_ASSERT_EQ(bfs_dir_insert(&dt, ROOT_DIR_INO, name, len, 100 + i, BFS_INODE_FILE), BFS_OK);
+        /* The neighbouring directory must not leak into the scan. */
+        TEST_ASSERT_EQ(bfs_dir_insert(&dt, ROOT_DIR_INO + 1, name, len, 200 + i, BFS_INODE_FILE), BFS_OK);
+    }
+    scan_result_t all = { .count = 0 };
+    TEST_ASSERT_EQ(bfs_dir_scan(&dt, ROOT_DIR_INO, dir_scan_collector, &all), BFS_OK);
+    TEST_ASSERT_EQ(all.count, 40);
+
+    /* Resuming after the k-th entry yields exactly the entries after it. */
+    for (uint32_t k = 0; k < all.count; k++) {
+        scan_result_t rest = { .count = 0 };
+        uint8_t len = entry_name(name, all.inodes[k]);
+        TEST_ASSERT_EQ(bfs_dir_scan_after(&dt, ROOT_DIR_INO, name, len, dir_scan_collector, &rest), BFS_OK);
+        TEST_ASSERT_EQ(rest.count, all.count - k - 1);
+        for (uint32_t i = 0; i < rest.count; i++)
+            TEST_ASSERT_EQ(rest.inodes[i], all.inodes[k + 1 + i]);
+    }
+
+    /* The resume name compares case-insensitively and need not exist. */
+    uint8_t len = entry_name(name, all.inodes[5]);
+    name[0] = 'E';
+    scan_result_t rest = { .count = 0 };
+    TEST_ASSERT_EQ(bfs_dir_scan_after(&dt, ROOT_DIR_INO, name, len, dir_scan_collector, &rest), BFS_OK);
+    TEST_ASSERT_EQ(rest.count, all.count - 6);
+    TEST_ASSERT_EQ(rest.inodes[0], all.inodes[6]);
+    len = entry_name(name, all.inodes[10]);
+    TEST_ASSERT_EQ(bfs_dir_remove(&dt, ROOT_DIR_INO, name, len), BFS_OK);
+    rest.count = 0;
+    TEST_ASSERT_EQ(bfs_dir_scan_after(&dt, ROOT_DIR_INO, name, len, dir_scan_collector, &rest), BFS_OK);
+    TEST_ASSERT_EQ(rest.count, all.count - 11);
+    TEST_ASSERT_EQ(rest.inodes[0], all.inodes[11]);
+
+    TEST_ASSERT_EQ(bfs_dir_scan_after(&dt, ROOT_DIR_INO, name, 0, dir_scan_collector, &rest),
+                   BFS_ERR_INVAL);
+
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 /* ── Test: large directory (1000 entries) ──────────────────── */
 
 static void test_dir_large(void)
@@ -234,6 +292,7 @@ TEST_SUITE_BEGIN("Directory B+tree")
     TEST_RUN(test_dir_intl_chars);
     TEST_RUN(test_dir_remove);
     TEST_RUN(test_dir_scan);
+    TEST_RUN(test_dir_scan_after);
     TEST_RUN(test_dir_large);
     TEST_RUN(test_max_filename_length);
 TEST_SUITE_END()

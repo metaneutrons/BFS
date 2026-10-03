@@ -185,11 +185,24 @@ struct bfs_handler {
 void EntryPoint(void);
 
 /* Lock structure — stored as BPTR in FileLock */
+/* Resume point of a directory enumeration on a lock: the name consumed last
+ * and how many entries had been consumed. ExNext and ExAll carry that count
+ * in fib_DiskKey and eac_LastKey; when it matches, the next call continues
+ * after the name in key order instead of counting from the first entry. That
+ * keeps a listing linear and keeps its place when entries are deleted while
+ * it runs. */
+typedef struct {
+    uint32_t position;
+    uint8_t name_len;
+    char name[BFS_NAME_MAX];
+} bfs_scan_cursor_t;
+
 typedef struct {
     struct FileLock fl;
     uint32_t ino;
     uint32_t type; /* BFS_INODE_FILE or BFS_INODE_DIR */
     uint32_t parent_ino;
+    bfs_scan_cursor_t *cursor; /* allocated by the first enumeration */
 } bfs_lock_t;
 
 typedef struct bfs_open_file {
@@ -757,6 +770,12 @@ static bfs_lock_t *MakeLock(struct bfs_handler *h, uint32_t ino,
     return lk;
 }
 
+static void DisposeLock(bfs_lock_t *lock)
+{
+    if (lock->cursor) FreeVec(lock->cursor);
+    FreeVec(lock);
+}
+
 static bool FreeLock(struct bfs_handler *h, bfs_lock_t *lock)
 {
     if (!lock || !h->volnode) return false;
@@ -766,7 +785,7 @@ static bool FreeLock(struct bfs_handler *h, bfs_lock_t *lock)
         bfs_lock_t *current = (bfs_lock_t *)BADDR(*link);
         if (current == lock) {
             *link = current->fl.fl_Link;
-            FreeVec(current);
+            DisposeLock(current);
             if (h->lock_count > 0) h->lock_count--;
             return true;
         }
@@ -1110,6 +1129,39 @@ static void HandleDosPacket64(bfs_dos_packet64_t *packet, struct bfs_handler *h)
     if (!packet->error && !getter) packet->result = DOSTRUE;
 }
 
+/* ── Directory enumeration ────────────────────────────────── */
+
+/* The internal parent entry of a subdirectory is no directory member. */
+static bool IsParentEntry(const char *name, uint8_t name_len)
+{
+    return name_len == 2 && name[0] == '.' && name[1] == '.';
+}
+
+static void CursorRemember(bfs_lock_t *lk, uint32_t position,
+                           const char *name, uint8_t name_len)
+{
+    if (!lk->cursor) lk->cursor = AllocVec(sizeof(*lk->cursor), MEMF_ANY);
+    if (!lk->cursor) return; /* the next call counts from the start */
+    lk->cursor->position = position;
+    lk->cursor->name_len = name_len;
+    memcpy(lk->cursor->name, name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+}
+
+/* Scan the directory of lk from the entry after position. *skip tells the
+ * callback how many entries to pass over first. */
+static bfs_err_t ScanDirectoryFrom(struct bfs_handler *h, bfs_lock_t *lk,
+                                   uint32_t position, bfs_dir_scan_cb cb,
+                                   void *ctx, uint32_t *skip)
+{
+    if (position > 0 && lk->cursor && lk->cursor->position == position) {
+        *skip = 0;
+        return bfs_dir_scan_after(&h->fs.dir_tree, lk->ino, lk->cursor->name,
+                                  lk->cursor->name_len, cb, ctx);
+    }
+    *skip = position;
+    return bfs_dir_scan(&h->fs.dir_tree, lk->ino, cb, ctx);
+}
+
 /* ── Directory scan context for EXAMINE_NEXT ──────────────── */
 
 typedef struct {
@@ -1127,6 +1179,7 @@ static bool exam_next_cb(const char *name, uint8_t name_len,
 {
     exam_next_ctx_t *ec = (exam_next_ctx_t *)ctx;
 
+    if (IsParentEntry(name, name_len)) return true;
     if (ec->seen < ec->skip_count) {
         ec->seen++;
         return true; /* skip */
@@ -1435,8 +1488,10 @@ typedef struct {
     UBYTE *pos;
     UBYTE *end;
     LONG type;
+    bfs_lock_t *lock;
     uint32_t skip_count;
     uint32_t seen;
+    uint32_t position;     /* entries consumed by the whole enumeration */
     struct ExAllData *last_ead;
     bool overflow;
     bfs_err_t err;
@@ -1449,6 +1504,7 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
 {
     exall_optimized_ctx_t *ec = (exall_optimized_ctx_t *)ctx;
 
+    if (IsParentEntry(name, name_len)) return true;
     if (ec->seen < ec->skip_count) {
         ec->seen++;
         return true;
@@ -1459,9 +1515,9 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
 
     /* Pattern match */
     if (ec->eac->eac_MatchString && !MatchPatternNoCase(ec->eac->eac_MatchString, namebuf)) {
-        ec->seen++;
-        ec->skip_count++;
-        ec->eac->eac_LastKey = (ULONG)ec->skip_count;
+        ec->position++;
+        ec->eac->eac_LastKey = (ULONG)ec->position;
+        CursorRemember(ec->lock, ec->position, name, name_len);
         return true;
     }
 
@@ -1520,9 +1576,9 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     ec->last_ead = ead;
     ec->pos += entry_size;
     ec->eac->eac_Entries++;
-    ec->seen++;
-    ec->skip_count++;
-    ec->eac->eac_LastKey = (ULONG)ec->skip_count;
+    ec->position++;
+    ec->eac->eac_LastKey = (ULONG)ec->position;
+    CursorRemember(ec->lock, ec->position, name, name_len);
 
     return true;
 }
@@ -2100,14 +2156,14 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (!LockIsOwned(h, lk)) { res2 = ERROR_INVALID_LOCK; break; }
 
         char namebuf[BFS_NAME_MAX + 1];
+        uint32_t position = (uint32_t)fib->fib_DiskKey;
         exam_next_ctx_t ctx;
-        ctx.skip_count = (uint32_t)fib->fib_DiskKey;
         ctx.seen = 0;
         ctx.name_out = namebuf;
         ctx.got_entry = false;
 
-        bfs_err_t err = bfs_dir_scan(&h->fs.dir_tree, lk->ino,
-                                     exam_next_cb, &ctx);
+        bfs_err_t err = ScanDirectoryFrom(h, lk, position, exam_next_cb, &ctx,
+                                          &ctx.skip_count);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
         if (!ctx.got_entry) {
@@ -2126,7 +2182,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_NEXT64) FillFib64(fib, en_size);
         err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
-        fib->fib_DiskKey = (LONG)(ctx.skip_count + 1);
+        CursorRemember(lk, position + 1, namebuf, ctx.name_len);
+        fib->fib_DiskKey = (LONG)(position + 1);
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -2397,13 +2454,13 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         eac->eac_Entries = 0;
         exall_optimized_ctx_t ectx = {
             .h = h, .eac = eac, .buffer = buffer, .pos = buffer,
-            .end = buffer + bufsize, .type = type,
-            .skip_count = (uint32_t)eac->eac_LastKey, .seen = 0,
+            .end = buffer + bufsize, .type = type, .lock = lk,
+            .seen = 0, .position = (uint32_t)eac->eac_LastKey,
             .last_ead = NULL, .overflow = false, .err = BFS_OK
         };
 
-        bfs_err_t err = bfs_dir_scan(&h->fs.dir_tree, lk->ino,
-                                     exall_optimized_cb, &ectx);
+        bfs_err_t err = ScanDirectoryFrom(h, lk, ectx.position, exall_optimized_cb,
+                                          &ectx, &ectx.skip_count);
         if (err == BFS_OK) err = ectx.err;
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 

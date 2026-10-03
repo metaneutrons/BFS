@@ -19,6 +19,17 @@ The LOCK_SAME/LOCK_SAME_VOLUME codes belong to the dos.library function, not
 the packet. Empty final path components retain the resolved directory after
 parent traversal or a volume-prefix reset, rather than reusing the base lock.
 
+ExNext and ExAll list the members of a directory in key order and never the
+internal parent entry. `fib_DiskKey` and `eac_LastKey` carry the number of
+entries the enumeration has consumed, and the lock remembers the name consumed
+last. When the number matches, the next call continues after that name. A
+listing therefore takes linear time, and deleting entries while it runs, as a
+recursive delete does, does not skip any of the rest. An entry created during a
+listing may or may not appear. If the number does not match (a second
+enumeration on the same lock) or the memory for the resume point is missing,
+the handler counts entries from the start. ExamineFH reports the file name: an
+object in use cannot be renamed, so the parent recorded at open still holds it.
+
 64-bit DOS extensions have two distinct wire contracts. They must not be decoded
 as pairs of ordinary packet arguments:
 

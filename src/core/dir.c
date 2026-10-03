@@ -201,6 +201,7 @@ typedef struct {
     bfs_dir_scan_cb cb;
     void *ctx;
     bfs_err_t err;
+    const uint8_t *skip_key; /* resume point that is not reported again */
 } dir_scan_ctx_t;
 
 static bool dir_scan_cb(const void *key, const void *val, void *ctx)
@@ -211,6 +212,13 @@ static bool dir_scan_cb(const void *key, const void *val, void *ctx)
 
     uint32_t pid = bfs_load_be32(k);
     if (pid != sc->parent_id) return false; /* different parent, stop */
+    if (sc->skip_key) {
+        /* The scan starts at the first key not below the resume key, so
+         * only that first key can be the resume entry itself. */
+        bool resume_entry = dir_key_compare(k, sc->skip_key) == 0;
+        sc->skip_key = NULL;
+        if (resume_entry) return true;
+    }
 
     uint8_t name_len = k[8];
     uint32_t inode_nr = bfs_be32(v->inode_nr);
@@ -256,6 +264,21 @@ bfs_err_t bfs_dir_scan(bfs_dir_tree_t *dt, uint32_t parent_id,
 
     dir_scan_ctx_t sc = {
         .parent_id = parent_id, .cb = cb, .ctx = ctx, .err = BFS_OK,
+    };
+    bfs_err_t err = bfs_btree_scan(&dt->tree, start_key, dir_scan_cb, &sc);
+    return sc.err != BFS_OK ? sc.err : err;
+}
+
+bfs_err_t bfs_dir_scan_after(bfs_dir_tree_t *dt, uint32_t parent_id,
+                             const char *name, uint8_t name_len,
+                             bfs_dir_scan_cb cb, void *ctx)
+{
+    if (!dt || !cb || !name || name_len == 0) return BFS_ERR_INVAL;
+    uint8_t start_key[DIR_KEY_SIZE];
+    make_dir_key(start_key, parent_id, name, name_len);
+    dir_scan_ctx_t sc = {
+        .parent_id = parent_id, .cb = cb, .ctx = ctx, .err = BFS_OK,
+        .skip_key = start_key,
     };
     bfs_err_t err = bfs_btree_scan(&dt->tree, start_key, dir_scan_cb, &sc);
     return sc.err != BFS_OK ? sc.err : err;
