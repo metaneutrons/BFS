@@ -1507,6 +1507,11 @@ typedef struct {
     struct ExAllData *last_ead;
     bool overflow;
     bfs_err_t err;
+    /* The entry consumed last, for the lock's resume point: its name in the
+     * caller's buffer, or in skipped for an entry the pattern rejected. */
+    const char *last_name;
+    uint8_t last_len;
+    char skipped[BFS_NAME_MAX + 1];
 } exall_optimized_ctx_t;
 
 /* Size of the fixed part of an ExAllData entry for each type. */
@@ -1536,15 +1541,16 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
         return true;
     }
 
-    char namebuf[BFS_NAME_MAX + 1];
-    memcpy(namebuf, name, name_len); namebuf[name_len] = 0;
-
     /* Pattern match */
-    if (ec->eac->eac_MatchString && !MatchPatternNoCase(ec->eac->eac_MatchString, namebuf)) {
-        ec->position++;
-        ec->eac->eac_LastKey = (ULONG)ec->position;
-        CursorRemember(ec->lock, ec->position, name, name_len);
-        return true;
+    if (ec->eac->eac_MatchString) {
+        memcpy(ec->skipped, name, name_len); ec->skipped[name_len] = 0;
+        if (!MatchPatternNoCase(ec->eac->eac_MatchString, ec->skipped)) {
+            ec->position++;
+            ec->eac->eac_LastKey = (ULONG)ec->position;
+            ec->last_name = ec->skipped;
+            ec->last_len = name_len;
+            return true;
+        }
     }
 
     /* Read inode for metadata fields */
@@ -1583,7 +1589,7 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     struct ExAllData *ead = (struct ExAllData *)ec->pos;
     memset(ead, 0, fixed_size);
     UBYTE *str = ec->pos + fixed_size;
-    memcpy(str, namebuf, name_len); str[name_len] = 0;
+    memcpy(str, name, name_len); str[name_len] = 0;
     ead->ed_Name = str; str += name_len + 1;
     if (ec->type >= ED_TYPE) ead->ed_Type = (entry_type == BFS_INODE_DIR) ? ST_USERDIR : ST_FILE;
     if (ec->type >= ED_SIZE) ead->ed_Size = fsize > INT32_MAX ? INT32_MAX : (ULONG)fsize;
@@ -1605,7 +1611,8 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     ec->eac->eac_Entries++;
     ec->position++;
     ec->eac->eac_LastKey = (ULONG)ec->position;
-    CursorRemember(ec->lock, ec->position, name, name_len);
+    ec->last_name = (const char *)ead->ed_Name;
+    ec->last_len = name_len;
 
     return true;
 }
@@ -2488,6 +2495,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         bfs_err_t err = ScanDirectoryFrom(h, lk, ectx.position, exall_optimized_cb,
                                           &ectx, &ectx.skip_count);
+        if (ectx.last_name)
+            CursorRemember(lk, ectx.position, ectx.last_name, ectx.last_len);
         if (err == BFS_OK) err = ectx.err;
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
