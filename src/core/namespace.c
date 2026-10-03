@@ -855,11 +855,16 @@ static bfs_err_t fs_set_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
     if (err != BFS_OK) return err;
     if (ino >= 0x80000000u) return BFS_ERR_CORRUPT;
 
-    comment_key_ctx_t old_comment;
-    err = fs_find_comment_unlocked(fs, &inode, ino, &old_comment);
-    if (err != BFS_OK) return err;
-
+    /* Setting a comment is rare, so look at the directory tree itself rather
+     * than trusting the flag: a stray entry or a stray flag left by damaged
+     * metadata is replaced instead of blocking the update. */
     uint32_t comment_parent = ino | 0x80000000u;
+    comment_key_ctx_t old_comment;
+    memset(&old_comment, 0, sizeof(old_comment));
+    err = bfs_dir_scan(&fs->dir_tree, comment_parent, comment_key_cb, &old_comment);
+    if (err != BFS_OK) return err;
+    if (old_comment.corrupt) return BFS_ERR_CORRUPT;
+
     if (old_comment.found) {
         err = bfs_dir_remove(&fs->dir_tree, comment_parent, old_comment.name,
                              old_comment.len);
@@ -873,19 +878,20 @@ static bfs_err_t fs_set_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
             return fs_cleanup_result(fs, err, fs_restore_comment(fs, ino, &old_comment));
         }
     }
-    if ((len != 0) == old_comment.found) return BFS_OK;
 
-    /* The entry changed from absent to present or back: the flag follows in
-     * the same transaction. */
+    /* The flag follows the entry in the same transaction. */
     uint32_t flags = bfs_be32(inode.flags);
-    inode.flags = bfs_be32(len != 0 ? flags | BFS_INODE_FLAG_HAS_COMMENT
-                                    : flags & ~BFS_INODE_FLAG_HAS_COMMENT);
+    bool flagged = (flags & BFS_INODE_FLAG_HAS_COMMENT) != 0;
+    if ((len != 0) == flagged) return BFS_OK;
+    inode.flags = bfs_be32(flags ^ BFS_INODE_FLAG_HAS_COMMENT);
     err = bfs_inode_write(&fs->inode_tree, ino, &inode);
     if (err == BFS_OK) return BFS_OK;
     fs_latch_dir_retirement_error(fs);
-    bfs_err_t rollback_err = len != 0
-        ? bfs_dir_remove(&fs->dir_tree, comment_parent, comment, len)
-        : fs_restore_comment(fs, ino, &old_comment);
+    bfs_err_t rollback_err = BFS_OK;
+    if (len != 0)
+        rollback_err = bfs_dir_remove(&fs->dir_tree, comment_parent, comment, len);
+    bfs_err_t restore_err = fs_restore_comment(fs, ino, &old_comment);
+    if (rollback_err == BFS_OK) rollback_err = restore_err;
     return fs_cleanup_result(fs, err, rollback_err);
 }
 

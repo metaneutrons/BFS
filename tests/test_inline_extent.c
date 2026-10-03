@@ -607,6 +607,52 @@ static void test_checker_verifies_comment_flag(void)
     teardown(false);
 }
 
+/* Setting a comment repairs a stray entry or a stray flag instead of failing. */
+static void test_set_comment_repairs_stray_state(void)
+{
+    TEST_ASSERT(setup(0));
+    uint32_t ino;
+    bfs_file_t file;
+    TEST_ASSERT(create_open("stray", &ino, &file));
+    char comment[80];
+    bfs_inode_t inode;
+
+    /* An entry without the flag, with the name about to be set. */
+    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, ino | 0x80000000u, "same", 4, ino, 0), BFS_OK);
+    TEST_ASSERT(check_has_errors());
+    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, "same", 4), BFS_OK);
+    TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_OK);
+    TEST_ASSERT(bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT);
+    TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, ino, comment, sizeof(comment)), BFS_OK);
+    TEST_ASSERT_MEM_EQ(comment, "same", 5);
+    TEST_ASSERT(check_no_errors());
+
+    /* A flag without the entry: clearing and setting both succeed. */
+    TEST_ASSERT_EQ(bfs_dir_remove(&fs.dir_tree, ino | 0x80000000u, "same", 4), BFS_OK);
+    TEST_ASSERT(check_has_errors());
+    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, NULL, 0), BFS_OK);
+    TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_OK);
+    TEST_ASSERT(!(bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT));
+    TEST_ASSERT(check_no_errors());
+    inode.flags = bfs_be32(BFS_INODE_FLAG_HAS_COMMENT);
+    TEST_ASSERT_EQ(bfs_inode_write(&fs.inode_tree, ino, &inode), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, "new", 3), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, ino, comment, sizeof(comment)), BFS_OK);
+    TEST_ASSERT_MEM_EQ(comment, "new", 4);
+
+    /* A 79-byte comment is returned whole into an 80-byte buffer. */
+    char longest[80];
+    memset(longest, 'c', 79);
+    longest[79] = 0;
+    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, longest, 79), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, ino, comment, sizeof(comment)), BFS_OK);
+    TEST_ASSERT_MEM_EQ(comment, longest, 80);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, longest, 80), BFS_ERR_INVAL);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT(check_clean());
+    teardown(true);
+}
+
 TEST_SUITE_BEGIN("Format v3 inline extents and inode flags")
     TEST_RUN(test_contiguous_runs_stay_inline);
     TEST_RUN(test_gap_and_discontiguity_convert_to_tree);
@@ -621,4 +667,5 @@ TEST_SUITE_BEGIN("Format v3 inline extents and inode flags")
     TEST_RUN(test_checker_rejects_shared_inline_blocks);
     TEST_RUN(test_comment_flag_follows_entry);
     TEST_RUN(test_checker_verifies_comment_flag);
+    TEST_RUN(test_set_comment_repairs_stray_state);
 TEST_SUITE_END()
