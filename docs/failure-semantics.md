@@ -49,7 +49,11 @@ changes since the last one and recovers the previous committed state. The
 Mountlist option `COMMIT=SYNC` commits at every close and standalone metadata
 operation instead. A failed timed commit is retried about once per second and
 reported by the next flush; if the core latched a recovery error, later
-mutating packets fail as well.
+mutating packets fail as well. A keyboard reset (Ctrl-Amiga-Amiga) first
+commits through the handler's reset handler; from that warning until the
+machine resets, every change is committed before its packet is answered.
+`make reset-test` checks this on FS-UAE: every write the guest saw return
+before the reset is on the volume, and the volume is clean.
 
 A writable mount synchronizes the selected readable state before exposing
 allocation or running mount-time recovery. This also covers a newer valid

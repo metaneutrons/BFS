@@ -259,7 +259,8 @@ The handler commits changes in the background, like PFS3: 200 ms after the
 last packet, and at the latest one second after the first uncommitted change.
 It also commits before replying to `ACTION_FLUSH`, before an inhibit, write
 protection, `bfs check`, snapshot operations, a format or `ACTION_DIE`, and
-from a keyboard reset handler before a warm reboot. A successful `Close` is
+from a keyboard reset handler before a warm reboot (after that warning, every
+change is committed before its reply). A successful `Close` is
 therefore durable within about one second, or immediately after a flush. A
 crash or power loss in that window loses the changes since the last commit but
 never leaves an inconsistent volume, because copy-on-write and the dual

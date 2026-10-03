@@ -160,6 +160,7 @@ struct bfs_handler {
      * quiescent state. Sync: also commit at every close and standalone
      * metadata packet. */
     bool sync_commits;
+    bool reset_pending;       /* reset warning seen: commit before every reply */
     bool commit_failed;      /* after a failure, retry only every max period */
     bool commit_activity;    /* a packet arrived since the timer was armed */
     bool commit_timer_pending;
@@ -1385,9 +1386,12 @@ static void RemoveCommitResetHandler(struct bfs_handler *h)
     h->reset_sig = -1;
 }
 
-/* The machine resets once every handler has answered. */
+/* The machine resets once every handler has answered. Packets can still
+ * arrive before it does, so from now on each change is committed before the
+ * reply that acknowledges it. */
 static void CommitBeforeReset(struct bfs_handler *h)
 {
+    h->reset_pending = true;
     if (CommitDirty(h) == BFS_OK) SendPendingNotifications(h);
     h->reset_req->io_Command = KBD_RESETHANDLERDONE;
     h->reset_req->io_Data = h->reset_int;
@@ -3028,6 +3032,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         } else {
             res1 = DOSFALSE;
             res2 = Pfs4ToDosError(sync_err);
+        }
+    }
+    if (h->reset_pending && h->dirty && res2 == 0) {
+        bfs_err_t reset_err = CommitDirty(h);
+        if (reset_err != BFS_OK) {
+            res1 = (pkt->dp_Type == ACTION_READ || pkt->dp_Type == ACTION_WRITE ||
+                    pkt->dp_Type == ACTION_SEEK || pkt->dp_Type == ACTION_SET_FILE_SIZE ||
+                    pkt->dp_Type == ACTION_READ_LINK) ? -1 : DOSFALSE;
+            res2 = Pfs4ToDosError(reset_err);
         }
     }
 

@@ -343,13 +343,20 @@ $(BUILD_AMIGA)/bfs: $(TOOL_SRCS_BFS) tools/bfs_command.h \
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o $@ $(TOOL_SRCS_BFS) $(AMIGA_TOOL_LDFLAGS)
 
-.PHONY: compatibility-test
+.PHONY: compatibility-test reset-test
 compatibility-test: amiga $(BUILD_HOST)/bfs $(BUILD_AMIGA)/bfs
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/compatibility-probe tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/cli-fixture tests/amiga/cli_fixture.c $(AMIGA_TOOL_LDFLAGS)
 	python3 emulator-test/compatibility-test.py
+
+# A keyboard reset must commit what the delayed-commit timer still holds.
+# Needs Xvfb and xdotool in addition to fs-uae.
+reset-test: amiga $(BUILD_HOST)/bfs
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+		-o build/amiga/reset-probe tests/amiga/reset_probe.c $(AMIGA_TOOL_LDFLAGS)
+	python3 emulator-test/reset-test.py
 
 # ── CI integration test ─────────────────────────────────────
 ci-test: amiga amiga-test $(BUILD_AMIGA)/bfs $(BUILD_HOST)/bfs

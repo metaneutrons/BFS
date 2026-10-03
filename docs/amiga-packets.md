@@ -93,7 +93,8 @@ latest one second after the timer was first armed, and before it replies to
 `BFS_ACTION_CHECK`, snapshot creation and deletion, `ACTION_FORMAT` and
 `ACTION_DIE`. Notifications are sent when a change completes, not when it is
 committed. A keyboard reset handler commits before a warm reboot when
-`keyboard.device` accepts it. A disk change discards uncommitted changes, as
+`keyboard.device` accepts it; until the machine resets, the handler then
+commits every change before its reply. A disk change discards uncommitted changes, as
 before.
 
 ## Snapshot volumes
