@@ -83,7 +83,7 @@ typedef struct bfs_bio_ops {
      * dirty; reads of blk return it, and finalize runs before it is written.
      * It returns BFS_ERR_UNSUPPORTED when the image cannot be held, so the
      * caller writes it through. The backend may write a dirty image at any
-     * time to make room. flush_deferred writes every dirty image; a failed
+     * time to make room; a failure to do so does not refuse the new image. flush_deferred writes every dirty image; a failed
      * image stays dirty. discard_deferred drops the image of blk, or of every
      * block for BFS_BLK_NULL, without writing it. All three are present or
      * absent together. */

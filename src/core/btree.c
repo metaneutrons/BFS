@@ -891,8 +891,10 @@ static void build_root_leaf_replacement(bfs_btree_t *tree, uint8_t *new_buf,
 
 static bfs_err_t replace_root_leaf(bfs_btree_t *tree, bfs_blk_t expected_root,
                                    const void *keys, const void *vals,
-                                   uint32_t count, bool transfer_old_root)
+                                   uint32_t count, bool transfer_old_root,
+                                   bool allow_in_place, bool *published)
 {
+    *published = false;
     bfs_err_t err = validate_root_leaf_replacement(tree, keys, vals, count);
     if (err != BFS_OK) return err;
     if (transfer_old_root &&
@@ -923,6 +925,22 @@ static bfs_err_t replace_root_leaf(bfs_btree_t *tree, bfs_blk_t expected_root,
 
     btree_mutation_t mutation = {0};
     build_root_leaf_replacement(tree, new_buf, old_buf, keys, vals, count);
+    /* A root the live transaction owns is rewritten in place, published like
+     * any staged owned node. Only a deferring cache makes that publication a
+     * memory update; written through, a device error at publication would
+     * discard the transaction where copy-on-write fails before it. */
+    if (allow_in_place && !transfer_old_root && bfs_bio_can_defer_nodes(tree->bio) &&
+        bfs_be64(hdr_of(old_buf)->txn_id) == bfs_btree_txn_id(tree) &&
+        owned_contains(tree, old_root)) {
+        mutation.staged_blocks[0] = old_root;
+        mutation.staged_images[0] = new_buf;
+        mutation.staged_count = 1;
+        new_buf = NULL; /* now owned by the mutation */
+        *published = true;
+        mutation_commit(tree, &mutation);
+        err = tree->free_sink_err;
+        goto done;
+    }
     bfs_blk_t new_root = mutation_alloc(tree, &mutation);
     if (new_root == BFS_BLK_NULL) {
         err = allocator_failure(tree);
@@ -942,6 +960,7 @@ static bfs_err_t replace_root_leaf(bfs_btree_t *tree, bfs_blk_t expected_root,
         if (err != BFS_OK) goto abort_done;
     }
     tree->root = new_root;
+    *published = true;
     mutation_commit(tree, &mutation);
     err = tree->free_sink_err;
     goto done;
@@ -957,7 +976,18 @@ done:
 bfs_err_t bfs_btree_replace_root_leaf(bfs_btree_t *tree, const void *keys,
                                       const void *vals, uint32_t count)
 {
-    return replace_root_leaf(tree, BFS_BLK_NULL, keys, vals, count, false);
+    bool published;
+    return replace_root_leaf(tree, BFS_BLK_NULL, keys, vals, count, false, false,
+                             &published);
+}
+
+bfs_err_t bfs_btree_rewrite_root_leaf(bfs_btree_t *tree, const void *keys,
+                                      const void *vals, uint32_t count,
+                                      bool *published)
+{
+    bool ignored;
+    return replace_root_leaf(tree, BFS_BLK_NULL, keys, vals, count, false, true,
+                             published ? published : &ignored);
 }
 
 bfs_err_t bfs_btree_root_leaf_txn_id(bfs_btree_t *tree, uint64_t *txn_id_out)
@@ -983,7 +1013,9 @@ bfs_err_t bfs_btree_replace_owned_root_leaf(bfs_btree_t *tree,
                                             const void *keys, const void *vals,
                                             uint32_t count)
 {
-    return replace_root_leaf(tree, expected_root, keys, vals, count, true);
+    bool published;
+    return replace_root_leaf(tree, expected_root, keys, vals, count, true, false,
+                             &published);
 }
 
 /* Insert key/val into a leaf at position idx. Caller must ensure there's room. */

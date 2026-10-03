@@ -197,17 +197,20 @@ static void test_cache_failed_write_back_keeps_image(void)
     image(buf, 0x41);
     TEST_ASSERT_EQ(bfs_bio_defer_node(&cache.bio, 2, buf, mark_final, NULL), BFS_OK);
     memory.fail_writes = true;
-    /* Making room fails: the new image is refused, the old one is kept. */
+    /* Making room fails: the new image goes beyond the limit and the old
+     * one stays dirty. */
     image(buf, 0x42);
-    TEST_ASSERT_EQ(bfs_bio_defer_node(&cache.bio, 3, buf, mark_final, NULL), BFS_ERR_IO);
+    TEST_ASSERT_EQ(bfs_bio_defer_node(&cache.bio, 3, buf, mark_final, NULL), BFS_OK);
+    TEST_ASSERT_EQ(cache.dirty_count, 2);
     TEST_ASSERT_EQ(bfs_bio_flush_deferred(&cache.bio), BFS_ERR_IO);
-    TEST_ASSERT_EQ(cache.dirty_count, 1);
+    TEST_ASSERT_EQ(cache.dirty_count, 2);
     TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 2, buf), BFS_OK);
     TEST_ASSERT_EQ(buf[0], 0x41);
     memory.fail_writes = false;
     TEST_ASSERT_EQ(bfs_bio_flush_deferred(&cache.bio), BFS_OK);
+    TEST_ASSERT_EQ(cache.dirty_count, 0);
     TEST_ASSERT_EQ(memory.blocks[2][0], 0x41);
-    TEST_ASSERT_EQ(memory.blocks[3][0], 0);
+    TEST_ASSERT_EQ(memory.blocks[3][0], 0x42);
     bfs_cache_destroy(&cache);
 }
 
@@ -655,6 +658,36 @@ static void test_nodes_freed_in_transaction_are_not_written(void)
     bfs_cache_destroy(&cache);
 }
 
+/* With a deferring cache, run allocations rewrite the owned free-space root
+ * in place; the accounting must follow the published replacement. */
+static void test_owned_free_root_rewritten_in_place(void)
+{
+    make_baseline();
+    bfs_bio_t *bio = bio_emu_open(TEST_IMG, BLK_SIZE);
+    bfs_cache_t cache;
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, bio, CACHE_SLOTS), BFS_OK);
+    bfs_cache_set_deferred_node_limit(&cache, CACHE_SLOTS / 2);
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, &cache.bio), BFS_OK);
+    TEST_ASSERT_EQ(fs.freespace.tree.height, 1);
+    bfs_blk_t first = bfs_freespace_alloc(&fs.freespace, 4);
+    TEST_ASSERT(first != BFS_BLK_NULL);
+    bfs_blk_t owned_root = fs.freespace.tree.root;
+    uint32_t free_before = fs.freespace.total_free;
+    bfs_blk_t second = bfs_freespace_alloc(&fs.freespace, 4);
+    TEST_ASSERT(second != BFS_BLK_NULL);
+    TEST_ASSERT_EQ(fs.freespace.tree.root, owned_root);
+    TEST_ASSERT_EQ(fs.freespace.total_free, free_before - 4);
+    TEST_ASSERT_EQ(bfs_freespace_free(&fs.freespace, first, 4), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_free(&fs.freespace, second, 4), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_cache_destroy(&cache);
+    TEST_ASSERT_EQ(verify_image(bio), 1);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 /* Readers that do not share the transaction's registry, such as a separately
  * opened directory tree, still see the deferred nodes through the cache. */
 static void test_independent_reader_sees_deferred_nodes(void)
@@ -697,4 +730,5 @@ TEST_SUITE_BEGIN("Deferred node writes")
     TEST_RUN(test_file_deleted_in_transaction);
     TEST_RUN(test_nodes_freed_in_transaction_are_not_written);
     TEST_RUN(test_independent_reader_sees_deferred_nodes);
+    TEST_RUN(test_owned_free_root_rewritten_in_place);
 TEST_SUITE_END()

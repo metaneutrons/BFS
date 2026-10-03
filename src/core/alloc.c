@@ -958,10 +958,9 @@ static bfs_err_t alloc_partial_root_leaf(bfs_freespace_t *fs,
     entries.keys[selected] += count;
     entries.lengths[selected] -= count;
     encode_free_leaf_entries(&entries);
-    bfs_blk_t old_root = fs->tree.root;
-    err = bfs_btree_replace_root_leaf(&fs->tree, entries.keys, entries.lengths,
-                                      entries.count);
-    bool changed = fs->tree.root != old_root;
+    bool changed = false;
+    err = bfs_btree_rewrite_root_leaf(&fs->tree, entries.keys, entries.lengths,
+                                      entries.count, &changed);
     if (changed) {
         fs->total_free -= count;
         fs->roving = start + count;
@@ -1076,14 +1075,15 @@ static bfs_err_t replace_free_root_leaf(bfs_freespace_t *fs,
 {
     encode_free_leaf_entries(entries);
     bfs_blk_t old_root = fs->tree.root;
+    bool published = false;
     fs->in_alloc = true;
     bfs_err_t err = take_current_root
         ? bfs_btree_replace_owned_root_leaf(&fs->tree, old_root, entries->keys,
                                             entries->lengths, entries->count)
-        : bfs_btree_replace_root_leaf(&fs->tree, entries->keys,
-                                       entries->lengths, entries->count);
+        : bfs_btree_rewrite_root_leaf(&fs->tree, entries->keys,
+                                      entries->lengths, entries->count, &published);
     fs->in_alloc = false;
-    if (fs->tree.root != old_root) fs->total_free += count;
+    if (published || fs->tree.root != old_root) fs->total_free += count;
     fs->last_error = err;
     return err;
 }

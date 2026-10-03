@@ -209,10 +209,10 @@ static bfs_err_t cache_defer_node(bfs_bio_t *bio, bfs_blk_t blk, const void *buf
         for (uint32_t i = 0; i < c->num_slots; i++)
             if (c->slots[i].dirty && (!oldest || c->slots[i].age < oldest->age))
                 oldest = &c->slots[i];
-        if (oldest) {
-            bfs_err_t err = cache_write_back(c, oldest);
-            if (err != BFS_OK) return err;
-        }
+        /* If making room fails, the image still takes a clean slot beyond
+         * the limit: the limit bounds work, not correctness, and the failed
+         * node stays dirty for the commit to retry and report. */
+        if (oldest) (void)cache_write_back(c, oldest);
     }
     if (!slot) {
         uint32_t victim = cache_victim(c);

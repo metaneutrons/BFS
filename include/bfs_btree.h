@@ -178,6 +178,14 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val);
 bfs_err_t bfs_btree_replace_root_leaf(bfs_btree_t *tree, const void *keys,
                                       const void *vals, uint32_t count);
 
+/* As bfs_btree_replace_root_leaf, but a root the live transaction owns is
+ * rewritten in place, so the root block may stay the same. *published is set
+ * once the replacement is committed to the tree, even if the call then
+ * reports a latched publication or reclamation error. */
+bfs_err_t bfs_btree_rewrite_root_leaf(bfs_btree_t *tree, const void *keys,
+                                      const void *vals, uint32_t count,
+                                      bool *published);
+
 /* Read the transaction id of a valid height-one root leaf. */
 bfs_err_t bfs_btree_root_leaf_txn_id(bfs_btree_t *tree, uint64_t *txn_id_out);
 
