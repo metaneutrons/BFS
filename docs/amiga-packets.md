@@ -24,7 +24,10 @@ internal parent entry. `fib_DiskKey` and `eac_LastKey` carry the number of
 entries the enumeration has consumed, and the lock remembers the name consumed
 last. When the number matches, the next call continues after that name. A
 listing therefore takes linear time, and deleting entries while it runs, as a
-recursive delete does, does not skip any of the rest. An entry created during a
+recursive delete does, does not skip any of the rest. The lock also keeps a
+copy of the directory leaf it read last; while the directory tree is
+unchanged, the next entries come from that copy without a descent from the
+root. An entry created during a
 listing may or may not appear. If the number does not match (a second
 enumeration on the same lock) or the memory for the resume point is missing,
 the handler counts entries from the start. ExamineFH reports the file name: an
