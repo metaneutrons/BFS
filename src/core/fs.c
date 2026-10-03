@@ -173,6 +173,7 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     if (err == BFS_OK) err = bfs_sb_write(bio, &fs.txn.sb);
 out:
     free(fs.pending_frees_dynamic);
+    bfs_btree_owned_destroy(&fs.owned_nodes);
     bfs_lock_destroy(&fs.lock);
     if (err != BFS_OK) return err;
     return bfs_bio_sync(bio);
@@ -245,6 +246,7 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
     fs->freespace.snapshot_state = &fs->has_snapshots;
     fs->freespace.readonly_state = &fs->read_only;
     fs->freespace.recovery_state = &fs->recovery_error;
+    fs->owned_nodes.recovery_state = &fs->recovery_error;
     err = fs_open_namespace_trees(fs);
     if (err != BFS_OK) return err;
     err = fs_open_refcount_tree(fs);
@@ -311,6 +313,7 @@ fail:
     fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
+    bfs_btree_owned_destroy(&fs->owned_nodes);
     fs->mounted = false;
     bfs_lock_destroy(&fs->lock);
     return err;
@@ -398,6 +401,7 @@ bfs_free_sink_t bfs_fs_free_sink(bfs_fs_t *fs)
     sink.defer = fs_defer_free;
     sink.headroom = fs_free_headroom;
     sink.reserve = fs_reserve_pending;
+    sink.owned = &fs->owned_nodes;
     sink.capacity = BFS_PENDING_FREES_MAX;
     return sink;
 }
@@ -547,6 +551,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
         fs->scratch_capacity = 0;
         free(fs->pending_frees_dynamic);
         fs->pending_frees_dynamic = NULL;
+        bfs_btree_owned_destroy(&fs->owned_nodes);
         fs->mounted = false;
         bfs_lock_unlock(&fs->lock);
         bfs_lock_destroy(&fs->lock);
@@ -559,6 +564,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
         fs->scratch_capacity = 0;
         free(fs->pending_frees_dynamic);
         fs->pending_frees_dynamic = NULL;
+        bfs_btree_owned_destroy(&fs->owned_nodes);
         fs->mounted = false;
         bfs_lock_unlock(&fs->lock);
         bfs_lock_destroy(&fs->lock);
@@ -574,6 +580,7 @@ bfs_err_t bfs_fs_unmount(bfs_fs_t *fs)
     fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
+    bfs_btree_owned_destroy(&fs->owned_nodes);
     fs->mounted = false;
     bfs_lock_unlock(&fs->lock);
     bfs_lock_destroy(&fs->lock);
@@ -588,6 +595,7 @@ void bfs_fs_abandon(bfs_fs_t *fs)
     fs->scratch_capacity = 0;
     free(fs->pending_frees_dynamic);
     fs->pending_frees_dynamic = NULL;
+    bfs_btree_owned_destroy(&fs->owned_nodes);
     fs->mounted = false;
     bfs_lock_destroy(&fs->lock);
 }
@@ -611,6 +619,8 @@ bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs)
     fs->txn = txn;
     fs->pending_count = 0;
     fs->pending_frees_cap = pending_cap;
+    /* Blocks of the discarded transaction are free again in the reloaded state. */
+    bfs_btree_owned_reset(&fs->owned_nodes);
     err = fs_load_working_state(fs);
     if (err != BFS_OK) goto fail;
 

@@ -431,11 +431,20 @@ static const char *delete_small_files(const char *drive)
     return NULL;
 }
 
+/* Ask the handler to commit pending state, so a durable phase also measures
+ * each filesystem's deferred commit work (for PFS3, its timed UpdateDisk). */
+static const char *flush_volume(const char *drive)
+{
+    struct MsgPort *port = DeviceProc(drive);
+    if (!port) return "flush-port";
+    return DoPkt(port, ACTION_FLUSH, 0, 0, 0, 0, 0) ? NULL : "flush";
+}
+
 typedef const char *(*workload_fn)(const char *drive);
 
 static const char *run_phase(const char *drive, const char *phase,
                              const char *reset_error, const char *timer_error,
-                             BOOL probe_enabled, ULONG *clock_hz,
+                             BOOL probe_enabled, BOOL flush_after, ULONG *clock_hz,
                              workload_fn workload)
 {
     struct timeval before, after;
@@ -446,6 +455,10 @@ static const char *run_phase(const char *drive, const char *phase,
     if (!clock_time(&before)) return timer_error;
     error = workload(drive);
     if (error) return error;
+    if (flush_after) {
+        error = flush_volume(drive);
+        if (error) return error;
+    }
     if (!clock_time(&after) || !elapsed_us(&before, &after, &elapsed))
         return timer_error;
     if (probe_enabled) {
@@ -457,7 +470,8 @@ static const char *run_phase(const char *drive, const char *phase,
     return NULL;
 }
 
-static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
+static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
+               BOOL probe_enabled)
 {
     char path[128];
     BPTR handle;
@@ -468,26 +482,27 @@ static int run(const char *drive, BOOL deep_mode, BOOL probe_enabled)
     if (!handle) return fail("mkdir");
     UnLock(handle);
     if (deep_mode) emit("FS_DEEP_COMPARE\t11\nDRIVE\t");
+    else if (durable_mode) emit("FS_DURABLE_COMPARE\t1\nDRIVE\t");
     else emit("FS_COMPARE_BENCH\t1\nDRIVE\t");
     emit(drive);
     emit("\n");
     error = run_phase(drive, "SMALL_CREATE_40", "perf-reset-create", "timer-create",
-                      probe_enabled, &clock_hz, create_small_files);
+                      probe_enabled, durable_mode, &clock_hz, create_small_files);
     if (error) return fail(error);
     error = run_phase(drive, "LOOKUP_400", "perf-reset-lookup", "timer-lookup",
-                      probe_enabled, &clock_hz, lookup_small_files);
+                      probe_enabled, FALSE, &clock_hz, lookup_small_files);
     if (error) return fail(error);
     error = run_phase(drive, "SMALL_READ_40", "perf-reset-small-read", "timer-small-read",
-                      probe_enabled, &clock_hz, read_small_files);
+                      probe_enabled, FALSE, &clock_hz, read_small_files);
     if (error) return fail(error);
     error = run_phase(drive, "SEQ_WRITE_8M", "perf-reset-large-write", "timer-large-write",
-                      probe_enabled, &clock_hz, write_large_file);
+                      probe_enabled, durable_mode, &clock_hz, write_large_file);
     if (error) return fail(error);
     error = run_phase(drive, "SEQ_READ_8M", "perf-reset-large-read", "timer-large-read",
-                      probe_enabled, &clock_hz, read_large_file);
+                      probe_enabled, FALSE, &clock_hz, read_large_file);
     if (error) return fail(error);
     error = run_phase(drive, "SMALL_DELETE_40", "perf-reset-delete", "timer-delete",
-                      probe_enabled, &clock_hz, delete_small_files);
+                      probe_enabled, durable_mode, &clock_hz, delete_small_files);
     if (error) return fail(error);
     if (probe_enabled) {
         metric("CLOCK_HZ", clock_hz);
@@ -502,11 +517,12 @@ int main(int argc, char **argv)
 {
     int result;
     BOOL deep_mode = argc == 3 && argv[2] && text_equal(argv[2], "deep");
+    BOOL durable_mode = argc == 3 && argv[2] && text_equal(argv[2], "durable");
     BOOL probe_enabled;
 
-    if ((argc != 2 && !deep_mode) || !argv[1] || !*argv[1] ||
+    if ((argc != 2 && !deep_mode && !durable_mode) || !argv[1] || !*argv[1] ||
         argv[1][text_length(argv[1]) - 1] != ':') {
-        emit("Usage: fs-compare-bench DRIVE: [deep]\n");
+        emit("Usage: fs-compare-bench DRIVE: [deep|durable]\n");
         return 20;
     }
     probe_enabled = deep_mode && text_equal(argv[1], "DH1:");
@@ -524,7 +540,7 @@ int main(int argc, char **argv)
         ULONG index;
         for (index = 0; index < BUFFER_BYTES; index++)
             expected[index] = (UBYTE)((index * 31UL + 17UL) & 0xff);
-        result = run(argv[1], deep_mode, probe_enabled);
+        result = run(argv[1], deep_mode, durable_mode, probe_enabled);
     }
     if (received) FreeVec(received);
     if (expected) FreeVec(expected);

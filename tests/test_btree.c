@@ -370,6 +370,223 @@ static void test_empty_tree_search(void)
     unlink(TEST_IMG);
 }
 
+/* ── Test: owned nodes ─────────────────────────────────────── */
+
+static void read_block(bfs_bio_t *bio, bfs_blk_t blk, uint8_t *buf)
+{
+    TEST_ASSERT_EQ(bfs_bio_read(bio, blk, buf), BFS_OK);
+}
+
+/* Insert key k with value k * 10. */
+static bfs_err_t insert_tenfold(bfs_btree_t *tree, uint32_t k)
+{
+    uint32_t key, val;
+    make_key(&key, k);
+    val = bfs_be32(k * 10u);
+    return bfs_btree_insert(tree, &key, &val);
+}
+
+static void test_owned_rewrite_requires_registration(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    bfs_btree_owned_t owned = {0};
+    tree.free_sink.owned = &owned;
+
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 1), BFS_OK);
+    bfs_blk_t root = tree.root;
+    bfs_blk_t next = ba->next_block;
+
+    /* A node the live transaction allocated is rewritten in place. */
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 2), BFS_OK);
+    TEST_ASSERT_EQ(tree.root, root);
+    TEST_ASSERT_EQ(ba->next_block, next);
+
+    /* The same txn_id without registration, as on a damaged image, is not
+     * proof of ownership: the node is copied and its bytes stay intact. */
+    bfs_btree_owned_reset(&owned);
+    uint8_t before[BLK_SIZE], after[BLK_SIZE];
+    read_block(bio, root, before);
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 3), BFS_OK);
+    TEST_ASSERT(tree.root != root);
+    read_block(bio, root, after);
+    TEST_ASSERT_MEM_EQ(after, before, BLK_SIZE);
+
+    /* The copy is registered and rewritten in place again. */
+    root = tree.root;
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 4), BFS_OK);
+    TEST_ASSERT_EQ(tree.root, root);
+
+    /* A different transaction id invalidates every entry. */
+    tree.txn_id_fallback = 2;
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 5), BFS_OK);
+    TEST_ASSERT(tree.root != root);
+
+    /* The disabled switch keeps every change copy-on-write. */
+    root = tree.root;
+    owned.disabled = true;
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 6), BFS_OK);
+    TEST_ASSERT(tree.root != root);
+
+    uint32_t key, val;
+    for (uint32_t i = 1; i <= 6; i++) {
+        make_key(&key, i);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+        TEST_ASSERT_EQ(bfs_load_be32(&val), i * 10);
+    }
+    bfs_btree_owned_destroy(&owned);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_owned_rewrite_publishes_after_fallible_steps(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    bfs_btree_owned_t owned = {0};
+    tree.free_sink.owned = &owned;
+
+    /* Fill one owned root leaf to capacity; the next insert must split. */
+    uint32_t capacity = bfs_btree_leaf_capacity(&tree);
+    uint32_t key, val;
+    for (uint32_t i = 0; i < capacity; i++) {
+        make_key(&key, i * 2u); val = bfs_be32(i);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    }
+    TEST_ASSERT_EQ(tree.height, 1);
+    bfs_blk_t root = tree.root;
+    uint8_t before[BLK_SIZE], after[BLK_SIZE];
+    read_block(bio, root, before);
+
+    /* The split cannot allocate: the owned leaf must keep its old bytes. */
+    ba->max_block = ba->next_block;
+    make_key(&key, 1u); val = bfs_be32(99);
+    TEST_ASSERT(bfs_btree_insert(&tree, &key, &val) != BFS_OK);
+    TEST_ASSERT_EQ(tree.root, root);
+    TEST_ASSERT_EQ(tree.height, 1);
+    read_block(bio, root, after);
+    TEST_ASSERT_MEM_EQ(after, before, BLK_SIZE);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_ERR_NOTFOUND);
+    for (uint32_t i = 0; i < capacity; i++) {
+        make_key(&key, i * 2u);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+    }
+
+    /* With space again the same insert succeeds. */
+    ba->max_block = BLK_COUNT;
+    make_key(&key, 1u); val = bfs_be32(99);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT_EQ(tree.height, 2);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+    bfs_btree_owned_destroy(&owned);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static int wide_compare(const void *a, const void *b)
+{
+    return u32_compare(a, b);
+}
+
+static const bfs_btree_ops_t wide_ops = {
+    .key_compare = wide_compare,
+    .key_size = BFS_MAX_KEY_SIZE,
+    .val_size = sizeof(uint32_t),
+};
+
+static void wide_key(uint8_t *key, uint32_t value)
+{
+    memset(key, 0, BFS_MAX_KEY_SIZE);
+    make_key((uint32_t *)(void *)key, value);
+}
+
+/* Insert ascending keys until the tree reaches height three and report the
+ * key count at which that happened. */
+static void wide_height_three_at(bfs_bio_t *bio, uint32_t *count_out)
+{
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &wide_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    uint8_t key[BFS_MAX_KEY_SIZE];
+    uint32_t val = 0, count = 0;
+    *count_out = 0;
+    while (tree.height < 3 && count < 1000) {
+        wide_key(key, ++count);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, key, &val), BFS_OK);
+    }
+    free(ba);
+    *count_out = count;
+}
+
+static void test_owned_rewrite_abort_after_staging_keeps_bytes(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    uint32_t split_at;
+    wide_height_three_at(bio, &split_at);
+    TEST_ASSERT(split_at > 1 && split_at < 1000);
+
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &wide_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    bfs_btree_owned_t owned = {0};
+    tree.free_sink.owned = &owned;
+    uint8_t key[BFS_MAX_KEY_SIZE];
+    uint32_t val = 0;
+    for (uint32_t i = 1; i < split_at; i++) {
+        wide_key(key, i);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, key, &val), BFS_OK);
+    }
+    TEST_ASSERT_EQ(tree.height, 2);
+
+    /* The rightmost leaf and the root are full and owned. Allow only the leaf
+     * split: the owned leaf is staged before the root split fails. */
+    bfs_blk_t root = tree.root;
+    uint8_t root_buf[BLK_SIZE];
+    read_block(bio, root, root_buf);
+    uint32_t root_keys = bfs_load_be32(&((bfs_btnode_hdr_t *)(void *)root_buf)->num_keys);
+    bfs_blk_t leaf = get_child(&tree, root_buf, root_keys);
+    uint8_t leaf_before[BLK_SIZE], root_before[BLK_SIZE], after[BLK_SIZE];
+    read_block(bio, leaf, leaf_before);
+    read_block(bio, root, root_before);
+    uint32_t freed_before = ba->freed_count;
+    ba->max_block = ba->next_block + 1;
+
+    wide_key(key, split_at);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, key, &val), BFS_ERR_NOSPC);
+    TEST_ASSERT_EQ(tree.root, root);
+    TEST_ASSERT_EQ(tree.height, 2);
+    TEST_ASSERT_EQ(ba->freed_count, freed_before + 1);
+    read_block(bio, leaf, after);
+    TEST_ASSERT_MEM_EQ(after, leaf_before, BLK_SIZE);
+    read_block(bio, root, after);
+    TEST_ASSERT_MEM_EQ(after, root_before, BLK_SIZE);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, key, &val), BFS_ERR_NOTFOUND);
+    for (uint32_t i = 1; i < split_at; i++) {
+        wide_key(key, i);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, key, &val), BFS_OK);
+    }
+    bfs_btree_owned_destroy(&owned);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 /* ── Test: single insert and search ────────────────────────── */
 
 static void test_single_insert_search(void)
@@ -1509,6 +1726,9 @@ static void test_cached_node_crc_revalidation(void)
 TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_empty_tree_search);
     TEST_RUN(test_single_insert_search);
+    TEST_RUN(test_owned_rewrite_requires_registration);
+    TEST_RUN(test_owned_rewrite_publishes_after_fallible_steps);
+    TEST_RUN(test_owned_rewrite_abort_after_staging_keeps_bytes);
     TEST_RUN(test_duplicate_insert);
     TEST_RUN(test_sequential_inserts);
     TEST_RUN(test_reverse_inserts);

@@ -49,6 +49,17 @@ does not perform this synchronization or make a durability assertion.
 
 A failed namespace rollback latches a recovery error: removing the device fault
 does not make the partial namespace committable. Abandon/remount is required.
+
+A B-tree node that the live transaction allocated, and that no committed
+superblock or snapshot can reference, is rewritten in place instead of being
+copied again. Such rewrites are published only after every allocation and
+every other fallible step of the mutation succeeded, so an earlier failure
+leaves the node unchanged. A device write failure while publishing them makes
+the transaction's graph uncertain: it is latched like an ownership-uncertain
+reclamation and the caller recovers the latest committed roots. Committed
+nodes are never rewritten in place; whether a node is owned is decided from an
+in-memory record of the transaction's own allocations, not from the node's
+on-disk transaction id.
 Failed extent-remap rollback marks block ownership uncertain so the file layer
 recovers committed roots rather than freeing a possibly referenced replacement.
 

@@ -63,6 +63,7 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
 	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
 	fault-qualification fault-qualification-verify amiga-fs-compare-bench amiga-fs-profile-bench \
+	core-workload-profile \
 	amiga-perf-probe-handler
 
 .PHONY: fuse
@@ -270,6 +271,15 @@ bench: $(BUILD_HOST)/bench_btree
 	@$(BUILD_HOST)/bench_btree
 
 $(BUILD_HOST)/bench_btree: tests/bench_btree.c $(CORE_SRC) $(EMU_SRC)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
+
+# Host replica of the AmigaDOS compare workload for deterministic profiling.
+core-workload-profile: $(BUILD_HOST)/core-workload
+	@tools/core-workload-profile.sh sync
+	@tools/core-workload-profile.sh group
+
+$(BUILD_HOST)/core-workload: tools/core-workload.c $(CORE_SRC) $(EMU_SRC)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
 
