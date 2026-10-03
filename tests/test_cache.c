@@ -590,6 +590,100 @@ static void test_node_write_retention(void)
     bfs_cache_destroy(&cache);
 }
 
+/* Every resident slot is on exactly the chain of its block's bucket. */
+static void check_hash_index(const bfs_cache_t *cache)
+{
+    uint32_t chained = 0, resident = 0;
+    for (uint32_t bucket = 0; bucket < 1u << (32u - cache->bucket_shift); bucket++) {
+        uint32_t steps = 0;
+        for (uint32_t i = cache->buckets[bucket]; i != 0xFFFFu; i = cache->slots[i].next) {
+            TEST_ASSERT(i < cache->num_slots);
+            TEST_ASSERT(cache->slots[i].blk != UINT32_MAX);
+            TEST_ASSERT_EQ((uint32_t)(cache->slots[i].blk * 2654435761u) >> cache->bucket_shift,
+                           bucket);
+            TEST_ASSERT(++steps <= cache->num_slots);
+            chained++;
+        }
+    }
+    for (uint32_t i = 0; i < cache->num_slots; i++) {
+        if (cache->slots[i].blk == UINT32_MAX) continue;
+        resident++;
+        for (uint32_t j = i + 1; j < cache->num_slots; j++)
+            TEST_ASSERT(cache->slots[i].blk != cache->slots[j].blk);
+    }
+    TEST_ASSERT_EQ(chained, resident);
+}
+
+static bfs_err_t keep_node_image(const void *layout, uint32_t block_size, uint8_t *buf)
+{
+    (void)layout;
+    (void)block_size;
+    (void)buf;
+    return BFS_OK;
+}
+
+/* Random reads, writes, node writes, failed writes, deferred images and
+ * invalidation keep the hash index and the returned bytes consistent. */
+static void test_hash_index_follows_slots(void)
+{
+    memory_bio_t memory;
+    bfs_cache_t cache;
+    uint8_t logical[BLOCK_COUNT];
+    uint8_t buffer[BLOCK_SIZE];
+    uint32_t seed = 12345u;
+    memory_init(&memory);
+    for (unsigned block = 0; block < BLOCK_COUNT; block++) logical[block] = (uint8_t)block;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 6), BFS_OK);
+    bfs_cache_set_node_write_retention(&cache, true);
+    bfs_cache_set_deferred_node_limit(&cache, 3);
+    for (unsigned step = 0; step < 4000; step++) {
+        seed = seed * 1103515245u + 12345u;
+        unsigned operation = (seed >> 16) % 8u;
+        bfs_blk_t block = (seed >> 8) % BLOCK_COUNT;
+        uint8_t value = (uint8_t)(seed >> 24);
+        memset(buffer, value, sizeof(buffer));
+        switch (operation) {
+        case 0: case 1: case 2:
+            TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, block, buffer), BFS_OK);
+            TEST_ASSERT_EQ(buffer[0], logical[block]);
+            TEST_ASSERT_EQ(buffer[BLOCK_SIZE - 1], logical[block]);
+            break;
+        case 3:
+            TEST_ASSERT_EQ(bfs_bio_write(&cache.bio, block, buffer), BFS_OK);
+            logical[block] = value;
+            break;
+        case 4:
+            TEST_ASSERT_EQ(bfs_bio_write_node(&cache.bio, block, buffer), BFS_OK);
+            logical[block] = value;
+            break;
+        case 5:
+            if (bfs_bio_defer_node(&cache.bio, block, buffer, keep_node_image, NULL) == BFS_OK)
+                logical[block] = value;
+            break;
+        case 6:
+            /* A failed write drops any cached image of the block, a deferred
+             * one included; the test device keeps its old bytes. */
+            memory.fail_write = 1;
+            TEST_ASSERT(bfs_bio_write(&cache.bio, block, buffer) != BFS_OK);
+            memory.fail_write = 0;
+            logical[block] = memory.blocks[block][0];
+            break;
+        default:
+            if ((seed >> 4) % 4u == 0) {
+                TEST_ASSERT_EQ(bfs_bio_flush_deferred(&cache.bio), BFS_OK);
+                bfs_cache_invalidate(&cache);
+            } else {
+                TEST_ASSERT_EQ(bfs_bio_flush_deferred(&cache.bio), BFS_OK);
+            }
+            for (unsigned b = 0; b < BLOCK_COUNT; b++)
+                TEST_ASSERT_EQ(memory.blocks[b][0], logical[b]);
+            break;
+        }
+        check_hash_index(&cache);
+    }
+    bfs_cache_destroy(&cache);
+}
+
 static void test_node_write_raw_bio_fallback(void)
 {
     memory_bio_t memory;
@@ -620,4 +714,5 @@ TEST_SUITE_BEGIN("Block Cache")
     TEST_RUN(test_verified_node_lifecycle);
     TEST_RUN(test_node_write_retention);
     TEST_RUN(test_node_write_raw_bio_fallback);
+    TEST_RUN(test_hash_index_follows_slots);
 TEST_SUITE_END()

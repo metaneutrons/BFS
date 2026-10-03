@@ -34,6 +34,7 @@
 
 typedef struct bfs_cache_slot {
     bfs_blk_t blk;         /* cached block number (UINT32_MAX = empty) */
+    uint16_t  next;        /* next slot in the same hash chain */
     uint32_t  age;          /* LRU counter (higher = more recent) */
     uint8_t  *data;         /* block data */
     bool      node_crc_valid; /* cached node bytes have a valid CRC */
@@ -54,6 +55,8 @@ typedef struct bfs_cache {
     bfs_bio_t         *dev;     /* underlying device */
     bfs_cache_slot_t  *slots;   /* dynamically allocated slot array */
     uint32_t           num_slots;
+    uint16_t          *buckets; /* hash index: first slot of each chain */
+    uint32_t           bucket_shift; /* 32 minus log2 of the bucket count */
     uint32_t           clock;   /* LRU clock */
     bool               retain_written_nodes;
     uint32_t           dirty_count;  /* slots holding deferred node images */

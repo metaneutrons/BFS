@@ -7,6 +7,42 @@
 #include <string.h>
 #include <stdlib.h>
 
+/* ── Hash index ────────────────────────────────────────────── */
+
+/* Every resident slot is on the chain of its block's bucket, so finding a
+ * block costs a short chain walk instead of a pass over all slots. */
+#define NO_SLOT 0xFFFFu
+
+static uint32_t cache_bucket(const bfs_cache_t *c, bfs_blk_t blk)
+{
+    return (uint32_t)(blk * 2654435761u) >> c->bucket_shift;
+}
+
+static bfs_cache_slot_t *cache_find(const bfs_cache_t *c, bfs_blk_t blk)
+{
+    for (uint32_t i = c->buckets[cache_bucket(c, blk)]; i != NO_SLOT; i = c->slots[i].next)
+        if (c->slots[i].blk == blk) return &c->slots[i];
+    return NULL;
+}
+
+/* Let slot index hold blk, or nothing for UINT32_MAX, in the index. */
+static void cache_assign(bfs_cache_t *c, uint32_t index, bfs_blk_t blk)
+{
+    bfs_cache_slot_t *slot = &c->slots[index];
+    if (slot->blk != UINT32_MAX) {
+        uint16_t *link = &c->buckets[cache_bucket(c, slot->blk)];
+        while (*link != index) link = &c->slots[*link].next;
+        *link = slot->next;
+    }
+    slot->blk = blk;
+    slot->next = NO_SLOT;
+    if (blk != UINT32_MAX) {
+        uint16_t *head = &c->buckets[cache_bucket(c, blk)];
+        slot->next = *head;
+        *head = (uint16_t)index;
+    }
+}
+
 /* ── Cache bio ops ─────────────────────────────────────────── */
 
 /* The least recently used clean slot, or UINT32_MAX if every slot is dirty.
@@ -28,7 +64,7 @@ static uint32_t cache_victim(const bfs_cache_t *cache)
 static void cache_drop_slot(bfs_cache_t *c, bfs_cache_slot_t *slot)
 {
     if (slot->dirty) c->dirty_count--;
-    slot->blk = UINT32_MAX;
+    cache_assign(c, (uint32_t)(slot - c->slots), UINT32_MAX);
     slot->dirty = false;
     slot->node_crc_valid = false;
     slot->node_structure_valid = false;
@@ -52,13 +88,11 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
 {
     bfs_cache_t *c = (bfs_cache_t *)bio;
 
-    /* Search cache */
-    for (uint32_t i = 0; i < c->num_slots; i++) {
-        if (c->slots[i].blk == blk) {
-            memcpy(buf, c->slots[i].data, bio->block_size);
-            c->slots[i].age = ++c->clock;
-            return BFS_OK;
-        }
+    bfs_cache_slot_t *slot = cache_find(c, blk);
+    if (slot) {
+        memcpy(buf, slot->data, bio->block_size);
+        slot->age = ++c->clock;
+        return BFS_OK;
     }
 
     /* Cache miss — read from device */
@@ -69,7 +103,7 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
     uint32_t victim = cache_victim(c);
     if (victim == UINT32_MAX) return BFS_OK;
     memcpy(c->slots[victim].data, buf, bio->block_size);
-    c->slots[victim].blk = blk;
+    cache_assign(c, victim, blk);
     c->slots[victim].age = ++c->clock;
     c->slots[victim].node_crc_valid = false;
     c->slots[victim].node_structure_valid = false;
@@ -88,25 +122,24 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
     if (err != BFS_OK) {
         /* A failed write may have reached media partially. Drop any cached
          * copy rather than retaining a validated view of uncertain contents. */
-        for (uint32_t i = 0; i < c->num_slots; i++)
-            if (c->slots[i].blk == blk) cache_drop_slot(c, &c->slots[i]);
+        bfs_cache_slot_t *stale = cache_find(c, blk);
+        if (stale) cache_drop_slot(c, stale);
         return err;
     }
 
     /* Ordinary writes update existing slots but never populate a new one.
      * Node writes may retain the bytes and the CRC computed by the B-tree. */
-    for (uint32_t i = 0; i < c->num_slots; i++) {
-        if (c->slots[i].blk == blk) {
-            memcpy(c->slots[i].data, buf, bio->block_size);
-            c->slots[i].age = ++c->clock;
-            if (c->slots[i].dirty) {
-                c->slots[i].dirty = false;
-                c->dirty_count--;
-            }
-            c->slots[i].node_crc_valid = retain_node;
-            c->slots[i].node_structure_valid = false;
-            return BFS_OK;
+    bfs_cache_slot_t *slot = cache_find(c, blk);
+    if (slot) {
+        memcpy(slot->data, buf, bio->block_size);
+        slot->age = ++c->clock;
+        if (slot->dirty) {
+            slot->dirty = false;
+            c->dirty_count--;
         }
+        slot->node_crc_valid = retain_node;
+        slot->node_structure_valid = false;
+        return BFS_OK;
     }
 
     if (retain_node) {
@@ -114,7 +147,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
         if (victim == UINT32_MAX) return BFS_OK;
         /* Every slot buffer was allocated with this cache's block_size. */
         memcpy(c->slots[victim].data, buf, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
-        c->slots[victim].blk = blk;
+        cache_assign(c, victim, blk);
         c->slots[victim].age = ++c->clock;
         c->slots[victim].node_crc_valid = true;
         c->slots[victim].node_structure_valid = false;
@@ -137,6 +170,11 @@ static bfs_err_t cache_write_node(bfs_bio_t *bio, bfs_blk_t blk,
 
 static bool cache_range_resident(const bfs_cache_t *c, bfs_blk_t blk, uint32_t count)
 {
+    if (count <= c->num_slots) {
+        for (uint32_t i = 0; i < count; i++)
+            if (cache_find(c, blk + i)) return true;
+        return false;
+    }
     for (uint32_t i = 0; i < c->num_slots; i++) {
         bfs_blk_t resident = c->slots[i].blk;
         if (resident != UINT32_MAX && resident >= blk && resident - blk < count)
@@ -198,12 +236,7 @@ static bfs_err_t cache_defer_node(bfs_bio_t *bio, bfs_blk_t blk, const void *buf
 {
     bfs_cache_t *c = (bfs_cache_t *)bio;
     if (c->dirty_limit == 0) return BFS_ERR_UNSUPPORTED;
-    bfs_cache_slot_t *slot = NULL;
-    for (uint32_t i = 0; i < c->num_slots; i++)
-        if (c->slots[i].blk == blk) {
-            slot = &c->slots[i];
-            break;
-        }
+    bfs_cache_slot_t *slot = cache_find(c, blk);
     if ((!slot || !slot->dirty) && c->dirty_count >= c->dirty_limit) {
         bfs_cache_slot_t *oldest = NULL;
         for (uint32_t i = 0; i < c->num_slots; i++)
@@ -218,7 +251,7 @@ static bfs_err_t cache_defer_node(bfs_bio_t *bio, bfs_blk_t blk, const void *buf
         uint32_t victim = cache_victim(c);
         if (victim == UINT32_MAX) return BFS_ERR_UNSUPPORTED;
         slot = &c->slots[victim];
-        slot->blk = blk;
+        cache_assign(c, victim, blk);
     }
     /* Every slot buffer was allocated with this cache's block_size. */
     memcpy(slot->data, buf, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
@@ -253,10 +286,14 @@ static bfs_err_t cache_flush_deferred(bfs_bio_t *bio)
 static void cache_discard_deferred(bfs_bio_t *bio, bfs_blk_t blk)
 {
     bfs_cache_t *c = (bfs_cache_t *)bio;
+    if (blk != BFS_BLK_NULL) {
+        bfs_cache_slot_t *slot = cache_find(c, blk);
+        if (slot && slot->dirty) cache_drop_slot(c, slot);
+        return;
+    }
     for (uint32_t i = 0; i < c->num_slots && c->dirty_count > 0; i++) {
         bfs_cache_slot_t *slot = &c->slots[i];
-        if (slot->dirty && (blk == BFS_BLK_NULL || slot->blk == blk))
-            cache_drop_slot(c, slot);
+        if (slot->dirty) cache_drop_slot(c, slot);
     }
 }
 
@@ -273,20 +310,14 @@ static void cache_close(bfs_bio_t *bio)
 
 static bool cache_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk)
 {
-    bfs_cache_t *c = (bfs_cache_t *)bio;
-    for (uint32_t i = 0; i < c->num_slots; i++)
-        if (c->slots[i].blk == blk) return c->slots[i].node_crc_valid;
-    return false;
+    const bfs_cache_slot_t *slot = cache_find((bfs_cache_t *)bio, blk);
+    return slot && slot->node_crc_valid;
 }
 
 static void cache_mark_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk)
 {
-    bfs_cache_t *c = (bfs_cache_t *)bio;
-    for (uint32_t i = 0; i < c->num_slots; i++)
-        if (c->slots[i].blk == blk) {
-            c->slots[i].node_crc_valid = true;
-            return;
-        }
+    bfs_cache_slot_t *slot = cache_find((bfs_cache_t *)bio, blk);
+    if (slot) slot->node_crc_valid = true;
 }
 
 static bool slot_structure_valid(const bfs_cache_slot_t *slot,
@@ -304,40 +335,27 @@ static bool slot_structure_valid(const bfs_cache_slot_t *slot,
 static bool cache_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
                                         const bfs_node_validation_t *context)
 {
-    bfs_cache_t *c = (bfs_cache_t *)bio;
-    for (uint32_t i = 0; i < c->num_slots; i++) {
-        const bfs_cache_slot_t *slot = &c->slots[i];
-        if (slot->blk != blk) continue;
-        return slot_structure_valid(slot, context);
-    }
-    return false;
+    const bfs_cache_slot_t *slot = cache_find((bfs_cache_t *)bio, blk);
+    return slot && slot_structure_valid(slot, context);
 }
 
 static const void *cache_peek_valid_node(bfs_bio_t *bio, bfs_blk_t blk,
                                          const bfs_node_validation_t *context)
 {
     bfs_cache_t *c = (bfs_cache_t *)bio;
-    for (uint32_t i = 0; i < c->num_slots; i++) {
-        bfs_cache_slot_t *slot = &c->slots[i];
-        if (slot->blk != blk) continue;
-        if (!slot_structure_valid(slot, context)) return NULL;
-        slot->age = ++c->clock;
-        return slot->data;
-    }
-    return NULL;
+    bfs_cache_slot_t *slot = cache_find(c, blk);
+    if (!slot || !slot_structure_valid(slot, context)) return NULL;
+    slot->age = ++c->clock;
+    return slot->data;
 }
 
 static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
                                              const bfs_node_validation_t *context)
 {
-    bfs_cache_t *c = (bfs_cache_t *)bio;
-    for (uint32_t i = 0; i < c->num_slots; i++) {
-        bfs_cache_slot_t *slot = &c->slots[i];
-        if (slot->blk == blk && slot->node_crc_valid) {
-            slot->node_validation = *context;
-            slot->node_structure_valid = true;
-            return;
-        }
+    bfs_cache_slot_t *slot = cache_find((bfs_cache_t *)bio, blk);
+    if (slot && slot->node_crc_valid) {
+        slot->node_validation = *context;
+        slot->node_structure_valid = true;
     }
 }
 
@@ -434,11 +452,28 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
     if (num_slots > BFS_CACHE_SLOTS_MAX) num_slots = BFS_CACHE_SLOTS_MAX;
     cache->num_slots = num_slots;
 
+    /* At least two buckets per slot keeps chains short. */
+    uint32_t buckets = 16;
+    cache->bucket_shift = 28;
+    while (buckets < 2u * num_slots) {
+        buckets *= 2u;
+        cache->bucket_shift--;
+    }
+    cache->buckets = malloc(buckets * sizeof(*cache->buckets));
     cache->slots = malloc(num_slots * sizeof(bfs_cache_slot_t));
-    if (!cache->slots) return BFS_ERR_NOMEM;
+    if (!cache->slots || !cache->buckets) {
+        free(cache->slots);
+        free(cache->buckets);
+        cache->slots = NULL;
+        cache->buckets = NULL;
+        cache->num_slots = 0;
+        return BFS_ERR_NOMEM;
+    }
+    for (uint32_t i = 0; i < buckets; i++) cache->buckets[i] = NO_SLOT;
 
     for (uint32_t i = 0; i < num_slots; i++) {
         cache->slots[i].blk = UINT32_MAX;
+        cache->slots[i].next = NO_SLOT;
         cache->slots[i].age = 0;
         cache->slots[i].node_crc_valid = false;
         cache->slots[i].node_structure_valid = false;
@@ -447,7 +482,9 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
         if (!cache->slots[i].data) {
             for (uint32_t j = 0; j < i; j++) free(cache->slots[j].data);
             free(cache->slots);
+            free(cache->buckets);
             cache->slots = NULL;
+            cache->buckets = NULL;
             cache->num_slots = 0;
             return BFS_ERR_NOMEM;
         }
@@ -476,7 +513,9 @@ void bfs_cache_destroy(bfs_cache_t *cache)
         }
         free(cache->slots);
     }
+    free(cache->buckets);
     cache->slots = NULL;
+    cache->buckets = NULL;
     cache->num_slots = 0;
     cache->clock = 0;
     cache->dirty_count = 0;
@@ -491,8 +530,11 @@ void bfs_cache_destroy(bfs_cache_t *cache)
 void bfs_cache_invalidate(bfs_cache_t *cache)
 {
     if (!cache || !cache->slots) return;
+    for (uint32_t i = 0; i < 1u << (32u - cache->bucket_shift); i++)
+        cache->buckets[i] = NO_SLOT;
     for (uint32_t i = 0; i < cache->num_slots; i++) {
         cache->slots[i].blk = UINT32_MAX;
+        cache->slots[i].next = NO_SLOT;
         cache->slots[i].node_crc_valid = false;
         cache->slots[i].node_structure_valid = false;
         cache->slots[i].dirty = false;
