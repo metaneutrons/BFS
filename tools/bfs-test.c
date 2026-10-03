@@ -1231,7 +1231,8 @@ static void test_morphos_packets(void)
 
 static BOOL scan_exall_batches(BPTR lock, struct ExAllControl *control)
 {
-    ULONG storage[40];
+    /* Room for one entry with its comment, so the listing takes batches. */
+    ULONG storage[16];
     ULONG seen = 0, batches = 0;
     for (;;) {
         BOOL more = ExAll(lock, (struct ExAllData *)storage, sizeof(storage), ED_COMMENT, control);
@@ -1816,6 +1817,38 @@ static void test_exall_delete(void)
     if (control) FreeDosObject(DOS_EXALLCONTROL, control);
     if (!remove_items("exalldel", count)) ok = FALSE;
     if (ok) pass(T); else fail(T, "batched listing while deleting or cleanup");
+}
+
+/* ExAll packs entries by the requested type and the real comment length,
+ * so 40 entries without comments fit one 4 KiB call with ED_COMMENT. */
+static void test_exall_packing(void)
+{
+    const char *T = "exallpack_50";
+    UBYTE seen[64] = {0};
+    static ULONG storage[1024];
+    struct ExAllControl *control = AllocDosObject(DOS_EXALLCONTROL, NULL);
+    BOOL ok = control && make_items("exallpack", 40);
+    BPTR lock = ok ? Lock(vpath("exallpack"), SHARED_LOCK) : 0;
+    if (!lock) ok = FALSE;
+    if (ok) {
+        BOOL more = ExAll(lock, (struct ExAllData *)storage, 4096, ED_COMMENT, control);
+        if (more) {
+            ok = FALSE;
+            ExAllEnd(lock, (struct ExAllData *)storage, 4096, ED_COMMENT, control);
+        }
+        if (ok) ok = IoErr() == ERROR_NO_MORE_ENTRIES && control->eac_Entries == 40;
+        struct ExAllData *entry = (struct ExAllData *)storage;
+        for (ULONG n = 0; ok && n < control->eac_Entries; n++, entry = entry->ed_Next) {
+            ok = entry && mark_item((const char *)entry->ed_Name, 40, seen) &&
+                 entry->ed_Type == ST_FILE && entry->ed_Size == 0 &&
+                 entry->ed_Comment && entry->ed_Comment[0] == 0;
+        }
+        if (ok) ok = all_seen(seen, 40);
+    }
+    if (lock) UnLock(lock);
+    if (control) FreeDosObject(DOS_EXALLCONTROL, control);
+    if (!remove_items("exallpack", 40)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "one packed call with every entry");
 }
 
 /* ── Test table ────────────────────────────────────────────── */

@@ -1509,6 +1509,20 @@ typedef struct {
     bfs_err_t err;
 } exall_optimized_ctx_t;
 
+/* Size of the fixed part of an ExAllData entry for each type. */
+static LONG ExAllFixedSize(LONG type)
+{
+    switch (type) {
+    case ED_NAME: return (LONG)offsetof(struct ExAllData, ed_Type);
+    case ED_TYPE: return (LONG)offsetof(struct ExAllData, ed_Size);
+    case ED_SIZE: return (LONG)offsetof(struct ExAllData, ed_Prot);
+    case ED_PROTECTION: return (LONG)offsetof(struct ExAllData, ed_Days);
+    case ED_DATE: return (LONG)offsetof(struct ExAllData, ed_Comment);
+    case ED_COMMENT: return (LONG)offsetof(struct ExAllData, ed_OwnerUID);
+    default: return (LONG)sizeof(struct ExAllData);
+    }
+}
+
 /* Stateful callback for single-pass linear directory scanning.
  * Manages skip_count, pattern matching, and user buffer overflow. */
 static bool exall_optimized_cb(const char *name, uint8_t name_len,
@@ -1533,16 +1547,6 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
         return true;
     }
 
-    /* Calculate entry size */
-    LONG entry_size = (LONG)sizeof(struct ExAllData) + name_len + 1;
-    if (ec->type >= ED_COMMENT) entry_size += 80;
-    entry_size = (entry_size + 3) & ~3;
-
-    if ((size_t)(ec->end - ec->pos) < (size_t)entry_size) {
-        ec->overflow = true;
-        return false; /* stop scan */
-    }
-
     /* Read inode for metadata fields */
     bfs_inode_t inode;
     uint64_t fsize = 0; uint32_t prot = 0;
@@ -1556,10 +1560,29 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
         fsize = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
         prot = bfs_be32(inode.protection);
     }
+    char cbuf[BFS_COMMENT_BUFFER];
+    int cl = 0;
+    if (ec->type >= ED_COMMENT) {
+        /* ED_COMMENT implies ED_SIZE, so the inode has been read. */
+        ec->err = ReadComment(ec->h, inode_nr, &inode, cbuf, &cl);
+        if (ec->err != BFS_OK) return false;
+    }
+
+    /* Only the fields up to the requested type, then the strings, as
+     * dos.library lays out ExAllData. An entry that does not fit is left for
+     * the next call. */
+    LONG fixed_size = ExAllFixedSize(ec->type);
+    LONG entry_size = fixed_size + name_len + 1;
+    if (ec->type >= ED_COMMENT) entry_size += cl + 1;
+    entry_size = (entry_size + 3) & ~3;
+    if ((size_t)(ec->end - ec->pos) < (size_t)entry_size) {
+        ec->overflow = true;
+        return false; /* stop scan */
+    }
 
     struct ExAllData *ead = (struct ExAllData *)ec->pos;
-    memset(ead, 0, entry_size);
-    UBYTE *str = ec->pos + sizeof(struct ExAllData);
+    memset(ead, 0, fixed_size);
+    UBYTE *str = ec->pos + fixed_size;
     memcpy(str, namebuf, name_len); str[name_len] = 0;
     ead->ed_Name = str; str += name_len + 1;
     if (ec->type >= ED_TYPE) ead->ed_Type = (entry_type == BFS_INODE_DIR) ? ST_USERDIR : ST_FILE;
@@ -1571,14 +1594,6 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
         ead->ed_Ticks = bfs_be16(inode.modify_ticks);
     }
     if (ec->type >= ED_COMMENT) {
-        /* ED_COMMENT implies ED_SIZE, so the inode has been read. */
-        char cbuf[BFS_COMMENT_BUFFER];
-        int cl;
-        bfs_err_t comment_err = ReadComment(ec->h, inode_nr, &inode, cbuf, &cl);
-        if (comment_err != BFS_OK) {
-            ec->err = comment_err;
-            return false;
-        }
         memcpy(str, cbuf, cl); str[cl] = 0;
         ead->ed_Comment = str;
     }
