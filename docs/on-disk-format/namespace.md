@@ -83,6 +83,9 @@ flag as authoritative: without it they report no comment and do not search
 the directory tree, and deleting the inode leaves no entry behind. A set flag
 without an entry, an entry without the flag, a second entry for one inode, or
 an entry whose inode does not exist is corruption, which a checker reports.
+Setting a comment is the exception on the writer side: the current writer
+looks up the entry itself and replaces a single stray entry or clears a stray
+flag instead of failing.
 
 ## Metadata interpretation
 

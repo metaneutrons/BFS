@@ -146,7 +146,9 @@ the comment bytes are stored; v3 does not change its record.
 Readers treat the flag as authoritative. With the flag clear, `get_comment`
 reports no comment and delete, rmdir and replacing rename do not search the
 directory tree. Writers change the entry and the flag in the same transaction:
-`set_comment` writes the inode only when the flag changes. A clear flag next to
+`set_comment` writes the inode only when the flag changes. Because setting a
+comment is rare, it reads the directory tree itself and so repairs a stray
+entry or flag instead of failing on it. A clear flag next to
 an existing entry is corruption, which the checker reports; an ordinary
 operation would leave that entry orphaned.
 
