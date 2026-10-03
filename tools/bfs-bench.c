@@ -100,25 +100,11 @@ static void get_time(struct timeval *tv)
 static BPTR out;
 
 
-static void format_drive(const char *drive, const char *volname)
-{
-    char cmd[128];
-    int i = 0, j = 0;
-    const char *p = "C:Format DRIVE ";
-    while (p[j]) cmd[i++] = p[j++];
-    j = 0; while (drive[j]) cmd[i++] = drive[j++];
-    p = " NAME "; j = 0; while (p[j]) cmd[i++] = p[j++];
-    j = 0; while (volname[j]) cmd[i++] = volname[j++];
-    p = " NOICONS QUICK"; j = 0; while (p[j]) cmd[i++] = p[j++];
-    cmd[i] = 0;
-    BPTR nil = Open((STRPTR)"NIL:", MODE_NEWFILE);
-    Execute((STRPTR)cmd, nil, nil);
-    if (nil) Close(nil);
-}
+static ULONG text_length(const char *s) { ULONG n = 0; while (*s++) n++; return n; }
 
 static void print(const char *s)
 {
-    Write(out, (APTR)s, strlen(s));
+    Write(out, (APTR)s, text_length(s));
 }
 
 static void print_num(ULONG n)
@@ -140,8 +126,6 @@ static void print_hex(ULONG n)
     buf[8] = 0;
     print(buf);
 }
-
-static ULONG strlen(const char *s) { ULONG n=0; while(*s++){n++;} return n; }
 
 /* ── File operations ───────────────────────────────────────── */
 
