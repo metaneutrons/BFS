@@ -101,6 +101,13 @@ typedef struct bfs_bio_ops {
     bfs_err_t (*read_blocks)(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count, void *buf);
     bfs_err_t (*write_blocks)(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count,
                               const void *buf, uint32_t *written);
+
+    /* Optional: the resident bytes of blk if they hold a node whose CRC and
+     * node-local structure are already validated for context (see
+     * node_structure_valid), else NULL. The pointer is read-only and valid
+     * only until the next call into this BIO. */
+    const void *(*peek_valid_node)(bfs_bio_t *bio, bfs_blk_t blk,
+                                   const bfs_node_validation_t *context);
 } bfs_bio_ops_t;
 
 /* Base block device — all implementations embed this as first member */
@@ -238,6 +245,12 @@ static inline bfs_err_t bfs_bio_flush_deferred(bfs_bio_t *bio) {
 
 static inline void bfs_bio_discard_deferred(bfs_bio_t *bio, bfs_blk_t blk) {
     if (bfs_bio_can_defer_nodes(bio)) bio->ops->discard_deferred(bio, blk);
+}
+
+static inline const void *bfs_bio_peek_valid_node(
+    bfs_bio_t *bio, bfs_blk_t blk, const bfs_node_validation_t *context) {
+    return bio && bio->ops && context && bio->ops->peek_valid_node
+               ? bio->ops->peek_valid_node(bio, blk, context) : NULL;
 }
 
 static inline bool bfs_bio_node_structure_valid(

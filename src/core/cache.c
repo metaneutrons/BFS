@@ -289,6 +289,18 @@ static void cache_mark_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk)
         }
 }
 
+static bool slot_structure_valid(const bfs_cache_slot_t *slot,
+                                 const bfs_node_validation_t *context)
+{
+    const bfs_node_validation_t *known = &slot->node_validation;
+    return slot->node_structure_valid && slot->node_crc_valid &&
+           known->key_compare == context->key_compare &&
+           known->key_size == context->key_size &&
+           known->val_size == context->val_size &&
+           known->block_size == context->block_size &&
+           known->block_count == context->block_count;
+}
+
 static bool cache_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
                                         const bfs_node_validation_t *context)
 {
@@ -296,15 +308,23 @@ static bool cache_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
     for (uint32_t i = 0; i < c->num_slots; i++) {
         const bfs_cache_slot_t *slot = &c->slots[i];
         if (slot->blk != blk) continue;
-        const bfs_node_validation_t *known = &slot->node_validation;
-        return slot->node_structure_valid && slot->node_crc_valid &&
-               known->key_compare == context->key_compare &&
-               known->key_size == context->key_size &&
-               known->val_size == context->val_size &&
-               known->block_size == context->block_size &&
-               known->block_count == context->block_count;
+        return slot_structure_valid(slot, context);
     }
     return false;
+}
+
+static const void *cache_peek_valid_node(bfs_bio_t *bio, bfs_blk_t blk,
+                                         const bfs_node_validation_t *context)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    for (uint32_t i = 0; i < c->num_slots; i++) {
+        bfs_cache_slot_t *slot = &c->slots[i];
+        if (slot->blk != blk) continue;
+        if (!slot_structure_valid(slot, context)) return NULL;
+        slot->age = ++c->clock;
+        return slot->data;
+    }
+    return NULL;
 }
 
 static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
@@ -374,6 +394,7 @@ static const bfs_bio_ops_t cache_ops = {
     .discard_deferred = cache_discard_deferred,
     .read_blocks = cache_read_blocks,
     .write_blocks = cache_write_blocks,
+    .peek_valid_node = cache_peek_valid_node,
 };
 
 void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)
