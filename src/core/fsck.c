@@ -216,13 +216,16 @@ static bool comment_entry_cb(const void *key, const void *value, void *context)
         return true;
     }
     if (set->count == set->capacity) {
+        /* The freestanding Amiga runtime has no realloc. */
         size_t capacity = set->capacity ? set->capacity * 2u : 16u;
         uint32_t *items = capacity > SIZE_MAX / sizeof(*items) ? NULL :
-                          realloc(set->items, capacity * sizeof(*items));
+                          malloc(capacity * sizeof(*items));
         if (!items) {
             set->failed = true;
             return false;
         }
+        for (size_t i = 0; i < set->count; i++) items[i] = set->items[i];
+        free(set->items);
         set->items = items;
         set->capacity = capacity;
     }
