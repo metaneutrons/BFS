@@ -86,34 +86,37 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     err = bfs_sb_write_raw(bio, backup_off, &sb);
     if (err != BFS_OK) return err;
 
-    bfs_fs_t fs;
-    memset(&fs, 0, sizeof(fs));
-    fs.pending_frees_cap = BFS_PENDING_FREES_MAX;
-    bfs_lock_init(&fs.lock);
-    fs.bio = bio;
-    fs.txn.bio = bio;
-    fs.txn.sb = sb;
-    fs.txn.sb_new = sb;
-    fs.txn.sb_new.txn_id = bfs_be64(2);
-    fs.txn.active = true;
-    fs.live_txn_id = 2;
-    fs.next_ino = BFS_ROOT_INO + 1;
-    fs.options = options;
+    /* The filesystem state holds the deferred-free array and is far too large
+     * for the Amiga handler stack, which also carries the packet frame. */
+    bfs_fs_t *fs = malloc(sizeof(*fs));
+    if (!fs) return BFS_ERR_NOMEM;
+    memset(fs, 0, sizeof(*fs));
+    fs->pending_frees_cap = BFS_PENDING_FREES_MAX;
+    bfs_lock_init(&fs->lock);
+    fs->bio = bio;
+    fs->txn.bio = bio;
+    fs->txn.sb = sb;
+    fs->txn.sb_new = sb;
+    fs->txn.sb_new.txn_id = bfs_be64(2);
+    fs->txn.active = true;
+    fs->live_txn_id = 2;
+    fs->next_ino = BFS_ROOT_INO + 1;
+    fs->options = options;
 
-    err = bfs_freespace_init(&fs.freespace, bio, BFS_BLK_NULL, fs.live_txn_id);
+    err = bfs_freespace_init(&fs->freespace, bio, BFS_BLK_NULL, fs->live_txn_id);
     if (err != BFS_OK) goto out;
-    fs.freespace.tree.txn_id_ptr = &fs.live_txn_id;
-    fs.freespace.tree.free_sink = bfs_fs_free_sink(&fs);
-    fs.freespace.sb = &fs.txn.sb_new;
-    fs.freespace.committed_sb = &fs.txn.sb;
+    fs->freespace.tree.txn_id_ptr = &fs->live_txn_id;
+    fs->freespace.tree.free_sink = bfs_fs_free_sink(fs);
+    fs->freespace.sb = &fs->txn.sb_new;
+    fs->freespace.committed_sb = &fs->txn.sb;
 
     uint32_t epool_count = BFS_EMERGENCY_POOL_SIZE;
     if (epool_count > data_blocks / 4) epool_count = data_blocks / 4;
     for (uint32_t i = 0; i < epool_count; i++)
         sb.emergency_pool[i] = bfs_be32(data_start + i);
     sb.emergency_count = bfs_be32(epool_count);
-    fs.txn.sb_new.emergency_count = sb.emergency_count;
-    memcpy(fs.txn.sb_new.emergency_pool, sb.emergency_pool, sizeof(sb.emergency_pool));
+    fs->txn.sb_new.emergency_count = sb.emergency_count;
+    memcpy(fs->txn.sb_new.emergency_pool, sb.emergency_pool, sizeof(sb.emergency_pool));
 
     uint32_t greserve = bc / BFS_GRESERVE_FRACTION;
     if (greserve < BFS_GRESERVE_TARGET)
@@ -123,58 +126,59 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
     if (greserve > BFS_GRESERVE_CAP) greserve = BFS_GRESERVE_CAP;
     if (greserve >= data_blocks) greserve = data_blocks / BFS_GRESERVE_TINY_DIV;
     sb.global_reserve = bfs_be32(greserve);
-    fs.txn.sb_new.global_reserve = sb.global_reserve;
-    fs.freespace.global_reserve = greserve;
+    fs->txn.sb_new.global_reserve = sb.global_reserve;
+    fs->freespace.global_reserve = greserve;
 
     bfs_blk_t backup_blk = (bfs_blk_t)(backup_off / bs);
     if (backup_blk >= data_start + epool_count && backup_blk < bc) {
-        err = bfs_freespace_add(&fs.freespace, data_start + epool_count, backup_blk - (data_start + epool_count));
+        err = bfs_freespace_add(&fs->freespace, data_start + epool_count, backup_blk - (data_start + epool_count));
         if (err != BFS_OK) goto out;
-        err = bfs_freespace_add(&fs.freespace, backup_blk + 1, bc - (backup_blk + 1));
+        err = bfs_freespace_add(&fs->freespace, backup_blk + 1, bc - (backup_blk + 1));
         if (err != BFS_OK) goto out;
     } else {
-        err = bfs_freespace_add(&fs.freespace, data_start + epool_count, data_blocks - epool_count);
+        err = bfs_freespace_add(&fs->freespace, data_start + epool_count, data_blocks - epool_count);
         if (err != BFS_OK) goto out;
     }
-    err = bfs_freespace_refill_reserve(&fs.freespace);
+    err = bfs_freespace_refill_reserve(&fs->freespace);
     if (err != BFS_OK) goto out;
 
-    err = bfs_dir_init(&fs.dir_tree, bio, bfs_freespace_allocator(&fs.freespace),
-                  BFS_BLK_NULL, fs.live_txn_id);
+    err = bfs_dir_init(&fs->dir_tree, bio, bfs_freespace_allocator(&fs->freespace),
+                  BFS_BLK_NULL, fs->live_txn_id);
     if (err != BFS_OK) goto out;
-    fs.dir_tree.tree.txn_id_ptr = &fs.live_txn_id;
-    fs.dir_tree.tree.free_sink = bfs_fs_free_sink(&fs);
-    err = bfs_dir_insert(&fs.dir_tree, 0, "/", 1, BFS_ROOT_INO, BFS_INODE_DIR);
+    fs->dir_tree.tree.txn_id_ptr = &fs->live_txn_id;
+    fs->dir_tree.tree.free_sink = bfs_fs_free_sink(fs);
+    err = bfs_dir_insert(&fs->dir_tree, 0, "/", 1, BFS_ROOT_INO, BFS_INODE_DIR);
     if (err != BFS_OK) goto out;
 
-    err = bfs_inode_init(&fs.inode_tree, bio, bfs_freespace_allocator(&fs.freespace),
-                    BFS_BLK_NULL, fs.live_txn_id);
+    err = bfs_inode_init(&fs->inode_tree, bio, bfs_freespace_allocator(&fs->freespace),
+                    BFS_BLK_NULL, fs->live_txn_id);
     if (err != BFS_OK) goto out;
-    fs.inode_tree.txn_id_ptr = &fs.live_txn_id;
-    fs.inode_tree.free_sink = bfs_fs_free_sink(&fs);
+    fs->inode_tree.txn_id_ptr = &fs->live_txn_id;
+    fs->inode_tree.free_sink = bfs_fs_free_sink(fs);
     bfs_inode_t root_inode;
     memset(&root_inode, 0, sizeof(root_inode));
     root_inode.inode_nr = bfs_be32(BFS_ROOT_INO);
     root_inode.type = bfs_be32(BFS_INODE_DIR);
     root_inode.link_count = bfs_be32(1);
-    err = bfs_inode_write(&fs.inode_tree, BFS_ROOT_INO, &root_inode);
+    err = bfs_inode_write(&fs->inode_tree, BFS_ROOT_INO, &root_inode);
     if (err != BFS_OK) goto out;
 
-    err = bfs_freespace_return_reserve(&fs.freespace);
+    err = bfs_freespace_return_reserve(&fs->freespace);
     if (err != BFS_OK) goto out;
 
     /* Use the normal full commit boundary so COW blocks retired while building
      * the initial trees are reclaimed instead of leaked on a fresh volume. */
-    fs.mounted = true;
-    err = bfs_txn_commit(&fs);
-    fs.mounted = false;
+    fs->mounted = true;
+    err = bfs_txn_commit(fs);
+    fs->mounted = false;
     /* Replace the remaining bootstrap-only copy before reporting success.
      * Either superblock must mount the completed filesystem on a fresh disk. */
-    if (err == BFS_OK) err = bfs_sb_write(bio, &fs.txn.sb);
+    if (err == BFS_OK) err = bfs_sb_write(bio, &fs->txn.sb);
 out:
-    free(fs.pending_frees_dynamic);
-    bfs_btree_owned_destroy(&fs.owned_nodes);
-    bfs_lock_destroy(&fs.lock);
+    free(fs->pending_frees_dynamic);
+    bfs_btree_owned_destroy(&fs->owned_nodes);
+    bfs_lock_destroy(&fs->lock);
+    free(fs);
     if (err != BFS_OK) return err;
     return bfs_bio_sync(bio);
 }

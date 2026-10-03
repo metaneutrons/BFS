@@ -1619,7 +1619,6 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
     case BFS_ACTION_CHECK: {
         ULONG *summary = (ULONG *)pkt->dp_Arg1;
-        bfs_fs_t checked;
         bfs_fsck_report_t report;
         bfs_err_t err;
 
@@ -1639,14 +1638,19 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             break;
         }
         SendPendingNotifications(h);
-        err = bfs_fs_mount_readonly(&checked, &h->cache.bio);
-        if (err != BFS_OK) {
-            res2 = Pfs4ToDosError(err);
+        /* A filesystem state is too large for the packet stack frame. */
+        bfs_fs_t *checked = AllocVec(sizeof(*checked), MEMF_CLEAR);
+        if (!checked) {
+            res2 = ERROR_NO_FREE_STORE;
             break;
         }
-        err = bfs_fs_check(&checked, false, &report);
-        if (bfs_fs_unmount(&checked) != BFS_OK && err == BFS_OK)
-            err = BFS_ERR_IO;
+        err = bfs_fs_mount_readonly(checked, &h->cache.bio);
+        if (err == BFS_OK) {
+            err = bfs_fs_check(checked, false, &report);
+            if (bfs_fs_unmount(checked) != BFS_OK && err == BFS_OK)
+                err = BFS_ERR_IO;
+        }
+        FreeVec(checked);
         if (err != BFS_OK && err != BFS_ERR_CORRUPT) {
             res2 = Pfs4ToDosError(err);
             break;
