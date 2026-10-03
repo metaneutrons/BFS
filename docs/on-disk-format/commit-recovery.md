@@ -11,7 +11,10 @@ on a next transaction ID. Mutating a B+tree writes new nodes, changes in-memory
 tree roots, and retains older nodes until publication. A normal commit:
 
 1. Requests a device sync first when `BFS_OPT_DATA_ORDERED` is set.
-2. Returns unused allocator-reserve blocks to the free-space tree.
+2. With snapshots, decrements the reference count of every retired block that
+   a snapshot still shares; such a block loses only its live reference and
+   stays allocated. Blocks that become free wait for step 5. Returns unused
+   allocator-reserve blocks to the free-space tree.
 3. Copies current directory, inode, free-space, refcount, snapshot, and inode
    allocation state into the working superblock.
 4. Writes and syncs the older superblock slot with that working state.
@@ -44,7 +47,8 @@ atomicity of an in-place overwrite.
 
 A crash after root publication and before deferred reclamation can leave
 allocated but unreachable blocks. That is space leakage, not an alternate
-namespace. `bfs check IMAGE --repair` rebuilds free-space accounting. The
+namespace. Reference counts are exact in every published state, because the
+decrements of shared blocks are part of the transaction they belong to. `bfs check IMAGE --repair` rebuilds free-space accounting. The
 deferred-free queue itself is never written as a recovery journal.
 
 ## Snapshot deletion state machine

@@ -428,12 +428,10 @@ static int committed_state(bfs_fs_t *fs)
 
 /* Mount the device image without a cache, check it and report its state.
  *
- * With a snapshot, a crash after the superblock publication but before the
- * post-publication refcount reclamation leaves refcount mismatches that the
- * checker reports as errors. That gap exists without deferred nodes as well
- * (it reproduces with write-through nodes on main), so the snapshot variant
- * requires a mountable image with a consistent namespace and readable data,
- * and a clean check only for the old state. */
+ * With a snapshot, commits take the refcount-aware path: blocks that become
+ * free are reclaimed after the superblock publication. A crash in between
+ * leaks them, which the format permits, so the snapshot variant accepts
+ * leaked blocks in the new state. Checker errors are never accepted. */
 static int verify_image(bfs_bio_t *bio)
 {
     bfs_fs_t fs;
@@ -445,9 +443,13 @@ static int verify_image(bfs_bio_t *bio)
     if (bfs_fs_mount_readonly(&check, bio) != BFS_OK) return -2;
     bfs_err_t err = bfs_fs_check(&check, false, &report);
     bfs_fs_unmount(&check);
-    bool clean = err == BFS_OK && !report.errors && !report.warnings &&
-                 !report.leaked_blocks;
-    if (!clean && !(baseline_snapshot && state == 2)) return -3;
+    bool leak_allowed = baseline_snapshot && state == 2;
+    bool clean = err == BFS_OK && !report.errors &&
+                 (report.leaked_blocks ? leak_allowed && report.warnings == 1
+                                       : !report.warnings);
+    if (!clean) fprintf(stderr, "  fsck: state %d errors %u warnings %u leaked %u\n",
+                        state, report.errors, report.warnings, report.leaked_blocks);
+    if (!clean) return -3;
     return state;
 }
 

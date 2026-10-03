@@ -20,6 +20,7 @@
 
 #include "bfs_txn.h"
 #include "bfs_fs.h"
+#include "bfs_internal.h"
 #include <string.h>
 #include <stdlib.h>
 #ifdef BFS_PERF_PROBE
@@ -216,10 +217,62 @@ static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
     return err;
 }
 
+/* With snapshots, a retired block that a snapshot still shares only loses the
+ * live reference: its count drops and it stays allocated. Doing this before
+ * publication keeps the published refcounts exact, so a crash before the
+ * post-publication reclaim can only leak unshared blocks. Blocks that become
+ * free still wait for publication. If the queue cannot hold the refcount
+ * tree's own retirements, the rest keep the post-publication path. */
+static bfs_err_t settle_shared_retirements(bfs_fs_t *fs)
+{
+    uint32_t count = fs->pending_count;
+    if (count == 0) return BFS_OK;
+    if (count > bfs_fs_pending_cap(fs) ||
+        (uint64_t)count * sizeof(bfs_blk_t) > SIZE_MAX)
+        return BFS_ERR_CORRUPT;
+    bfs_blk_t *blocks = malloc(count * sizeof(*blocks));
+    if (!blocks) return BFS_ERR_NOMEM;
+    /* The source capacity and exactly matching allocation size were checked above. */
+    memcpy(blocks, bfs_fs_pending_items(fs), count * sizeof(*blocks)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    fs->pending_count = 0;
+    bfs_err_t err = BFS_OK;
+    uint32_t i = 0;
+    for (; i < count; i++) {
+        uint32_t refs;
+        err = bfs_refcount_get_checked(&fs->refcount, blocks[i], &refs);
+        if (err != BFS_OK) break;
+        if (refs > 1) {
+            /* Room for every block not yet decided plus this mutation's
+             * own retirements. */
+            uint64_t need = (uint64_t)fs->pending_count + (count - i) +
+                            BFS_BTREE_MAX_OP_FREES;
+            if (need > UINT32_MAX ||
+                bfs_fs_reserve_pending(fs, (uint32_t)need) != BFS_OK)
+                break;
+            bool freed = false;
+            err = bfs_refcount_dec(&fs->refcount, blocks[i], &freed);
+            if (err == BFS_OK && freed) err = BFS_ERR_CORRUPT;
+            if (err != BFS_OK) break;
+        } else {
+            bfs_fs_pending_items(fs)[fs->pending_count++] = blocks[i];
+        }
+    }
+    /* Undecided blocks keep the post-publication path. */
+    if (err == BFS_OK && !preserve_pending_tail(fs, blocks, i, count))
+        err = BFS_ERR_NOSPC;
+    free(blocks);
+    return err;
+}
+
 static bfs_err_t txn_commit_working(bfs_fs_t *fs)
 {
     bool sealed = false;
-    bfs_err_t err = bfs_freespace_seal_commit(fs, &sealed);
+    bfs_err_t err = BFS_OK;
+    if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
+        err = settle_shared_retirements(fs);
+        if (err != BFS_OK) return err;
+    }
+    err = bfs_freespace_seal_commit(fs, &sealed);
     if (err != BFS_OK) return err;
     if (!sealed) {
         err = bfs_freespace_return_reserve(&fs->freespace);
