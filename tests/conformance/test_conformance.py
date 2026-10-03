@@ -242,11 +242,33 @@ class ConformanceTests(unittest.TestCase):
             self.assertEqual(run(str(ORACLE), str(image)).returncode, 3)
             self.assertEqual(run(str(FIXTURE_WRITER), str(Path(temporary) / "future.bfs")).returncode, 0)
             future = Path(temporary) / "future.bfs"
-            incompatible = bytearray(future.read_bytes())
-            put_be32(incompatible, 4, 3)
-            put_be32(incompatible, 236, zlib.crc32(incompatible[:236]) & 0xffffffff)
-            future.write_bytes(incompatible)
-            self.assertEqual(run(str(ORACLE), str(future)).returncode, 3)
+            original = future.read_bytes()
+            for version in (2, 4):
+                incompatible = bytearray(original)
+                put_be32(incompatible, 4, version)
+                put_be32(incompatible, 236, zlib.crc32(incompatible[:236]) & 0xffffffff)
+                future.write_bytes(incompatible)
+                self.assertEqual(run(str(ORACLE), str(future)).returncode, 3)
+
+    def test_oracle_rejects_a_comment_flag_without_entry(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "flag.bfs"
+            self.assertEqual(run(str(FIXTURE_WRITER), str(image)).returncode, 0)
+            data = bytearray(image.read_bytes())
+            block_size, root = be32(data, 8), be32(data, 36)
+            node_start = root * block_size
+            node = data[node_start:node_start + block_size]
+            self.assertEqual(int.from_bytes(node[20:22], "big"), 0)
+            capacity = (block_size - 28) // (4 + 56)
+            flags = 28 + capacity * 4 + 44  # first inode value: the root directory
+            put_be32(node, flags, be32(node, flags) | 0x2)
+            update_node_crc(node)
+            data[node_start:node_start + block_size] = node
+            image.write_bytes(data)
+            completed = run(str(ORACLE), str(image))
+        self.assertEqual(completed.returncode, 3)
+        self.assertEqual(json.loads(completed.stdout)["code"],
+                         "comment flag disagrees with comment entries")
 
     def test_oracle_rejects_a_cycle_with_a_valid_node_crc(self):
         with tempfile.TemporaryDirectory() as temporary:
