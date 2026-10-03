@@ -250,6 +250,39 @@ static bfs_err_t extent_insert_raw(bfs_extent_tree_t *et, uint32_t file_block,
     return bfs_btree_insert(&et->tree, &key, &val);
 }
 
+/* Map a new run in the tree. A run that continues the record before it on
+ * disk extends that record instead of adding one, so a file appended in
+ * many steps keeps a short tree. A checksummed record covers one block and
+ * is never extended. */
+static bfs_err_t extent_tree_map(bfs_extent_tree_t *et, uint32_t file_block,
+                                 bfs_blk_t disk_block, uint32_t count, uint32_t crc)
+{
+    uint32_t key = bfs_be32(file_block + (count - 1));
+    uint32_t found_key;
+    bfs_extent_val_t found_val;
+    bfs_err_t err = bfs_btree_search_floor(&et->tree, &key, &found_key, &found_val);
+    if (err == BFS_ERR_NOTFOUND)
+        return extent_insert_raw(et, file_block, disk_block, count, crc);
+    if (err != BFS_OK) return err;
+
+    uint32_t fb = bfs_be32(found_key);
+    uint32_t len = bfs_be32(found_val.length);
+    bfs_blk_t disk = bfs_be32(found_val.disk_block);
+    if (!extent_range_valid(et, disk, len))
+        return BFS_ERR_CORRUPT;
+    /* The last record starting at or before the run's end must end before
+     * the run begins; otherwise part of the run is mapped already. */
+    if (fb >= file_block || len > file_block - fb)
+        return BFS_ERR_EXISTS;
+    if (!et->data_checksums && crc == 0 && found_val.data_crc32 == 0 &&
+        len == file_block - fb && disk_block == disk + len &&
+        count <= UINT32_MAX - len) {
+        found_val.length = bfs_be32(len + count);
+        return bfs_btree_update(&et->tree, &found_key, &found_val);
+    }
+    return extent_insert_raw(et, file_block, disk_block, count, crc);
+}
+
 /* Map a new run. The first run at block 0 of an empty file is stored inline;
  * a contiguous continuation extends it; anything else needs a tree. */
 static bfs_err_t extent_map(bfs_extent_tree_t *et, uint32_t file_block,
@@ -278,7 +311,9 @@ static bfs_err_t extent_map(bfs_extent_tree_t *et, uint32_t file_block,
         et->inline_crc = crc;
         return BFS_OK;
     }
-    return extent_insert_raw(et, file_block, disk_block, count, crc);
+    if (et->tree.root == BFS_BLK_NULL)
+        return extent_insert_raw(et, file_block, disk_block, count, crc);
+    return extent_tree_map(et, file_block, disk_block, count, crc);
 }
 
 bfs_err_t bfs_extent_map_block(bfs_extent_tree_t *et, uint32_t file_block,
@@ -662,11 +697,9 @@ bfs_err_t bfs_extent_truncate_batch(bfs_extent_tree_t *et, uint32_t from_block,
             uint32_t len = tc.lens[i];
             bfs_blk_t dblk = tc.dblks[i];
             /* Reject a corrupt/implausible extent read from disk before its
-             * length drives the free loop below. Legitimate extents are tiny
-             * (the writer appends one block at a time); a length past the device,
-             * or so long that it plus one delete's worst-case node frees could
-             * never fit the deferred-free queue (so a retry could never help),
-             * can only be corruption. */
+             * length drives the free loop below. A record may be long (the
+             * writer extends it with contiguous runs), but one that reaches
+             * past the device or into reserved blocks can only be corruption. */
             if (!extent_range_valid(et, dblk, len)) {
                 return BFS_ERR_CORRUPT;
             }

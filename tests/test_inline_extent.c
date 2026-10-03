@@ -5,7 +5,7 @@
  * A file whose content is one contiguous run from block 0 keeps it in the
  * inode. These tests cover growth, every conversion into a tree, truncation,
  * checksummed volumes, handle refresh, snapshots, validation, the checker and
- * the HAS_COMMENT flag.
+ * the HAS_COMMENT flag, and how a tree record grows with contiguous runs.
  */
 
 #include "test_harness.h"
@@ -400,6 +400,104 @@ static void test_snapshot_shares_and_copies_inline_blocks(void)
     teardown(true);
 }
 
+static bool count_record(const void *key, const void *val, void *ctx)
+{
+    (void)key; (void)val;
+    (*(uint32_t *)ctx)++;
+    return true;
+}
+
+static uint32_t record_count(bfs_extent_tree_t *et)
+{
+    uint32_t count = 0;
+    if (bfs_btree_scan(&et->tree, NULL, count_record, &count) != BFS_OK) return UINT32_MAX;
+    return count;
+}
+
+/* After a file has a tree, a contiguous run extends its last record. The
+ * extension belongs to the live tree only: a snapshot keeps its shorter
+ * record, and reference counts stay exact through the snapshot's deletion. */
+static void test_tree_record_grows_with_contiguous_runs(void)
+{
+    TEST_ASSERT(setup(0));
+    uint32_t ino;
+    bfs_file_t file;
+    TEST_ASSERT(create_open("grow", &ino, &file));
+    bfs_blk_t run = bfs_freespace_alloc(&fs.freespace, 5);
+    TEST_ASSERT(run != BFS_BLK_NULL);
+    TEST_ASSERT(fill_blocks(run, 5, 0x60));
+
+    TEST_ASSERT_EQ(bfs_extent_map_block(&file.extents, 1, run, 0), BFS_OK);
+    TEST_ASSERT(file.extents.tree.root != BFS_BLK_NULL);
+    TEST_ASSERT(publish(&file, 2u * BS));
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_snapshot_create(&fs, "short"), BFS_OK);
+
+    TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_extent_map_run(&file.extents, 2, run + 1, 3), BFS_OK);
+    TEST_ASSERT_EQ(bfs_extent_map_block(&file.extents, 5, run + 4, 0), BFS_OK);
+    TEST_ASSERT_EQ(record_count(&file.extents), 1);
+    TEST_ASSERT(publish(&file, 6u * BS));
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT(check_clean());
+
+    uint8_t old_block[BS];
+    bool snapshot_inline = true;
+    TEST_ASSERT(read_snapshot_block("short", ino, 1, old_block, &snapshot_inline));
+    TEST_ASSERT(!snapshot_inline);
+    TEST_ASSERT_EQ(old_block[0], 0x60);
+    TEST_ASSERT(!read_snapshot_block("short", ino, 2, old_block, &snapshot_inline));
+    TEST_ASSERT_EQ(bfs_file_seek(&file, BS, BFS_SEEK_SET), (int64_t)BS);
+    TEST_ASSERT_EQ(bfs_file_read(&file, block_buf, 4u * BS), (int32_t)(4u * BS));
+    for (uint32_t i = 0; i < 4; i++) TEST_ASSERT_EQ(block_buf[i * BS], 0x60 + i);
+
+    uint32_t id;
+    TEST_ASSERT_EQ(bfs_snapshot_find_by_name(&fs, "short", &id, NULL), BFS_OK);
+    TEST_ASSERT_EQ(bfs_snapshot_delete(&fs, id), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT(check_clean());
+    TEST_ASSERT_EQ(bfs_fs_delete_file(&fs, BFS_ROOT_INO, "grow", 4), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT(check_clean());
+    teardown(true);
+}
+
+/* Multi-block appends through the file layer to a file that starts with a
+ * hole: the allocator places consecutive runs next to each other, so they
+ * share a record. */
+static void test_file_appends_after_hole_share_records(void)
+{
+    TEST_ASSERT(setup(0));
+    uint32_t ino;
+    bfs_file_t file;
+    TEST_ASSERT(create_open("append", &ino, &file));
+    TEST_ASSERT_EQ(bfs_file_seek(&file, 4u * BS, BFS_SEEK_SET), (int64_t)(4u * BS));
+    for (uint32_t i = 0; i < 12; i++) {
+        for (uint32_t b = 0; b < 4; b++) memset(block_buf + b * BS, 0x10 + (int)(4 * i + b), BS);
+        TEST_ASSERT_EQ(bfs_file_write(&file, block_buf, sizeof(block_buf)), (int32_t)sizeof(block_buf));
+        if (i % 4 == 3) TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    }
+    TEST_ASSERT(file.extents.tree.root != BFS_BLK_NULL);
+    /* The block after the hole is placed on its own; the following 47 blocks
+     * arrive as runs and end up in one record. */
+    TEST_ASSERT_EQ(record_count(&file.extents), 2);
+    bfs_extent_val_t value;
+    TEST_ASSERT_EQ(bfs_extent_lookup_val(&file.extents, 51, &value), BFS_OK);
+    TEST_ASSERT_EQ(bfs_be32(value.length), 47);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT(check_clean());
+    TEST_ASSERT_EQ(bfs_file_seek(&file, 4u * BS, BFS_SEEK_SET), (int64_t)(4u * BS));
+    for (uint32_t i = 0; i < 48; i++) {
+        TEST_ASSERT_EQ(bfs_file_read(&file, block_buf, BS), (int32_t)BS);
+        TEST_ASSERT_EQ(block_buf[0], 0x10 + i);
+        TEST_ASSERT_EQ(block_buf[BS - 1], 0x10 + i);
+    }
+    TEST_ASSERT_EQ(bfs_fs_delete_file(&fs, BFS_ROOT_INO, "append", 6), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT(check_clean());
+    teardown(true);
+}
+
 static bfs_inode_t valid_file_inode(uint32_t ino)
 {
     bfs_inode_t inode;
@@ -662,6 +760,8 @@ TEST_SUITE_BEGIN("Format v3 inline extents and inode flags")
     TEST_RUN(test_second_handle_sees_inline_growth);
     TEST_RUN(test_delete_reclaims_inline_blocks);
     TEST_RUN(test_snapshot_shares_and_copies_inline_blocks);
+    TEST_RUN(test_tree_record_grows_with_contiguous_runs);
+    TEST_RUN(test_file_appends_after_hole_share_records);
     TEST_RUN(test_inode_validation_rules);
     TEST_RUN(test_inline_range_avoids_reserved_blocks);
     TEST_RUN(test_checker_rejects_shared_inline_blocks);

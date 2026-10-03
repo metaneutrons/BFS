@@ -173,8 +173,9 @@ An entry maps logical blocks `[file_block, file_block + length)` to physical
 blocks `[disk_block, disk_block + length)`. `length` is nonzero and the mapped
 range must stay within the device, start at or after the data-start block, and
 avoid the B-containing block, emergency pool, and active allocator reserve.
-The current writer commonly emits one-block extents; a valid reader must handle
-longer representable extents.
+The current writer extends the last record when a new run continues it both
+logically and on disk, except on a checksummed volume (below). A reader must
+not assume any particular record length or split.
 
 With `BFS_OPT_DATA_CHECKSUMS`, `data_crc32` is the CRC of the full physical
 data block for a single-block checked extent. A stored zero disables validation.
