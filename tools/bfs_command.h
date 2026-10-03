@@ -28,5 +28,6 @@ int bfs_snapshot_command(const char *operation, const char *drive,
                          const char *name, const char *option);
 int bfs_check_command(const char *drive);
 int bfs_info_command(const char *drive);
+int bfs_commit_command(const char *drive, const char *mode);
 
 #endif

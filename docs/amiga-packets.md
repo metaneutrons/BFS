@@ -63,12 +63,34 @@ structural errors, warnings, leaked blocks and repaired blocks. Invalid
 arguments return DOSFALSE / `ERROR_BAD_NUMBER`; a handler or I/O failure
 returns DOSFALSE with the translated DOS error.
 
-The handler creates a short-lived read-only mount over its cached block device,
-checks the last committed filesystem state, then drops that mount. It never
-repairs or commits data, and does not modify the handler's live mount. Packet
+The handler first commits outstanding delayed changes, then creates a
+short-lived read-only mount over its cached block device, checks the committed
+filesystem state and drops that mount. It never repairs data and does not
+otherwise modify the handler's live mount. Packet
 handling is serial, so ordinary filesystem I/O waits until the scan completes.
 `bfs check DRIVE:` is the matching AmigaDOS command. Older handlers return
 `ERROR_ACTION_NOT_KNOWN`.
+
+## Commit policy
+
+`BFS_ACTION_COMMIT_MODE` (3012) queries or changes when the handler commits.
+Argument 1 is 0 to query, 1 for delayed commits (the default) or 2 for a
+commit at every close and standalone metadata packet. Switching to 2 first
+commits outstanding changes and fails with the translated DOS error if that
+commit fails. Result 1 is the active mode after the request; any other
+argument returns DOSFALSE / `ERROR_BAD_NUMBER`. The mode lasts until the
+volume is mounted again; the Mountlist `Control` string `COMMIT=SYNC` selects
+mode 2 at mount time. `bfs commit DRIVE: [SYNC|DELAYED]` is the matching
+AmigaDOS command. Older handlers return `ERROR_ACTION_NOT_KNOWN`.
+
+In delayed mode the handler commits 200 ms after the last packet and at the
+latest one second after the timer was first armed, and before it replies to
+`ACTION_FLUSH`, `ACTION_INHIBIT(DOSTRUE)`, `ACTION_WRITE_PROTECT(DOSTRUE)`,
+`BFS_ACTION_CHECK`, snapshot creation and deletion, `ACTION_FORMAT` and
+`ACTION_DIE`. Notifications are sent when a change completes, not when it is
+committed. A keyboard reset handler commits before a warm reboot when
+`keyboard.device` accepts it. A disk change discards uncommitted changes, as
+before.
 
 ## Snapshot volumes
 

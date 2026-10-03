@@ -249,6 +249,23 @@ make emulator-test
    bfs format BFS: Work
    ```
 
+### Commit policy
+
+The handler commits changes in the background, like PFS3: 200 ms after the
+last packet, and at the latest one second after the first uncommitted change.
+It also commits before replying to `ACTION_FLUSH`, before an inhibit, write
+protection, `bfs check`, snapshot operations, a format or `ACTION_DIE`, and
+from a keyboard reset handler before a warm reboot. A successful `Close` is
+therefore durable within about one second, or immediately after a flush. A
+crash or power loss in that window loses the changes since the last commit but
+never leaves an inconsistent volume, because copy-on-write and the dual
+superblocks remain the only publication mechanism.
+
+`Control = "COMMIT=SYNC"` in the Mountlist entry restores a commit at every
+close and every standalone metadata operation. `bfs commit DRIVE: SYNC` or
+`DELAYED` switches a mounted volume until the next mount; `bfs commit DRIVE:`
+shows the active mode.
+
 ## License
 
 [Mozilla Public License 2.0](LICENSE)

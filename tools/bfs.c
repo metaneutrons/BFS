@@ -9,6 +9,7 @@
 #include <proto/dos.h>
 
 #include "bfs_command.h"
+#include "commit_protocol.h"
 
 #ifndef BFS_VERSION
 #define BFS_VERSION "development"
@@ -33,6 +34,43 @@ static void usage(void)
     bfs_put("  bfs snapshot unmount TARGET:\n");
     bfs_put("  bfs check DRIVE:\n");
     bfs_put("  bfs info DRIVE:\n");
+    bfs_put("  bfs commit DRIVE: [SYNC|DELAYED]\n");
+}
+
+/* Show or change when the handler commits: DELAYED (default) commits within
+ * about a second, SYNC at every close and metadata change. */
+int bfs_commit_command(const char *drive, const char *mode)
+{
+    struct MsgPort *port = DeviceProc(drive);
+    LONG requested = BFS_COMMIT_MODE_QUERY;
+    LONG result;
+
+    if (mode) {
+        if (bfs_equal_nocase(mode, "sync")) {
+            requested = BFS_COMMIT_MODE_SYNC;
+        } else if (bfs_equal_nocase(mode, "delayed")) {
+            requested = BFS_COMMIT_MODE_DELAYED;
+        } else {
+            usage();
+            return 10;
+        }
+    }
+    if (!port) {
+        bfs_put("Cannot find handler for ");
+        bfs_put(drive);
+        bfs_put("\n");
+        return 20;
+    }
+    result = DoPkt(port, BFS_ACTION_COMMIT_MODE, requested, 0, 0, 0, 0);
+    if (result != BFS_COMMIT_MODE_SYNC && result != BFS_COMMIT_MODE_DELAYED) {
+        bfs_put("Commit mode not available: ");
+        bfs_putnum(IoErr());
+        bfs_put("\n");
+        return 20;
+    }
+    bfs_put(drive);
+    bfs_put(result == BFS_COMMIT_MODE_SYNC ? " commits SYNC\n" : " commits DELAYED\n");
+    return 0;
 }
 
 int bfs_info_command(const char *drive)
@@ -99,6 +137,13 @@ int main(void)
             result = 10;
         } else {
             result = bfs_info_command(first);
+        }
+    } else if (bfs_equal_nocase(command, "commit")) {
+        if (!first || third || fourth) {
+            usage();
+            result = 10;
+        } else {
+            result = bfs_commit_command(first, second);
         }
     } else if (bfs_equal_nocase(command, "check")) {
         if (!first || second || third || fourth) {

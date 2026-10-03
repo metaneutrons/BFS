@@ -41,6 +41,16 @@ reload itself fails, mutations, sync and file operations reject further use unti
 the filesystem is abandoned or unmounted and mounted again. An error from a
 commit does not prove that no part of the commit reached storage.
 
+The AmigaOS handler commits delayed changes from a timer: within about one
+second of a change, and before it replies to a flush, inhibit, write
+protection, check, snapshot, format or shutdown packet. A successful AmigaDOS
+`Close` is therefore not yet durable; a crash before the next commit loses the
+changes since the last one and recovers the previous committed state. The
+Mountlist option `COMMIT=SYNC` commits at every close and standalone metadata
+operation instead. A failed timed commit is retried about once per second and
+reported by the next flush; if the core latched a recovery error, later
+mutating packets fail as well.
+
 A writable mount synchronizes the selected readable state before exposing
 allocation or running mount-time recovery. This also covers a newer valid
 superblock left only in volatile device storage by a failed publication flush.

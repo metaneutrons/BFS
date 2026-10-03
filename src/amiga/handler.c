@@ -19,6 +19,7 @@
 #include <dos/exall.h>
 #include <devices/trackdisk.h>
 #include <devices/timer.h>
+#include <devices/keyboard.h>
 #include <utility/tagitem.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
@@ -94,6 +95,7 @@
 #endif
 
 #include "dos_packets.h"
+#include "commit_protocol.h"
 
 #define BFS_SNAPSHOT_ENTRY_META_OFFSET 260
 #define BFS_SNAPSHOT_ENTRY_SIZE        284
@@ -152,7 +154,28 @@ struct bfs_handler {
     BYTE diskchange_sig;
     struct IOExtTD *diskchange_req;
     struct Interrupt *diskchange_int;
+    /* Commit policy. Delayed: commit after a quiet period, at the latest
+     * after COMMIT_MAX_PERIODS, and before any packet that needs durable or
+     * quiescent state. Sync: also commit at every close and standalone
+     * metadata packet. */
+    bool sync_commits;
+    bool commit_failed;      /* after a failure, retry only every max period */
+    bool commit_activity;    /* a packet arrived since the timer was armed */
+    bool commit_timer_pending;
+    uint8_t commit_periods;  /* timer periods since the timer was first armed */
+    struct MsgPort *commit_port;
+    struct timerequest *commit_timer;
+    bool commit_timer_open;
+    /* Keyboard reset handler: commit before a warm reboot. */
+    BYTE reset_sig;
+    struct IOStdReq *reset_req;
+    struct Interrupt *reset_int;
+    bool reset_handler_added;
 };
+
+/* Delayed commit timing: one quiet period of 200 ms, at most five periods. */
+#define COMMIT_PERIOD_MICROS 200000
+#define COMMIT_MAX_PERIODS   5
 
 /* The source handler keeps this code resident for each mounted snapshot.
  * Snapshot workers are explicit processes with this entry point, rather than
@@ -185,6 +208,14 @@ struct DosLibrary *DOSBase;
 static ULONG DiskChangeHandler(register struct bfs_handler *h __asm("a1"))
 {
     Signal(h->msgport->mp_SigTask, 1UL << h->diskchange_sig);
+    return 0;
+}
+
+/* Runs in the keyboard reset interrupt: the handler task commits and then
+ * acknowledges with KBD_RESETHANDLERDONE. */
+static ULONG ResetHandler(register struct bfs_handler *h __asm("a1"))
+{
+    Signal(h->msgport->mp_SigTask, 1UL << h->reset_sig);
     return 0;
 }
 
@@ -1154,6 +1185,180 @@ static void SendNotifications(struct bfs_handler *h)
     }
 }
 
+/* Notifications report that a change is visible, not that it is durable, so
+ * they do not wait for the commit. */
+static void SendPendingNotifications(struct bfs_handler *h)
+{
+    if (h->notify_pending) SendNotifications(h);
+    h->notify_pending = false;
+}
+
+/* ── Commit policy ─────────────────────────────────────────── */
+
+/* Commit the live transaction if it holds changes. */
+static bfs_err_t CommitDirty(struct bfs_handler *h)
+{
+    if (!h->dirty || !h->fs.mounted) return BFS_OK;
+    bfs_err_t err = bfs_fs_sync(&h->fs);
+    if (err != BFS_OK) return err;
+    h->dirty = false;
+    h->commit_failed = false;
+    return BFS_OK;
+}
+
+static bool ControlWordMatches(const UBYTE *text, LONG length, const char *word)
+{
+    LONG word_length = (LONG)strlen(word);
+    for (LONG start = 0; start + word_length <= length; start++) {
+        LONG i = 0;
+        while (i < word_length) {
+            UBYTE c = text[start + i];
+            if (c >= 'a' && c <= 'z') c = (UBYTE)(c - 'a' + 'A');
+            if (c != (UBYTE)word[i]) break;
+            i++;
+        }
+        if (i == word_length) return true;
+    }
+    return false;
+}
+
+/* Mountlist: Control = "COMMIT=SYNC" restores a commit at every close and
+ * standalone metadata packet. DOS stores the Control string as a BSTR. */
+static bool ControlRequestsSyncCommits(const struct DosEnvec *env)
+{
+    if (!env || env->de_TableSize < DE_CONTROL || !env->de_Control) return false;
+    const UBYTE *control = (const UBYTE *)BADDR(env->de_Control);
+    return ControlWordMatches(control + 1, control[0], "COMMIT=SYNC");
+}
+
+static void OpenCommitTimer(struct bfs_handler *h)
+{
+    h->commit_port = CreateMsgPort();
+    if (!h->commit_port) return;
+    h->commit_timer = (struct timerequest *)CreateIORequest(h->commit_port,
+                                                            sizeof(struct timerequest));
+    if (!h->commit_timer) return;
+    h->commit_timer_open = OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_VBLANK,
+                                      (struct IORequest *)h->commit_timer, 0) == 0;
+}
+
+static void CloseCommitTimer(struct bfs_handler *h)
+{
+    if (h->commit_timer_pending) {
+        AbortIO((struct IORequest *)h->commit_timer);
+        WaitIO((struct IORequest *)h->commit_timer);
+        h->commit_timer_pending = false;
+    }
+    if (h->commit_timer_open) CloseDevice((struct IORequest *)h->commit_timer);
+    h->commit_timer_open = false;
+    if (h->commit_timer) DeleteIORequest((struct IORequest *)h->commit_timer);
+    h->commit_timer = NULL;
+    if (h->commit_port) DeleteMsgPort(h->commit_port);
+    h->commit_port = NULL;
+}
+
+static ULONG CommitTimerMask(const struct bfs_handler *h)
+{
+    return h->commit_timer_open ? 1UL << h->commit_port->mp_SigBit : 0;
+}
+
+/* Arm the commit timer while delayed changes are outstanding. */
+static void ArmCommitTimer(struct bfs_handler *h)
+{
+    if (!h->commit_timer_open || h->commit_timer_pending || !h->dirty ||
+        h->sync_commits || !h->fs.mounted)
+        return;
+    h->commit_timer->tr_node.io_Command = TR_ADDREQUEST;
+    h->commit_timer->tr_time.tv_secs = 0;
+    h->commit_timer->tr_time.tv_micro = COMMIT_PERIOD_MICROS;
+    SendIO((struct IORequest *)h->commit_timer);
+    h->commit_timer_pending = true;
+    h->commit_activity = false;
+}
+
+/* A timer period ended: commit after a quiet period or at the latest after
+ * COMMIT_MAX_PERIODS. Errors stay latched in the core; ACTION_FLUSH and the
+ * next packets report them. */
+static void CommitTimerExpired(struct bfs_handler *h)
+{
+    if (!h->commit_timer_pending ||
+        !CheckIO((struct IORequest *)h->commit_timer))
+        return;
+    WaitIO((struct IORequest *)h->commit_timer);
+    h->commit_timer_pending = false;
+    if (!h->dirty) {
+        h->commit_periods = 0;
+        return;
+    }
+    if (h->commit_periods < COMMIT_MAX_PERIODS) h->commit_periods++;
+    bool due = h->commit_periods >= COMMIT_MAX_PERIODS ||
+               (!h->commit_activity && !h->commit_failed);
+    if (due && !h->sync_commits) {
+        if (CommitDirty(h) == BFS_OK) {
+            SendPendingNotifications(h);
+        } else {
+            h->commit_failed = true;
+        }
+        h->commit_periods = 0;
+    }
+}
+
+/* PFS3 commits from a keyboard reset handler as well. Best effort: without
+ * keyboard.device, a warm reboot loses the changes of the last second. */
+static void AddCommitResetHandler(struct bfs_handler *h)
+{
+    h->reset_sig = AllocSignal(-1);
+    if (h->reset_sig < 0) return;
+    h->reset_int = (struct Interrupt *)AllocVec(sizeof(struct Interrupt), MEMF_CLEAR | MEMF_PUBLIC);
+    if (!h->reset_int) return;
+    h->reset_int->is_Node.ln_Type = NT_INTERRUPT;
+    h->reset_int->is_Node.ln_Name = (char *)"BFS-Commit";
+    h->reset_int->is_Data = h;
+    h->reset_int->is_Code = (void (*)(void))ResetHandler;
+    h->reset_req = (struct IOStdReq *)CreateIORequest(h->devport, sizeof(struct IOStdReq));
+    if (!h->reset_req) return;
+    if (OpenDevice((CONST_STRPTR)"keyboard.device", 0,
+                   (struct IORequest *)h->reset_req, 0) != 0) {
+        DeleteIORequest((struct IORequest *)h->reset_req);
+        h->reset_req = NULL;
+        return;
+    }
+    h->reset_req->io_Command = KBD_ADDRESETHANDLER;
+    h->reset_req->io_Data = h->reset_int;
+    h->reset_req->io_Length = 0;
+    h->reset_handler_added = DoIO((struct IORequest *)h->reset_req) == 0;
+}
+
+static void RemoveCommitResetHandler(struct bfs_handler *h)
+{
+    if (h->reset_handler_added) {
+        h->reset_req->io_Command = KBD_REMRESETHANDLER;
+        h->reset_req->io_Data = h->reset_int;
+        h->reset_req->io_Length = 0;
+        DoIO((struct IORequest *)h->reset_req);
+        h->reset_handler_added = false;
+    }
+    if (h->reset_req) {
+        CloseDevice((struct IORequest *)h->reset_req);
+        DeleteIORequest((struct IORequest *)h->reset_req);
+        h->reset_req = NULL;
+    }
+    if (h->reset_int) FreeVec(h->reset_int);
+    h->reset_int = NULL;
+    if (h->reset_sig >= 0) FreeSignal(h->reset_sig);
+    h->reset_sig = -1;
+}
+
+/* The machine resets once every handler has answered. */
+static void CommitBeforeReset(struct bfs_handler *h)
+{
+    if (CommitDirty(h) == BFS_OK) SendPendingNotifications(h);
+    h->reset_req->io_Command = KBD_RESETHANDLERDONE;
+    h->reset_req->io_Data = h->reset_int;
+    h->reset_req->io_Length = 0;
+    DoIO((struct IORequest *)h->reset_req);
+}
+
 /* ── Packet dispatch ───────────────────────────────────────── */
 
 typedef struct {
@@ -1423,7 +1628,14 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         /* The handler processes packets serially. Scan a separate read-only
          * mount so CHECK observes the last committed state without changing
-         * the live write transaction. */
+         * the live write transaction. Delayed changes are committed first so
+         * the check covers everything accepted so far. */
+        err = CommitDirty(h);
+        if (err != BFS_OK) {
+            res2 = Pfs4ToDosError(err);
+            break;
+        }
+        SendPendingNotifications(h);
         err = bfs_fs_mount_readonly(&checked, &h->cache.bio);
         if (err != BFS_OK) {
             res2 = Pfs4ToDosError(err);
@@ -1691,15 +1903,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case ACTION_END: {
         bfs_file_t *f = (bfs_file_t *)pkt->dp_Arg1;
         if (!FindOpenFile(h, f)) { res2 = ERROR_INVALID_LOCK; break; }
-        bfs_err_t err = BFS_OK;
-        if (h->dirty) {
-            err = bfs_fs_sync(&h->fs);
-            if (err == BFS_OK) {
-                h->dirty = false;
-                if (h->notify_pending) SendNotifications(h);
-                h->notify_pending = false;
-            }
-        }
+        /* Delayed commits leave the change to the commit timer. */
+        bfs_err_t err = h->sync_commits ? CommitDirty(h) : BFS_OK;
+        if (err == BFS_OK) SendPendingNotifications(h);
         FreeOpenFile(h, f);
         res1 = (err == BFS_OK) ? DOSTRUE : DOSFALSE;
         res2 = Pfs4ToDosError(err);
@@ -1989,10 +2195,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     }
 
     /* ── INHIBIT ───────────────────────────────────────────── */
-    case ACTION_INHIBIT:
+    case ACTION_INHIBIT: {
+        /* Whoever inhibits the volume may read or replace it directly. */
+        bfs_err_t err = pkt->dp_Arg1 ? CommitDirty(h) : BFS_OK;
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        SendPendingNotifications(h);
         res1 = DOSTRUE;
         res2 = 0;
         break;
+    }
 
     /* ── ACTION_MAKE_LINK (hard/soft links) ────────────────── */
     case ACTION_MAKE_LINK: {
@@ -2468,11 +2679,32 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         bfs_err_t err = bfs_fs_sync(&h->fs);
         if (err == BFS_OK) {
             h->dirty = false;
-            if (h->notify_pending) SendNotifications(h);
-            h->notify_pending = false;
+            h->commit_failed = false;
+            SendPendingNotifications(h);
         }
         res1 = (err == BFS_OK) ? DOSTRUE : DOSFALSE;
         res2 = Pfs4ToDosError(err);
+        break;
+    }
+
+    /* ── BFS_ACTION_COMMIT_MODE ────────────────────────────── */
+    case BFS_ACTION_COMMIT_MODE: {
+        LONG mode = pkt->dp_Arg1;
+        if (mode != BFS_COMMIT_MODE_QUERY && mode != BFS_COMMIT_MODE_DELAYED &&
+            mode != BFS_COMMIT_MODE_SYNC) {
+            res2 = ERROR_BAD_NUMBER;
+            break;
+        }
+        if (mode == BFS_COMMIT_MODE_SYNC) {
+            bfs_err_t err = CommitDirty(h);
+            if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+            SendPendingNotifications(h);
+            h->sync_commits = true;
+        } else if (mode == BFS_COMMIT_MODE_DELAYED) {
+            h->sync_commits = false;
+        }
+        res1 = h->sync_commits ? BFS_COMMIT_MODE_SYNC : BFS_COMMIT_MODE_DELAYED;
+        res2 = 0;
         break;
     }
 
@@ -2482,11 +2714,16 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         break;
 
     /* ── ACTION_WRITE_PROTECT ──────────────────────────────── */
-    case ACTION_WRITE_PROTECT:
+    case ACTION_WRITE_PROTECT: {
+        /* Changes accepted before protection must not reach the medium
+         * later, so they are committed first. */
+        bfs_err_t err = pkt->dp_Arg1 ? CommitDirty(h) : BFS_OK;
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         h->write_protected = (pkt->dp_Arg1 != 0);
         res1 = DOSTRUE;
         res2 = 0;
         break;
+    }
 
     /* ── ACTION_FORMAT ─────────────────────────────────────── */
     case ACTION_FORMAT: {
@@ -2734,8 +2971,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         break;
     }
 
-    /* Sync standalone metadata operations. File mutations are committed by
-     * ACTION_END so rapid writes to one open handle share one transaction. */
+    /* Standalone metadata operations are complete here. In sync mode they
+     * are committed; file mutations wait for ACTION_END so rapid writes to
+     * one open handle share one transaction. */
     if (h->dirty && res2 == 0 &&
                     (pkt->dp_Type == ACTION_DELETE_OBJECT ||
                      pkt->dp_Type == ACTION_CREATE_DIR ||
@@ -2747,11 +2985,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                      pkt->dp_Type == ACTION_SET_OWNER ||
                      pkt->dp_Type == ACTION_RENAME_DISK ||
                      pkt->dp_Type == ACTION_FORMAT)) {
-        bfs_err_t sync_err = bfs_fs_sync(&h->fs);
+        bfs_err_t sync_err = h->sync_commits ? CommitDirty(h) : BFS_OK;
         if (sync_err == BFS_OK) {
-            h->dirty = false;
-            if (h->notify_pending) SendNotifications(h);
-            h->notify_pending = false;
+            SendPendingNotifications(h);
         } else {
             res1 = DOSFALSE;
             res2 = Pfs4ToDosError(sync_err);
@@ -2843,6 +3079,7 @@ void EntryPoint(void)
 
     /* Allocate handler state */
     h = AllocMem(sizeof(struct bfs_handler) + sizeof(amiga_bio_t), MEMF_CLEAR);
+    if (h) h->reset_sig = -1;
     if (!h) {
         pkt->dp_Res1 = DOSFALSE;
         pkt->dp_Res2 = ERROR_NO_FREE_STORE;
@@ -3005,6 +3242,14 @@ void EntryPoint(void)
         }
     }
 
+    /* Live volumes commit delayed changes from a timer and before a reset.
+     * Snapshot workers are read-only. */
+    if (!snapshot_startup) {
+        h->sync_commits = ControlRequestsSyncCommits(h->dosenvec);
+        OpenCommitTimer(h);
+        AddCommitResetHandler(h);
+    }
+
     /* Reply to startup packet — success */
     pkt->dp_Res1 = DOSTRUE;
     pkt->dp_Res2 = 0;
@@ -3019,8 +3264,13 @@ void EntryPoint(void)
 
     /* ── Main packet loop ──────────────────────────────────── */
     while (running) {
+        ULONG reset_mask = h->reset_handler_added ? 1UL << h->reset_sig : 0;
         ULONG sigs = Wait((1UL << h->msgport->mp_SigBit) |
-                          ((h->diskchange_sig >= 0) ? (1UL << h->diskchange_sig) : 0));
+                          ((h->diskchange_sig >= 0) ? (1UL << h->diskchange_sig) : 0) |
+                          CommitTimerMask(h) | reset_mask);
+
+        if (sigs & CommitTimerMask(h)) CommitTimerExpired(h);
+        if (sigs & reset_mask) CommitBeforeReset(h);
 
         if (h->diskchange_sig >= 0 && (sigs & (1UL << h->diskchange_sig))) {
             /* The old medium is gone: discard cached state without writing it
@@ -3036,16 +3286,19 @@ void EntryPoint(void)
 
         while ((pkt = GetPacket(h->msgport)) != NULL) {
             HandlePacket(pkt, h);
+            h->commit_activity = true;
             if (h->should_exit) {
                 running = FALSE;
                 break;
             }
             if (h->media_changed && !HandlerIsInUse(h)) TryRemountMedia(h);
         }
-
+        if (running) ArmCommitTimer(h);
     }
 
     /* Cleanup */
+    RemoveCommitResetHandler(h);
+    CloseCommitTimer(h);
     h->devnode->dn_Task = NULL;
     if (h->diskchange_req) {
         h->diskchange_req->iotd_Req.io_Command = TD_REMCHANGEINT;

@@ -22,6 +22,7 @@
 #include <proto/dos.h>
 #include "../src/amiga/dos_packets.h"
 #include "snapshot_protocol.h"
+#include "commit_protocol.h"
 
 /* Request 32KB stack from AmigaOS */
 LONG __stack = 32768;
@@ -1455,6 +1456,34 @@ static void test_mixed_sizes(void)
         char rel[16]; rel[0] = 'm'; rel[1] = '0' + i; rel[2] = 0;
         DeleteFile(vpath(rel));
     }
+    pass(T);
+}
+
+/* ── Commit policy ─────────────────────────────────────────── */
+
+/* The default policy commits from a timer; SYNC restores per-operation
+ * commits. Files stay readable across mode changes and timed commits. */
+static void test_commit_mode(void)
+{
+    const char *T = "commit_47";
+    const char *p = vpath("commit.dat");
+    struct MsgPort *port = DeviceProc(vol);
+    if (!port) { fail(T, "no port"); return; }
+    if (DoPkt(port, BFS_ACTION_COMMIT_MODE, BFS_COMMIT_MODE_QUERY, 0, 0, 0, 0) !=
+        BFS_COMMIT_MODE_DELAYED) { fail(T, "default"); return; }
+    if (!write_seeded(p, 5000, 0x4747)) { fail(T, "write delayed"); return; }
+    if (DoPkt(port, BFS_ACTION_COMMIT_MODE, BFS_COMMIT_MODE_SYNC, 0, 0, 0, 0) !=
+        BFS_COMMIT_MODE_SYNC) { fail(T, "sync"); DeleteFile(p); return; }
+    if (!verify_seeded(p, 5000, 0x4747)) { fail(T, "verify sync"); DeleteFile(p); return; }
+    if (DoPkt(port, BFS_ACTION_COMMIT_MODE, 7, 0, 0, 0, 0) != DOSFALSE ||
+        IoErr() != ERROR_BAD_NUMBER) { fail(T, "invalid"); DeleteFile(p); return; }
+    if (!write_seeded(p, 6000, 0x4848)) { fail(T, "write sync"); DeleteFile(p); return; }
+    if (DoPkt(port, BFS_ACTION_COMMIT_MODE, BFS_COMMIT_MODE_DELAYED, 0, 0, 0, 0) !=
+        BFS_COMMIT_MODE_DELAYED) { fail(T, "delayed"); DeleteFile(p); return; }
+    if (!write_seeded(p, 7000, 0x4949)) { fail(T, "rewrite"); DeleteFile(p); return; }
+    Delay(75); /* past the latest timed commit */
+    if (!verify_seeded(p, 7000, 0x4949)) { fail(T, "verify timed"); DeleteFile(p); return; }
+    DeleteFile(p);
     pass(T);
 }
 
