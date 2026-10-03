@@ -273,6 +273,61 @@ static void test_version_diagnostics(void)
     bfs_sb_describe_unsupported(sb, NULL);
 }
 
+/* Rewrite one superblock slot with another version or option word. */
+static bfs_err_t patch_slot(bfs_bio_t *bio, unsigned slot, uint32_t version,
+                            uint32_t options, bool damage)
+{
+    bfs_superblock_t sb;
+    bfs_err_t err = bfs_sb_read(bio, &sb);
+    if (err != BFS_OK && err != BFS_ERR_UNSUPPORTED) return err;
+    sb.version = bfs_be32(version);
+    sb.options = bfs_be32(options);
+    sb.crc32 = bfs_be32(bfs_sb_compute_crc(&sb));
+    if (damage) sb.crc32 ^= bfs_be32(1);
+    uint64_t offset = slot ? bfs_default_backup_offset(BLOCK_COUNT, BLOCK_SIZE) : 0;
+    return bfs_sb_write_raw(bio, offset, &sb);
+}
+
+static void test_only_older_formats_are_replaceable(void)
+{
+    static const struct {
+        uint32_t version_a, options_a, version_b, options_b;
+        bool damage_b, replaceable;
+    } cases[] = {
+        { BFS_SB_VERSION, 0, BFS_SB_VERSION, 0, false, false },     /* current */
+        { 2, 0, 2, 0, false, true },                                /* older */
+        { 2, 0, BFS_SB_VERSION, 0, false, true },                   /* interrupted format */
+        { 2, BFS_OPT_DATA_ORDERED, 1, 0, false, true },
+        { 2, 0, BFS_SB_VERSION + 1, 0, false, false },              /* newer copy */
+        { BFS_SB_VERSION + 1, 0, 2, 0, false, false },
+        { 2, 0x80000000u, 2, 0, false, false },                     /* unknown option */
+        { 2, 0, BFS_SB_VERSION + 1, 0, true, true },                /* damage is no format */
+    };
+    for (unsigned i = 0; i < sizeof(cases) / sizeof(cases[0]); i++) {
+        unlink(IMAGE);
+        bfs_bio_t *bio = bio_emu_create(IMAGE, BLOCK_SIZE, BLOCK_COUNT);
+        TEST_ASSERT(bio != NULL);
+        TEST_ASSERT_EQ(bfs_fs_format(bio, "Old", 0), BFS_OK);
+        TEST_ASSERT_EQ(patch_slot(bio, 1, cases[i].version_b, cases[i].options_b,
+                                  cases[i].damage_b), BFS_OK);
+        TEST_ASSERT_EQ(patch_slot(bio, 0, cases[i].version_a, cases[i].options_a,
+                                  false), BFS_OK);
+        uint32_t size = bio->block_size;
+        TEST_ASSERT_EQ(bfs_sb_replaceable(bio, (uint64_t)BLOCK_SIZE * BLOCK_COUNT),
+                       cases[i].replaceable);
+        TEST_ASSERT_EQ(bio->block_size, size);
+        if (cases[i].replaceable) {
+            /* Formatting replaces both copies and the result mounts. */
+            TEST_ASSERT_EQ(bfs_fs_format(bio, "New", 0), BFS_OK);
+            bfs_fs_t fs;
+            TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+            TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+        }
+        bfs_bio_close(bio);
+    }
+    unlink(IMAGE);
+}
+
 TEST_SUITE_BEGIN("Format Compatibility")
     TEST_RUN(test_incompatible_copies_never_write);
     TEST_RUN(test_damaged_version_or_options_still_recover);
@@ -281,4 +336,5 @@ TEST_SUITE_BEGIN("Format Compatibility")
     TEST_RUN(test_probe_stops_on_incompatible_copy);
     TEST_RUN(test_probe_failure_restores_geometry);
     TEST_RUN(test_version_diagnostics);
+    TEST_RUN(test_only_older_formats_are_replaceable);
 TEST_SUITE_END()

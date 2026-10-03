@@ -15,7 +15,7 @@ uint32_t bfs_sb_compute_crc(const bfs_superblock_t *sb);
 
 /* Validate a superblock: checks magic, version, CRC32, and block size.
  * Returns BFS_OK if valid, BFS_ERR_UNSUPPORTED for an intact but unknown
- * version/options in the v2 envelope, or BFS_ERR_CORRUPT for damaged data. */
+ * version/options in the frozen envelope, or BFS_ERR_CORRUPT for damaged data. */
 bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb);
 
 /* Describe an intact unsupported envelope, including its actual version.
@@ -35,6 +35,12 @@ bfs_err_t bfs_sb_read(bfs_bio_t *bio, bfs_superblock_t *sb_out);
  * Unsupported formats stop probing. Failure restores the original geometry. */
 bfs_err_t bfs_sb_probe(bfs_bio_t *bio, uint64_t device_bytes,
                        bfs_superblock_t *sb_out);
+
+/* True when formatting would replace only formats this driver supersedes:
+ * at least one intact superblock copy carries an older version, and no intact
+ * copy at slot A or at any geometry's slot B carries a newer version or an
+ * unknown option bit. Reads only; the original geometry is restored. */
+bool bfs_sb_replaceable(bfs_bio_t *bio, uint64_t device_bytes);
 
 /* Write superblock to the older of the two alternating slots.
  * Computes and stores CRC32 before writing. */

@@ -24,20 +24,31 @@ def run_checked(argv):
     subprocess.run([str(value) for value in argv], check=True, shell=False)  # nosec B603
 
 
-def alter_copy(image, slot, options=False, damaged=False):
+CURRENT_VERSION = 3
+
+
+def alter_copy(image, slot, options=False, damaged=False, version=CURRENT_VERSION + 1):
     with image.open("r+b") as stream:
         offset = image.stat().st_size // 2 if slot else 0
         stream.seek(offset)
         header = bytearray(stream.read(240))
-        if struct.unpack_from(">II", header) != (0x42465300, 2):
-            raise ValueError("fixture does not contain a v2 superblock")
+        if struct.unpack_from(">II", header) != (0x42465300, CURRENT_VERSION):
+            raise ValueError("fixture does not contain a current superblock")
         if zlib.crc32(header[:236]) != struct.unpack_from(">I", header, 236)[0]:
             raise ValueError("fixture CRC is invalid before mutation")
-        struct.pack_into(">I", header, 56 if options else 4, 0x80000000 if options else 3)
+        struct.pack_into(">I", header, 56 if options else 4, 0x80000000 if options else version)
         if not damaged:
             struct.pack_into(">I", header, 236, zlib.crc32(header[:236]))
         stream.seek(offset)
         stream.write(header)
+
+
+def superblock_version(image):
+    with image.open("rb") as stream:
+        header = stream.read(240)
+    if zlib.crc32(header[:236]) != struct.unpack_from(">I", header, 236)[0]:
+        raise ValueError("superblock CRC is invalid")
+    return struct.unpack_from(">I", header, 4)[0]
 
 
 def prepare_media():
@@ -63,15 +74,19 @@ def main():
     if not emulator:
         raise ValueError("fs-uae is required")
     work, rom, clean = prepare_media()
+    # expected: 0 compatible, 4 newer version, 3 unknown options. The "v2"
+    # scenario carries an older format in both slots, which bfs format replaces.
     scenarios = [("format", None, False, False, 0, True, False),
                  ("snapshot-commands", None, False, False, 0, False, True),
-                 ("v2", None, False, False, 0, False, False),
-                 ("new-primary", 0, False, False, 3, False, False),
-                 ("new-backup", 1, False, False, 3, False, False),
-                 ("options-primary", 0, True, False, 2, False, False),
-                 ("options-backup", 1, True, False, 2, False, False),
+                 ("v3", None, False, False, 0, False, False),
+                 ("v2", "both", False, False, 0, False, False),
+                 ("new-primary", 0, False, False, 4, False, False),
+                 ("new-backup", 1, False, False, 4, False, False),
+                 ("options-primary", 0, True, False, 3, False, False),
+                 ("options-backup", 1, True, False, 3, False, False),
                  ("damaged-version", 0, False, True, 0, False, False)]
     for name, slot, options, damaged, expected, format_blank, snapshot_commands in scenarios:
+        replace_old = slot == "both"
         case = work / name
         system = case / "system"
         for directory in ("C", "L", "S"):
@@ -86,10 +101,13 @@ def main():
                 stream.truncate(32 * 1024 * 1024)
         else:
             shutil.copyfile(clean, image)
-        if slot is not None:
+        if replace_old:
+            alter_copy(image, 0, version=2)
+            alter_copy(image, 1, version=2)
+        elif slot is not None:
             alter_copy(image, slot, options, damaged)
         before = hashlib.sha256(image.read_bytes()).digest()
-        if format_blank:
+        if format_blank or replace_old:
             startup = "FailAt 21\nC:bfs format DH1: Test >SYS:format-message.txt\n"
         elif snapshot_commands:
             startup = """FailAt 11
@@ -169,6 +187,13 @@ automatic_input_grab = 0
         if format_blank:
             if (system / "format-message.txt").read_bytes() != b"Formatting DH1: as \"Test\"...\nFormat complete.\n":
                 raise ValueError(f"{name}: bfs format did not complete")
+        if replace_old:
+            message = (system / "format-message.txt").read_bytes()
+            if (not message.startswith(b"BFS format version 2 is not supported.\n") or
+                    not message.endswith(b"Formatting DH1: as \"Test\"...\nFormat complete.\n")):
+                raise ValueError(f"{name}: bfs format did not replace the older format")
+            if superblock_version(image) != CURRENT_VERSION:
+                raise ValueError(f"{name}: the replaced medium is not current")
         if snapshot_commands:
             outputs = {path.name: path.read_bytes() for path in system.iterdir() if path.is_file()}
             expected_outputs = {

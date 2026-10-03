@@ -22,9 +22,10 @@ static BOOL check_format(LONG expected)
     ok = ok && IoErr() == 0 && message[sizeof(message) - 1] == 0;
     message[sizeof(message) - 1] = 0;
     if (expected) {
-        ok = ok && result && strstr(message, expected == 3 ?
-            "version 3 is too new" : "version 2 uses unsupported options 0x80000000");
-        if (expected == 3) ok = ok && strstr(message, "supports version 2");
+        /* 4: a newer version, 3: unknown options on the current version. */
+        ok = ok && result && strstr(message, expected == 4 ?
+            "version 4 is too new" : "version 3 uses unsupported options 0x80000000");
+        if (expected == 4) ok = ok && strstr(message, "supports version 3");
         BPTR diagnosis = Open("SYS:diagnosis.txt", MODE_NEWFILE);
         if (!diagnosis) ok = FALSE;
         else {

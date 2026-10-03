@@ -3,10 +3,14 @@
 #define BFS_DIAGNOSTICS_H
 
 /* Read-only Amiga packet: Arg1 = text buffer, Arg2 = buffer capacity.
- * DOSTRUE returns a NUL-terminated incompatibility diagnosis. DOSFALSE with
- * error 0 means no diagnosis; older handlers return ACTION_NOT_KNOWN. */
+ * DOSTRUE returns a NUL-terminated incompatibility diagnosis; its secondary
+ * result is BFS_FORMAT_REPLACEABLE when the medium holds only older BFS
+ * formats, which ACTION_FORMAT replaces, and 0 when ACTION_FORMAT refuses it.
+ * DOSFALSE with error 0 means no diagnosis; older handlers return
+ * ACTION_NOT_KNOWN. */
 #define BFS_ACTION_FORMAT_ERROR 3004
 #define BFS_FORMAT_ERROR_MAX 192
+#define BFS_FORMAT_REPLACEABLE 1
 
 /* Mounted-only Amiga packet: Arg1 = ULONG[BFS_CHECK_REPORT_WORDS], Arg2 =
  * its byte capacity. The handler always runs this as a read-only scan of the

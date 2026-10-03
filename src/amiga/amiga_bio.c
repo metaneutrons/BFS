@@ -353,3 +353,8 @@ bfs_err_t bfs_amiga_bio_probe_superblock(amiga_bio_t *ab, bfs_superblock_t *sb)
     if (!ab || !sb) return BFS_ERR_INVAL;
     return bfs_sb_probe(&ab->base, partition_size_bytes(ab), sb);
 }
+
+bool bfs_amiga_bio_format_replaceable(amiga_bio_t *ab)
+{
+    return ab && bfs_sb_replaceable(&ab->base, partition_size_bytes(ab));
+}

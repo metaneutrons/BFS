@@ -137,6 +137,7 @@ struct bfs_handler {
     bool dirty;
     bool write_protected;
     bfs_err_t mount_error;
+    bool format_replaceable;  /* unsupported medium holds only older formats */
     char format_error[BFS_FORMAT_ERROR_MAX];
     bool format_error_reported;
     struct DosList *volnode;
@@ -591,6 +592,8 @@ static void SetMountError(struct bfs_handler *h, bfs_err_t err,
     /* Both arrays have BFS_FORMAT_ERROR_MAX bytes. */
     memcpy(h->format_error, message, sizeof(message)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     h->mount_error = err;
+    h->format_replaceable = err == BFS_ERR_UNSUPPORTED &&
+                            bfs_amiga_bio_format_replaceable((amiga_bio_t *)(h + 1));
 }
 
 static void ReportFormatError(struct bfs_handler *h, struct MsgPort *reply_port)
@@ -1613,7 +1616,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         /* Packet capacity was checked above; the source has exactly this size. */
         memcpy(buffer, h->format_error, BFS_FORMAT_ERROR_MAX); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         res1 = h->format_error[0] ? DOSTRUE : DOSFALSE;
-        res2 = 0;
+        res2 = h->format_error[0] && h->format_replaceable ? BFS_FORMAT_REPLACEABLE : 0;
         break;
     }
 
@@ -2735,7 +2738,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     /* ── ACTION_FORMAT ─────────────────────────────────────── */
     case ACTION_FORMAT: {
         if (h->write_protected) { res2 = ERROR_DISK_WRITE_PROTECTED; break; }
-        if (h->mount_error == BFS_ERR_UNSUPPORTED) {
+        /* Formatting replaces older BFS formats, never a newer one. */
+        if (h->mount_error == BFS_ERR_UNSUPPORTED && !h->format_replaceable) {
             ReportFormatError(h, pkt->dp_Port);
             res2 = Pfs4ToDosError(h->mount_error); break;
         }

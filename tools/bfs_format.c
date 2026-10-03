@@ -32,11 +32,16 @@ int bfs_format_command(const char *drive, const char *name)
 
     if (DoPkt(port, BFS_ACTION_FORMAT_ERROR, (LONG)format_message,
               sizeof(format_message), 0, 0, 0)) {
+        BOOL replaceable = IoErr() == BFS_FORMAT_REPLACEABLE;
         format_message[sizeof(format_message) - 1] = 0;
         bfs_put(format_message);
         bfs_put("\n");
-        FreeDeviceProc(device);
-        return 20;
+        /* Only an older BFS format may be replaced. */
+        if (!replaceable) {
+            FreeDeviceProc(device);
+            return 20;
+        }
+        format_message[0] = 0;
     }
 
     if (!bfs_build_name_bstr(bfs_bstr_bytes(&bstr), name)) {

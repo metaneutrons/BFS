@@ -82,6 +82,9 @@ static bool sb_root_valid(bfs_blk_t root, uint32_t block_size,
            root != backup_block;
 }
 
+#define SB_KNOWN_OPTIONS (BFS_OPT_DATA_CHECKSUMS | BFS_OPT_SNAPSHOTS | \
+                          BFS_OPT_DATA_ORDERED)
+
 bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
 {
     if (!sb) return BFS_ERR_INVAL;
@@ -90,12 +93,10 @@ bfs_err_t bfs_sb_validate(const bfs_superblock_t *sb)
     if (bfs_be32(sb->crc32) != bfs_sb_compute_crc(sb))
         return BFS_ERR_CORRUPT;
 
-    /* Classify incompatibility only after verifying the frozen v2 envelope.
+    /* Classify incompatibility only after verifying the frozen envelope.
      * A bit flip in version/options must still permit ordinary recovery. */
-    const uint32_t known_options = BFS_OPT_DATA_CHECKSUMS | BFS_OPT_SNAPSHOTS |
-                                   BFS_OPT_DATA_ORDERED;
     if (bfs_be32(sb->version) != BFS_SB_VERSION ||
-        (bfs_be32(sb->options) & ~known_options) != 0)
+        (bfs_be32(sb->options) & ~SB_KNOWN_OPTIONS) != 0)
         return BFS_ERR_UNSUPPORTED;
 
     uint32_t bs = bfs_be32(sb->block_size);
@@ -198,11 +199,11 @@ void bfs_sb_describe_unsupported(const bfs_superblock_t *sb,
         message_text(&cursor, end, "This driver supports version ");
         message_number(&cursor, end, BFS_SB_VERSION, false);
         message_text(&cursor, end, version > BFS_SB_VERSION ?
-                     ".\nUse a newer BFS driver." : ".\nUse a compatible BFS driver.");
+                     ".\nUse a newer BFS driver." :
+                     ".\nCopy the data with a compatible driver, then format.");
     } else {
         message_text(&cursor, end, " uses unsupported options 0x");
-        message_number(&cursor, end, bfs_be32(sb->options) &
-                       ~(BFS_OPT_DATA_CHECKSUMS | BFS_OPT_SNAPSHOTS | BFS_OPT_DATA_ORDERED), true);
+        message_number(&cursor, end, bfs_be32(sb->options) & ~SB_KNOWN_OPTIONS, true);
         message_text(&cursor, end, ".\nUse a compatible BFS driver.");
     }
 }
@@ -301,6 +302,47 @@ bfs_err_t bfs_sb_probe(bfs_bio_t *bio, uint64_t device_bytes,
     bio->block_size = saved_size;
     bio->block_count = saved_count;
     return result;
+}
+
+typedef enum { SB_COPY_ABSENT, SB_COPY_CURRENT, SB_COPY_OLDER, SB_COPY_BLOCKING } sb_copy_t;
+
+/* A copy counts only when magic and CRC are intact; damage is not a format. */
+static sb_copy_t classify_copy(bfs_bio_t *bio, uint64_t offset)
+{
+    bfs_superblock_t sb;
+    if (read_sb_at(bio, offset, &sb) != BFS_OK ||
+        bfs_be32(sb.magic) != BFS_SB_MAGIC ||
+        bfs_be32(sb.crc32) != bfs_sb_compute_crc(&sb))
+        return SB_COPY_ABSENT;
+    uint32_t version = bfs_be32(sb.version);
+    if (version > BFS_SB_VERSION || (bfs_be32(sb.options) & ~SB_KNOWN_OPTIONS) != 0)
+        return SB_COPY_BLOCKING;
+    return version == BFS_SB_VERSION ? SB_COPY_CURRENT : SB_COPY_OLDER;
+}
+
+bool bfs_sb_replaceable(bfs_bio_t *bio, uint64_t device_bytes)
+{
+    if (!bio || !bio->ops || !bio->ops->read_block) return false;
+    uint32_t saved_size = bio->block_size;
+    bfs_blk_t saved_count = bio->block_count;
+    bool older = false, blocking = false;
+    /* Slot A sits at byte zero for every geometry; slot B at each geometry's
+     * midpoint, which is also where an older copy's stored offset points. */
+    for (uint32_t bs = BFS_MIN_BLOCK_SIZE; bs <= BFS_MAX_BLOCK_SIZE && !blocking; bs *= 2u) {
+        if (bfs_bio_set_geometry(bio, device_bytes, bs) != BFS_OK) continue;
+        const uint64_t offsets[2] = {
+            BFS_SB_OFFSET_A,
+            bfs_default_backup_offset(bio->block_count, bio->block_size),
+        };
+        for (unsigned i = 0; i < 2; i++) {
+            sb_copy_t copy = classify_copy(bio, offsets[i]);
+            if (copy == SB_COPY_BLOCKING) blocking = true;
+            if (copy == SB_COPY_OLDER) older = true;
+        }
+    }
+    bio->block_size = saved_size;
+    bio->block_count = saved_count;
+    return older && !blocking;
 }
 
 bfs_err_t bfs_sb_write(bfs_bio_t *bio, bfs_superblock_t *sb)
