@@ -147,6 +147,11 @@ typedef struct bfs_btree {
     /* Sticky ownership error from reclamation or a failed composite rollback.
      * Callers must recover or abandon instead of publishing uncertain mappings. */
     bfs_err_t         free_sink_err;
+
+    /* Changes with every node write and every root or height change, so a
+     * reader that remembers it can tell whether nodes it saw are still
+     * current. It wraps only after 2^32 changes. */
+    uint32_t          generation;
 } bfs_btree_t;
 
 static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)

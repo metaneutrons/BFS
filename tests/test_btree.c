@@ -5,6 +5,7 @@
 #include "test_harness.h"
 #include "bfs_btree.h"
 #include "bfs_btree_internal.h"
+#include "bfs_alloc.h"
 #include "bfs_cache.h"
 #include "block_device_emu.h"
 #include <unistd.h>
@@ -787,6 +788,149 @@ static void test_scan_from_key(void)
     free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
+}
+
+/* ── Test: scans across leaves of a three-level tree ───────── */
+
+#define SCAN_IMG "test_btree_scan.img"
+#define SCAN_BLK_SIZE 1024
+#define SCAN_BLK_COUNT 262144
+#define SCAN_KEYS 16000u
+
+typedef struct {
+    uint32_t *keys;
+    uint32_t count;
+    uint32_t capacity;
+} scan_list_t;
+
+static bool scan_list_add(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    scan_list_t *list = ctx;
+    if (list->count < list->capacity) list->keys[list->count] = read_key(key);
+    list->count++;
+    return true;
+}
+
+static bfs_freespace_t scan_space;
+
+/* Even keys 0 .. 2 * (SCAN_KEYS - 1) in a tree on 1 KiB blocks, three levels deep. */
+static void build_scan_tree(bfs_btree_t *tree, bfs_bio_t *bio)
+{
+    TEST_ASSERT_EQ(bfs_freespace_init(&scan_space, bio, BFS_BLK_NULL, 1), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_add(&scan_space, 2, SCAN_BLK_COUNT - 2), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&scan_space), BFS_OK);
+    TEST_ASSERT_EQ(bfs_btree_init(tree, bio, bfs_freespace_allocator(&scan_space), &u32_ops,
+                                  BFS_BLK_NULL, 1), BFS_OK);
+    for (uint32_t i = 0; i < SCAN_KEYS; i++) {
+        uint32_t k = (i * 7919u) % SCAN_KEYS;
+        uint32_t key, val;
+        make_key(&key, 2 * k);
+        make_key(&val, k);
+        TEST_ASSERT_EQ(bfs_btree_insert(tree, &key, &val), BFS_OK);
+    }
+    TEST_ASSERT(tree->height >= 3);
+}
+
+/* Scans from every kind of start key return exactly the keys at or after it,
+ * read through the device or through validated cache views. */
+static void test_scan_three_levels(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    static uint32_t keys[SCAN_KEYS];
+    static bfs_cache_t cache;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, raw, 64), BFS_OK);
+    static const uint32_t starts[] = {0, 1, 2, 247, 248, 249, 9999, 15000, 31996, 31997, 31998, 31999, 40000};
+    for (int via_cache = 0; via_cache < 2; via_cache++) {
+        tree.bio = via_cache ? &cache.bio : raw;
+        for (int pass = 0; pass < 2; pass++) {
+            scan_list_t list = { keys, 0, SCAN_KEYS };
+            TEST_ASSERT_EQ(bfs_btree_scan(&tree, NULL, scan_list_add, &list), BFS_OK);
+            TEST_ASSERT_EQ(list.count, SCAN_KEYS);
+            for (uint32_t i = 0; i < SCAN_KEYS; i++) TEST_ASSERT_EQ(keys[i], 2 * i);
+        }
+        for (size_t s = 0; s < sizeof(starts) / sizeof(starts[0]); s++) {
+            uint32_t start;
+            make_key(&start, starts[s]);
+            scan_list_t list = { keys, 0, SCAN_KEYS };
+            TEST_ASSERT_EQ(bfs_btree_scan(&tree, &start, scan_list_add, &list), BFS_OK);
+            uint32_t first = (starts[s] + 1) / 2;
+            uint32_t expected = first < SCAN_KEYS ? SCAN_KEYS - first : 0;
+            TEST_ASSERT_EQ(list.count, expected);
+            for (uint32_t i = 0; i < list.count; i++) TEST_ASSERT_EQ(keys[i], 2 * (first + i));
+        }
+    }
+    bfs_cache_destroy(&cache);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
+typedef struct {
+    bfs_btree_t *tree;
+    uint32_t previous;
+    uint32_t visited;
+    bool any;
+    bool ordered;
+    uint8_t *seen;      /* by key value */
+    bool *deleted;      /* by key value */
+} mutating_scan_t;
+
+/* At every visited key, delete the even key four ahead and insert odd keys
+ * behind and ahead of the scan position. */
+static bool mutate_while_scanning(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    mutating_scan_t *scan = ctx;
+    uint32_t k = read_key(key);
+    if (scan->any && k <= scan->previous) scan->ordered = false;
+    scan->previous = k;
+    scan->any = true;
+    if (k < 2 * SCAN_KEYS + 8) scan->seen[k]++;
+    scan->visited++;
+    if (k % 2 == 0 && k % 10 == 0) {
+        uint32_t victim, behind, ahead, v;
+        make_key(&victim, k + 4);
+        if (k + 4 < 2 * SCAN_KEYS && bfs_btree_delete(scan->tree, &victim) == BFS_OK)
+            scan->deleted[k + 4] = true;
+        make_key(&behind, k > 1 ? k - 1 : 1);
+        make_key(&ahead, k + 7);
+        make_key(&v, 0);
+        (void)bfs_btree_insert(scan->tree, &behind, &v);
+        (void)bfs_btree_insert(scan->tree, &ahead, &v);
+    }
+    return true;
+}
+
+/* A callback may change the scanned tree. The scan then still returns keys
+ * in strictly ascending order, each at most once, never a key deleted before
+ * the scan reached it, and every original key that was not deleted. */
+static void test_scan_survives_callback_changes(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    static bfs_cache_t cache;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, raw, 64), BFS_OK);
+    tree.bio = &cache.bio;
+    static uint8_t seen[2 * SCAN_KEYS + 8];
+    static bool deleted[2 * SCAN_KEYS + 8];
+    mutating_scan_t scan = { .tree = &tree, .ordered = true, .seen = seen, .deleted = deleted };
+    TEST_ASSERT_EQ(bfs_btree_scan(&tree, NULL, mutate_while_scanning, &scan), BFS_OK);
+    TEST_ASSERT(scan.ordered);
+    for (uint32_t k = 0; k < 2 * SCAN_KEYS; k += 2) {
+        TEST_ASSERT(seen[k] <= 1);
+        if (deleted[k]) TEST_ASSERT_EQ(seen[k], 0);
+        else TEST_ASSERT_EQ(seen[k], 1);
+    }
+    bfs_cache_destroy(&cache);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
 }
 
 /* ── Test: COW preserves old root ──────────────────────────── */
@@ -1836,6 +1980,8 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_reverse_inserts);
     TEST_RUN(test_scan_all);
     TEST_RUN(test_scan_from_key);
+    TEST_RUN(test_scan_three_levels);
+    TEST_RUN(test_scan_survives_callback_changes);
     TEST_RUN(test_cow_old_root_preserved);
     TEST_RUN(test_single_delete);
     TEST_RUN(test_delete_all);

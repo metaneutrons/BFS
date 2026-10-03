@@ -6,6 +6,7 @@
 #include "bfs_fs.h"
 #include "bfs_file.h"
 #include "bfs_inode.h"
+#include "bfs_dir.h"
 #include "block_device_emu.h"
 #include <string.h>
 #include <unistd.h>
@@ -235,6 +236,75 @@ static void test_rename_replaces_empty_directory_and_rekeys_case(void)
     teardown(fs);
 }
 
+/* ── Test: scanning a directory while deleting from it ─────── */
+
+typedef struct {
+    bfs_fs_t *fs;
+    uint32_t dir;
+    uint8_t seen[30];
+    bool deleted_unseen[30];
+    bool other;
+} delete_scan_t;
+
+static int item_index(const char *name, uint8_t len)
+{
+    if (len != 3 || name[0] != 'f' || name[1] < '0' || name[1] > '9' ||
+        name[2] < '0' || name[2] > '9')
+        return -1;
+    int index = (name[1] - '0') * 10 + (name[2] - '0');
+    return index < 30 ? index : -1;
+}
+
+/* At every even item, delete the next item. */
+static bool delete_while_scanning(const char *name, uint8_t len, uint32_t ino,
+                                  uint32_t type, void *ctx)
+{
+    (void)ino;
+    (void)type;
+    delete_scan_t *scan = ctx;
+    int index = item_index(name, len);
+    if (index < 0) {
+        if (!(len == 2 && name[0] == '.' && name[1] == '.') &&
+            !(len == 1 && name[0] == 'x'))
+            scan->other = true;
+        return true;
+    }
+    scan->seen[index]++;
+    if (index % 2 == 0 && index + 1 < 30) {
+        char victim[3] = { 'f', (char)('0' + (index + 1) / 10), (char)('0' + (index + 1) % 10) };
+        bool unseen = scan->seen[index + 1] == 0;
+        if (bfs_fs_delete_file(scan->fs, scan->dir, victim, 3) == BFS_OK && unseen)
+            scan->deleted_unseen[index + 1] = true;
+    }
+    return true;
+}
+
+/* Entries deleted in the live transaction, where the directory nodes are
+ * rewritten in place, are not reported once deleted; every other entry is
+ * reported exactly once. */
+static void test_scan_while_deleting(void)
+{
+    bfs_fs_t *fs = setup();
+    uint32_t dir, ino;
+    TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "d", 1, &dir), BFS_OK);
+    for (int i = 0; i < 30; i++) {
+        char name[3] = { 'f', (char)('0' + i / 10), (char)('0' + i % 10) };
+        TEST_ASSERT_EQ(bfs_fs_create_file(fs, dir, name, 3, &ino), BFS_OK);
+    }
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+    /* The first change of the new transaction makes the path its own. */
+    TEST_ASSERT_EQ(bfs_fs_create_file(fs, dir, "x", 1, &ino), BFS_OK);
+    delete_scan_t scan = { .fs = fs, .dir = dir };
+    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, dir, delete_while_scanning, &scan), BFS_OK);
+    TEST_ASSERT(!scan.other);
+    for (int i = 0; i < 30; i++) {
+        if (scan.deleted_unseen[i]) TEST_ASSERT_EQ(scan.seen[i], 0);
+        else TEST_ASSERT_EQ(scan.seen[i], 1);
+    }
+    TEST_ASSERT_EQ(bfs_fs_sync(fs), BFS_OK);
+    teardown(fs);
+}
+
 TEST_SUITE_BEGIN("Directory Operations")
     TEST_RUN(test_create_file);
     TEST_RUN(test_mkdir);
@@ -244,4 +314,5 @@ TEST_SUITE_BEGIN("Directory Operations")
     TEST_RUN(test_rename_cross_dir);
     TEST_RUN(test_rename_replaces_file_and_preserves_open_target);
     TEST_RUN(test_rename_replaces_empty_directory_and_rekeys_case);
+    TEST_RUN(test_scan_while_deleting);
 TEST_SUITE_END()
