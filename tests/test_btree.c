@@ -1053,6 +1053,62 @@ static void test_scan_cursor_resumes_in_leaf(void)
     unlink(SCAN_IMG);
 }
 
+/* ── Test: searches reuse the last leaf only while it is current ── */
+
+static bool search_value(bfs_btree_t *tree, uint32_t k, uint32_t *value)
+{
+    uint32_t key, raw;
+    make_key(&key, k);
+    if (bfs_btree_search(tree, &key, &raw) != BFS_OK) return false;
+    *value = read_key(&raw);
+    return true;
+}
+
+static void test_search_hint_follows_changes(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    static bfs_cache_t cache;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, raw, 64), BFS_OK);
+    tree.bio = &cache.bio;
+
+    uint32_t value;
+    for (uint32_t k = 0; k < 2 * SCAN_KEYS; k += 2) {
+        TEST_ASSERT(search_value(&tree, k, &value));
+        TEST_ASSERT_EQ(value, k / 2);
+        /* An absent key inside the same leaf is absent. */
+        TEST_ASSERT(!search_value(&tree, k + 1, &value));
+    }
+    TEST_ASSERT(!search_value(&tree, 2 * SCAN_KEYS + 1, &value));
+
+    /* Each change makes the remembered leaf stale; the old copy of a
+     * rewritten leaf stays resident and must not answer. */
+    TEST_ASSERT(search_value(&tree, 1000, &value));
+    uint32_t key, replacement;
+    make_key(&key, 1002);
+    make_key(&replacement, 7777);
+    TEST_ASSERT_EQ(bfs_btree_update(&tree, &key, &replacement), BFS_OK);
+    TEST_ASSERT(search_value(&tree, 1002, &value));
+    TEST_ASSERT_EQ(value, 7777);
+    make_key(&key, 1004);
+    TEST_ASSERT_EQ(bfs_btree_delete(&tree, &key), BFS_OK);
+    TEST_ASSERT(!search_value(&tree, 1004, &value));
+    TEST_ASSERT(search_value(&tree, 1006, &value));
+    TEST_ASSERT_EQ(value, 503);
+    make_key(&key, 1005);
+    make_key(&replacement, 4242);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &replacement), BFS_OK);
+    TEST_ASSERT(search_value(&tree, 1005, &value));
+    TEST_ASSERT_EQ(value, 4242);
+
+    bfs_cache_destroy(&cache);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
 /* ── Test: COW preserves old root ──────────────────────────── */
 
 static void test_cow_old_root_preserved(void)
@@ -2103,6 +2159,7 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_scan_three_levels);
     TEST_RUN(test_scan_survives_callback_changes);
     TEST_RUN(test_scan_cursor_resumes_in_leaf);
+    TEST_RUN(test_search_hint_follows_changes);
     TEST_RUN(test_cow_old_root_preserved);
     TEST_RUN(test_single_delete);
     TEST_RUN(test_delete_all);

@@ -15,6 +15,7 @@
 #include "bfs_file.h"
 #include "bfs_fs.h"
 #include "bfs_fsck.h"
+#include "bfs_inode.h"
 #include "bfs_snapshot.h"
 #include "block_device_emu.h"
 #include <stdio.h>
@@ -824,6 +825,37 @@ static void test_independent_reader_sees_deferred_nodes(void)
     unlink(TEST_IMG);
 }
 
+/* A leaf replaced in the live transaction stays resident and valid until
+ * the commit reclaims it. A later search must not answer from it. */
+static void test_search_skips_replaced_leaf(void)
+{
+    make_baseline();
+    bfs_bio_t *bio = bio_emu_open(TEST_IMG, BLK_SIZE);
+    bfs_cache_t cache;
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, bio, CACHE_SLOTS), BFS_OK);
+    bfs_cache_set_node_write_retention(&cache, true);
+    bfs_cache_set_deferred_node_limit(&cache, CACHE_SLOTS / 2);
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, &cache.bio), BFS_OK);
+    uint32_t ino;
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "hint", 4, &ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+
+    bfs_inode_t inode;
+    TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_OK);
+    uint32_t protection = bfs_be32(inode.protection) ^ 0x0Fu;
+    inode.protection = bfs_be32(protection);
+    TEST_ASSERT_EQ(bfs_inode_write(&fs.inode_tree, ino, &inode), BFS_OK);
+    bfs_inode_t again;
+    TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &again), BFS_OK);
+    TEST_ASSERT_EQ(bfs_be32(again.protection), protection);
+
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_cache_destroy(&cache);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("Deferred node writes")
     TEST_RUN(test_cache_defers_until_flush);
     TEST_RUN(test_cache_never_evicts_dirty_slots);
@@ -834,6 +866,7 @@ TEST_SUITE_BEGIN("Deferred node writes")
     TEST_RUN(test_crash_at_every_write_keeps_committed_state);
     TEST_RUN(test_write_failure_at_every_write_keeps_committed_state);
     TEST_RUN(test_file_deleted_in_transaction);
+    TEST_RUN(test_search_skips_replaced_leaf);
     TEST_RUN(test_nodes_freed_in_transaction_are_not_written);
     TEST_RUN(test_independent_reader_sees_deferred_nodes);
     TEST_RUN(test_owned_free_root_rewritten_in_place);

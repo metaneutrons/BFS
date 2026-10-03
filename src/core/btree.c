@@ -500,6 +500,8 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
     tree->free_sink = (bfs_free_sink_t){0};
     tree->free_sink_err = BFS_OK;
     tree->generation = 0;
+    tree->hint_leaf = BFS_BLK_NULL;
+    tree->hint_generation = 0;
 
     if (leaf_max_keys(tree) < 3 || internal_max_keys(tree) < 3)
         return BFS_ERR_INVAL;
@@ -570,6 +572,25 @@ bfs_err_t bfs_btree_lower_bound(bfs_btree_t *tree, const void *key, void *key_ou
     return result;
 }
 
+/* The leaf of the last search, if the tree has not changed since, it is
+ * still resident and validated, and key lies between its first and last
+ * keys: in a B+tree every key of that range is in that leaf. */
+static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key)
+{
+    if (tree->hint_leaf == BFS_BLK_NULL || tree->hint_generation != tree->generation ||
+        !tree->ops->cache_key_order)
+        return NULL;
+    bfs_node_validation_t validation = node_validation_context(tree);
+    /* Read-only, like the resident views of node_view. */
+    uint8_t *leaf = (uint8_t *)bfs_bio_peek_valid_node(tree->bio, tree->hint_leaf, &validation);
+    if (!leaf || node_level(leaf) != BFS_BTNODE_LEAF) return NULL;
+    uint32_t n = num_keys(leaf);
+    if (n == 0 || tree->ops->key_compare(node_key(tree, leaf, 0), key) > 0 ||
+        tree->ops->key_compare(key, node_key(tree, leaf, n - 1)) > 0)
+        return NULL;
+    return leaf;
+}
+
 bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
 {
     if (!tree || !tree->bio || !tree->ops || !key || !val_out)
@@ -577,6 +598,15 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+
+    uint8_t *hinted = hinted_leaf(tree, key);
+    if (hinted) {
+        bool found;
+        uint32_t idx = node_search(tree, hinted, key, &found);
+        if (!found) return BFS_ERR_NOTFOUND;
+        memcpy(val_out, leaf_val(tree, hinted, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+        return BFS_OK;
+    }
 
     uint8_t *buf = alloc_buf(tree);
     if (!buf) return BFS_ERR_NOMEM;
@@ -595,6 +625,8 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
         uint32_t idx = node_search(tree, node, key, &found);
 
         if (is_leaf(node)) {
+            tree->hint_leaf = blk;
+            tree->hint_generation = tree->generation;
             if (!found) { free_buf(tree, buf); return BFS_ERR_NOTFOUND; }
             memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size);
             free_buf(tree, buf);

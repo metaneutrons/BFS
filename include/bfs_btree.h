@@ -152,6 +152,10 @@ typedef struct bfs_btree {
      * reader that remembers it can tell whether nodes it saw are still
      * current. It wraps only after 2^32 changes. */
     uint32_t          generation;
+
+    /* The leaf the last search ended in, valid at hint_generation. */
+    bfs_blk_t         hint_leaf;
+    uint32_t          hint_generation;
 } bfs_btree_t;
 
 static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
