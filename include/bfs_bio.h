@@ -91,6 +91,16 @@ typedef struct bfs_bio_ops {
                                   bfs_node_finalize_fn finalize, const void *layout);
     bfs_err_t (*flush_deferred)(bfs_bio_t *bio);
     void (*discard_deferred)(bfs_bio_t *bio, bfs_blk_t blk);
+
+    /* Optional: transfer count consecutive blocks in as few device requests
+     * as the device allows. buf is ordinary caller memory; a backend with
+     * DMA restrictions bounces it. On a write error *written is the number of
+     * leading blocks known to be written; later blocks of the range may hold
+     * old, new or partial contents. Without these hooks the wrappers below
+     * loop over single blocks. */
+    bfs_err_t (*read_blocks)(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count, void *buf);
+    bfs_err_t (*write_blocks)(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count,
+                              const void *buf, uint32_t *written);
 } bfs_bio_ops_t;
 
 /* Base block device — all implementations embed this as first member */
@@ -167,6 +177,45 @@ static inline bool bfs_bio_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk) {
 static inline void bfs_bio_mark_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk) {
     if (bio && bio->ops && bio->ops->mark_node_crc_valid)
         bio->ops->mark_node_crc_valid(bio, blk);
+}
+
+static inline bool bfs_bio_range_valid(const bfs_bio_t *bio, bfs_blk_t blk,
+                                       uint32_t count) {
+    return count > 0 && blk < bio->block_count && count <= bio->block_count - blk;
+}
+
+static inline bfs_err_t bfs_bio_read_blocks(bfs_bio_t *bio, bfs_blk_t blk,
+                                            uint32_t count, void *buf) {
+    if (!bio || !bio->ops || !bio->ops->read_block || !buf ||
+        !bfs_bio_range_valid(bio, blk, count))
+        return BFS_ERR_INVAL;
+    if (bio->ops->read_blocks) return bio->ops->read_blocks(bio, blk, count, buf);
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_err_t err = bio->ops->read_block(bio, blk + i,
+                                             (uint8_t *)buf + (size_t)i * bio->block_size);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
+static inline bfs_err_t bfs_bio_write_blocks(bfs_bio_t *bio, bfs_blk_t blk,
+                                             uint32_t count, const void *buf,
+                                             uint32_t *written) {
+    uint32_t done = 0;
+    if (!written) written = &done;
+    *written = 0;
+    if (!bio || !bio->ops || !bio->ops->write_block || !buf ||
+        !bfs_bio_range_valid(bio, blk, count))
+        return BFS_ERR_INVAL;
+    if (bio->ops->write_blocks)
+        return bio->ops->write_blocks(bio, blk, count, buf, written);
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_err_t err = bio->ops->write_block(
+            bio, blk + i, (const uint8_t *)buf + (size_t)i * bio->block_size);
+        if (err != BFS_OK) return err;
+        *written = i + 1;
+    }
+    return BFS_OK;
 }
 
 static inline bool bfs_bio_can_defer_nodes(const bfs_bio_t *bio) {

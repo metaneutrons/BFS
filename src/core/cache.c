@@ -135,6 +135,61 @@ static bfs_err_t cache_write_node(bfs_bio_t *bio, bfs_blk_t blk,
     return cache_write_common(bio, blk, buf, c->retain_written_nodes);
 }
 
+static bool cache_range_resident(const bfs_cache_t *c, bfs_blk_t blk, uint32_t count)
+{
+    for (uint32_t i = 0; i < c->num_slots; i++) {
+        bfs_blk_t resident = c->slots[i].blk;
+        if (resident != UINT32_MAX && resident >= blk && resident - blk < count)
+            return true;
+    }
+    return false;
+}
+
+/* Bulk reads (file data) bypass the slots so they do not evict metadata.
+ * A range that overlaps a resident block is read slot by slot instead, so a
+ * deferred node is never bypassed. */
+static bfs_err_t cache_read_blocks(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count,
+                                   void *buf)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    if (!cache_range_resident(c, blk, count))
+        return bfs_bio_read_blocks(c->dev, blk, count, buf);
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_err_t err = cache_read(bio, blk + i, (uint8_t *)buf + (size_t)i * bio->block_size);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
+/* Bulk writes go to the device in one transfer; resident copies of written
+ * blocks are refreshed, or dropped if the write failed. */
+static bfs_err_t cache_write_blocks(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count,
+                                    const void *buf, uint32_t *written)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    bfs_err_t err = bfs_bio_write_blocks(c->dev, blk, count, buf, written);
+    for (uint32_t i = 0; i < c->num_slots; i++) {
+        bfs_cache_slot_t *slot = &c->slots[i];
+        if (slot->blk == UINT32_MAX || slot->blk < blk || slot->blk - blk >= count)
+            continue;
+        if (err != BFS_OK && slot->blk - blk >= *written) {
+            cache_drop_slot(c, slot);
+            continue;
+        }
+        /* Every slot buffer was allocated with this cache's block_size. */
+        memcpy(slot->data, (const uint8_t *)buf + (size_t)(slot->blk - blk) * bio->block_size, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+               bio->block_size);
+        slot->age = ++c->clock;
+        if (slot->dirty) {
+            slot->dirty = false;
+            c->dirty_count--;
+        }
+        slot->node_crc_valid = false;
+        slot->node_structure_valid = false;
+    }
+    return err;
+}
+
 /* Keep a node image dirty. Its CRC is not computed yet, so the slot is marked
  * as a trusted node: readers skip the CRC check but still validate the
  * structure. */
@@ -317,6 +372,8 @@ static const bfs_bio_ops_t cache_ops = {
     .defer_node_block = cache_defer_node,
     .flush_deferred = cache_flush_deferred,
     .discard_deferred = cache_discard_deferred,
+    .read_blocks = cache_read_blocks,
+    .write_blocks = cache_write_blocks,
 };
 
 void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)

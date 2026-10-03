@@ -18,6 +18,7 @@
 #include <dos/filehandler.h>
 #include <devices/trackdisk.h>
 #include <proto/exec.h>
+#include <string.h>
 #include "amiga_bio.h"
 #ifdef BFS_PERF_PROBE
 #include "perf_probe.h"
@@ -60,28 +61,32 @@ static uint64_t partition_size_bytes(const amiga_bio_t *ab)
     return ab->total_sectors * (uint64_t)ab->sector_size;
 }
 
-static bfs_err_t amiga_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+/* One device request for length bytes at block blk. */
+static bfs_err_t amiga_transfer(amiga_bio_t *ab, bool write, bfs_blk_t blk,
+                                ULONG length, APTR data)
 {
-    amiga_bio_t *ab = (amiga_bio_t *)bio;
+    bfs_bio_t *bio = &ab->base;
     struct IOExtTD *req = ab->request;
-    uint64_t byte_off;
 
-    if (blk >= bio->block_count) return BFS_ERR_INVAL;
-    if (bio->block_size == 0) return BFS_ERR_INVAL;
-    byte_off = ab->partition_start_byte + (uint64_t)blk * bio->block_size;
+    if (write && ab->read_only) return BFS_ERR_UNSUPPORTED;
+    if (bio->block_size == 0 || length == 0 || blk >= bio->block_count) return BFS_ERR_INVAL;
+    uint64_t byte_off = ab->partition_start_byte + (uint64_t)blk * bio->block_size;
     uint64_t part_end = ab->partition_start_byte + partition_size_bytes(ab);
-    uint64_t io_end = byte_off + bio->block_size;
+    uint64_t io_end = byte_off + length;
     if (part_end < ab->partition_start_byte || io_end < byte_off ||
         byte_off < ab->partition_start_byte || io_end > part_end)
         return BFS_ERR_INVAL;
     if (ab->access_mode == ACCESS_STD && (byte_off >> 32) != 0)
         return BFS_ERR_INVAL;
 
-    /* Select command based on detected access mode */
-    req->iotd_Req.io_Command = (ab->access_mode == ACCESS_NSD) ? NSCMD_TD_READ64 :
-                               (ab->access_mode == ACCESS_TD64) ? TD_READ64 : CMD_READ;
-    req->iotd_Req.io_Data = buf;
-    req->iotd_Req.io_Length = bio->block_size;
+    if (write)
+        req->iotd_Req.io_Command = (ab->access_mode == ACCESS_NSD) ? NSCMD_TD_WRITE64 :
+                                   (ab->access_mode == ACCESS_TD64) ? TD_WRITE64 : CMD_WRITE;
+    else
+        req->iotd_Req.io_Command = (ab->access_mode == ACCESS_NSD) ? NSCMD_TD_READ64 :
+                                   (ab->access_mode == ACCESS_TD64) ? TD_READ64 : CMD_READ;
+    req->iotd_Req.io_Data = data;
+    req->iotd_Req.io_Length = length;
     req->iotd_Req.io_Offset = (ULONG)byte_off;
 
     /* For 64-bit modes, upper 32 bits go into io_Actual */
@@ -89,62 +94,100 @@ static bfs_err_t amiga_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
         req->iotd_Req.io_Actual = (ULONG)(byte_off >> 32);
 
 #ifdef BFS_PERF_PROBE
-    bfs_perf_probe_counters.bio_read_calls++;
     BOOL data_io = bfs_perf_probe_data_depth != 0;
+    if (write) {
+        bfs_perf_probe_counters.bio_write_calls++;
+        if (data_io) bfs_perf_probe_counters.data_write_calls++;
+    } else {
+        bfs_perf_probe_counters.bio_read_calls++;
+        if (data_io) bfs_perf_probe_counters.data_read_calls++;
+    }
     struct EClockVal started = {0};
-    if (data_io) bfs_perf_probe_counters.data_read_calls++;
     bfs_perf_probe_begin(&started);
 #endif
     LONG io_error = DoIO((struct IORequest *)req);
 #ifdef BFS_PERF_PROBE
-    bfs_perf_probe_end(BFS_PERF_IO_READ, data_io, &started);
+    bfs_perf_probe_end(write ? BFS_PERF_IO_WRITE : BFS_PERF_IO_READ, data_io, &started);
 #endif
-    if (io_error || req->iotd_Req.io_Actual != bio->block_size)
+    if (io_error || req->iotd_Req.io_Actual != length)
         return BFS_ERR_IO;
     return BFS_OK;
 }
 
+static bfs_err_t amiga_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+{
+    return amiga_transfer((amiga_bio_t *)bio, false, blk, bio->block_size, buf);
+}
+
 static bfs_err_t amiga_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
 {
+    return amiga_transfer((amiga_bio_t *)bio, true, blk, bio->block_size, (APTR)buf);
+}
+
+/* Caller memory may be used for DMA only if the whole range lies inside the
+ * device's address mask (which also encodes its alignment). */
+static bool amiga_dma_ok(const amiga_bio_t *ab, const void *buf, ULONG length)
+{
+    ULONG start = (ULONG)buf;
+    ULONG last = start + length - 1u;
+    return ab->mask != 0 && last >= start &&
+           (start & ~ab->mask) == 0 && (last & ~ab->mask) == 0;
+}
+
+static UBYTE *amiga_bounce(amiga_bio_t *ab)
+{
+    if (ab->bounce && ab->bounce_size == ab->base.block_size) return ab->bounce;
+    bfs_amiga_bio_release(ab);
+    ab->bounce = AllocMem(ab->base.block_size, ab->buf_mem_type);
+    if (ab->bounce) ab->bounce_size = ab->base.block_size;
+    return ab->bounce;
+}
+
+/* *done counts the leading blocks whose requests completed. */
+static bfs_err_t amiga_blocks(bfs_bio_t *bio, bool write, bfs_blk_t blk,
+                              uint32_t count, UBYTE *buf, uint32_t *done)
+{
     amiga_bio_t *ab = (amiga_bio_t *)bio;
-    struct IOExtTD *req = ab->request;
-    uint64_t byte_off;
-
-    if (ab->read_only) return BFS_ERR_UNSUPPORTED;
-    if (blk >= bio->block_count) return BFS_ERR_INVAL;
-    if (bio->block_size == 0) return BFS_ERR_INVAL;
-    byte_off = ab->partition_start_byte + (uint64_t)blk * bio->block_size;
-    uint64_t part_end = ab->partition_start_byte + partition_size_bytes(ab);
-    uint64_t io_end = byte_off + bio->block_size;
-    if (part_end < ab->partition_start_byte || io_end < byte_off ||
-        byte_off < ab->partition_start_byte || io_end > part_end)
-        return BFS_ERR_INVAL;
-    if (ab->access_mode == ACCESS_STD && (byte_off >> 32) != 0)
-        return BFS_ERR_INVAL;
-
-    req->iotd_Req.io_Command = (ab->access_mode == ACCESS_NSD) ? NSCMD_TD_WRITE64 :
-                               (ab->access_mode == ACCESS_TD64) ? TD_WRITE64 : CMD_WRITE;
-    req->iotd_Req.io_Data = (APTR)buf;
-    req->iotd_Req.io_Length = bio->block_size;
-    req->iotd_Req.io_Offset = (ULONG)byte_off;
-
-    if (ab->access_mode != ACCESS_STD)
-        req->iotd_Req.io_Actual = (ULONG)(byte_off >> 32);
-
-#ifdef BFS_PERF_PROBE
-    bfs_perf_probe_counters.bio_write_calls++;
-    BOOL data_io = bfs_perf_probe_data_depth != 0;
-    struct EClockVal started = {0};
-    if (data_io) bfs_perf_probe_counters.data_write_calls++;
-    bfs_perf_probe_begin(&started);
-#endif
-    LONG io_error = DoIO((struct IORequest *)req);
-#ifdef BFS_PERF_PROBE
-    bfs_perf_probe_end(BFS_PERF_IO_WRITE, data_io, &started);
-#endif
-    if (io_error || req->iotd_Req.io_Actual != bio->block_size)
-        return BFS_ERR_IO;
+    const ULONG bs = bio->block_size;
+    *done = 0;
+    if (bs == 0 || count > 0xFFFFFFFFu / bs) return BFS_ERR_INVAL;
+    if (!amiga_dma_ok(ab, buf, count * bs)) {
+        UBYTE *bounce = amiga_bounce(ab);
+        if (!bounce) return BFS_ERR_NOMEM;
+        for (uint32_t i = 0; i < count; i++) {
+            UBYTE *user = buf + (size_t)i * bs;
+            if (write) memcpy(bounce, user, bs); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+            bfs_err_t err = amiga_transfer(ab, write, blk + i, bs, bounce);
+            if (err != BFS_OK) return err;
+            if (!write) memcpy(user, bounce, bs); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+            *done = i + 1;
+        }
+        return BFS_OK;
+    }
+    uint32_t per_request = ab->max_transfer / bs;
+    if (per_request == 0) per_request = 1;
+    while (*done < count) {
+        uint32_t n = count - *done;
+        if (n > per_request) n = per_request;
+        bfs_err_t err = amiga_transfer(ab, write, blk + *done, n * bs,
+                                       buf + (size_t)*done * bs);
+        if (err != BFS_OK) return err;
+        *done += n;
+    }
     return BFS_OK;
+}
+
+static bfs_err_t amiga_read_blocks(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count,
+                                   void *buf)
+{
+    uint32_t done;
+    return amiga_blocks(bio, false, blk, count, buf, &done);
+}
+
+static bfs_err_t amiga_write_blocks(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count,
+                                    const void *buf, uint32_t *written)
+{
+    return amiga_blocks(bio, true, blk, count, (UBYTE *)buf, written);
 }
 
 static bfs_err_t amiga_sync(bfs_bio_t *bio)
@@ -188,6 +231,8 @@ static const bfs_bio_ops_t amiga_bio_ops = {
     .write_block = amiga_write,
     .sync = amiga_sync,
     .close = amiga_close,
+    .read_blocks = amiga_read_blocks,
+    .write_blocks = amiga_write_blocks,
 };
 
 /* ── Hardware detection ────────────────────────────────────── */
@@ -264,6 +309,13 @@ bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
     ab->total_sectors = total_sectors;
     ab->removable = removable;
     ab->read_only = false;
+    ab->max_transfer = env->de_TableSize >= DE_MAXTRANSFER && env->de_MaxTransfer
+                           ? env->de_MaxTransfer : 0x1FE00;
+    ab->mask = env->de_TableSize >= DE_MASK ? env->de_Mask : 0;
+    ab->buf_mem_type = env->de_TableSize >= DE_BUFMEMTYPE ? env->de_BufMemType
+                                                          : MEMF_PUBLIC;
+    ab->bounce = NULL;
+    ab->bounce_size = 0;
 
     /* Standard commands are both sufficient and most compatible below 4 GiB. */
     uint64_t partition_end = ab->partition_start_byte + partition_size_bytes(ab);
@@ -274,6 +326,14 @@ bfs_err_t bfs_amiga_bio_init(amiga_bio_t *ab, struct IOExtTD *request,
     if (partition_end > (1ULL << 32) && ab->access_mode == ACCESS_STD)
         return BFS_ERR_INVAL;
     return BFS_OK;
+}
+
+void bfs_amiga_bio_release(amiga_bio_t *ab)
+{
+    if (!ab || !ab->bounce) return;
+    FreeMem(ab->bounce, ab->bounce_size);
+    ab->bounce = NULL;
+    ab->bounce_size = 0;
 }
 
 void bfs_amiga_bio_set_readonly(amiga_bio_t *ab, bool read_only)

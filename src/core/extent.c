@@ -78,7 +78,14 @@ bfs_err_t bfs_extent_init(bfs_extent_tree_t *et, bfs_bio_t *bio,
 bfs_err_t bfs_extent_lookup(bfs_extent_tree_t *et, uint32_t file_block,
                               bfs_blk_t *disk_block)
 {
-    if (!et || !disk_block) return BFS_ERR_INVAL;
+    uint32_t run;
+    return bfs_extent_lookup_run(et, file_block, disk_block, &run);
+}
+
+bfs_err_t bfs_extent_lookup_run(bfs_extent_tree_t *et, uint32_t file_block,
+                                bfs_blk_t *disk_block, uint32_t *run_blocks)
+{
+    if (!et || !disk_block || !run_blocks) return BFS_ERR_INVAL;
     if (et->tree.root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
 
@@ -96,6 +103,7 @@ bfs_err_t bfs_extent_lookup(bfs_extent_tree_t *et, uint32_t file_block,
         return BFS_ERR_CORRUPT;
     if (file_block < fb || file_block - fb >= len) return BFS_ERR_NOTFOUND;
     *disk_block = disk + (file_block - fb);
+    *run_blocks = len - (file_block - fb);
     return BFS_OK;
 }
 

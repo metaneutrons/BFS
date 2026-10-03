@@ -3324,6 +3324,7 @@ void EntryPoint(void)
         RemoveVolumeNode(h);
     }
     bfs_cache_destroy(&h->cache);
+    bfs_amiga_bio_release((amiga_bio_t *)(h + 1));
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_close();
 #endif
@@ -3347,6 +3348,7 @@ fail_startup:
         else RemoveVolumeNode(h);
         if (h->fs.mounted) bfs_fs_abandon(&h->fs);
         bfs_cache_destroy(&h->cache);
+        bfs_amiga_bio_release((amiga_bio_t *)(h + 1));
 #ifdef BFS_PERF_PROBE
         bfs_perf_probe_close();
 #endif

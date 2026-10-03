@@ -41,6 +41,11 @@ bfs_err_t bfs_extent_init(bfs_extent_tree_t *et, bfs_bio_t *bio,
 bfs_err_t bfs_extent_lookup(bfs_extent_tree_t *et, uint32_t file_block,
                               bfs_blk_t *disk_block);
 
+/* As bfs_extent_lookup, and the number of contiguous blocks mapped from
+ * file_block to the end of its extent (at least 1). */
+bfs_err_t bfs_extent_lookup_run(bfs_extent_tree_t *et, uint32_t file_block,
+                                bfs_blk_t *disk_block, uint32_t *run_blocks);
+
 /* Append 'count' blocks to the end of the file (at file_block offset).
  * Allocates physical blocks from the free space allocator.
  * Returns BFS_OK or error. Sets *disk_block_out to the first allocated block. */

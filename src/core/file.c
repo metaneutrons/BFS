@@ -47,6 +47,33 @@ static bfs_err_t file_data_bio_write(bfs_bio_t *bio, bfs_blk_t blk,
     return err;
 }
 
+static bfs_err_t file_data_bio_read_blocks(bfs_bio_t *bio, bfs_blk_t blk,
+                                           uint32_t count, void *buf)
+{
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_data_depth++;
+#endif
+    bfs_err_t err = bfs_bio_read_blocks(bio, blk, count, buf);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_data_depth--;
+#endif
+    return err;
+}
+
+static bfs_err_t file_data_bio_write_blocks(bfs_bio_t *bio, bfs_blk_t blk,
+                                            uint32_t count, const void *buf,
+                                            uint32_t *written)
+{
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_data_depth++;
+#endif
+    bfs_err_t err = bfs_bio_write_blocks(bio, blk, count, buf, written);
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_data_depth--;
+#endif
+    return err;
+}
+
 static bfs_err_t file_handle_error(const bfs_file_t *f)
 {
     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;
@@ -218,7 +245,29 @@ int32_t bfs_file_read_unlocked(bfs_file_t *f, void *buf, uint32_t len)
         if (chunk > len) chunk = len;
 
         bfs_blk_t disk_blk;
-        bfs_err_t err = bfs_extent_lookup(&f->extents, file_blk, &disk_blk);
+        bfs_err_t err;
+        /* Whole blocks of one extent go straight into the caller's buffer in
+         * one transfer; checksummed data is verified block by block below. */
+        if (blk_off == 0 && len >= bs && !f->extents.data_checksums) {
+            uint32_t run;
+            err = bfs_extent_lookup_run(&f->extents, file_blk, &disk_blk, &run);
+            if (err == BFS_OK) {
+                uint32_t blocks = len / bs;
+                if (blocks > run) blocks = run;
+                err = file_data_bio_read_blocks(f->fs->bio, disk_blk, blocks, out);
+                if (err != BFS_OK)
+                    return (total > 0) ? (int32_t)total : (int32_t)err;
+                uint32_t bytes = blocks * bs;
+                out += bytes;
+                f->offset += bytes;
+                total += bytes;
+                len -= bytes;
+                continue;
+            }
+            if (err != BFS_ERR_NOTFOUND)
+                return (total > 0) ? (int32_t)total : (int32_t)err;
+        }
+        err = bfs_extent_lookup(&f->extents, file_blk, &disk_blk);
         if (err == BFS_ERR_NOTFOUND) {
             /* Sparse region — return zeros */
             memset(out, 0, chunk);
@@ -319,15 +368,12 @@ static bfs_err_t file_write_allocated_run(bfs_file_t *f, const uint8_t *input,
         bfs_err_t cleanup = file_release_unmapped_run(fs, start, count);
         return cleanup != BFS_OK ? cleanup : BFS_ERR_CORRUPT;
     }
+    /* One transfer from the caller's buffer; a backend with DMA limits
+     * bounces it. On failure the leading blocks known written are kept. */
     uint32_t initialized = 0;
-    bfs_err_t write_error = BFS_OK;
-    for (; initialized < count; initialized++) {
-        /* The one-block scratch buffer is DMA-safe; the caller's input need
-         * not be. Capacity is checked before allocating the run. */
-        memcpy(fs->scratch, input + (size_t)initialized * bs, bs); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
-        write_error = file_data_bio_write(fs->bio, start + initialized, fs->scratch);
-        if (write_error != BFS_OK) break;
-    }
+    bfs_err_t write_error = file_data_bio_write_blocks(fs->bio, start, count, input,
+                                                       &initialized);
+    if (initialized > count) initialized = 0;
 
     if (initialized < count) {
         bfs_err_t err = file_release_unmapped_run(fs, start + initialized,
