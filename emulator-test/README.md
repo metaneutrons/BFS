@@ -47,6 +47,24 @@ The flow is:
 5. Run the complete on-Amiga integrity suite.
 6. Require a valid structured summary with zero failures.
 
+## Kickstart Runs
+
+CI uses only the AROS ROM. The same suites run locally on a lawfully obtained
+Kickstart ROM with Workbench commands from the asset directory below. The
+integration suite uses `ci-local.sh`; the compatibility, reset and baseline
+refusal checks take `--kickstart` and `--workbench`:
+
+```bash
+xvfb-run -a ./emulator-test/ci-local.sh 1800
+python3 emulator-test/compatibility-test.py \
+    --kickstart emulator-test/.assets/A1200.47.102.rom --workbench emulator-test/.assets
+python3 emulator-test/reset-test.py \
+    --kickstart emulator-test/.assets/A1200.47.102.rom --workbench emulator-test/.assets
+```
+
+Under Kickstart the reset test also requires the machine to boot again after
+the reset; the AROS ROM halts at that point, also without BFS.
+
 ## External Benchmark Assets
 
 The optional BFS/PFS3 comparison uses third-party or licensed Amiga files that must not be

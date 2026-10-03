@@ -51,18 +51,22 @@ def superblock_version(image):
     return struct.unpack_from(">I", header, 4)[0]
 
 
-def prepare_runtime():
+def prepare_runtime(kickstart):
+    """Return the evidence directory and the ROM lines of the emulator configuration."""
     runtime = ROOT / "build/emulator"
     runtime.mkdir(parents=True, exist_ok=True)
-    rom = runtime / "aros"
-    run_checked([ROOT / "tools/install-aros-rom.sh", rom])
     work = Path(tempfile.mkdtemp(prefix="run.compat-", dir=runtime))
     print(f"Compatibility evidence: {work}", flush=True)
-    return work, rom
+    if kickstart:
+        return work, f"kickstart_file = {kickstart}\n"
+    rom = runtime / "aros"
+    run_checked([ROOT / "tools/install-aros-rom.sh", rom])
+    return work, (f"kickstart_file = {rom / 'aros-amiga-m68k-rom.bin'}\n"
+                  f"kickstart_ext_file = {rom / 'aros-amiga-m68k-ext.bin'}\n")
 
 
-def prepare_media():
-    work, rom = prepare_runtime()
+def prepare_media(kickstart):
+    work, rom = prepare_runtime(kickstart)
     clean = work / "clean.hdf"
     with clean.open("wb") as stream:
         stream.truncate(32 * 1024 * 1024)
@@ -71,11 +75,15 @@ def prepare_media():
     return work, rom, clean
 
 
-def make_system(case, handler):
+def make_system(case, handler, workbench):
     system = case / "system"
     for directory in ("C", "L", "S"):
         (system / directory).mkdir(parents=True)
     shutil.copyfile(handler, system / "L/bfshandler")
+    if workbench:
+        # Commands the AROS ROM carries but Kickstart does not.
+        for command in ("Delete", "Wait"):
+            shutil.copyfile(workbench / "C" / command, system / "C" / command)
     shutil.copyfile(ROOT / "build/amiga/compatibility-probe", system / "C/compatibility-probe")
     return system
 
@@ -90,9 +98,7 @@ fast_memory = 8192
 cpu = 68040
 uae_cpu_speed = max
 uae_cpu_24bit_addressing = false
-kickstart_file = {rom / 'aros-amiga-m68k-rom.bin'}
-kickstart_ext_file = {rom / 'aros-amiga-m68k-ext.bin'}
-hard_drive_0 = {system}
+{rom}hard_drive_0 = {system}
 hard_drive_0_label = System
 hard_drive_0_priority = 0
 hard_drive_1 = {image}
@@ -108,14 +114,14 @@ automatic_input_grab = 0
     run_emulator(command, system / "compatibility.result", case / "fs-uae.log", 90)
 
 
-def refuse_current_media(emulator, handler, supported, images):
+def refuse_current_media(emulator, handler, supported, images, kickstart, workbench):
     """A driver for an older format must refuse current media unchanged."""
-    work, rom = prepare_runtime()
+    work, rom = prepare_runtime(kickstart)
     for index, source in enumerate(images):
         if superblock_version(source) != CURRENT_VERSION:
             raise ValueError(f"{source}: not a current-format image")
         case = work / f"refusal-{index}"
-        system = make_system(case, handler)
+        system = make_system(case, handler, workbench)
         image = case / "test.hdf"
         shutil.copyfile(source, image)
         before = hashlib.sha256(image.read_bytes()).digest()
@@ -136,14 +142,21 @@ def main():
                         help="only check that --handler refuses these current-format images")
     parser.add_argument("--supported-version", type=int, default=CURRENT_VERSION - 1,
                         help="format version the --refuse handler implements")
+    parser.add_argument("--kickstart", type=Path,
+                        help="Kickstart ROM to use instead of the AROS ROM")
+    parser.add_argument("--workbench", type=Path,
+                        help="Workbench tree whose C commands the Kickstart run needs")
     args = parser.parse_args()
+    if bool(args.kickstart) != bool(args.workbench):
+        raise ValueError("--kickstart and --workbench go together")
     emulator = shutil.which("fs-uae")
     if not emulator:
         raise ValueError("fs-uae is required")
     if args.refuse:
-        refuse_current_media(emulator, args.handler, args.supported_version, args.refuse)
+        refuse_current_media(emulator, args.handler, args.supported_version, args.refuse,
+                             args.kickstart, args.workbench)
         return
-    work, rom, clean = prepare_media()
+    work, rom, clean = prepare_media(args.kickstart)
     # expected: 0 compatible, 4 newer version, 3 unknown options. The "v2"
     # scenario carries an older format in both slots, which bfs format replaces.
     scenarios = [("format", None, False, False, 0, True, False),
@@ -158,7 +171,7 @@ def main():
     for name, slot, options, damaged, expected, format_blank, snapshot_commands in scenarios:
         replace_old = slot == "both"
         case = work / name
-        system = make_system(case, args.handler)
+        system = make_system(case, args.handler, args.workbench)
         shutil.copyfile(ROOT / "build/amiga/cli-fixture", system / "C/cli-fixture")
         shutil.copyfile(ROOT / "build/amiga/bfs", system / "C/bfs")
         image = case / "test.hdf"

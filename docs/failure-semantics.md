@@ -53,7 +53,9 @@ mutating packets fail as well. A keyboard reset (Ctrl-Amiga-Amiga) first
 commits through the handler's reset handler; from that warning until the
 machine resets, every change is committed before its packet is answered.
 `make reset-test` checks this on FS-UAE: every write the guest saw return
-before the reset is on the volume, and the volume is clean.
+before the reset is on the volume, and the volume is clean. CI runs it on the
+AROS ROM; locally it also runs on Kickstart 3.2, where the machine must boot
+again after the reset.
 
 A writable mount synchronizes the selected readable state before exposing
 allocation or running mount-time recovery. This also covers a newer valid

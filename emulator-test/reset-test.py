@@ -9,7 +9,8 @@ must be clean and hold every reported record.
 
 The image is checked on the host because the AROS ROM does not boot again
 after the software reboot it performs once all reset handlers have answered;
-plain ColdReboot() stops the same way without BFS.
+plain ColdReboot() stops the same way without BFS. With --kickstart the test
+runs on a Kickstart ROM instead and also requires the machine to boot again.
 """
 
 import argparse
@@ -62,15 +63,26 @@ def free_display():
     raise ValueError("no free X display")
 
 
-def prepare(work, rom, handler, probe):
+def rom_lines(rom, kickstart):
+    if kickstart:
+        return f"kickstart_file = {kickstart}\n"
+    return (f"kickstart_file = {rom / 'aros-amiga-m68k-rom.bin'}\n"
+            f"kickstart_ext_file = {rom / 'aros-amiga-m68k-ext.bin'}\n")
+
+
+def prepare(work, rom, handler, probe, kickstart=None, workbench=None):
     system = work / "system"
     for directory in ("C", "L", "S"):
         (system / directory).mkdir(parents=True)
     shutil.copyfile(handler, system / "L/bfshandler")
     shutil.copyfile(probe, system / "C/reset-probe")
+    if workbench:
+        # Kickstart has no Wait command in ROM.
+        shutil.copyfile(workbench / "C/Wait", system / "C/Wait")
     # The writer runs on the first boot only; a later boot must not touch DH1.
     (system / "S/Startup-Sequence").write_text(
-        "FailAt 21\nIf EXISTS SYS:reset-started\n  Wait 600\nElse\n"
+        "FailAt 21\nIf EXISTS SYS:reset-started\n  Echo >SYS:reset-rebooted \"\"\n"
+        "  Wait 600\nElse\n"
         "  Echo >SYS:reset-started \"\"\n  C:reset-probe\nEndIf\n", encoding="ascii")
     image = work / "reset.hdf"
     with image.open("wb") as stream:
@@ -85,9 +97,7 @@ fast_memory = 8192
 cpu = 68040
 uae_cpu_speed = max
 uae_cpu_24bit_addressing = false
-kickstart_file = {rom / 'aros-amiga-m68k-rom.bin'}
-kickstart_ext_file = {rom / 'aros-amiga-m68k-ext.bin'}
-hard_drive_0 = {system}
+{rom_lines(rom, kickstart)}hard_drive_0 = {system}
 hard_drive_0_label = System
 hard_drive_0_priority = 0
 hard_drive_1 = {image}
@@ -152,7 +162,13 @@ def main():
     parser.add_argument("--handler", type=Path, default=ROOT / "build/amiga/bfshandler")
     parser.add_argument("--probe", type=Path, default=ROOT / "build/amiga/reset-probe")
     parser.add_argument("--write-seconds", type=float, default=4.0)
+    parser.add_argument("--kickstart", type=Path,
+                        help="Kickstart ROM to use instead of the AROS ROM")
+    parser.add_argument("--workbench", type=Path,
+                        help="Workbench tree whose C:Wait the Kickstart run needs")
     args = parser.parse_args()
+    if bool(args.kickstart) != bool(args.workbench):
+        raise ValueError("--kickstart and --workbench go together")
     for tool in ("fs-uae", "Xvfb", "xdotool"):
         if not shutil.which(tool):
             raise ValueError(f"{tool} is required")
@@ -162,7 +178,8 @@ def main():
     run_checked([ROOT / "tools/install-aros-rom.sh", rom])
     work = Path(tempfile.mkdtemp(prefix="run.reset-", dir=runtime))
     print(f"Reset evidence: {work}", flush=True)
-    system, image, config = prepare(work, rom, args.handler, args.probe)
+    system, image, config = prepare(work, rom, args.handler, args.probe,
+                                    args.kickstart, args.workbench)
 
     display = free_display()
     # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
@@ -183,6 +200,10 @@ def main():
             time.sleep(args.write_seconds)
             press_reset(display)
             reported = wait_until_stopped(progress, 30)
+            if args.kickstart:
+                # Kickstart reboots once every reset handler has answered.
+                wait_for((system / "reset-rebooted").exists, 60, "the reboot")
+                print("machine booted again after the reset", flush=True)
     finally:
         for process in (emulator, xvfb):
             if process and process.poll() is None:
