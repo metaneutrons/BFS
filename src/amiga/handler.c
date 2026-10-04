@@ -1671,6 +1671,15 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     return true;
 }
 
+/* A ReadLink path split around its soft link: the text before the link and
+ * the text after it, starting with '/'. */
+typedef struct {
+    const char *prefix;
+    uint32_t prefix_len;
+    const char *rest;
+    uint32_t rest_len;
+} soft_link_request_t;
+
 /* Write into buf the path that replaces a soft link, as PFS3 does: the
  * request's text before the link (prefix), the link's target, and the text
  * after the link (rest, starting with '/'). A target containing ':' is
@@ -1680,10 +1689,13 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
  * dropped. Returns the length, -2 if size bytes cannot hold the path and its
  * terminator, or -1 with *error set. */
 static LONG ComposeSoftLinkPath(struct bfs_handler *h, uint32_t ino,
-                                const char *prefix, uint32_t prefix_len,
-                                const char *rest, uint32_t rest_len,
+                                const soft_link_request_t *request,
                                 char *buf, LONG size, LONG *error)
 {
+    const char *prefix = request->prefix;
+    uint32_t prefix_len = request->prefix_len;
+    const char *rest = request->rest;
+    uint32_t rest_len = request->rest_len;
     bfs_inode_t inode;
     bfs_err_t err = bfs_inode_read(&h->fs.inode_tree, ino, &inode);
     if (err != BFS_OK) { *error = Pfs4ToDosError(err); return -1; }
@@ -2540,10 +2552,11 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (type != BFS_INODE_SOFTLINK) { res2 = ERROR_OBJECT_WRONG_TYPE; break; }
 
         const char *rest = link + link_len;
+        soft_link_request_t request = {
+            path, (uint32_t)(link - path), rest, (uint32_t)(path + path_len - rest)
+        };
         LONG error = 0;
-        LONG n = ComposeSoftLinkPath(h, ino, path, (uint32_t)(link - path),
-                                     rest, (uint32_t)(path + path_len - rest),
-                                     buf, bufsize, &error);
+        LONG n = ComposeSoftLinkPath(h, ino, &request, buf, bufsize, &error);
         res1 = n;
         res2 = n == -2 ? ERROR_LINE_TOO_LONG : error;
         break;
