@@ -21,8 +21,25 @@
 #include <proto/exec.h>
 #include <proto/dos.h>
 #include "../src/amiga/dos_packets.h"
+#include "../include/bfs_dos_name.h"
 #include "snapshot_protocol.h"
 #include "commit_protocol.h"
+
+/* Native AROS passes pointer-sized packet arguments and NUL-terminated BSTRs
+ * (AROS_FAST_BSTR); its 64-bit file calls live in dos64.library. */
+#ifdef BFS_AROS
+#include <aros/debug.h>
+#include <dos/dos64.h>
+#include <proto/dos64.h>
+typedef SIPTR test_word_t;
+struct Library *DOS64Base;
+/* ExAll entries hold pointers, which are 8 bytes wide. */
+#define EXALL_BUFFER __attribute__((aligned(8)))
+#else
+typedef LONG test_word_t;
+#define EXALL_BUFFER
+#endif
+#define TEST_PTR(value) ((test_word_t)(value))
 
 /* Request 32KB stack from AmigaOS */
 LONG __stack = 32768;
@@ -36,6 +53,7 @@ static UBYTE *databuf;     /* 64KB work buffer (allocated) */
 
 static int tests_run, tests_pass, tests_fail;
 static BPTR logfh; /* log file handle (0 = no log) */
+static BOOL serial_log; /* mirror the log to the debug console (AROS) */
 static BOOL quick_mode;
 static BOOL io_failed, log_failed;
 static char logpath[480];
@@ -90,10 +108,46 @@ static void putnum(LONG n)
     put(p);
 }
 
+#ifdef BFS_AROS
+/* Each log line goes to the debug console, which a QEMU run captures from the
+ * serial port, as "BFS-LOG<TAB>line". A line is emitted whole, without a
+ * task switch, so other debug output cannot split it. */
+static char serial_line[600];
+static int serial_len;
+
+static void serial_emit(const char *prefix, const char *text, int len)
+{
+    char line[620];
+    int prefix_len = tool_strlen(prefix);
+    if (len > (int)sizeof(line) - prefix_len - 1) len = (int)sizeof(line) - prefix_len - 1;
+    tool_memcpy(line, prefix, prefix_len);
+    tool_memcpy(line + prefix_len, text, len);
+    line[prefix_len + len] = 0;
+    Forbid();
+    bug("%s\n", line);
+    Permit();
+}
+
+static void serial_put(const char *s)
+{
+    for (; *s; s++) {
+        if (*s == '\n') {
+            serial_emit("BFS-LOG\t", serial_line, serial_len);
+            serial_len = 0;
+        } else if (serial_len < (int)sizeof(serial_line)) {
+            serial_line[serial_len++] = *s;
+        }
+    }
+}
+#endif
+
 static void logput(const char *s)
 {
     LONG len = tool_strlen(s);
     if (logfh && Write(logfh, (APTR)s, len) != len) log_failed = TRUE;
+#ifdef BFS_AROS
+    if (serial_log) serial_put(s);
+#endif
 }
 static void lognum(LONG n)
 {
@@ -119,7 +173,7 @@ static void progress(LONG cur, LONG total)
 {
     /* CI consumes the result file; console repaint traffic is disproportionately
      * expensive under FS-UAE and provides no machine-readable evidence. */
-    if (logfh) return;
+    if (logfh || serial_log) return;
     LONG pct = (cur * 100) / total;
     char bar[16] = "..........";
     LONG filled = pct / 10;
@@ -129,7 +183,7 @@ static void progress(LONG cur, LONG total)
 
 static void progress_done(void)
 {
-    if (!logfh) put("\r                        \r");
+    if (!logfh && !serial_log) put("\r                        \r");
 }
 
 static void fail(const char *name, const char *detail)
@@ -386,11 +440,10 @@ static BPTR locate_relative(BPTR lock, const char *name)
     UBYTE *bstr = (UBYTE *)storage;
     ULONG len = 0;
     while (len < 255 && name[len]) len++;
-    bstr[0] = len;
-    tool_memcpy(bstr + 1, name, len);
+    bfs_dos_name_encode(bstr, sizeof(storage), (const UBYTE *)name, len);
     struct FileLock *base = BADDR(lock);
-    return DoPkt(base->fl_Task, ACTION_LOCATE_OBJECT, lock,
-                 (LONG)MKBADDR(bstr), SHARED_LOCK, 0, 0);
+    return (BPTR)DoPkt(base->fl_Task, ACTION_LOCATE_OBJECT, TEST_PTR(lock),
+                       TEST_PTR(MKBADDR(bstr)), SHARED_LOCK, 0, 0);
 }
 
 static BOOL check_relative_paths(BPTR child, BPTR expected)
@@ -1094,6 +1147,7 @@ static void test_resize_positions(void)
     else fail("resizepos_41", "position preservation or shared handle truncation");
 }
 
+#ifndef BFS_AROS
 static BOOL send_packet64(BPTR file, LONG type, int64_t offset, LONG mode,
                            int64_t *result, LONG *error)
 {
@@ -1145,6 +1199,26 @@ static BOOL os4_packet_values(BPTR file)
     return Read(file, databuf, 1) == 1 && databuf[0] == 'X';
 }
 
+#else
+/* 64-bit AROS carries 64-bit values in the ordinary packet fields;
+ * dos64.library offers the OS4-style calls on top of them. */
+static BOOL os4_packet_values(BPTR file)
+{
+    QUAD large = (1LL << 32) + 123;
+    if (!DOS64Base) return FALSE;
+    if (GetFileSize64(file) != 16) return FALSE;
+    if (!ChangeFileSize64(file, OFFSET_BEGINNING, large)) return FALSE;
+    if (GetFileSize64(file) != large) return FALSE;
+    if (!ChangeFilePosition64(file, OFFSET_END, -1)) return FALSE;
+    if (Write(file, (APTR)"X", 1) != 1) return FALSE;
+    if (GetFilePosition64(file) != large) return FALSE;
+    if (ChangeFilePosition64(file, OFFSET_CURRENT, INT64_MIN)) return FALSE;
+    if (GetFilePosition64(file) != large) return FALSE;
+    if (!ChangeFilePosition64(file, OFFSET_END, -1)) return FALSE;
+    return Read(file, databuf, 1) == 1 && databuf[0] == 'X';
+}
+#endif
+
 static void test_os4_packets(void)
 {
     const char *path = vpath("os4-packets.dat");
@@ -1157,6 +1231,7 @@ static void test_os4_packets(void)
     else fail("os4pkt_42", "64-bit packet layout, result, or position");
 }
 
+#ifndef BFS_AROS
 /* GCC 6 m68k cannot allocate registers when a DoPkt inline and quadword
  * comparisons are in the same expression. Keep that ABI boundary out of line. */
 static LONG __attribute__((noinline)) send_morphos_packet(struct FileHandle *fh,
@@ -1217,6 +1292,35 @@ static BOOL examine_packet64(BPTR file, const char *path)
     return ok;
 }
 
+#else
+/* The MorphOS-style calls of dos64.library: positions and sizes beyond
+ * 4 GiB, and FileInfoBlock64 sizes from a handle and from a lock. */
+static BOOL morphos_packet_values(BPTR file)
+{
+    QUAD offset = (1LL << 32) + 234;
+    if (!DOS64Base) return FALSE;
+    if (SetFileSize64(file, OFFSET_BEGINNING, offset) != offset) return FALSE;
+    if (Seek64(file, OFFSET_END, -1) != 0) return FALSE;
+    if (Write(file, (APTR)"Y", 1) != 1) return FALSE;
+    if (Seek64(file, OFFSET_CURRENT, INT64_MIN) != -1 || !IoErr()) return FALSE;
+    if (Seek64(file, OFFSET_END, -1) != offset) return FALSE;
+    return Read(file, databuf, 1) == 1 && databuf[0] == 'Y';
+}
+
+static BOOL examine_packet64(BPTR file, const char *path)
+{
+    static struct FileInfoBlock64 fib;
+    QUAD size = (1LL << 32) + 234;
+    BOOL ok = ExamineFH64(file, &fib, NULL) && fib.fib_Size == (UQUAD)size &&
+              fib.fib_NumBlocks == (UQUAD)((size + 511) / 512);
+    BPTR lock = ok ? Lock(path, SHARED_LOCK) : 0;
+    if (!lock) return FALSE;
+    ok = Examine64(lock, &fib, NULL) && fib.fib_Size == (UQUAD)size;
+    UnLock(lock);
+    return ok;
+}
+#endif
+
 static void test_morphos_packets(void)
 {
     const char *path = vpath("morphos-packets.dat");
@@ -1232,7 +1336,7 @@ static void test_morphos_packets(void)
 static BOOL scan_exall_batches(BPTR lock, struct ExAllControl *control)
 {
     /* Room for one entry with its comment, so the listing takes batches. */
-    ULONG storage[16];
+    ULONG storage[16] EXALL_BUFFER;
     ULONG seen = 0, batches = 0;
     for (;;) {
         BOOL more = ExAll(lock, (struct ExAllData *)storage, sizeof(storage), ED_COMMENT, control);
@@ -1557,21 +1661,20 @@ static void test_snapshot_create_delete(void)
     if (!port) { fail(T, "no port"); return; }
 
     /* Create snapshot */
-    UBYTE bstr[36] = {0};
-    const char *sname = "test_snap";
-    int nlen = 9;
-    bstr[0] = nlen; tool_memcpy(bstr + 1, sname, nlen);
+    ULONG storage[9] = {0};
+    UBYTE *bstr = (UBYTE *)storage;
+    bfs_dos_name_encode(bstr, sizeof(storage), (const UBYTE *)"test_snap", 9);
 
-    LONG res = DoPkt(port, BFS_ACTION_SNAPSHOT_CREATE, (LONG)MKBADDR(bstr), 0, 0, 0, 0);
+    LONG res = DoPkt(port, BFS_ACTION_SNAPSHOT_CREATE, TEST_PTR(MKBADDR(bstr)), 0, 0, 0, 0);
     if (!res) { fail(T, "create"); return; }
 
     /* Verify exists */
     char lbuf[64];
-    res = DoPkt(port, BFS_ACTION_SNAPSHOT_LIST, (LONG)lbuf, (LONG)sizeof(lbuf), 0, 0, 0);
+    res = DoPkt(port, BFS_ACTION_SNAPSHOT_LIST, TEST_PTR(lbuf), (LONG)sizeof(lbuf), 0, 0, 0);
     if (!res) { fail(T, "list"); return; }
 
     /* Delete */
-    res = DoPkt(port, BFS_ACTION_SNAPSHOT_DELETE, (LONG)MKBADDR(bstr), 0, 0, 0, 0);
+    res = DoPkt(port, BFS_ACTION_SNAPSHOT_DELETE, TEST_PTR(MKBADDR(bstr)), 0, 0, 0, 0);
     if (!res) { fail(T, "delete"); return; }
 
     pass(T);
@@ -1791,7 +1894,7 @@ static void test_exall_delete(void)
     const char *T = "exalldel_49";
     int count = quick_mode ? 16 : 50;
     UBYTE seen[64] = {0};
-    ULONG storage[32];
+    ULONG storage[32] EXALL_BUFFER;
     int batches = 0;
     struct ExAllControl *control = AllocDosObject(DOS_EXALLCONTROL, NULL);
     BOOL ok = control && make_items("exalldel", count);
@@ -1830,7 +1933,7 @@ static void test_exall_packing(void)
     if (!lock) ok = FALSE;
     if (ok) {
         UBYTE seen[64] = {0};
-        static ULONG storage[1024];
+        static ULONG storage[1024] EXALL_BUFFER;
         BOOL more = ExAll(lock, (struct ExAllData *)storage, 4096, ED_COMMENT, control);
         if (more) {
             ok = FALSE;
@@ -1864,7 +1967,7 @@ static void test_soft_link(void)
     tool_memcpy(link, p, tool_strlen(p) + 1);
     struct MsgPort *port = DeviceProc(vol);
     if (!port) { fail(T, "no port"); return; }
-    if (!MakeLink(link, (LONG)target, LINK_SOFT)) { fail(T, "make"); return; }
+    if (!MakeLink(link, TEST_PTR(target), LINK_SOFT)) { fail(T, "make"); return; }
 
     BPTR root = Lock(vol, SHARED_LOCK);
     BOOL ok = root != 0;
@@ -1926,8 +2029,8 @@ static void test_soft_link_resolution(void)
     /* A relative link to the directory, an absolute one to the file. */
     const char *step = "make";
     BOOL ok = write_seeded(file, 3000, 0x5252) &&
-              MakeLink(dirlink, (LONG)"sldir", LINK_SOFT) &&
-              MakeLink(filelink, (LONG)file, LINK_SOFT);
+              MakeLink(dirlink, TEST_PTR("sldir"), LINK_SOFT) &&
+              MakeLink(filelink, TEST_PTR(file), LINK_SOFT);
     if (ok) { step = "open through the directory link"; ok = verify_seeded(through, 3000, 0x5252); }
     if (ok) { step = "open the file link"; ok = verify_seeded(filelink, 3000, 0x5252); }
     if (ok) {
@@ -2026,8 +2129,12 @@ int main(void)
     me->pr_WindowPtr = (APTR)-1;
 
     struct RDArgs *rdargs;
-    LONG args[4] = {0, 0, 0, 0};
+    test_word_t args[5] = {0, 0, 0, 0, 0};
+#ifdef BFS_AROS
+    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S,SERIAL/S", args, NULL);
+#else
     rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S", args, NULL);
+#endif
     if (!rdargs) {
         put("Usage: bfs-test VOLUME [LOG=path] [filter] [QUICK]\n");
         put("  bfs-test DH1:                   (run all)\n");
@@ -2035,11 +2142,15 @@ int main(void)
         put("  bfs-test DH1: a+b               (run matching filters)\n");
         put("  bfs-test DH1: LOG=SYS:test.log  (CI mode)\n");
         put("  bfs-test DH1: LOG=SYS:x large   (both)\n");
+#ifdef BFS_AROS
+        put("  bfs-test DH1: SERIAL            (log to the debug console)\n");
+#endif
         me->pr_WindowPtr = oldwin;
         return 5;
     }
 
     quick_mode = args[3] != 0;
+    serial_log = args[4] != 0;
 
     /* Validate and copy all ReadArgs-backed strings before FreeArgs. */
     const char *volume_arg = (const char *)args[0];
@@ -2108,6 +2219,9 @@ int main(void)
 
     FreeArgs(rdargs);
 
+#ifdef BFS_AROS
+    DOS64Base = OpenLibrary("dos64.library", 0);
+#endif
     databuf = AllocMem(BUF_SIZE, MEMF_PUBLIC);
     if (!databuf) {
         put("Out of memory\n");
@@ -2150,6 +2264,14 @@ int main(void)
         logfh = 0;
         if (!log_failed && !log_completion(TRUE)) log_failed = TRUE;
     }
+#ifdef BFS_AROS
+    /* The QEMU runner treats this line as the completion record. */
+    if (serial_log && !log_failed) {
+        static const char record[] = "BFS-TEST-COMPLETE\t1";
+        serial_emit("BFS-DONE\t", record, sizeof(record) - 1);
+    }
+    if (DOS64Base) CloseLibrary(DOS64Base);
+#endif
     me->pr_WindowPtr = oldwin;
     FreeMem(databuf, BUF_SIZE);
     return tests_fail || log_failed || !tests_run ? 5 : 0;

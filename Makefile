@@ -3,15 +3,24 @@
 # Targets:
 #   make host-test   — build and run tests on host (macOS/Linux)
 #   make amiga       — cross-compile Amiga handler (requires bebbo's gcc)
-#   make aros        — cross-compile native AROS x86_64 handler and CLI
+#   make aros        — cross-compile native AROS x86_64 handler, CLI and test program
+#   make aros-ci-test — run the integration test on AROS x86_64 in QEMU
 #   make clean
 
 # ── Toolchains ──────────────────────────────────────────────
 HOST_CC  = cc
 HOST_AR  = ar
 AMIGA_CC = m68k-amigaos-gcc
+# AROS_ROOT names an AROS-NX checkout with a pc-x86_64 build. Its
+# aros-toolchains.lock.toml selects the cross-toolchain, which the aros CLI
+# installs and verifies, so compiler and SDK come from one release.
+# AROS_TOOLCHAIN and AROS_BUILD override the two halves separately.
+AROS_ROOT ?=
+AROS_PRESET = pc-x86_64
 AROS_TOOLCHAIN ?=
 AROS_BUILD ?=
+# The linker driver of the installed aros-tools suite, the same that builds
+# AROS-NX; the toolchain's own copy is older.
 AROS_COLLECT ?= aros-collect
 GCOVR    = gcovr
 GCOV     = gcov
@@ -53,12 +62,14 @@ EMU_SRC  = tests/block_device_emu.c
 BUILD_HOST  = build/host
 BUILD_AMIGA = build/amiga
 BUILD_AROS = build/aros/pc-x86_64
-AROS_SRCS = src/amiga/startup_aros.c src/amiga/handler.c src/amiga/amiga_bio.c $(CORE_SRC)
+AROS_SRCS = src/amiga/startup_aros.c src/amiga/handler.c src/amiga/amiga_bio.c \
+	src/amiga/heap_aros.c $(CORE_SRC)
 AROS_HEADERS = $(wildcard src/amiga/*.h) $(CORE_HEADERS) tools/bfs_command.h
 AROS_OBJS = $(patsubst %.c,$(BUILD_AROS)/%.o,$(AROS_SRCS))
-AROS_CLI_SRCS = tools/startup_aros.c tools/bfs.c tools/bfs_common.c \
+AROS_CLI_SRCS = tools/bfs.c tools/bfs_common.c \
 	tools/bfs_format.c tools/bfs_snapshot.c tools/bfs_check.c
 AROS_CLI_OBJS = $(patsubst %.c,$(BUILD_AROS)/%.o,$(AROS_CLI_SRCS))
+AROS_TEST_OBJS = $(BUILD_AROS)/tools/bfs-test.o
 HOST_CORE_OBJS = $(patsubst src/core/%.c,$(BUILD_HOST)/obj/core/%.o,$(CORE_SRC))
 HOST_POSIX_OBJ = $(BUILD_HOST)/obj/host/posix_bio.o
 HOST_LIB = $(BUILD_HOST)/libbfs.a
@@ -82,7 +93,7 @@ AROS_DOS_NAME_TEST_BIN = $(BUILD_HOST)/test_dos_name_aros_profile
 
 # ── Phony targets ───────────────────────────────────────────
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
-	host-test coverage sanitize amiga aros amiga-stresstest clean tools stress-test bench release \
+	host-test coverage sanitize amiga aros aros-ci-test amiga-stresstest clean tools stress-test bench release \
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
 	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
 	fault-qualification fault-qualification-verify amiga-fs-compare-bench amiga-fs-profile-bench \
@@ -290,10 +301,32 @@ amiga-perf-probe-handler:
 		-nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 
 aros:
-	@test -n "$(AROS_TOOLCHAIN)" -a -n "$(AROS_BUILD)" || { \
-		echo "AROS_TOOLCHAIN and AROS_BUILD are required" >&2; exit 2; }
-	@$(MAKE) $(BUILD_AROS)/bfshandler $(BUILD_AROS)/bfs AROS_TOOLCHAIN="$(AROS_TOOLCHAIN)" \
-		AROS_BUILD="$(AROS_BUILD)" AROS_COLLECT="$(AROS_COLLECT)"
+	@toolchain="$(AROS_TOOLCHAIN)"; build="$(AROS_BUILD)"; \
+	if [ -n "$(AROS_ROOT)" ]; then \
+		[ -n "$$build" ] || build="$(AROS_ROOT)/build/$(AROS_PRESET)"; \
+		if [ -z "$$toolchain" ]; then \
+			(cd "$(AROS_ROOT)" && aros toolchain install --preset $(AROS_PRESET) >/dev/null) || exit 2; \
+			toolchain=$$(cd "$(AROS_ROOT)" && aros toolchain path --preset $(AROS_PRESET)) || exit 2; \
+		fi; \
+	fi; \
+	if [ -z "$$toolchain" ] || [ ! -d "$$build/SDK/include" ]; then \
+		echo "make aros needs AROS_ROOT: an AROS-NX checkout with a $(AROS_PRESET) build" >&2; \
+		exit 2; \
+	fi; \
+	$(MAKE) $(BUILD_AROS)/bfshandler $(BUILD_AROS)/bfs $(BUILD_AROS)/bfs-test \
+		AROS_TOOLCHAIN="$$toolchain" AROS_BUILD="$$build"
+
+# The handler starts as a DOS process, so it has its own entry, its own heap
+# (heap_aros.c) and the static C library. Commands use the standard startup,
+# which opens their libraries, including the C library, through autoinit.
+AROS_BUILTINS = $(AROS_TOOLCHAIN)/lib/clang/11.0.0/lib/aros/libclang_rt.builtins-x86_64.a
+AROS_HANDLER_LIBS = $(AROS_SYSROOT)/lib/libamiga.a $(AROS_SYSROOT)/lib/libarossupport.a \
+	$(AROS_SYSROOT)/lib/libdos.a $(AROS_SYSROOT)/lib/libexec.a \
+	$(AROS_SYSROOT)/lib/libstdc.static.a $(AROS_BUILTINS)
+AROS_COMMAND_LIBS = $(AROS_SYSROOT)/lib/startup.o $(AROS_SYSROOT)/lib/libamiga.a \
+	$(AROS_SYSROOT)/lib/libarossupport.a $(AROS_SYSROOT)/lib/libdos.a \
+	$(AROS_SYSROOT)/lib/liblibinit.a $(AROS_SYSROOT)/lib/libautoinit.a \
+	$(AROS_SYSROOT)/lib/libstdc.a $(AROS_SYSROOT)/lib/libexec.a $(AROS_BUILTINS)
 
 $(BUILD_AROS)/%.o: %.c $(AROS_HEADERS)
 	@mkdir -p $(dir $@)
@@ -301,17 +334,23 @@ $(BUILD_AROS)/%.o: %.c $(AROS_HEADERS)
 
 $(BUILD_AROS)/bfshandler: $(AROS_OBJS)
 	$(AROS_COLLECT) --ld "$(AROS_LD)" -- -r --sysroot="$(AROS_SYSROOT)" \
-		$(AROS_OBJS) -o $@ \
-		$(AROS_SYSROOT)/lib/libdos.a $(AROS_SYSROOT)/lib/libexec.a \
-		$(AROS_SYSROOT)/lib/libamiga.a $(AROS_SYSROOT)/lib/libarossupport.a \
-		$(AROS_SYSROOT)/lib/libstdc.a $(AROS_SYSROOT)/lib/libautoinit.a
+		$(AROS_OBJS) -o $@ $(AROS_HANDLER_LIBS)
 
 $(BUILD_AROS)/bfs: $(AROS_CLI_OBJS)
 	$(AROS_COLLECT) --ld "$(AROS_LD)" -- -r --sysroot="$(AROS_SYSROOT)" \
-		$(AROS_CLI_OBJS) -o $@ \
-		$(AROS_SYSROOT)/lib/libdos.a $(AROS_SYSROOT)/lib/libexec.a \
-		$(AROS_SYSROOT)/lib/libamiga.a $(AROS_SYSROOT)/lib/libarossupport.a \
-		$(AROS_SYSROOT)/lib/libstdc.a $(AROS_SYSROOT)/lib/libautoinit.a
+		$(AROS_CLI_OBJS) -o $@ $(AROS_COMMAND_LIBS)
+
+$(BUILD_AROS)/bfs-test: $(AROS_TEST_OBJS)
+	$(AROS_COLLECT) --ld "$(AROS_LD)" -- -r --sysroot="$(AROS_SYSROOT)" \
+		$(AROS_TEST_OBJS) -o $@ $(AROS_COMMAND_LIBS)
+
+# The integration test on AROS x86_64: the AROS-NX boot ISO of AROS_ROOT,
+# extended by the handler, a Mountlist and the test program, in QEMU.
+aros-ci-test: aros $(BUILD_HOST)/bfs
+	python3 emulator-test/aros-ci-test.py \
+		--iso "$(or $(AROS_ISO),$(or $(AROS_BUILD),$(AROS_ROOT)/build/$(AROS_PRESET))/aros-x86_64-pc.iso)" \
+		--handler $(BUILD_AROS)/bfshandler --test-binary $(BUILD_AROS)/bfs-test \
+		--bfs $(BUILD_HOST)/bfs
 
 amiga-stresstest:
 	@mkdir -p $(BUILD_AMIGA)
