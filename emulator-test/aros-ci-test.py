@@ -44,7 +44,7 @@ Activate  = 1
 
 def run_checked(argv, **kwargs):
     # Trusted local argv, resolved executables and no shell.
-    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args, python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
     return subprocess.run([str(value) for value in argv], check=True, shell=False, **kwargs)  # nosec B603
 
 
@@ -87,7 +87,7 @@ def build_iso(base_iso, handler, test_binary, run_dir, profile, filter_name):
 def wait_for_completion(command, serial, log, timeout):
     deadline = time.monotonic() + timeout
     with log.open("wb") as output:
-        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args, python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
         process = subprocess.Popen(command, stdout=output, stderr=subprocess.STDOUT,  # nosec B603
                                    shell=False, start_new_session=True)
         try:
@@ -117,6 +117,15 @@ def extract_result(serial, result):
         result.with_name(result.name + ".done").write_bytes(f"{done}\n".encode("ascii"))
 
 
+def check_inputs(parser, args):
+    for tool in ("qemu-system-x86_64", "xorriso"):
+        if not shutil.which(tool):
+            parser.error(f"{tool} is required")
+    for path in (args.iso, args.handler, args.test_binary, args.bfs):
+        if not path.is_file():
+            parser.error(f"not found: {path}")
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--iso", type=Path, required=True)
@@ -128,13 +137,7 @@ def main():
     parser.add_argument("--timeout", type=int, default=3600)
     parser.add_argument("--memory", type=int, default=512)
     args = parser.parse_args()
-
-    for tool in ("qemu-system-x86_64", "xorriso"):
-        if not shutil.which(tool):
-            parser.error(f"{tool} is required")
-    for path in (args.iso, args.handler, args.test_binary, args.bfs):
-        if not path.is_file():
-            parser.error(f"not found: {path}")
+    check_inputs(parser, args)
 
     runtime = ROOT / "build/emulator"
     runtime.mkdir(parents=True, exist_ok=True)

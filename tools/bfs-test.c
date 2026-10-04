@@ -112,19 +112,13 @@ static void putnum(LONG n)
 /* Each log line goes to the debug console, which a QEMU run captures from the
  * serial port, as "BFS-LOG<TAB>line". A line is emitted whole, without a
  * task switch, so other debug output cannot split it. */
-static char serial_line[600];
+static char serial_line[601];
 static int serial_len;
 
-static void serial_emit(const char *prefix, const char *text, int len)
+static void serial_emit(const char *prefix, const char *text)
 {
-    char line[620];
-    int prefix_len = tool_strlen(prefix);
-    if (len > (int)sizeof(line) - prefix_len - 1) len = (int)sizeof(line) - prefix_len - 1;
-    tool_memcpy(line, prefix, prefix_len);
-    tool_memcpy(line + prefix_len, text, len);
-    line[prefix_len + len] = 0;
     Forbid();
-    bug("%s\n", line);
+    bug("%s%s\n", prefix, text);
     Permit();
 }
 
@@ -132,9 +126,10 @@ static void serial_put(const char *s)
 {
     for (; *s; s++) {
         if (*s == '\n') {
-            serial_emit("BFS-LOG\t", serial_line, serial_len);
+            serial_line[serial_len] = 0;
+            serial_emit("BFS-LOG\t", serial_line);
             serial_len = 0;
-        } else if (serial_len < (int)sizeof(serial_line)) {
+        } else if (serial_len < (int)sizeof(serial_line) - 1) {
             serial_line[serial_len++] = *s;
         }
     }
@@ -2267,8 +2262,7 @@ int main(void)
 #ifdef BFS_AROS
     /* The QEMU runner treats this line as the completion record. */
     if (serial_log && !log_failed) {
-        static const char record[] = "BFS-TEST-COMPLETE\t1";
-        serial_emit("BFS-DONE\t", record, sizeof(record) - 1);
+        serial_emit("BFS-DONE\t", "BFS-TEST-COMPLETE\t1");
     }
     if (DOS64Base) CloseLibrary(DOS64Base);
 #endif
