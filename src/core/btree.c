@@ -90,8 +90,9 @@ static bfs_node_validation_t node_validation_context(const bfs_btree_t *tree)
     return validation;
 }
 
-/* Node-local structure: header fields, strictly ascending keys and in-range
- * children. Parent bounds and the expected level are checked by traversals. */
+/* Node-local structure: header fields, strictly ascending keys, in-range
+ * children and leaf entries the tree accepts. Parent bounds and the expected
+ * level are checked by traversals. */
 static bool node_structure_ok(const bfs_btree_t *tree, uint8_t *buf)
 {
     const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
@@ -115,6 +116,11 @@ static bool node_structure_ok(const bfs_btree_t *tree, uint8_t *buf)
         for (uint32_t i = 0; i <= nkeys; i++) {
             bfs_blk_t child = get_child(tree, buf, i);
             if (child == BFS_BLK_NULL || child >= tree->bio->block_count)
+                return false;
+        }
+    } else if (tree->ops->entry_ok) {
+        for (uint32_t i = 0; i < nkeys; i++) {
+            if (!tree->ops->entry_ok(node_key(tree, buf, i), leaf_val(tree, buf, i)))
                 return false;
         }
     }
@@ -607,6 +613,13 @@ bfs_err_t bfs_btree_lower_bound(bfs_btree_t *tree, const void *key, void *key_ou
     }
     free_buf(tree, buf);
     return result;
+}
+
+/* True if the tree accepts a leaf entry; an in-place change must keep every
+ * entry of a validated leaf acceptable. */
+static bool leaf_entry_ok(const bfs_btree_t *tree, const void *key, const void *val)
+{
+    return !tree->ops->entry_ok || tree->ops->entry_ok(key, val);
 }
 
 static bool node_within_bounds(const bfs_btree_t *tree, uint8_t *node,
@@ -1421,7 +1434,7 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
     /* A key that fits into an owned leaf needs no split and no copy. */
     node_bounds_t owned_bounds = {0};
     uint8_t *owned_leaf = owned_leaf_in_place(tree, key, &owned_bounds);
-    if (owned_leaf) {
+    if (owned_leaf && leaf_entry_ok(tree, key, val)) {
         bool found;
         uint32_t idx = node_search(tree, owned_leaf, key, &found);
         if (found) return BFS_ERR_EXISTS;
@@ -1613,7 +1626,7 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
 
     node_bounds_t owned_bounds = {0};
     uint8_t *owned_leaf = owned_leaf_in_place(tree, key, &owned_bounds);
-    if (owned_leaf) {
+    if (owned_leaf && leaf_entry_ok(tree, key, new_val)) {
         bool found;
         uint32_t idx = node_search(tree, owned_leaf, key, &found);
         if (!found) return BFS_ERR_NOTFOUND;
@@ -1814,7 +1827,7 @@ bfs_err_t bfs_btree_update_key(bfs_btree_t *tree, const void *old_key,
 
     node_bounds_t bounds = {0};
     uint8_t *owned_leaf = owned_leaf_in_place(tree, old_key, &bounds);
-    if (owned_leaf) {
+    if (owned_leaf && leaf_entry_ok(tree, new_key, new_val)) {
         bool found;
         uint32_t index = node_search(tree, owned_leaf, old_key, &found);
         if (!found) return BFS_ERR_NOTFOUND;

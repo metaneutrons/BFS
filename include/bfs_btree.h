@@ -59,6 +59,11 @@ typedef struct bfs_btree_ops {
      * Invalidate the BIO cache before changing comparator semantics. Default
      * false retains full structural validation for arbitrary comparators. */
     bool cache_key_order;
+
+    /* Optional check of one leaf entry beyond the key order. A leaf is valid
+     * only if every entry passes, so readers of validated leaves need not
+     * repeat it. It must depend on the entry alone. */
+    bool (*entry_ok)(const void *key, const void *val);
 } bfs_btree_ops_t;
 
 /* Comparator for big-endian u32 keys. Trees that use it get node searches

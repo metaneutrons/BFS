@@ -83,11 +83,27 @@ static int dir_key_compare(const void *a, const void *b)
     return 0;
 }
 
+/* An entry names something and its stored hash matches the name, which the
+ * order relies on; its value refers to a possible inode of a known type.
+ * Validated leaves hold only such entries, so scans need not check them. */
+static bool dir_entry_ok(const void *key, const void *val)
+{
+    const uint8_t *k = (const uint8_t *)key;
+    const bfs_dir_val_t *v = (const bfs_dir_val_t *)val;
+    uint8_t name_len = k[8];
+    uint32_t inode_nr = bfs_be32(v->inode_nr);
+    return name_len != 0 &&
+           bfs_load_be32(k + 4) == bfs_dir_name_hash((const char *)(k + 9), name_len) &&
+           inode_nr != 0 && inode_nr < 0x80000000u &&
+           bfs_be32(v->entry_type) <= BFS_INODE_HARDLINK;
+}
+
 static const bfs_btree_ops_t dir_ops = {
     .key_compare = dir_key_compare,
     .key_size = DIR_KEY_SIZE,
     .val_size = sizeof(bfs_dir_val_t),
     .cache_key_order = true,
+    .entry_ok = dir_entry_ok,
 };
 
 /* ── Init ──────────────────────────────────────────────────── */
@@ -220,18 +236,9 @@ static bool dir_scan_cb(const void *key, const void *val, void *ctx)
         if (resume_entry) return true;
     }
 
-    uint8_t name_len = k[8];
-    uint32_t inode_nr = bfs_be32(v->inode_nr);
-    uint32_t type = bfs_be32(v->entry_type);
-    if (name_len == 0 || bfs_load_be32(k + 4) !=
-                             bfs_dir_name_hash((const char *)(k + 9), name_len) ||
-        inode_nr == 0 || inode_nr >= 0x80000000u ||
-        type > BFS_INODE_HARDLINK) {
-        sc->err = BFS_ERR_CORRUPT;
-        return false;
-    }
-    return sc->cb((const char *)(k + 9), name_len,
-                  inode_nr, type, sc->ctx);
+    /* Leaf validation has checked the entry (dir_entry_ok). */
+    return sc->cb((const char *)(k + 9), k[8], bfs_be32(v->inode_nr),
+                  bfs_be32(v->entry_type), sc->ctx);
 }
 
 bfs_err_t bfs_dir_may_have_entries(bfs_dir_tree_t *dt, uint32_t parent_id,
