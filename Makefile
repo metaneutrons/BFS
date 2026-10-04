@@ -38,7 +38,6 @@ AROS_CFLAGS = --target=x86_64-unknown-aros --sysroot=$(AROS_SYSROOT) \
               -std=gnu99 -O2 -Wall -Wextra -Werror -Wno-pointer-sign \
               -ffreestanding -fno-builtin -fno-stack-protector -fno-common \
               -I$(AROS_BUILD)/SDK/include -iquote src/amiga $(INCLUDES) \
-              -D__AROS__=1 -D__AROS_VERSION__=1 -DAMIGA=1 -D_AMIGA=1 \
               -DBFS_AROS=1 -DBFS_VERSION=\"$(BFS_VERSION)\"
 
 # ── Sources ─────────────────────────────────────────────────
