@@ -1602,9 +1602,11 @@ update_cleanup:
     return cerr;
 }
 
+/* Descend to the leaf that holds key, recording the path and, if bounds is
+ * not NULL, the separators that bound the leaf's keys. */
 static bfs_err_t rekey_descend_to_leaf(const bfs_btree_t *tree, const void *key,
                                        uint8_t *node_bufs, path_entry_t *path,
-                                       int *depth_out)
+                                       int *depth_out, node_bounds_t *bounds)
 {
     const uint32_t block_size = tree->bio->block_size;
     bfs_blk_t block = tree->root;
@@ -1623,6 +1625,7 @@ static bfs_err_t rekey_descend_to_leaf(const bfs_btree_t *tree, const void *key,
         bool found;
         uint32_t index = node_search(tree, buffer, key, &found);
         path[depth].child_idx = found ? index + 1 : index;
+        if (bounds) child_bounds(tree, buffer, path[depth].child_idx, bounds);
         block = get_child(tree, buffer, path[depth].child_idx);
     }
 }
@@ -1666,7 +1669,7 @@ bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
 
     path_entry_t path[MAX_TREE_DEPTH];
     int depth = 0;
-    bfs_err_t err = rekey_descend_to_leaf(tree, old_key, node_bufs, path, &depth);
+    bfs_err_t err = rekey_descend_to_leaf(tree, old_key, node_bufs, path, &depth, NULL);
     if (err != BFS_OK) goto rekey_cleanup;
 
     bool found;
@@ -1684,6 +1687,70 @@ bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
     err = rekey_commit_path(tree, &mutation, path, node_bufs, depth);
 
 rekey_cleanup:
+    free_buf(tree, node_bufs);
+    if (err == BFS_OK) mutation_commit(tree, &mutation);
+    else mutation_abort(tree, &mutation);
+    if (err == BFS_OK && tree->free_sink_err != BFS_OK) err = tree->free_sink_err;
+    return err;
+}
+
+/* True if new_key can replace the key at index of leaf: it keeps the leaf
+ * ordered and stays inside the separators that route to the leaf, so no
+ * other node has to change. */
+static bool key_fits_at(const bfs_btree_t *tree, uint8_t *leaf, uint32_t index,
+                        const node_bounds_t *bounds, const void *new_key)
+{
+    uint32_t n = num_keys(leaf);
+    return !((index > 0 &&
+              tree->ops->key_compare(node_key(tree, leaf, index - 1), new_key) >= 0) ||
+             (index + 1 < n &&
+              tree->ops->key_compare(new_key, node_key(tree, leaf, index + 1)) >= 0) ||
+             (bounds->have_lower && tree->ops->key_compare(new_key, bounds->lower) < 0) ||
+             (bounds->have_upper && tree->ops->key_compare(new_key, bounds->upper) >= 0));
+}
+
+bfs_err_t bfs_btree_update_key(bfs_btree_t *tree, const void *old_key,
+                               const void *new_key, const void *new_val)
+{
+    if (!tree || !tree->bio || !tree->alloc || !old_key || !new_key || !new_val ||
+        !tree->ops)
+        return BFS_ERR_INVAL;
+    tree->free_sink_err = BFS_OK;
+    btree_mutation_t mutation = {0};
+    if (tree->root == BFS_BLK_NULL) return BFS_ERR_NOTFOUND;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+
+    node_bounds_t bounds = {0};
+    bfs_err_t preflight = mutation_headroom(tree, tree->height);
+    if (preflight != BFS_OK) return preflight;
+
+    const uint32_t block_size = tree->bio->block_size;
+    uint8_t *node_bufs = bfs_bio_alloc_buffer(tree->bio,
+                                             (size_t)tree->height * block_size);
+    if (!node_bufs) return BFS_ERR_NOMEM;
+
+    path_entry_t path[MAX_TREE_DEPTH];
+    int depth = 0;
+    bfs_err_t err = rekey_descend_to_leaf(tree, old_key, node_bufs, path, &depth,
+                                          &bounds);
+    if (err != BFS_OK) goto update_key_cleanup;
+
+    bool found;
+    uint8_t *leaf = node_bufs + (size_t)depth * block_size;
+    uint32_t index = node_search(tree, leaf, old_key, &found);
+    if (!found) {
+        err = BFS_ERR_NOTFOUND;
+        goto update_key_cleanup;
+    }
+    if (!key_fits_at(tree, leaf, index, &bounds, new_key)) {
+        err = BFS_ERR_UNSUPPORTED;
+        goto update_key_cleanup;
+    }
+    copy_bytes(node_key(tree, leaf, index), new_key, tree->ops->key_size);
+    copy_bytes(leaf_val(tree, leaf, index), new_val, tree->ops->val_size);
+    err = rekey_commit_path(tree, &mutation, path, node_bufs, depth);
+
+update_key_cleanup:
     free_buf(tree, node_bufs);
     if (err == BFS_OK) mutation_commit(tree, &mutation);
     else mutation_abort(tree, &mutation);

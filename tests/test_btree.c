@@ -1053,6 +1053,102 @@ static void test_scan_cursor_resumes_in_leaf(void)
     unlink(SCAN_IMG);
 }
 
+static bool stop_at_first(const void *key, const void *val, void *ctx)
+{
+    (void)key;
+    (void)val;
+    (void)ctx;
+    return false;
+}
+
+typedef struct {
+    uint32_t count;
+    uint32_t last;
+    bool ordered;
+} order_check_t;
+
+static bool check_order(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    order_check_t *check = ctx;
+    uint32_t k = read_key(key);
+    if (check->count > 0 && k <= check->last) check->ordered = false;
+    check->last = k;
+    check->count++;
+    return true;
+}
+
+static bool key_value(bfs_btree_t *tree, uint32_t k, uint32_t *value)
+{
+    uint32_t key, val;
+    make_key(&key, k);
+    if (bfs_btree_search(tree, &key, &val) != BFS_OK) return false;
+    *value = read_key(&val);
+    return true;
+}
+
+static bool key_present(bfs_btree_t *tree, uint32_t k)
+{
+    uint32_t value;
+    return key_value(tree, k, &value);
+}
+
+static bfs_err_t move_key(bfs_btree_t *tree, uint32_t from, uint32_t to, uint32_t value)
+{
+    uint32_t old_key, new_key, val;
+    make_key(&old_key, from);
+    make_key(&new_key, to);
+    make_key(&val, value);
+    return bfs_btree_update_key(tree, &old_key, &new_key, &val);
+}
+
+/* A key moves in place only while it stays between its neighbours and below
+ * the separator that routes to its leaf; otherwise the tree is unchanged. */
+static void test_update_key_stays_inside_its_leaf(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+
+    TEST_ASSERT_EQ(move_key(&tree, 4, 5, 77), BFS_OK);
+    uint32_t value;
+    TEST_ASSERT(key_value(&tree, 5, &value));
+    TEST_ASSERT_EQ(value, 77);
+    TEST_ASSERT(!key_present(&tree, 4));
+    TEST_ASSERT_EQ(move_key(&tree, 2, 6, 1), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT(key_present(&tree, 2));
+    TEST_ASSERT_EQ(move_key(&tree, 3, 7, 1), BFS_ERR_NOTFOUND);
+
+    /* The last key of the first leaf; the next leaf starts two above it. */
+    bfs_btree_cursor_t cursor;
+    bfs_btree_cursor_init(&cursor);
+    TEST_ASSERT_EQ(bfs_btree_scan_cursor(&tree, &cursor, NULL, stop_at_first, NULL), BFS_OK);
+    uint32_t n = bfs_be32(((bfs_btnode_hdr_t *)cursor.leaf)->num_keys);
+    TEST_ASSERT(n > 1);
+    uint32_t last = read_key(node_key(&tree, cursor.leaf, n - 1));
+    bfs_btree_cursor_release(&cursor);
+    TEST_ASSERT(key_present(&tree, last + 2));
+    TEST_ASSERT_EQ(move_key(&tree, last, last + 1, 5), BFS_OK);
+
+    /* With the next leaf's first key gone, its separator still bounds this
+     * leaf, although no stored key lies between. */
+    uint32_t gone;
+    make_key(&gone, last + 2);
+    TEST_ASSERT_EQ(bfs_btree_delete(&tree, &gone), BFS_OK);
+    TEST_ASSERT_EQ(move_key(&tree, last + 1, last + 3, 5), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT(key_present(&tree, last + 1));
+    TEST_ASSERT(!key_present(&tree, last + 3));
+
+    order_check_t check = { 0, 0, true };
+    TEST_ASSERT_EQ(bfs_btree_scan(&tree, NULL, check_order, &check), BFS_OK);
+    TEST_ASSERT(check.ordered);
+    TEST_ASSERT_EQ(check.count, SCAN_KEYS - 1);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
 /* ── Test: searches reuse the last leaf only while it is current ── */
 
 static bool search_value(bfs_btree_t *tree, uint32_t k, uint32_t *value)
@@ -2209,6 +2305,7 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_scan_three_levels);
     TEST_RUN(test_scan_survives_callback_changes);
     TEST_RUN(test_scan_cursor_resumes_in_leaf);
+    TEST_RUN(test_update_key_stays_inside_its_leaf);
     TEST_RUN(test_search_hint_follows_changes);
     TEST_RUN(test_be32_search_matches_comparator);
     TEST_RUN(test_cow_old_root_preserved);

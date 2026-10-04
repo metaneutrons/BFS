@@ -231,6 +231,14 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
 bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
                                 const void *new_key);
 
+/* Replace a stored key and its value with new_key and new_val in one path
+ * rewrite, as bfs_btree_update does for a value. new_key must lie strictly
+ * between the neighbouring keys and inside the separators that lead to the
+ * leaf; otherwise BFS_ERR_UNSUPPORTED is returned and the tree is unchanged,
+ * and the caller can delete and insert instead. */
+bfs_err_t bfs_btree_update_key(bfs_btree_t *tree, const void *old_key,
+                               const void *new_key, const void *new_val);
+
 /* Scan keys >= start_key. Calls cb for each key/value pair. Traversal follows
  * parent/child links, not the on-disk right_sibling legacy leaf hint. If
  * start_key is NULL, scanning starts from the beginning. A callback may
