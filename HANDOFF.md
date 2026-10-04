@@ -1,9 +1,9 @@
 # BFS: Übergabe für die Weiterarbeit
 
 Stand: 2026-10-04, Zweig `format/v3-inline-extents`. Die Arbeit dieser
-Runde liegt in zehn Commits ab `4ab8756`, lokal und nicht gepusht (siehe
-Abschnitt 3). Die vorige Übergabe zum Release v0.1.1 liegt unter
-`docs/qualification/release-v0.1.1-handoff-2026-09-08.md`.
+Runde liegt in zehn Commits ab `4ab8756`; PR #83 führt die ganze Kette nach
+`main` (siehe Abschnitt 3). Die vorige Übergabe zum Release v0.1.1 liegt
+unter `docs/qualification/release-v0.1.1-handoff-2026-09-08.md`.
 
 ## 1. Sitzungsstart
 
@@ -70,13 +70,15 @@ hat die Cloud-Faktoren bestätigt; sie steht im selben Bericht.
 
 ## 3. Zweige und offene Commits
 
-- PR #82 `perf/txn-owned-nodes` nach `main` ist offen.
-- `perf/write-path-stages` baut darauf auf.
-- `format/v3-inline-extents` baut darauf auf; ohne PR und damit ohne CI-Lauf.
+- `perf/write-path-stages` baut auf `perf/txn-owned-nodes` (PR #82) auf,
+  `format/v3-inline-extents` auf `perf/write-path-stages`.
+- PR #83 führt `format/v3-inline-extents` mit der ganzen Kette nach `main`,
+  wie #81 als ein Squash-Merge. Der Titel ist als Breaking Change markiert
+  (Format v3). #82 ist in #83 enthalten und wird nicht separat gemergt.
 - Die Arbeit dieser Runde liegt in zehn Commits auf
-  `format/v3-inline-extents`, lokal und nicht gepusht. Jeder Commit besteht
-  für sich `make host-test`; die Commits mit Pufferübernahme und Änderungen
-  an Ort und Stelle zusätzlich `make sanitize`.
+  `format/v3-inline-extents`. Jeder Commit besteht für sich
+  `make host-test`; die Commits mit Pufferübernahme und Änderungen an Ort
+  und Stelle zusätzlich `make sanitize`.
   1. `4ab8756` test(bench): Anhänge-Phasen (Schema 3).
   2. `7d14490` fix(core): Notfall-Pool-Blöcke beim Nachholen von Freigaben
      in den Pool zurückgeben.
@@ -163,8 +165,8 @@ Mac noch auf Cachy installiert ist.
 
 ## 7. Offene Punkte und Entscheidungen
 
-1. Push der Commits dieser Runde (Abschnitt 3) und PR-Strategie für die
-   Kette #82, `perf/write-path-stages`, v3.
+1. Review und Merge von #83. Danach baut release-please den Release-PR
+   #57 wegen des Breaking Change neu auf.
 2. Ausreißer beim Anhängen: einzelne Läufe brauchen fast doppelt so lange.
    Ungeklärt, ob Host-Störung oder ein Timer-Commit innerhalb der Phase.
 3. ExAll liegt bei rund 3,6×. Etwa 44 % der Host-Arbeit der Auflistung ist
