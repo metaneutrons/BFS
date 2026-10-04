@@ -1,8 +1,9 @@
 # BFS: Übergabe für die Weiterarbeit
 
 Stand: 2026-10-04. Gearbeitet wird auf `main`. Die v3-Kette mit der Arbeit
-dieser Runde kommt mit PR #83 als ein Squash-Commit dorthin; ihre
-Einzelcommits bleiben auf `format/v3-inline-extents` (siehe Abschnitt 3).
+dieser Runde liegt seit #83 als Squash-Commit `b8ea972` dort; ihre
+Einzelcommits erhält der Tag `archive/format-v3-inline-extents` (siehe
+Abschnitt 3).
 Die vorige Übergabe zum Release v0.1.1 liegt unter
 `docs/qualification/release-v0.1.1-handoff-2026-09-08.md`.
 
@@ -71,12 +72,17 @@ hat die Cloud-Faktoren bestätigt; sie steht im selben Bericht.
 
 ## 3. Zweige und Commits
 
-- PR #83 bringt `format/v3-inline-extents` mit `perf/write-path-stages` und
-  `perf/txn-owned-nodes` (#82, ohne Merge geschlossen) als einen
-  Squash-Commit auf `main`, wie zuvor #81. Der Titel ist als Breaking
-  Change markiert (Format v3).
-- Die Einzelcommits bleiben auf diesen Zweigen. Die zehn Commits dieser
-  Runde auf `format/v3-inline-extents` bestehen jeder für sich
+- #83 hat `format/v3-inline-extents` mit `perf/write-path-stages` und
+  `perf/txn-owned-nodes` (#82, ohne Merge geschlossen) als `b8ea972` auf
+  `main` gebracht, wie zuvor #81 die Kette #75–#80 als `79df2e9`. Der
+  Commit ist als Breaking Change markiert (Format v3).
+- Die Zweige sind gelöscht. Ihre Einzelcommits, auf die Berichte und Pläne
+  verweisen, erhalten die Tags `archive/format-v3-inline-extents` (diese
+  Kette), `archive/bfs-txn-free-tree` (#75–#80) und
+  `archive/group-commit-inplace-experiments` (Prototyp `1d7483a`).
+- `wip/aros-native-port` (`43bd6fb`) sichert einen Port auf natives AROS
+  x86_64, der uncommittet in einem Codex-Worktree lag (siehe Abschnitt 7).
+- Die zehn Commits dieser Runde bestehen jeder für sich
   `make host-test`; die Commits mit Pufferübernahme und Änderungen an Ort
   und Stelle zusätzlich `make sanitize`.
   1. `4ab8756` test(bench): Anhänge-Phasen (Schema 3).
@@ -103,7 +109,7 @@ ausschließlich älteren Formaten.
 
 Frühere Korrekturen und Leistungsarbeit: siehe
 `docs/qualification/bfs-directory-listing-performance-2026-10-03.md` und die
-Einzelcommits auf `format/v3-inline-extents`.
+Einzelcommits unter `archive/format-v3-inline-extents`.
 
 Diese Runde (siehe Abschnitt 3 und den Bericht vom 4. Oktober):
 Benchmark-Schema 3, Datenvergabe hinter dem letzten Dateiblock, Korrektur
@@ -165,8 +171,8 @@ Mac noch auf Cachy installiert ist.
 
 ## 7. Offene Punkte und Entscheidungen
 
-1. Nach dem Merge von #83 baut release-please den Release-PR #57 wegen
-   des Breaking Change neu auf.
+1. release-please baut den Release-PR #57 nach #83 wegen des Breaking
+   Change neu auf; vor einem Release prüfen.
 2. Codacy meldet für #83 zehn Funktionen oder Testdateien über der
    Längengrenze von Lizard, darunter `freespace_alloc_core`,
    `bfs_btree_scan_cursor` und `node_write_image`. Codacy ist kein
@@ -186,6 +192,12 @@ Mac noch auf Cachy installiert ist.
    Freigabe-Warteschlange, die auf dem Amiga per malloc wächst.
 9. Nicht getestet: echte Hardware, MorphOS und OS4 nativ, andere
    Kickstart-Versionen, 68000.
+10. Port auf natives AROS x86_64 auf `wip/aros-native-port`: baut gegen das
+    AROS-NX-SDK `pc-x86_64` (Toolchain v0.1.4), wurde aber nie in einem
+    laufenden AROS gemountet und setzt vor #81 und #83 auf. Nächste
+    Schritte: auf `main` nachziehen, AROS-NX booten, Handler mounten. BFS
+    wird vorerst nicht in AROS-NX integriert; braucht AROS selbst
+    Korrekturen, gehen sie als eigener PR nach AROS-NX.
 
 ## 8. Arbeitsregeln
 
@@ -194,6 +206,9 @@ Mac noch auf Cachy installiert ist.
   KI-Zuschreibung; `tools/check-commit-hygiene.sh` lässt sonst die CI
   scheitern.
 - ROMs, Workbench-Dateien, PFS3, HDFs und Buildartefakte nie committen.
+- GitHub löscht den Kopfzweig eines PRs beim Merge, und gemergt wird nur
+  per Squash. Zitieren Berichte Einzelcommits eines Zweigs, vor dem Merge
+  ein Tag `archive/<zweig>` auf sein Ende setzen und pushen.
 - Shell: `cp`, `mv` und `rm` sind auf `-i` gesetzt und zsh läuft mit
   `noclobber`. In Skripten `command cp`, `cp -f` oder Python verwenden und
   `>!` statt `>`.
