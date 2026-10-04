@@ -2,6 +2,10 @@
 #ifndef BFS_AMIGA_STDINT_H
 #define BFS_AMIGA_STDINT_H
 
+/* AROS provides the standard integer types in its SDK. */
+#ifdef BFS_AROS
+#include <stdint.h>
+#else
 /* Both GCC and VBCC for m68k-amigaos need these types defined.
  * We define them directly rather than including system headers
  * to avoid conflicts between our shims and system headers. */
@@ -19,5 +23,6 @@ typedef unsigned long long uint64_t;
 #define UINT64_MAX 0xFFFFFFFFFFFFFFFFULL
 #define INT64_MAX  0x7FFFFFFFFFFFFFFFLL
 #define INT64_MIN  (-INT64_MAX - 1LL)
+#endif
 
 #endif

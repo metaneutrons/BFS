@@ -30,7 +30,7 @@ int bfs_format_command(const char *drive, const char *name)
         return 20;
     }
 
-    if (DoPkt(port, BFS_ACTION_FORMAT_ERROR, (LONG)format_message,
+    if (DoPkt(port, BFS_ACTION_FORMAT_ERROR, BFS_CLI_PTR(format_message),
               sizeof(format_message), 0, 0, 0)) {
         BOOL replaceable = IoErr() == BFS_FORMAT_REPLACEABLE;
         format_message[sizeof(format_message) - 1] = 0;
@@ -61,12 +61,12 @@ int bfs_format_command(const char *drive, const char *name)
         FreeDeviceProc(device);
         return 20;
     }
-    result = DoPkt(port, ACTION_FORMAT, (LONG)MKBADDR(bfs_bstr_bytes(&bstr)), 0, 0, 0, 0);
+    result = DoPkt(port, ACTION_FORMAT, BFS_CLI_PTR(MKBADDR(bfs_bstr_bytes(&bstr))), 0, 0, 0, 0);
     format_error = IoErr();
     uninhibited = Inhibit(drive, DOSFALSE);
     uninhibit_error = IoErr();
     if (!result && format_error == ERROR_NOT_IMPLEMENTED) {
-        DoPkt(port, BFS_ACTION_FORMAT_ERROR, (LONG)format_message,
+        DoPkt(port, BFS_ACTION_FORMAT_ERROR, BFS_CLI_PTR(format_message),
               sizeof(format_message), 0, 0, 0);
         format_message[sizeof(format_message) - 1] = 0;
     }

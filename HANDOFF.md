@@ -80,8 +80,10 @@ hat die Cloud-Faktoren bestätigt; sie steht im selben Bericht.
   verweisen, erhalten die Tags `archive/format-v3-inline-extents` (diese
   Kette), `archive/bfs-txn-free-tree` (#75–#80) und
   `archive/group-commit-inplace-experiments` (Prototyp `1d7483a`).
-- `wip/aros-native-port` (`43bd6fb`) sichert einen Port auf natives AROS
-  x86_64, der uncommittet in einem Codex-Worktree lag (siehe Abschnitt 7).
+- Die native AROS-x86_64-Unterstützung (PR #86, Zweig `feat/aros-x86_64`)
+  stammt aus einem uncommittet gefundenen Port. Nach dem Merge entfallen
+  der Sicherungszweig `wip/aros-native-port` (`43bd6fb`) und der
+  Codex-Worktree mit der uncommitteten Kopie (siehe Abschnitt 7).
 - Die zehn Commits dieser Runde bestehen jeder für sich
   `make host-test`; die Commits mit Pufferübernahme und Änderungen an Ort
   und Stelle zusätzlich `make sanitize`.
@@ -192,12 +194,21 @@ Mac noch auf Cachy installiert ist.
    Freigabe-Warteschlange, die auf dem Amiga per malloc wächst.
 9. Nicht getestet: echte Hardware, MorphOS und OS4 nativ, andere
    Kickstart-Versionen, 68000.
-10. Port auf natives AROS x86_64 auf `wip/aros-native-port`: baut gegen das
-    AROS-NX-SDK `pc-x86_64` (Toolchain v0.1.4), wurde aber nie in einem
-    laufenden AROS gemountet und setzt vor #81 und #83 auf. Nächste
-    Schritte: auf `main` nachziehen, AROS-NX booten, Handler mounten. BFS
-    wird vorerst nicht in AROS-NX integriert; braucht AROS selbst
-    Korrekturen, gehen sie als eigener PR nach AROS-NX.
+10. Natives AROS x86_64 (PR #86): `make aros AROS_ROOT=<AROS-NX>` und
+    `make aros-ci-test` bestehen alle 52 Integrationstests auf dem
+    AROS-NX-ISO `7d0a509` unter QEMU (q35). Vereinbart: hier pausieren, bis
+    #86 gemergt und ein BFS-Release getaggt ist; zuerst `aros-tools` und
+    `aros-toolchains` (auch ESP32) fertigstellen, dann BFS als metamake-Paket
+    in AROS-NX aufnehmen, das ein BFS-Release per `%fetch` holt. Gepflegt
+    wird nur hier. Offen für die BFS-CI: ein festes AROS-NX-SDK und Boot-ISO
+    als Release-Artefakt.
+11. Für `aros-toolchains`: Das in Release v0.1.4 mitgelieferte
+    `aros-collect` 0.3.12 lässt beim Linken mit `startup.o`
+    `__eh_frame_start` offen; AROS lädt das Programm dann nicht („file is
+    not executable“). `aros-collect` 0.3.19 aus `aros-tools`, mit dem auch
+    AROS-NX baut, löst es auf. BFS linkt deshalb mit dem `aros-collect` der
+    installierten `aros-tools`. In AROS-NX selbst wurde beim Nachweis kein
+    Fehler gefunden: Die Abstürze kamen von falsch gelinkten BFS-Programmen.
 
 ## 8. Arbeitsregeln
 

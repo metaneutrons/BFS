@@ -25,6 +25,10 @@
 #include <proto/dos.h>
 #include <proto/intuition.h>
 #include <string.h>
+#ifdef BFS_AROS
+#include <aros/asmcall.h>
+#include <dos/dos64.h>
+#endif
 
 #include "bfs_fs.h"
 #include "bfs_cache.h"
@@ -34,6 +38,7 @@
 #include "bfs_snapshot.h"
 #include "bfs_fsck.h"
 #include "bfs_diagnostics.h"
+#include "bfs_dos_name.h"
 #include "amiga_bio.h"
 #include "snapshot_mount.h"
 #ifdef BFS_PERF_PROBE
@@ -96,6 +101,16 @@
 
 #include "dos_packets.h"
 #include "commit_protocol.h"
+
+#ifdef BFS_AROS
+typedef SIPTR bfs_packet_word_t;
+_Static_assert(sizeof(bfs_packet_word_t) == sizeof(void *),
+               "AROS packet arguments must preserve pointers");
+_Static_assert(BFS_CPU_BE == 0, "pc-x86_64 AROS must swap on-disk words");
+#else
+typedef LONG bfs_packet_word_t;
+#endif
+#define BFS_PACKET_PTR(value) ((bfs_packet_word_t)(value))
 
 #define BFS_SNAPSHOT_ENTRY_META_OFFSET 260
 #define BFS_SNAPSHOT_ENTRY_SIZE        284
@@ -221,19 +236,45 @@ _Static_assert(offsetof(bfs_open_file_t, file) == 0,
 struct ExecBase *SysBase;
 struct DosLibrary *DOSBase;
 
+#ifdef BFS_AROS
+static AROS_INTH1(DiskChangeHandler, struct bfs_handler *, h)
+{
+    AROS_INTFUNC_INIT
+    (void)__ufi_intmask;
+    (void)__ufi_custom;
+    (void)__ufi_code;
+    Signal(h->msgport->mp_SigTask, 1UL << h->diskchange_sig);
+    return 0;
+    AROS_INTFUNC_EXIT
+}
+#else
 static ULONG DiskChangeHandler(register struct bfs_handler *h __asm("a1"))
 {
     Signal(h->msgport->mp_SigTask, 1UL << h->diskchange_sig);
     return 0;
 }
+#endif
 
 /* Runs in the keyboard reset interrupt: the handler task commits and then
  * acknowledges with KBD_RESETHANDLERDONE. */
+#ifdef BFS_AROS
+static AROS_INTH1(ResetHandler, struct bfs_handler *, h)
+{
+    AROS_INTFUNC_INIT
+    (void)__ufi_intmask;
+    (void)__ufi_custom;
+    (void)__ufi_code;
+    Signal(h->msgport->mp_SigTask, 1UL << h->reset_sig);
+    return 0;
+    AROS_INTFUNC_EXIT
+}
+#else
 static ULONG ResetHandler(register struct bfs_handler *h __asm("a1"))
 {
     Signal(h->msgport->mp_SigTask, 1UL << h->reset_sig);
     return 0;
 }
+#endif
 
 /* ── Packet helpers ────────────────────────────────────────── */
 
@@ -286,13 +327,23 @@ static void RemoveVolumeNode(struct bfs_handler *h)
     h->volnode = NULL;
 }
 
+/* AROS_FAST_BSTR uses C strings, unlike the length-prefixed m68k ABI.
+ * A bounded length also rejects malformed packet names before copying them. */
+static uint32_t BstrLength(const UBYTE *bstr, uint32_t limit)
+{
+    return bfs_dos_name_length(bstr, limit);
+}
+
+static const UBYTE *BstrText(const UBYTE *bstr)
+{
+    return bfs_dos_name_text(bstr);
+}
+
 static UBYTE *AllocateBstr(const UBYTE *text, uint8_t len)
 {
     UBYTE *bstr = (UBYTE *)AllocVec((ULONG)len + 2, MEMF_PUBLIC | MEMF_CLEAR);
     if (!bstr) return NULL;
-    bstr[0] = len;
-    /* Allocation above includes the length byte, len bytes and a terminator. */
-    memcpy(&bstr[1], text, len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    (void)bfs_dos_name_encode(bstr, (unsigned)len + 2, text, len);
     return bstr;
 }
 
@@ -362,9 +413,9 @@ static bool CopySnapshotBstrName(const UBYTE *bstr, char *destination,
 {
     uint32_t length;
     if (!bstr || destination_size == 0) return false;
-    length = bstr[0];
+    length = BstrLength(bstr, destination_size);
     if (length == 0 || length >= destination_size) return false;
-    memcpy(destination, bstr + 1, length); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    memcpy(destination, BstrText(bstr), length); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     destination[length] = '\0';
     return true;
 }
@@ -414,7 +465,7 @@ static void ReleaseSnapshotPin(struct bfs_handler *h)
     bfs_snapshot_startup_t *startup = h->snapshot_startup;
     if (!startup) return;
     (void)DoPkt(startup->source_port, BFS_ACTION_SNAPSHOT_RELEASE,
-                (LONG)startup->pin, (LONG)startup, 0, 0, 0);
+                (LONG)startup->pin, BFS_PACKET_PTR(startup), 0, 0, 0);
     h->snapshot_startup = NULL;
 }
 
@@ -482,11 +533,12 @@ static LONG ConfigureSnapshotMount(struct bfs_handler *h, bfs_snapshot_startup_t
                                    const bfs_snapshot_record_t *record)
 {
     const UBYTE *device_bstr = (const UBYTE *)BADDR(h->startup->fssm_Device);
-    uint32_t words;
+    size_t words;
 
-    if (!device_bstr || device_bstr[0] == 0 || device_bstr[0] >= sizeof(startup->device_bstr))
+    uint32_t device_length = BstrLength(device_bstr, sizeof(startup->device_bstr));
+    if (device_length == 0 || device_length >= sizeof(startup->device_bstr))
         return ERROR_BAD_NUMBER;
-    memcpy(startup->device_bstr, device_bstr, (size_t)device_bstr[0] + 1u); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    memcpy(startup->device_bstr, device_bstr, (size_t)device_length + 1u); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     startup->magic = BFS_SNAPSHOT_STARTUP_MAGIC;
     startup->version = BFS_SNAPSHOT_STARTUP_VERSION;
     startup->size = sizeof(*startup);
@@ -498,10 +550,11 @@ static LONG ConfigureSnapshotMount(struct bfs_handler *h, bfs_snapshot_startup_t
     startup->fssm.fssm_Device = MKBADDR(startup->device_bstr);
     startup->fssm.fssm_Environ = MKBADDR(&startup->envec);
     startup->fssm.fssm_Flags = h->startup->fssm_Flags;
-    words = h->dosenvec->de_TableSize + 1u;
-    if (words > sizeof(startup->envec) / sizeof(ULONG))
-        words = sizeof(startup->envec) / sizeof(ULONG);
-    memcpy(&startup->envec, h->dosenvec, words * sizeof(ULONG)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    words = sizeof(startup->envec) / sizeof(h->dosenvec->de_TableSize);
+    if (h->dosenvec->de_TableSize < words)
+        words = (size_t)h->dosenvec->de_TableSize + 1u;
+    memcpy(&startup->envec, h->dosenvec,
+           words * sizeof(h->dosenvec->de_TableSize)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     startup->device_node->dn_Startup = MKBADDR(&startup->fssm);
     startup->device_node->dn_GlobalVec = (BPTR)-1;
     startup->device_node->dn_StackSize = h->devnode->dn_StackSize ? h->devnode->dn_StackSize : 32768;
@@ -533,11 +586,11 @@ static LONG StartSnapshotWorker(bfs_snapshot_startup_t *startup)
     struct Process *process;
 
     if (!reply) return ERROR_NO_FREE_STORE;
-    process = CreateNewProcTags(NP_Entry, (ULONG)EntryPoint,
+    process = CreateNewProcTags(NP_Entry, BFS_PACKET_PTR(EntryPoint),
                                 NP_StackSize, startup->device_node->dn_StackSize < 131072 ?
                                               131072 : startup->device_node->dn_StackSize,
                                 NP_Priority, startup->device_node->dn_Priority,
-                                NP_Name, (ULONG)startup->mount_name, TAG_DONE);
+                                NP_Name, BFS_PACKET_PTR(startup->mount_name), TAG_DONE);
     if (!process) {
         LONG error = IoErr() ? IoErr() : ERROR_NO_FREE_STORE;
         DeleteMsgPort(reply);
@@ -549,8 +602,8 @@ static LONG StartSnapshotWorker(bfs_snapshot_startup_t *startup)
     packet.sp_Pkt.dp_Link = &packet.sp_Msg;
     packet.sp_Pkt.dp_Port = reply;
     packet.sp_Pkt.dp_Type = ACTION_STARTUP;
-    packet.sp_Pkt.dp_Arg3 = (LONG)MKBADDR(startup->device_node);
-    packet.sp_Pkt.dp_Arg4 = (LONG)startup;
+    packet.sp_Pkt.dp_Arg3 = BFS_PACKET_PTR(MKBADDR(startup->device_node));
+    packet.sp_Pkt.dp_Arg4 = BFS_PACKET_PTR(startup);
     packet.sp_Pkt.dp_Arg5 = BFS_SNAPSHOT_STARTUP_PACKET_MAGIC;
     PutMsg(&process->pr_MsgPort, &packet.sp_Msg);
     WaitPort(reply);
@@ -1040,7 +1093,12 @@ static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
                              struct bfs_handler *h)
 {
     const UBYTE *bstr = (const UBYTE *)BADDR(bstr_name);
-    return ResolveName(lock, bstr ? (const char *)&bstr[1] : NULL, bstr ? bstr[0] : 0,
+    if (!bstr) return ResolveName(lock, NULL, 0, namebuf, namelen_out, parent_out, h);
+    /* AROS_FAST_BSTR names are NUL-terminated; a bounded length also rejects
+     * a malformed name before it is used. */
+    uint32_t name_length = BstrLength(bstr, 256);
+    if (name_length > 255) return BFS_ERR_INVAL;
+    return ResolveName(lock, (const char *)BstrText(bstr), (uint8_t)name_length,
                        namebuf, namelen_out, parent_out, h);
 }
 
@@ -1145,6 +1203,7 @@ static LONG ResizeFile(struct bfs_handler *h, bfs_file_t *file, int64_t offset,
     return error;
 }
 
+#ifndef BFS_AROS
 static void HandleDosPacket64(bfs_dos_packet64_t *packet, struct bfs_handler *h)
 {
     bool getter = packet->type == BFS_ACTION_GET_FILE_POSITION64 ||
@@ -1175,6 +1234,7 @@ static void HandleDosPacket64(bfs_dos_packet64_t *packet, struct bfs_handler *h)
     }
     if (!packet->error && !getter) packet->result = DOSTRUE;
 }
+#endif
 
 /* ── Directory enumeration ────────────────────────────────── */
 
@@ -1288,6 +1348,26 @@ static void FillFib(struct FileInfoBlock *fib, const char *name, uint8_t name_le
     }
 }
 
+#ifdef BFS_AROS
+static void FillFib64(struct FileInfoBlock64 *destination,
+                      const struct FileInfoBlock *source, uint64_t size)
+{
+    memset(destination, 0, sizeof(*destination));
+    destination->fib_DiskKey = source->fib_DiskKey;
+    destination->fib_DirEntryType = source->fib_DirEntryType;
+    memcpy(destination->fib_FileName, source->fib_FileName,
+           sizeof(destination->fib_FileName));
+    destination->fib_Protection = source->fib_Protection;
+    destination->fib_EntryType = source->fib_EntryType;
+    destination->fib_Size = size;
+    destination->fib_NumBlocks = size / 512 + (size % 512 != 0);
+    destination->fib_Date = source->fib_Date;
+    memcpy(destination->fib_Comment, source->fib_Comment,
+           sizeof(destination->fib_Comment));
+    destination->fib_OwnerUID = source->fib_OwnerUID;
+    destination->fib_OwnerGID = source->fib_OwnerGID;
+}
+#else
 static void FillFib64(struct FileInfoBlock *fib, uint64_t size)
 {
     uint64_t blocks = size / 512 + (size % 512 != 0);
@@ -1298,6 +1378,7 @@ static void FillFib64(struct FileInfoBlock *fib, uint64_t size)
     if (size > INT32_MAX) fib->fib_Size = 0;
     if (blocks > INT32_MAX) fib->fib_NumBlocks = 0;
 }
+#endif
 
 /* Read an object's comment into a C string of BFS_COMMENT_BUFFER bytes. Only
  * an inode with HAS_COMMENT has one, so most objects need no directory
@@ -1383,12 +1464,14 @@ static bool ControlWordMatches(const UBYTE *text, LONG length, const char *word)
 }
 
 /* Mountlist: Control = "COMMIT=SYNC" restores a commit at every close and
- * standalone metadata packet. DOS stores the Control string as a BSTR. */
+ * standalone metadata packet. DOS stores the Control string as a BSTR, which
+ * native AROS keeps NUL-terminated; Mount accepts at most 255 characters. */
 static bool ControlRequestsSyncCommits(const struct DosEnvec *env)
 {
     if (!env || env->de_TableSize < DE_CONTROL || !env->de_Control) return false;
     const UBYTE *control = (const UBYTE *)BADDR(env->de_Control);
-    return ControlWordMatches(control + 1, control[0], "COMMIT=SYNC");
+    return ControlWordMatches(BstrText(control), (LONG)BstrLength(control, 255),
+                              "COMMIT=SYNC");
 }
 
 static void OpenCommitTimer(struct bfs_handler *h)
@@ -1474,7 +1557,11 @@ static void AddCommitResetHandler(struct bfs_handler *h)
     h->reset_int->is_Node.ln_Type = NT_INTERRUPT;
     h->reset_int->is_Node.ln_Name = (char *)"BFS-Commit";
     h->reset_int->is_Data = h;
+#ifdef BFS_AROS
+    h->reset_int->is_Code = (void (*)(void))AROS_ASMSYMNAME(ResetHandler);
+#else
     h->reset_int->is_Code = (void (*)(void))ResetHandler;
+#endif
     h->reset_req = (struct IOStdReq *)CreateIORequest(h->devport, sizeof(struct IOStdReq));
     if (!h->reset_req) return;
     if (OpenDevice((CONST_STRPTR)"keyboard.device", 0,
@@ -1633,7 +1720,9 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     LONG fixed_size = ExAllFixedSize(ec->type);
     LONG entry_size = fixed_size + name_len + 1;
     if (ec->type >= ED_COMMENT) entry_size += cl + 1;
-    entry_size = (entry_size + 3) & ~3;
+    /* Entries hold pointers: align to their width (4 on m68k, 8 on 64-bit
+     * AROS). */
+    entry_size = (entry_size + (LONG)sizeof(APTR) - 1) & ~((LONG)sizeof(APTR) - 1);
     if ((size_t)(ec->end - ec->pos) < (size_t)entry_size) {
         ec->overflow = true;
         return false; /* stop scan */
@@ -1748,11 +1837,11 @@ static void HandlePacketWork(struct DosPacket *pkt, struct bfs_handler *h)
 static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 #endif
 {
-    LONG res1 = (pkt->dp_Type == ACTION_READ || pkt->dp_Type == ACTION_WRITE ||
+    bfs_packet_word_t res1 = (pkt->dp_Type == ACTION_READ || pkt->dp_Type == ACTION_WRITE ||
                  pkt->dp_Type == ACTION_SEEK || pkt->dp_Type == ACTION_SET_FILE_SIZE ||
                  pkt->dp_Type == ACTION_READ_LINK) ?
                 -1 : DOSFALSE;
-    LONG res2 = ERROR_ACTION_NOT_KNOWN;
+    bfs_packet_word_t res2 = ERROR_ACTION_NOT_KNOWN;
 
     if (h->snapshot_startup && SnapshotRejectsPacket(pkt->dp_Type)) {
         res1 = DOSFALSE;
@@ -1760,6 +1849,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         goto reply;
     }
 
+#ifndef BFS_AROS
     if (pkt->dp_Type >= BFS_ACTION_CHANGE_FILE_POSITION64 &&
         pkt->dp_Type <= BFS_ACTION_GET_FILE_SIZE64) {
         if (pkt->dp_Res1 != BFS_DP64_INIT) goto reply;
@@ -1768,6 +1858,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         ReplyPacket(pkt, h);
         return;
     }
+#endif
 
     if (!h->fs.mounted && pkt->dp_Type != ACTION_FORMAT &&
         pkt->dp_Type != BFS_ACTION_FORMAT_ERROR &&
@@ -1962,7 +2053,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         bfs_lock_t *lk = MakeLock(h, ino, type, pkt->dp_Arg3, lock_parent);
         if (!lk) { res2 = IoErr() ? IoErr() : ERROR_NO_FREE_STORE; break; }
-        res1 = (LONG)MKBADDR(lk);
+        res1 = BFS_PACKET_PTR(MKBADDR(lk));
         res2 = 0;
         break;
     }
@@ -2078,7 +2169,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         }
 
         TrackOpenFile(h, open_file, access, parent_ino, type);
-        fh->fh_Arg1 = (LONG)&open_file->file;
+        fh->fh_Arg1 = BFS_PACKET_PTR(&open_file->file);
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -2210,7 +2301,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         }
 
         AttachLock(h, lk, ino, BFS_INODE_DIR, SHARED_LOCK, parent_ino);
-        res1 = (LONG)MKBADDR(lk);
+        res1 = BFS_PACKET_PTR(MKBADDR(lk));
         res2 = 0;
         h->dirty = true;
         h->notify_pending = true;
@@ -2288,8 +2379,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case BFS_ACTION_EXAMINE_OBJECT64:
     case ACTION_EXAMINE_OBJECT: {
         bfs_lock_t *lk = (bfs_lock_t *)BADDR(pkt->dp_Arg1);
+#ifdef BFS_AROS
+        struct FileInfoBlock local_fib;
+        bool wide_fib = pkt->dp_Type == BFS_ACTION_EXAMINE_OBJECT64;
+        struct FileInfoBlock *fib = wide_fib ? &local_fib :
+            (struct FileInfoBlock *)BADDR(pkt->dp_Arg2);
+#else
         struct FileInfoBlock *fib = (struct FileInfoBlock *)BADDR(pkt->dp_Arg2);
-        if (!lk || !fib) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
+#endif
+        if (!lk || !pkt->dp_Arg2) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
         if (!LockIsOwned(h, lk)) { res2 = ERROR_INVALID_LOCK; break; }
 
         uint64_t size = 0;
@@ -2306,11 +2404,17 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         FillFib(fib, name, name_len, lk->ino, lk->type, size, prot,
                 &inode);
+#ifndef BFS_AROS
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_OBJECT64) FillFib64(fib, size);
+#endif
         err = FillFibComment(h, fib, lk->ino, &inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         /* Store scan index 0 in fib_DiskKey for EXAMINE_NEXT */
         fib->fib_DiskKey = 0;
+#ifdef BFS_AROS
+        if (wide_fib)
+            FillFib64((struct FileInfoBlock64 *)BADDR(pkt->dp_Arg2), fib, size);
+#endif
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -2320,12 +2424,26 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case BFS_ACTION_EXAMINE_NEXT64:
     case ACTION_EXAMINE_NEXT: {
         bfs_lock_t *lk = (bfs_lock_t *)BADDR(pkt->dp_Arg1);
+#ifdef BFS_AROS
+        struct FileInfoBlock local_fib;
+        bool wide_fib = pkt->dp_Type == BFS_ACTION_EXAMINE_NEXT64;
+        struct FileInfoBlock *fib = wide_fib ? &local_fib :
+            (struct FileInfoBlock *)BADDR(pkt->dp_Arg2);
+#else
         struct FileInfoBlock *fib = (struct FileInfoBlock *)BADDR(pkt->dp_Arg2);
-        if (!lk || !fib) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
+#endif
+        if (!lk || !pkt->dp_Arg2) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
         if (!LockIsOwned(h, lk)) { res2 = ERROR_INVALID_LOCK; break; }
 
         char namebuf[BFS_NAME_MAX + 1];
+#ifdef BFS_AROS
+        /* A wide request keeps its position in the caller's FileInfoBlock64. */
+        uint32_t position = wide_fib ?
+            (uint32_t)((struct FileInfoBlock64 *)BADDR(pkt->dp_Arg2))->fib_DiskKey :
+            (uint32_t)fib->fib_DiskKey;
+#else
         uint32_t position = (uint32_t)fib->fib_DiskKey;
+#endif
         exam_next_ctx_t ctx;
         ctx.seen = 0;
         ctx.name_out = namebuf;
@@ -2348,11 +2466,17 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         en_size = ((uint64_t)bfs_be32(en_inode.size_hi) << 32) | bfs_be32(en_inode.size_lo);
         en_prot = bfs_be32(en_inode.protection);
         FillFib(fib, namebuf, ctx.name_len, ctx.ino_out, ctx.type_out, en_size, en_prot, &en_inode);
+#ifndef BFS_AROS
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_NEXT64) FillFib64(fib, en_size);
+#endif
         err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         CursorRemember(lk, position + 1, namebuf, ctx.name_len);
         fib->fib_DiskKey = (LONG)(position + 1);
+#ifdef BFS_AROS
+        if (wide_fib)
+            FillFib64((struct FileInfoBlock64 *)BADDR(pkt->dp_Arg2), fib, en_size);
+#endif
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -2458,7 +2582,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         }
         bfs_lock_t *lk = MakeLock(h, par, BFS_INODE_DIR, SHARED_LOCK, grandparent);
         if (!lk) { res2 = IoErr() ? IoErr() : ERROR_NO_FREE_STORE; break; }
-        res1 = (LONG)MKBADDR(lk);
+        res1 = BFS_PACKET_PTR(MKBADDR(lk));
         res2 = 0;
         break;
     }
@@ -2579,9 +2703,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         UBYTE *bcomment = (UBYTE *)BADDR(pkt->dp_Arg4);
         if (!bcomment) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
-        uint8_t clen = bcomment[0];
+        uint32_t clen = BstrLength(bcomment, 80);
         if (clen > 79) { res2 = ERROR_COMMENT_TOO_BIG; break; }
-        err = bfs_fs_set_comment(&h->fs, ino, (const char *)&bcomment[1], clen);
+        err = bfs_fs_set_comment(&h->fs, ino, (const char *)BstrText(bcomment), clen);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         res1 = DOSTRUE;
         res2 = 0;
@@ -2616,11 +2740,11 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (!src) {
             bfs_lock_t *lk = MakeLock(h, BFS_ROOT_INO, BFS_INODE_DIR, SHARED_LOCK, 0);
             if (!lk) { res2 = IoErr() ? IoErr() : ERROR_NO_FREE_STORE; break; }
-            res1 = (LONG)MKBADDR(lk);
+            res1 = BFS_PACKET_PTR(MKBADDR(lk));
         } else {
             bfs_lock_t *lk = MakeLock(h, src->ino, src->type, src->fl.fl_Access, src->parent_ino);
             if (!lk) { res2 = IoErr() ? IoErr() : ERROR_NO_FREE_STORE; break; }
-            res1 = (LONG)MKBADDR(lk);
+            res1 = BFS_PACKET_PTR(MKBADDR(lk));
         }
         res2 = 0;
         break;
@@ -2682,12 +2806,12 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case BFS_ACTION_SNAPSHOT_CREATE: {
         if (h->write_protected) { res2 = ERROR_DISK_WRITE_PROTECTED; break; }
         UBYTE *bname = (UBYTE *)BADDR(pkt->dp_Arg1);
-        if (!bname || bname[0] == 0 || bname[0] >= BFS_SNAPSHOT_NAME_MAX) {
+        uint32_t nlen = BstrLength(bname, BFS_SNAPSHOT_NAME_MAX);
+        if (nlen == 0 || nlen >= BFS_SNAPSHOT_NAME_MAX) {
             res2 = ERROR_INVALID_COMPONENT_NAME; break;
         }
-        uint8_t nlen = bname[0];
         char name[BFS_NAME_BSTR_MAX];
-        memcpy(name, &bname[1], nlen);
+        memcpy(name, BstrText(bname), nlen);
         name[nlen] = 0;
         bfs_err_t err = bfs_snapshot_create(&h->fs, name);
         if (err == BFS_OK) {
@@ -2702,12 +2826,12 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case BFS_ACTION_SNAPSHOT_DELETE: {
         if (h->write_protected) { res2 = ERROR_DISK_WRITE_PROTECTED; break; }
         UBYTE *bname = (UBYTE *)BADDR(pkt->dp_Arg1);
-        if (!bname || bname[0] == 0 || bname[0] >= BFS_SNAPSHOT_NAME_MAX) {
+        uint32_t nlen = BstrLength(bname, BFS_SNAPSHOT_NAME_MAX);
+        if (nlen == 0 || nlen >= BFS_SNAPSHOT_NAME_MAX) {
             res2 = ERROR_INVALID_COMPONENT_NAME; break;
         }
-        uint8_t nlen = bname[0];
         char name[BFS_NAME_BSTR_MAX];
-        memcpy(name, &bname[1], nlen);
+        memcpy(name, BstrText(bname), nlen);
         name[nlen] = 0;
         uint32_t id = 0;
         bfs_err_t err = bfs_snapshot_find_by_name(&h->fs, name, &id, NULL);
@@ -2783,15 +2907,14 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         char *outbuf = (char *)pkt->dp_Arg2;
         LONG bufsize = pkt->dp_Arg3;
         uint32_t last_key = (uint32_t)pkt->dp_Arg4;
-        if (!bname || bname[0] == 0 ||
-            bname[0] >= BFS_SNAPSHOT_NAME_MAX || !outbuf ||
+        uint32_t nlen = BstrLength(bname, BFS_SNAPSHOT_NAME_MAX);
+        if (nlen == 0 || nlen >= BFS_SNAPSHOT_NAME_MAX || !outbuf ||
             bufsize < BFS_SNAPSHOT_ENTRY_SIZE) {
             res2 = ERROR_BAD_NUMBER; break;
         }
 
         /* Find snapshot by name */
-        uint8_t nlen = bname[0];
-        char sname[BFS_NAME_BSTR_MAX]; memcpy(sname, &bname[1], nlen); sname[nlen] = 0;
+        char sname[BFS_NAME_BSTR_MAX]; memcpy(sname, BstrText(bname), nlen); sname[nlen] = 0;
 
         bfs_snapshot_record_t rec;
         if (bfs_snapshot_find_by_name(&h->fs, sname, NULL, &rec) != BFS_OK) {
@@ -2886,17 +3009,17 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case ACTION_RENAME_DISK: {
         if (h->write_protected) { res2 = ERROR_DISK_WRITE_PROTECTED; break; }
         UBYTE *bname = (UBYTE *)BADDR(pkt->dp_Arg1);
-        if (!bname || bname[0] == 0 || bname[0] >= BFS_VOLNAME_MAX) {
+        uint32_t nlen = BstrLength(bname, BFS_VOLNAME_MAX);
+        if (nlen == 0 || nlen >= BFS_VOLNAME_MAX) {
             res2 = ERROR_INVALID_COMPONENT_NAME; break;
         }
-        uint8_t nlen = bname[0];
-        UBYTE *new_node_name = AllocateBstr(&bname[1], nlen);
+        UBYTE *new_node_name = AllocateBstr(BstrText(bname), nlen);
         if (!new_node_name) { res2 = ERROR_NO_FREE_STORE; break; }
 
         memset(h->fs.txn.sb_new.volname, 0, BFS_VOLNAME_MAX);
-        memcpy(h->fs.txn.sb_new.volname, &bname[1], nlen);
+        memcpy(h->fs.txn.sb_new.volname, BstrText(bname), nlen);
         bfs_err_t err = bfs_fs_sync(&h->fs);
-        bool committed = memcmp(h->fs.txn.sb.volname, &bname[1], nlen) == 0 &&
+        bool committed = memcmp(h->fs.txn.sb.volname, BstrText(bname), nlen) == 0 &&
                          h->fs.txn.sb.volname[nlen] == 0;
         if (committed && h->volnode) {
             ReplaceVolumeNodeName(h, new_node_name);
@@ -2938,7 +3061,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
     /* ── ACTION_CURRENT_VOLUME ─────────────────────────────── */
     case ACTION_CURRENT_VOLUME:
-        res1 = h->volnode ? (LONG)MKBADDR(h->volnode) : 0;
+        res1 = h->volnode ? BFS_PACKET_PTR(MKBADDR(h->volnode)) : 0;
         res2 = 0;
         break;
 
@@ -3030,12 +3153,12 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         }
         if (HandlerIsInUse(h)) { res2 = ERROR_OBJECT_IN_USE; break; }
         UBYTE *bname = (UBYTE *)BADDR(pkt->dp_Arg1);
-        if (!bname || bname[0] == 0 || bname[0] >= BFS_VOLNAME_MAX) {
+        uint32_t nlen = BstrLength(bname, BFS_VOLNAME_MAX);
+        if (nlen == 0 || nlen >= BFS_VOLNAME_MAX) {
             res2 = ERROR_INVALID_COMPONENT_NAME; break;
         }
-        uint8_t nlen = bname[0];
         char volname[BFS_VOLNAME_MAX];
-        memcpy(volname, &bname[1], nlen);
+        memcpy(volname, BstrText(bname), nlen);
         volname[nlen] = 0;
 
         /* Check the proposed geometry before unmounting or changing the cache. */
@@ -3102,7 +3225,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             break;
         }
         TrackOpenFile(h, open_file, access, parent_ino, type);
-        fh->fh_Arg1 = (LONG)&open_file->file;
+        fh->fh_Arg1 = BFS_PACKET_PTR(&open_file->file);
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -3127,7 +3250,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         bfs_lock_t *lk = MakeLock(h, par_ino, BFS_INODE_DIR, SHARED_LOCK,
                                   grandparent);
         if (!lk) { res2 = IoErr() ? IoErr() : ERROR_NO_FREE_STORE; break; }
-        res1 = (LONG)MKBADDR(lk);
+        res1 = BFS_PACKET_PTR(MKBADDR(lk));
         res2 = 0;
         break;
     }
@@ -3140,7 +3263,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         bfs_lock_t *lk = MakeLock(h, f->inode_nr, open_file->type,
                                   SHARED_LOCK, open_file->parent_ino);
         if (!lk) { res2 = IoErr() ? IoErr() : ERROR_NO_FREE_STORE; break; }
-        res1 = (LONG)MKBADDR(lk);
+        res1 = BFS_PACKET_PTR(MKBADDR(lk));
         res2 = 0;
         break;
     }
@@ -3149,8 +3272,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case BFS_ACTION_EXAMINE_FH64:
     case ACTION_EXAMINE_FH: {
         bfs_file_t *f = (bfs_file_t *)pkt->dp_Arg1;
+#ifdef BFS_AROS
+        struct FileInfoBlock local_fib;
+        bool wide_fib = pkt->dp_Type == BFS_ACTION_EXAMINE_FH64;
+        struct FileInfoBlock *fib = wide_fib ? &local_fib :
+            (struct FileInfoBlock *)BADDR(pkt->dp_Arg2);
+#else
         struct FileInfoBlock *fib = (struct FileInfoBlock *)BADDR(pkt->dp_Arg2);
-        if (!FindOpenFile(h, f) || !fib) {
+#endif
+        if (!FindOpenFile(h, f) || !pkt->dp_Arg2) {
             res2 = ERROR_REQUIRED_ARG_MISSING; break;
         }
 
@@ -3167,10 +3297,16 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                             name, &name_len);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         FillFib(fib, name, name_len, f->inode_nr, type, size, bfs_be32(inode.protection), &inode);
+#ifndef BFS_AROS
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_FH64) FillFib64(fib, size);
+#endif
         err = FillFibComment(h, fib, f->inode_nr, &inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         fib->fib_DiskKey = 0;
+#ifdef BFS_AROS
+        if (wide_fib)
+            FillFib64((struct FileInfoBlock64 *)BADDR(pkt->dp_Arg2), fib, size);
+#endif
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -3242,6 +3378,57 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         break;
     }
 
+#ifdef BFS_AROS
+    /* On 64-bit AROS, DosPacket already has pointer-sized arguments and
+     * results; the OS4 packet overlay must not be used. */
+    case BFS_ACTION_GET_FILE_POSITION64:
+    case BFS_ACTION_GET_FILE_SIZE64:
+    case BFS_ACTION_CHANGE_FILE_POSITION64:
+    case BFS_ACTION_CHANGE_FILE_SIZE64: {
+        bfs_file_t *f = (bfs_file_t *)pkt->dp_Arg1;
+        res1 = pkt->dp_Type == BFS_ACTION_GET_FILE_POSITION64 ||
+               pkt->dp_Type == BFS_ACTION_GET_FILE_SIZE64 ? -1 : DOSFALSE;
+        if (!FindOpenFile(h, f)) { res2 = ERROR_INVALID_LOCK; break; }
+        if (pkt->dp_Type == BFS_ACTION_GET_FILE_POSITION64) {
+            res1 = (bfs_packet_word_t)f->offset;
+            res2 = 0;
+        } else if (pkt->dp_Type == BFS_ACTION_GET_FILE_SIZE64) {
+            res1 = (bfs_packet_word_t)f->size;
+            res2 = 0;
+        } else if (pkt->dp_Type == BFS_ACTION_CHANGE_FILE_SIZE64) {
+            uint64_t size;
+            res2 = ResizeFile(h, f, pkt->dp_Arg2, pkt->dp_Arg3, INT64_MAX, &size);
+            if (!res2) res1 = DOSTRUE;
+        } else {
+            int mode = FileSeekMode(pkt->dp_Arg3);
+            if (mode < 0) { res2 = ERROR_BAD_NUMBER; break; }
+            int64_t position = bfs_file_seek(f, pkt->dp_Arg2, mode);
+            res2 = position < 0 ? Pfs4ToDosError((bfs_err_t)position) : 0;
+            if (!res2) res1 = DOSTRUE;
+        }
+        break;
+    }
+
+    case BFS_ACTION_SEEK64:
+    case BFS_ACTION_SET_FILE_SIZE64: {
+        bfs_file_t *f = (bfs_file_t *)pkt->dp_Arg1;
+        res1 = -1;
+        if (!FindOpenFile(h, f)) { res2 = ERROR_INVALID_LOCK; break; }
+        if (pkt->dp_Type == BFS_ACTION_SET_FILE_SIZE64) {
+            uint64_t size;
+            res2 = ResizeFile(h, f, pkt->dp_Arg2, pkt->dp_Arg3, INT64_MAX, &size);
+            if (!res2) res1 = (bfs_packet_word_t)size;
+        } else {
+            int mode = FileSeekMode(pkt->dp_Arg3);
+            if (mode < 0) { res2 = ERROR_BAD_NUMBER; break; }
+            uint64_t previous = f->offset;
+            int64_t position = bfs_file_seek(f, pkt->dp_Arg2, mode);
+            res2 = position < 0 ? Pfs4ToDosError((bfs_err_t)position) : 0;
+            if (!res2) res1 = (bfs_packet_word_t)previous;
+        }
+        break;
+    }
+#else
     /* MorphOS passes input and output quadwords by pointer. */
     case BFS_ACTION_SEEK64:
     case BFS_ACTION_SET_FILE_SIZE64: {
@@ -3270,6 +3457,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         }
         break;
     }
+#endif
 
     default:
         res2 = ERROR_ACTION_NOT_KNOWN;
@@ -3359,7 +3547,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
 void EntryPointNoStack(void)
 {
+#ifndef BFS_AROS
     SysBase = *((struct ExecBase **)4);
+#endif
     struct Process *process = (struct Process *)FindTask(NULL);
     WaitPort(&process->pr_MsgPort);
     struct Message *message = GetMsg(&process->pr_MsgPort);
@@ -3382,7 +3572,9 @@ void EntryPoint(void)
     BOOL removable_device = FALSE;
     bfs_snapshot_startup_t *snapshot_startup = NULL;
 
+#ifndef BFS_AROS
     SysBase = *((struct ExecBase **)4);
+#endif
 
     myproc = (struct Process *)FindTask(NULL);
 
@@ -3451,13 +3643,14 @@ void EntryPoint(void)
     {
         UBYTE devname[108];
         UBYTE *bname = (UBYTE *)BADDR(fssm->fssm_Device);
-        if (!bname || bname[0] == 0 || bname[0] >= sizeof(devname)) {
+        uint32_t device_length = BstrLength(bname, sizeof(devname));
+        if (device_length == 0 || device_length >= sizeof(devname)) {
             pkt->dp_Res1 = DOSFALSE;
             pkt->dp_Res2 = ERROR_BAD_NUMBER;
             goto fail_startup;
         }
-        memcpy(devname, bname + 1, bname[0]);
-        devname[bname[0]] = 0;
+        memcpy(devname, BstrText(bname), device_length);
+        devname[device_length] = 0;
         removable_device = strcmp((char *)devname, "trackdisk.device") == 0;
         if (OpenDevice(devname, fssm->fssm_Unit, (struct IORequest *)h->request, fssm->fssm_Flags)) {
             pkt->dp_Res1 = DOSFALSE;
@@ -3544,7 +3737,11 @@ void EntryPoint(void)
             h->diskchange_int->is_Node.ln_Type = NT_INTERRUPT;
             h->diskchange_int->is_Node.ln_Name = (char *)"BFS-DiskChange";
             h->diskchange_int->is_Data = h;
+#ifdef BFS_AROS
+            h->diskchange_int->is_Code = (void (*)(void))AROS_ASMSYMNAME(DiskChangeHandler);
+#else
             h->diskchange_int->is_Code = (void (*)(void))DiskChangeHandler;
+#endif
             h->diskchange_req = (struct IOExtTD *)CreateIORequest(h->devport, sizeof(struct IOExtTD));
             if (h->diskchange_req) {
                 *h->diskchange_req = *h->request;

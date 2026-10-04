@@ -46,18 +46,17 @@ typedef enum {
     BFS_ERR_OVERFLOW = -11, /* geometry exceeds the block address range */
 } bfs_err_t;
 
-/* On-disk structures use big-endian (68k native byte order).
- * On host we need conversion helpers.
- */
-#if defined(__amigaos__) || defined(__VBCC__) || defined(BFS_AMIGA)
-  /* 68k is big-endian — no conversion needed */
-  #define BFS_CPU_BE 1
-#elif defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__)
+/* On-disk structures use big-endian byte order. Native AROS may run on a
+ * little-endian CPU, so the target compiler's byte order takes precedence over
+ * the Amiga-family build profile. Older 68k compilers need the fallback. */
+#if defined(__BYTE_ORDER__) && defined(__ORDER_BIG_ENDIAN__)
   #if __BYTE_ORDER__ == __ORDER_BIG_ENDIAN__
     #define BFS_CPU_BE 1
   #else
     #define BFS_CPU_BE 0
   #endif
+#elif defined(__amigaos__) || defined(__VBCC__) || defined(BFS_AMIGA)
+  #define BFS_CPU_BE 1
 #elif defined(__APPLE__)
   #include <machine/endian.h>
   #if defined(BYTE_ORDER) && defined(BIG_ENDIAN) && BYTE_ORDER == BIG_ENDIAN

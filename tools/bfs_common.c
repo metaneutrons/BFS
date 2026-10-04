@@ -4,6 +4,7 @@
 #include <proto/dos.h>
 
 #include "bfs_command.h"
+#include "../include/bfs_dos_name.h"
 
 static int text_length(const char *text)
 {
@@ -78,14 +79,13 @@ int bfs_build_name_bstr(UBYTE *destination, const char *name)
     int length = text_length(name);
 
     if (length < 1 || length >= 32) return 0;
-    destination[0] = (UBYTE)length;
-    bfs_copy(destination + 1, name, length);
-    return 1;
+    return bfs_dos_name_encode(destination, BFS_NAME_BSTR_MAX + 3,
+                               (const UBYTE *)name, (unsigned)length);
 }
 
 UBYTE *bfs_bstr_bytes(bfs_bstr_t *bstr)
 {
-    ULONG address = (ULONG)(APTR)bstr->storage;
+    bfs_cli_uword_t address = (bfs_cli_uword_t)(APTR)bstr->storage;
 
     /* MKBADDR shifts two low bits; stack byte arrays do not guarantee them. */
     return (UBYTE *)((address + 3) & ~3UL);

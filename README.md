@@ -114,6 +114,23 @@ make amiga
 
 Output: `build/amiga/bfshandler`
 
+### Native AROS x86_64
+
+`make aros` builds the handler, `bfs` and the integration test program for
+native AROS x86_64 from an AROS-NX checkout with a `pc-x86_64` build. The
+checkout's `aros-toolchains.lock.toml` selects the cross-toolchain, which the
+`aros` CLI installs and verifies, and the SDK comes from the same build:
+
+```sh
+make aros AROS_ROOT=/path/to/AROS-NX
+make aros-ci-test AROS_ROOT=/path/to/AROS-NX
+```
+
+The outputs are in `build/aros/pc-x86_64`. `make aros-ci-test` boots the
+checkout's `aros-x86_64-pc.iso` in QEMU, extended by the handler, a Mountlist
+and the test program, and runs the same integration test as the FS-UAE run
+on a raw BFS disk. It needs `qemu-system-x86_64` and `xorriso`.
+
 ### AmigaOS administration
 
 Release archives publish one administration binary, `bfs`:
@@ -236,15 +253,24 @@ make emulator-test
    Copy bfshandler L:bfshandler
    ```
 
-2. Add a Mountlist entry (e.g., `DEVS:DOSDrivers/BFS`):
+2. Add a Mountlist entry (e.g., `DEVS:DOSDrivers/BFS`) with the device and
+   the partition's geometry. BFS is a file system, so the entry uses
+   `FileSystem`; `Mount` passes a `Handler` no device or geometry.
 
    ```bash
    BFS:
-       Handler   = L:bfshandler
-       Stacksize = 16384
-       Priority  = 5
-       GlobVec   = -1
-       Mount     = 1
+       FileSystem     = L:bfshandler
+       Device         = scsi.device
+       Unit           = 0
+       Surfaces       = 16
+       BlocksPerTrack = 63
+       LowCyl         = 2
+       HighCyl        = 1023
+       DosType        = 0x42465300
+       Stacksize      = 32768
+       Priority       = 5
+       GlobVec        = -1
+       Mount          = 1
    ```
 
 3. Format the partition:
