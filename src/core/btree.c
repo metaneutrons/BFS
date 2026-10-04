@@ -609,6 +609,52 @@ bfs_err_t bfs_btree_lower_bound(bfs_btree_t *tree, const void *key, void *key_ou
     return result;
 }
 
+static bool node_within_bounds(const bfs_btree_t *tree, uint8_t *node,
+                               const node_bounds_t *bounds)
+{
+    uint32_t n = num_keys(node);
+    return n > 0 &&
+           (!bounds->have_lower ||
+            tree->ops->key_compare(node_key(tree, node, 0), bounds->lower) >= 0) &&
+           (!bounds->have_upper ||
+            tree->ops->key_compare(node_key(tree, node, n - 1), bounds->upper) < 0);
+}
+
+/* The leaf that holds key as a writable image, if the live transaction owns
+ * it and the cache holds it dirty and validated. No committed state refers to
+ * that image, so a change confined to the leaf can be made in place: no path
+ * copies, no staged image, and nothing left that can fail afterwards. Inner
+ * nodes are only viewed, with the checks of node_view. NULL leaves the change
+ * to the copy-on-write path, which also reports any inconsistency. */
+static uint8_t *owned_leaf_in_place(bfs_btree_t *tree, const void *key,
+                                    node_bounds_t *bounds)
+{
+    if (!tree->ops->cache_key_order || !bfs_bio_can_modify_nodes(tree->bio) ||
+        tree->height == 0 || tree->height > MAX_TREE_DEPTH)
+        return NULL;
+    bfs_node_validation_t validation = node_validation_context(tree);
+    bfs_blk_t blk = tree->root;
+    for (uint16_t level = (uint16_t)(tree->height - 1); level > 0; level--) {
+        if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count) return NULL;
+        uint8_t *node = (uint8_t *)bfs_bio_peek_valid_node(tree->bio, blk, &validation);
+        if (!node || node_level(node) != level || !node_within_bounds(tree, node, bounds))
+            return NULL;
+        bool found;
+        uint32_t idx = node_search(tree, node, key, &found);
+        uint32_t child = found ? idx + 1 : idx;
+        child_bounds(tree, node, child, bounds);
+        blk = get_child(tree, node, child);
+    }
+    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count || !owned_contains(tree, blk))
+        return NULL;
+    uint8_t *leaf = bfs_bio_modify_dirty_node(tree->bio, blk, &validation);
+    if (!leaf || node_level(leaf) != BFS_BTNODE_LEAF ||
+        !node_within_bounds(tree, leaf, bounds) ||
+        bfs_be64(hdr_of(leaf)->txn_id) != bfs_btree_txn_id(tree))
+        return NULL;
+    return leaf;
+}
+
 /* The leaf of the last search, if the tree has not changed since, it is
  * still resident and validated, and key lies between its first and last
  * keys: in a B+tree every key of that range is in that leaf. */
@@ -1371,6 +1417,21 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
         return tree->free_sink_err;
     }
     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+
+    /* A key that fits into an owned leaf needs no split and no copy. */
+    node_bounds_t owned_bounds = {0};
+    uint8_t *owned_leaf = owned_leaf_in_place(tree, key, &owned_bounds);
+    if (owned_leaf) {
+        bool found;
+        uint32_t idx = node_search(tree, owned_leaf, key, &found);
+        if (found) return BFS_ERR_EXISTS;
+        if (num_keys(owned_leaf) < leaf_max_keys(tree)) {
+            leaf_insert_at(tree, owned_leaf, idx, key, val);
+            tree->generation++;
+            return BFS_OK;
+        }
+    }
+
     bfs_err_t preflight = mutation_headroom(tree, tree->height);
     if (preflight != BFS_OK) return preflight;
 
@@ -1549,6 +1610,21 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+
+    node_bounds_t owned_bounds = {0};
+    uint8_t *owned_leaf = owned_leaf_in_place(tree, key, &owned_bounds);
+    if (owned_leaf) {
+        bool found;
+        uint32_t idx = node_search(tree, owned_leaf, key, &found);
+        if (!found) return BFS_ERR_NOTFOUND;
+        void *value = leaf_val(tree, owned_leaf, idx);
+        if (memcmp(value, new_val, tree->ops->val_size) != 0) {
+            memcpy(value, new_val, tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+            tree->generation++;
+        }
+        return BFS_OK;
+    }
+
     bfs_err_t preflight = mutation_headroom(tree, tree->height);
     if (preflight != BFS_OK) return preflight;
 
@@ -1737,6 +1813,20 @@ bfs_err_t bfs_btree_update_key(bfs_btree_t *tree, const void *old_key,
     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
 
     node_bounds_t bounds = {0};
+    uint8_t *owned_leaf = owned_leaf_in_place(tree, old_key, &bounds);
+    if (owned_leaf) {
+        bool found;
+        uint32_t index = node_search(tree, owned_leaf, old_key, &found);
+        if (!found) return BFS_ERR_NOTFOUND;
+        if (!key_fits_at(tree, owned_leaf, index, &bounds, new_key))
+            return BFS_ERR_UNSUPPORTED;
+        copy_bytes(node_key(tree, owned_leaf, index), new_key, tree->ops->key_size);
+        copy_bytes(leaf_val(tree, owned_leaf, index), new_val, tree->ops->val_size);
+        tree->generation++;
+        return BFS_OK;
+    }
+    memset(&bounds, 0, sizeof(bounds));
+
     bfs_err_t preflight = mutation_headroom(tree, tree->height);
     if (preflight != BFS_OK) return preflight;
 
@@ -2159,6 +2249,23 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key)
     if (tree->root == BFS_BLK_NULL)
         return BFS_ERR_NOTFOUND;
     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+
+    /* An owned leaf that keeps enough keys needs no rebalancing and no copy;
+     * a root leaf only has to keep one. */
+    node_bounds_t owned_bounds = {0};
+    uint8_t *owned_leaf = owned_leaf_in_place(tree, key, &owned_bounds);
+    if (owned_leaf) {
+        bool found;
+        uint32_t idx = node_search(tree, owned_leaf, key, &found);
+        if (!found) return BFS_ERR_NOTFOUND;
+        uint32_t keep = tree->height == 1 ? 1u : leaf_min(tree);
+        if (num_keys(owned_leaf) > keep) {
+            leaf_remove_at(tree, owned_leaf, idx);
+            tree->generation++;
+            return BFS_OK;
+        }
+    }
+
     bfs_err_t preflight = mutation_headroom(tree, 2u * tree->height + 1u);
     if (preflight != BFS_OK) return preflight;
 

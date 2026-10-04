@@ -116,6 +116,14 @@ typedef struct bfs_bio_ops {
      * only until the next call into this BIO. */
     const void *(*peek_valid_node)(bfs_bio_t *bio, bfs_blk_t blk,
                                    const bfs_node_validation_t *context);
+
+    /* Optional, with the deferral hooks: as peek_valid_node, but only for a
+     * dirty image that has not been written since it was deferred, and
+     * writable. The caller changes the node in place and keeps its structure
+     * valid for context; the image stays dirty and is finalized when written.
+     * The pointer is valid only until the next call into this BIO. */
+    void *(*modify_dirty_node)(bfs_bio_t *bio, bfs_blk_t blk,
+                               const bfs_node_validation_t *context);
 } bfs_bio_ops_t;
 
 /* Base block device — all implementations embed this as first member */
@@ -264,6 +272,16 @@ static inline bfs_err_t bfs_bio_flush_deferred(bfs_bio_t *bio) {
 
 static inline void bfs_bio_discard_deferred(bfs_bio_t *bio, bfs_blk_t blk) {
     if (bfs_bio_can_defer_nodes(bio)) bio->ops->discard_deferred(bio, blk);
+}
+
+static inline bool bfs_bio_can_modify_nodes(const bfs_bio_t *bio) {
+    return bfs_bio_can_defer_nodes(bio) && bio->ops->modify_dirty_node;
+}
+
+static inline void *bfs_bio_modify_dirty_node(
+    bfs_bio_t *bio, bfs_blk_t blk, const bfs_node_validation_t *context) {
+    return bfs_bio_can_modify_nodes(bio) && context
+               ? bio->ops->modify_dirty_node(bio, blk, context) : NULL;
 }
 
 static inline const void *bfs_bio_peek_valid_node(

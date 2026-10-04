@@ -377,6 +377,16 @@ static const void *cache_peek_valid_node(bfs_bio_t *bio, bfs_blk_t blk,
     return slot->data;
 }
 
+static void *cache_modify_dirty_node(bfs_bio_t *bio, bfs_blk_t blk,
+                                     const bfs_node_validation_t *context)
+{
+    bfs_cache_t *c = (bfs_cache_t *)bio;
+    bfs_cache_slot_t *slot = cache_find(c, blk);
+    if (!slot || !slot->dirty || !slot_structure_valid(slot, context)) return NULL;
+    slot->age = ++c->clock;
+    return slot->data;
+}
+
 static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
                                              const bfs_node_validation_t *context)
 {
@@ -442,6 +452,7 @@ static const bfs_bio_ops_t cache_ops = {
     .read_blocks = cache_read_blocks,
     .write_blocks = cache_write_blocks,
     .peek_valid_node = cache_peek_valid_node,
+    .modify_dirty_node = cache_modify_dirty_node,
 };
 
 void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)
