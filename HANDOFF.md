@@ -202,11 +202,13 @@ Mac noch auf Cachy installiert ist.
     in AROS-NX aufnehmen, das ein BFS-Release per `%fetch` holt. Gepflegt
     wird nur hier. Offen für die BFS-CI: ein festes AROS-NX-SDK und Boot-ISO
     als Release-Artefakt.
-11. Beim Nachweis gefundene AROS-NX-Fehler, Korrekturen gehören nach
-    AROS-NX: `Echo >SER:` stürzt auf q35 ab; ein Dateisystem, das `LoadSeg`
-    nicht laden kann, stürzt beim Aktivieren ab, statt einen Fehler zu
-    melden; der PCI-Treiber stürzt auf i440FX ohne MCFG-Tabelle ab (lokaler
-    Zweig `fix/pcipc-null-legacy-tags-validation`).
+11. Für `aros-toolchains`: Das in Release v0.1.4 mitgelieferte
+    `aros-collect` 0.3.12 lässt beim Linken mit `startup.o`
+    `__eh_frame_start` offen; AROS lädt das Programm dann nicht („file is
+    not executable“). `aros-collect` 0.3.19 aus `aros-tools`, mit dem auch
+    AROS-NX baut, löst es auf. BFS linkt deshalb mit dem `aros-collect` der
+    installierten `aros-tools`. In AROS-NX selbst wurde beim Nachweis kein
+    Fehler gefunden: Die Abstürze kamen von falsch gelinkten BFS-Programmen.
 
 ## 8. Arbeitsregeln
 
