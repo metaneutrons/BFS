@@ -108,9 +108,11 @@ for filesystem in "${filesystems[@]}"; do
         read -r -a metric_names_array <<<"$metrics"
         metric_count=${#metric_names_array[@]}
     elif [[ -n "${versioned_compare:-}" ]]; then
-        # Schema 2 adds the directory listing phases after the small reads.
+        # Schema 2 adds the directory listing phases after the small reads;
+        # schema 3 adds small-step appends and their read-back at the end.
         IFS=$'\t' read -r observed_header observed_version < "$output"
-        if [[ "$observed_header" != "$header" || ( "$observed_version" != 1 && "$observed_version" != 2 ) ]]; then
+        if [[ "$observed_header" != "$header" ||
+              ( "$observed_version" != 1 && "$observed_version" != 2 && "$observed_version" != 3 ) ]]; then
             printf 'ERROR: invalid compare schema header in %s output\n' "$filesystem" >&2
             exit 1
         fi
@@ -122,8 +124,10 @@ for filesystem in "${filesystems[@]}"; do
         fi
         if [[ "$header_version" == 1 ]]; then
             metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
-        else
+        elif [[ "$header_version" == 2 ]]; then
             metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US LIST_EXNEXT_400_US LIST_EXALL_400_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
+        else
+            metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US LIST_EXNEXT_400_US LIST_EXALL_400_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US APPEND_4K_1M_US APPEND_1K_256K_US APPEND_READ_1280K_US'
         fi
         read -r -a metric_names_array <<<"$metrics"
         metric_count=${#metric_names_array[@]}

@@ -17,6 +17,10 @@
 #define LARGE_BYTES (8UL * 1024UL * 1024UL)
 #define LIST_PASSES 10
 #define LIST_BUFFER_BYTES 4096
+#define APPEND_BLOCK_BYTES 4096
+#define APPEND_BLOCK_TOTAL (1024UL * 1024UL)
+#define APPEND_SMALL_BYTES 1024
+#define APPEND_SMALL_TOTAL (256UL * 1024UL)
 
 static struct MsgPort *timer_port;
 static struct timerequest *timer_request;
@@ -524,6 +528,72 @@ static const char *read_large_file(const char *drive)
     return NULL;
 }
 
+/* Grow a file by step bytes per Write, as copy tools with small buffers and
+ * log writers do. The content repeats the expected pattern, so a reader can
+ * verify it in whole buffers. */
+static const char *append_file(const char *drive, const char *name, ULONG step,
+                               ULONG total)
+{
+    char path[128];
+    ULONG offset;
+    BPTR handle;
+    if (!make_path(path, sizeof(path), drive, name)) return "path";
+    handle = Open(path, MODE_NEWFILE);
+    if (!handle) return "append-open-write";
+    for (offset = 0; offset < total; offset += step) {
+        if (Write(handle, expected + offset % BUFFER_BYTES, (LONG)step) != (LONG)step) {
+            Close(handle);
+            return "append-write";
+        }
+    }
+    {
+        BOOL flushed = Flush(handle);
+        BOOL closed = checked_close(handle);
+        if (!flushed || !closed) return "append-close";
+    }
+    return NULL;
+}
+
+static const char *append_block_file(const char *drive)
+{
+    return append_file(drive, "perf_append4k", APPEND_BLOCK_BYTES, APPEND_BLOCK_TOTAL);
+}
+
+static const char *append_small_file(const char *drive)
+{
+    return append_file(drive, "perf_append1k", APPEND_SMALL_BYTES, APPEND_SMALL_TOTAL);
+}
+
+static const char *read_appended_file(const char *drive, const char *name, ULONG total)
+{
+    char path[128];
+    ULONG offset;
+    BPTR handle;
+    if (!make_path(path, sizeof(path), drive, name)) return "path";
+    handle = Open(path, MODE_OLDFILE);
+    if (!handle) return "append-open-read";
+    for (offset = 0; offset < total; offset += BUFFER_BYTES) {
+        if (Read(handle, received, BUFFER_BYTES) != BUFFER_BYTES ||
+            !equal_bytes(expected, received, BUFFER_BYTES)) {
+            Close(handle);
+            return "append-read-verify";
+        }
+    }
+    {
+        LONG trailing = Read(handle, received, 1);
+        BOOL closed = checked_close(handle);
+        if (trailing != 0 || !closed) return "append-read-close";
+    }
+    return NULL;
+}
+
+static const char *read_appended_files(const char *drive)
+{
+    const char *error = read_appended_file(drive, "perf_append4k", APPEND_BLOCK_TOTAL);
+    if (error) return error;
+    return read_appended_file(drive, "perf_append1k", APPEND_SMALL_TOTAL);
+}
+
 static const char *delete_small_files(const char *drive)
 {
     char path[128];
@@ -586,8 +656,8 @@ static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
     if (!handle) return fail("mkdir");
     UnLock(handle);
     if (deep_mode) emit("FS_DEEP_COMPARE\t11\nDRIVE\t");
-    else if (durable_mode) emit("FS_DURABLE_COMPARE\t2\nDRIVE\t");
-    else emit("FS_COMPARE_BENCH\t2\nDRIVE\t");
+    else if (durable_mode) emit("FS_DURABLE_COMPARE\t3\nDRIVE\t");
+    else emit("FS_COMPARE_BENCH\t3\nDRIVE\t");
     emit(drive);
     emit("\n");
     error = run_phase(drive, "SMALL_CREATE_40", "perf-reset-create", "timer-create",
@@ -617,6 +687,20 @@ static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
     error = run_phase(drive, "SMALL_DELETE_40", "perf-reset-delete", "timer-delete",
                       probe_enabled, durable_mode, &clock_hz, delete_small_files);
     if (error) return fail(error);
+    /* Schema 3 appends growth in small steps after the earlier phases, so
+     * those run on the same volume state as before. */
+    if (!deep_mode) {
+        error = run_phase(drive, "APPEND_4K_1M", "perf-reset-append", "timer-append-4k",
+                          FALSE, durable_mode, &clock_hz, append_block_file);
+        if (error) return fail(error);
+        error = run_phase(drive, "APPEND_1K_256K", "perf-reset-append", "timer-append-1k",
+                          FALSE, durable_mode, &clock_hz, append_small_file);
+        if (error) return fail(error);
+        error = run_phase(drive, "APPEND_READ_1280K", "perf-reset-append",
+                          "timer-append-read", FALSE, FALSE, &clock_hz,
+                          read_appended_files);
+        if (error) return fail(error);
+    }
     if (probe_enabled) {
         metric("CLOCK_HZ", clock_hz);
         metric("CRC_SAMPLE_STRIDE", BFS_PERF_CRC_SAMPLE_STRIDE);

@@ -111,8 +111,12 @@ recheck retained outputs. The result is an emulated AmigaOS comparison, not a
 native-hardware throughput claim.
 
 Schema 2 of `FS_COMPARE_BENCH` and `FS_DURABLE_COMPARE` added the two listing
-phases; the verifier still accepts schema 1 outputs, which lack them. The deep
-profile keeps its phases and does not list.
+phases. Schema 3 adds, after the deletes, a file grown to 1 MiB in 4 KiB
+writes, one grown to 256 KiB in 1 KiB writes, and a checked read of both in
+64 KiB reads, as copy tools with small buffers and log writers produce them.
+These phases come last, so the earlier ones run on the same volume state as
+before. The verifier still accepts schema 1 and 2 outputs. The deep profile
+keeps its phases and neither lists nor appends.
 
 To compare several handlers, `emulator-test/bench-series.sh LABEL COUNT MODE
 NAME=HANDLER...` runs COUNT fresh runs of each handler in turn, starting with
@@ -127,7 +131,7 @@ inside the timed region. Each filesystem then pays for its own commit within
 the phase that caused it; PFS3, which commits from a timer, otherwise defers
 that work past the measurement or into a later phase. The outputs are
 `bfs.durable.tsv` and `pfs3.durable.tsv` with the schema header
-`FS_DURABLE_COMPARE 2`; validate them with
+`FS_DURABLE_COMPARE 3`; validate them with
 `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" durable-compare`.
 
 For a deterministic, emulator-free view of where the core spends its work, run

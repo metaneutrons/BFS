@@ -225,6 +225,37 @@ static void delete_small_files(bfs_fs_t *fs, uint32_t dir)
     commit_phase(fs);
 }
 
+static uint32_t append_file(bfs_fs_t *fs, uint32_t dir, const char *name,
+                            uint32_t step, uint32_t total)
+{
+    uint32_t ino;
+    bfs_file_t file;
+    require(bfs_fs_reserve(fs, 5), "reserve");
+    require(bfs_fs_create_file_with_stamp(fs, dir, name, (uint8_t)strlen(name),
+                                          sample_stamp, NULL, &ino), "create-append");
+    require(bfs_file_open(&file, fs, ino), "open-append");
+    for (uint32_t offset = 0; offset < total; offset += step) {
+        if (bfs_file_write_with_stamp(&file, expected + offset % BUFFER_BYTES, step,
+                                      sample_stamp, NULL, 0) != (int32_t)step)
+            require(BFS_ERR_IO, "append-write");
+    }
+    commit_operation(fs);
+    commit_phase(fs);
+    return ino;
+}
+
+static void read_appended_file(bfs_fs_t *fs, uint32_t ino, uint32_t total)
+{
+    bfs_file_t file;
+    require(bfs_file_open(&file, fs, ino), "open-append-read");
+    for (uint32_t offset = 0; offset < total; offset += BUFFER_BYTES) {
+        if (bfs_file_read(&file, received, BUFFER_BYTES) != (int32_t)BUFFER_BYTES ||
+            memcmp(received, expected, BUFFER_BYTES) != 0)
+            require(BFS_ERR_CORRUPT, "append-read");
+    }
+    if (bfs_file_read(&file, received, 1) != 0) require(BFS_ERR_CORRUPT, "append-eof");
+}
+
 int main(int argc, char **argv)
 {
     if (argc != 3 || (strcmp(argv[2], "sync") != 0 && strcmp(argv[2], "group") != 0)) {
@@ -270,6 +301,13 @@ int main(int argc, char **argv)
     CALLGRIND_DUMP_STATS_AT("SEQ_READ_8M");
     delete_small_files(&fs, dir);
     CALLGRIND_DUMP_STATS_AT("SMALL_DELETE_40");
+    uint32_t append4k = append_file(&fs, dir, "append4k", 4096u, 1024u * 1024u);
+    CALLGRIND_DUMP_STATS_AT("APPEND_4K_1M");
+    uint32_t append1k = append_file(&fs, dir, "append1k", 1024u, 256u * 1024u);
+    CALLGRIND_DUMP_STATS_AT("APPEND_1K_256K");
+    read_appended_file(&fs, append4k, 1024u * 1024u);
+    read_appended_file(&fs, append1k, 256u * 1024u);
+    CALLGRIND_DUMP_STATS_AT("APPEND_READ_1280K");
 
     require(bfs_fs_unmount(&fs), "unmount");
     bfs_cache_destroy(&cache);
