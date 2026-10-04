@@ -82,7 +82,7 @@ class ConformanceTests(unittest.TestCase):
         catalog = json.loads((ROOT / "tests/conformance/scenarios.json").read_text(encoding="utf-8"))
         test_ids = set(re.findall(r"BFS_TEST\(([^,]+),", (ROOT / "tools/bfs-test-cases.def").read_text(
             encoding="utf-8")))
-        self.assertEqual(len(test_ids), 50)
+        self.assertEqual(len(test_ids), 52)
         mapped = {test_id for scenario in catalog["scenarios"]
                   for test_id in scenario.get("amiga_test_ids", [])}
         self.assertIn("fill_08", mapped)

@@ -1851,6 +1851,104 @@ static void test_exall_packing(void)
     if (ok) pass(T); else fail(T, "one packed call with every entry");
 }
 
+/* MakeLink passes a soft link's target as a C string. ReadLink returns it
+ * with its length, and -2 when the buffer has no room for the terminator. */
+static void test_soft_link(void)
+{
+    const char *T = "softlink_51";
+    static const char target[] = "Work:dir/target.txt";
+    const LONG target_len = (LONG)sizeof(target) - 1;
+    char link[96];
+    const char *p = vpath("softlnk");
+    if (!p) { fail(T, "path"); return; }
+    tool_memcpy(link, p, tool_strlen(p) + 1);
+    struct MsgPort *port = DeviceProc(vol);
+    if (!port) { fail(T, "no port"); return; }
+    if (!MakeLink(link, (LONG)target, LINK_SOFT)) { fail(T, "make"); return; }
+
+    BPTR root = Lock(vol, SHARED_LOCK);
+    BOOL ok = root != 0;
+    if (ok) {
+        char buffer[64];
+        LONG length = ReadLink(port, root, link, buffer, sizeof(buffer));
+        ok = length == target_len && tool_memcmp(buffer, target, (int)sizeof(target)) == 0;
+        if (ok) ok = ReadLink(port, root, link, buffer, (ULONG)target_len) == -2;
+        UnLock(root);
+    }
+    if (!DeleteFile(link)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "read back the target");
+}
+
+/* vol followed by rel in dst; vpath returns a buffer the next call reuses. */
+static BOOL volpath(char *dst, int size, const char *rel)
+{
+    const char *p = vpath(rel);
+    int length = p ? tool_strlen(p) : 0;
+    if (!p || length >= size) return FALSE;
+    tool_memcpy(dst, p, length + 1);
+    return TRUE;
+}
+
+/* The entry type ExNext reports for name in the volume root, 0 if absent. */
+static LONG exnext_type(const char *name)
+{
+    BPTR lock = Lock(vol, SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    LONG type = 0;
+    if (lock && fib && Examine(lock, fib)) {
+        while (!type && ExNext(lock, fib))
+            if (cstr_equal(fib->fib_FileName, name)) type = fib->fib_DirEntryType;
+    }
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    return type;
+}
+
+/* dos.library follows soft links: a link inside a path and one at its end
+ * make the handler report ERROR_IS_SOFT_LINK, ReadLink supplies the path
+ * that replaces the link, and DOS retries. ExNext reports a link as
+ * ST_SOFTLINK. */
+static void test_soft_link_resolution(void)
+{
+    const char *T = "softresolve_52";
+    char dir[96], file[96], dirlink[96], filelink[96], through[96];
+    if (!volpath(dir, sizeof(dir), "sldir") || !volpath(file, sizeof(file), "sldir/data") ||
+        !volpath(dirlink, sizeof(dirlink), "sldirlnk") ||
+        !volpath(filelink, sizeof(filelink), "sllnk") ||
+        !volpath(through, sizeof(through), "sldirlnk/data")) {
+        fail(T, "path");
+        return;
+    }
+    BPTR made = CreateDir(dir);
+    if (!made) { fail(T, "mkdir"); return; }
+    UnLock(made);
+
+    /* A relative link to the directory, an absolute one to the file. */
+    const char *step = "make";
+    BOOL ok = write_seeded(file, 3000, 0x5252) &&
+              MakeLink(dirlink, (LONG)"sldir", LINK_SOFT) &&
+              MakeLink(filelink, (LONG)file, LINK_SOFT);
+    if (ok) { step = "open through the directory link"; ok = verify_seeded(through, 3000, 0x5252); }
+    if (ok) { step = "open the file link"; ok = verify_seeded(filelink, 3000, 0x5252); }
+    if (ok) {
+        step = "lock the file link";
+        BPTR lock = Lock(filelink, SHARED_LOCK);
+        struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+        ok = lock && fib && Examine(lock, fib) && fib->fib_DirEntryType == ST_FILE &&
+             cstr_equal(fib->fib_FileName, "data");
+        if (fib) FreeDosObject(DOS_FIB, fib);
+        if (lock) UnLock(lock);
+    }
+    if (ok) { step = "list the link"; ok = exnext_type("sldirlnk") == ST_SOFTLINK; }
+
+    BOOL removed = DeleteFile(filelink);
+    removed = DeleteFile(dirlink) && removed;
+    removed = DeleteFile(file) && removed;
+    removed = DeleteFile(dir) && removed;
+    if (ok && !removed) { ok = FALSE; step = "cleanup"; }
+    if (ok) pass(T); else fail(T, step);
+}
+
 /* ── Test table ────────────────────────────────────────────── */
 
 typedef void (*test_fn)(void);

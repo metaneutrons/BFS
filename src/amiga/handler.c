@@ -932,7 +932,15 @@ static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
 
 /* ── BSTR / path helpers ──────────────────────────────────── */
 
-/* Extract the parent inode and final component from a lock-relative BSTR path. */
+/* A soft link met as a directory component of a path. dos.library then asks
+ * ReadLink for the path that replaces it and retries (ERROR_IS_SOFT_LINK).
+ * A handler-only result, mapped by Pfs4ToDosError. */
+#define HANDLER_ERR_IS_SOFT_LINK ((bfs_err_t)-100)
+
+/* Walk the directory components of a lock-relative path, leaving *parent at
+ * the directory and *name at the final component. A soft link among the
+ * directories stops the walk there with HANDLER_ERR_IS_SOFT_LINK: *parent is
+ * its directory and *name points at the link's component. */
 static bfs_err_t ResolveDirectories(struct bfs_handler *h, uint32_t *parent,
                                     const char **name, uint8_t *len)
 {
@@ -950,6 +958,7 @@ static bfs_err_t ResolveDirectories(struct bfs_handler *h, uint32_t *parent,
             bfs_err_t err = bfs_dir_lookup(&h->fs.dir_tree, *parent, key,
                                            component ? component : 2, &ino, &type);
             if (err != BFS_OK) return err;
+            if (type == BFS_INODE_SOFTLINK) return HANDLER_ERR_IS_SOFT_LINK;
             if (type != BFS_INODE_DIR) return BFS_ERR_INVAL;
         }
         *parent = ino;
@@ -959,53 +968,87 @@ static bfs_err_t ResolveDirectories(struct bfs_handler *h, uint32_t *parent,
     return BFS_OK;
 }
 
-static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
-                             char *namebuf, uint8_t *namelen_out,
-                             uint32_t *parent_out,
-                             struct bfs_handler *h)
+/* Length of a NUL-terminated string in caller memory, or limit if none of
+ * its first limit bytes is NUL. */
+static uint32_t BoundedStringLength(const char *text, uint32_t limit)
 {
-    if (!namebuf || !namelen_out || !parent_out || !h || !h->fs.mounted)
+    uint32_t length = 0;
+    while (length < limit && text[length]) length++;
+    return length;
+}
+
+/* Walk name (len bytes, NULL for none) relative to lock as
+ * ResolveDirectories does. *last points into name at the final component
+ * or, with HANDLER_ERR_IS_SOFT_LINK, at the soft link; *last_len counts the
+ * bytes from there to the end of name. */
+static bfs_err_t WalkPath(BPTR lock, const char *name, uint8_t len,
+                          uint32_t *parent_out, const char **last,
+                          uint8_t *last_len, struct bfs_handler *h)
+{
+    if (!parent_out || !last || !last_len || !h || !h->fs.mounted)
         return BFS_ERR_INVAL;
 
     bfs_lock_t *base_lock = (bfs_lock_t *)BADDR(lock);
     if (base_lock && !LockIsOwned(h, base_lock)) return BFS_ERR_INVAL;
 
     uint32_t parent_ino = LockIno(lock);
-    UBYTE *bstr = (UBYTE *)BADDR(bstr_name);
-    if (!bstr) {
-        *namelen_out = 0;
-        namebuf[0] = 0;
-        *parent_out = parent_ino;
-        return BFS_OK;
-    }
-    uint8_t len = bstr[0];
-    const char *name = (const char *)&bstr[1];
-
-    /* Skip volume prefix (e.g. "VOL:") — resets to root */
-    for (uint8_t i = 0; i < len; i++) {
-        if (name[i] == ':') {
-            name += i + 1;
-            len -= i + 1;
-            parent_ino = BFS_ROOT_INO;
-            break;
+    bfs_err_t err = BFS_OK;
+    if (!name) {
+        len = 0;
+    } else {
+        /* Skip volume prefix (e.g. "VOL:") — resets to root */
+        for (uint8_t i = 0; i < len; i++) {
+            if (name[i] == ':') {
+                name += i + 1;
+                len -= i + 1;
+                parent_ino = BFS_ROOT_INO;
+                break;
+            }
         }
+        err = ResolveDirectories(h, &parent_ino, &name, &len);
     }
+    *parent_out = parent_ino;
+    *last = name;
+    *last_len = len;
+    return err;
+}
 
-    bfs_err_t err = ResolveDirectories(h, &parent_ino, &name, &len);
+/* Resolve name (len bytes, NULL for none) relative to lock into the parent
+ * directory and the last component. */
+static bfs_err_t ResolveName(BPTR lock, const char *name, uint8_t len,
+                             char *namebuf, uint8_t *namelen_out,
+                             uint32_t *parent_out,
+                             struct bfs_handler *h)
+{
+    if (!namebuf || !namelen_out) return BFS_ERR_INVAL;
+    const char *last;
+    uint32_t parent_ino;
+    bfs_err_t err = WalkPath(lock, name, len, &parent_ino, &last, &len, h);
     if (err != BFS_OK) return err;
-    if (len && name[len - 1] == '/') len--;
-    /* All callers supply BFS_NAME_MAX + 1 bytes; a BSTR length is at most 255. */
-    memcpy(namebuf, name, len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    if (len && last[len - 1] == '/') len--;
+    /* All callers supply BFS_NAME_MAX + 1 bytes; len is at most 255. */
+    if (len) memcpy(namebuf, last, len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     namebuf[len] = 0;
     *namelen_out = len;
     *parent_out = parent_ino;
     return BFS_OK;
 }
 
+static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
+                             char *namebuf, uint8_t *namelen_out,
+                             uint32_t *parent_out,
+                             struct bfs_handler *h)
+{
+    const UBYTE *bstr = (const UBYTE *)BADDR(bstr_name);
+    return ResolveName(lock, bstr ? (const char *)&bstr[1] : NULL, bstr ? bstr[0] : 0,
+                       namebuf, namelen_out, parent_out, h);
+}
+
 /* ── BFS error to AmigaDOS error mapping ─────────────────── */
 
 static LONG Pfs4ToDosError(bfs_err_t err)
 {
+    if (err == HANDLER_ERR_IS_SOFT_LINK) return ERROR_IS_SOFT_LINK;
     switch (err) {
     case BFS_OK:          return 0;
     case BFS_ERR_NOTFOUND: return ERROR_OBJECT_NOT_FOUND;
@@ -1209,13 +1252,21 @@ static bool exam_next_cb(const char *name, uint8_t name_len,
 
 /* ── Fill FileInfoBlock ───────────────────────────────────── */
 
+/* The DOS entry type of an inode type, as Examine, ExNext and ExAll report it. */
+static LONG DosEntryType(uint32_t type)
+{
+    if (type == BFS_INODE_DIR) return ST_USERDIR;
+    if (type == BFS_INODE_SOFTLINK) return ST_SOFTLINK;
+    return ST_FILE;
+}
+
 static void FillFib(struct FileInfoBlock *fib, const char *name, uint8_t name_len,
                     uint32_t ino, uint32_t type, uint64_t size, uint32_t prot,
                     const bfs_inode_t *inode)
 {
     memset(fib, 0, sizeof(*fib));
     fib->fib_DiskKey = ino;
-    fib->fib_DirEntryType = (type == BFS_INODE_DIR) ? ST_USERDIR : ST_FILE;
+    fib->fib_DirEntryType = DosEntryType(type);
     fib->fib_EntryType = fib->fib_DirEntryType;
     fib->fib_Protection = prot;
     fib->fib_Size = size > INT32_MAX ? INT32_MAX : (LONG)size;
@@ -1594,7 +1645,7 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     /* entry_size above includes name_len + 1 bytes behind the fixed part. */
     memcpy(str, name, name_len); str[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     ead->ed_Name = str; str += name_len + 1;
-    if (ec->type >= ED_TYPE) ead->ed_Type = (entry_type == BFS_INODE_DIR) ? ST_USERDIR : ST_FILE;
+    if (ec->type >= ED_TYPE) ead->ed_Type = DosEntryType(entry_type);
     if (ec->type >= ED_SIZE) ead->ed_Size = fsize > INT32_MAX ? INT32_MAX : (ULONG)fsize;
     if (ec->type >= ED_PROTECTION) ead->ed_Prot = prot;
     if (ec->type >= ED_DATE && have_inode) {
@@ -1618,6 +1669,77 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     ec->last_len = name_len;
 
     return true;
+}
+
+/* A ReadLink path split around its soft link: the text before the link and
+ * the text after it, starting with '/'. */
+typedef struct {
+    const char *prefix;
+    uint32_t prefix_len;
+    const char *rest;
+    uint32_t rest_len;
+} soft_link_request_t;
+
+/* Write into buf the path that replaces a soft link, as PFS3 does: the
+ * request's text before the link (prefix), the link's target, and the text
+ * after the link (rest, starting with '/'). A target containing ':' is
+ * absolute and drops the prefix, except that a target starting with ':'
+ * keeps the prefix's volume or assign name. A target ending in '/' absorbs
+ * the slash that starts rest; otherwise a single trailing '/' of rest is
+ * dropped. Returns the length, -2 if size bytes cannot hold the path and its
+ * terminator, or -1 with *error set. */
+static LONG ComposeSoftLinkPath(struct bfs_handler *h, uint32_t ino,
+                                const soft_link_request_t *request,
+                                char *buf, LONG size, LONG *error)
+{
+    const char *prefix = request->prefix;
+    uint32_t prefix_len = request->prefix_len;
+    const char *rest = request->rest;
+    uint32_t rest_len = request->rest_len;
+    bfs_inode_t inode;
+    bfs_err_t err = bfs_inode_read(&h->fs.inode_tree, ino, &inode);
+    if (err != BFS_OK) { *error = Pfs4ToDosError(err); return -1; }
+    uint64_t stored = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
+    if (stored == 0 || stored > UINT16_MAX) { *error = ERROR_NOT_A_DOS_DISK; return -1; }
+    uint32_t target_len = (uint32_t)stored;
+    if ((uint64_t)target_len >= (uint64_t)size) return -2;
+
+    bfs_file_t f;
+    err = bfs_file_open(&f, &h->fs, ino);
+    if (err != BFS_OK) { *error = Pfs4ToDosError(err); return -1; }
+    int32_t n = bfs_file_read(&f, buf, target_len);
+    if (n < 0) { *error = Pfs4ToDosError((bfs_err_t)n); return -1; }
+    /* A stored target is non-empty and holds no NUL. */
+    if ((uint32_t)n != target_len || BoundedStringLength(buf, target_len) != target_len) {
+        *error = ERROR_NOT_A_DOS_DISK;
+        return -1;
+    }
+
+    uint32_t keep = prefix_len;
+    for (uint32_t i = 0; i < target_len; i++) {
+        if (buf[i] != ':') continue;
+        keep = 0;
+        if (buf[0] == ':') {
+            for (uint32_t j = 0; j < prefix_len; j++) {
+                if (prefix[j] == ':') { keep = j; break; }
+            }
+        }
+        break;
+    }
+    if (buf[target_len - 1] == '/') {
+        if (rest_len) { rest++; rest_len--; }
+    } else if (rest_len && rest[rest_len - 1] == '/' &&
+               (rest_len == 1 || rest[rest_len - 2] != '/')) {
+        rest_len--;
+    }
+    uint64_t total = (uint64_t)keep + target_len + rest_len;
+    if (total >= (uint64_t)size) return -2;
+    for (uint32_t i = target_len; i > 0; i--) buf[keep + i - 1] = buf[i - 1];
+    /* total < size bounds every copy below. */
+    if (keep) memcpy(buf, prefix, keep); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    if (rest_len) memcpy(buf + keep + target_len, rest, rest_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    buf[total] = 0;
+    return (LONG)total;
 }
 
 #ifdef BFS_PERF_PROBE
@@ -1834,6 +1956,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             err = bfs_dir_lookup(&h->fs.dir_tree, parent_ino, namebuf, len,
                                   &ino, &type);
             if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+            /* A soft link is not locked itself; DOS follows it. */
+            if (type == BFS_INODE_SOFTLINK) { res2 = ERROR_IS_SOFT_LINK; break; }
         }
 
         bfs_lock_t *lk = MakeLock(h, ino, type, pkt->dp_Arg3, lock_parent);
@@ -1902,6 +2026,14 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         } else if (err != BFS_OK) {
             FreeVec(open_file);
             res2 = Pfs4ToDosError(err);
+            break;
+        }
+
+        /* A soft link is not opened itself; DOS follows it, also to create
+         * or truncate its target. */
+        if (type == BFS_INODE_SOFTLINK) {
+            FreeVec(open_file);
+            res2 = ERROR_IS_SOFT_LINK;
             break;
         }
 
@@ -2363,13 +2495,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                                        target_ino);
             if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         } else {
-            UBYTE *bpath = (UBYTE *)BADDR(pkt->dp_Arg3);
-            if (!bpath || bpath[0] == 0) {
-                res2 = ERROR_REQUIRED_ARG_MISSING; break;
-            }
-            uint8_t plen = bpath[0];
+            /* A soft link's target is a C string, not a BSTR (MakeLink
+             * passes "a pointer to a null-terminated path string"). The
+             * format stores at most UINT16_MAX bytes. */
+            const char *target = (const char *)pkt->dp_Arg3;
+            uint32_t target_len = target ? BoundedStringLength(target, UINT16_MAX + 1u) : 0;
+            if (target_len == 0) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
+            if (target_len > UINT16_MAX) { res2 = ERROR_LINE_TOO_LONG; break; }
             err = bfs_fs_make_softlink(&h->fs, parent_ino, namebuf, len,
-                                       (const char *)&bpath[1], plen);
+                                       target, (uint16_t)target_len);
             if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         }
         res1 = DOSTRUE;
@@ -2381,29 +2515,50 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
     /* ── ACTION_READ_LINK ──────────────────────────────────── */
     case ACTION_READ_LINK: {
-        char namebuf[BFS_NAME_MAX + 1];
-        uint8_t len;
-        uint32_t parent_ino;
-        bfs_err_t err = ResolvePath((BPTR)pkt->dp_Arg1,
-                                    (BPTR)pkt->dp_Arg2, namebuf, &len,
-                                    &parent_ino, h);
-        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
-        uint32_t ino, type;
-        err = bfs_dir_lookup(&h->fs.dir_tree, parent_ino, namebuf, len,
-                             &ino, &type);
-        if (err != BFS_OK || type != BFS_INODE_SOFTLINK) { res2 = ERROR_OBJECT_NOT_FOUND; break; }
-
-        bfs_file_t f;
-        err = bfs_file_open(&f, &h->fs, ino);
-        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        /* dp_Arg1=lock, dp_Arg2=path (C string), dp_Arg3=buffer, dp_Arg4=size.
+         * The soft link is the last component of path, or the directory
+         * component at which another packet reported ERROR_IS_SOFT_LINK.
+         * Res1 is the length of the path that replaces it, -1 on error, or
+         * -2 if the buffer is too small; dos.library then retries with a
+         * larger buffer. */
+        const char *path = (const char *)pkt->dp_Arg2;
+        if (!path) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
+        uint32_t path_len = BoundedStringLength(path, BFS_NAME_MAX + 1);
+        if (path_len > BFS_NAME_MAX) { res2 = ERROR_LINE_TOO_LONG; break; }
         char *buf = (char *)pkt->dp_Arg3;
         LONG bufsize = pkt->dp_Arg4;
         if (!buf || bufsize <= 0) { res2 = ERROR_BAD_NUMBER; break; }
-        int32_t n = bfs_file_read(&f, buf, (uint32_t)(bufsize - 1));
-        if (n < 0) { res2 = Pfs4ToDosError((bfs_err_t)n); break; }
-        buf[n] = 0;
+
+        uint32_t parent_ino;
+        const char *link;
+        uint8_t remaining;
+        bfs_err_t err = WalkPath((BPTR)pkt->dp_Arg1, path, (uint8_t)path_len,
+                                 &parent_ino, &link, &remaining, h);
+        uint8_t link_len = remaining;
+        if (err == HANDLER_ERR_IS_SOFT_LINK) {
+            link_len = 0;
+            while (link_len < remaining && link[link_len] != '/') link_len++;
+        } else if (err != BFS_OK) {
+            res2 = Pfs4ToDosError(err);
+            break;
+        } else if (link_len && link[link_len - 1] == '/') {
+            link_len--;
+        }
+        if (link_len == 0) { res2 = ERROR_OBJECT_WRONG_TYPE; break; }
+        uint32_t ino, type;
+        err = bfs_dir_lookup(&h->fs.dir_tree, parent_ino, link, link_len,
+                             &ino, &type);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        if (type != BFS_INODE_SOFTLINK) { res2 = ERROR_OBJECT_WRONG_TYPE; break; }
+
+        const char *rest = link + link_len;
+        soft_link_request_t request = {
+            path, (uint32_t)(link - path), rest, (uint32_t)(path + path_len - rest)
+        };
+        LONG error = 0;
+        LONG n = ComposeSoftLinkPath(h, ino, &request, buf, bufsize, &error);
         res1 = n;
-        res2 = 0;
+        res2 = n == -2 ? ERROR_LINE_TOO_LONG : error;
         break;
     }
 
