@@ -148,7 +148,8 @@ static bool list_entry(const char *name, uint8_t name_len, uint32_t ino,
     bfs_inode_t inode;
     require(bfs_inode_read(&list->fs->inode_tree, ino, &inode), "list-inode");
     if (bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT) require(BFS_ERR_CORRUPT, "list-comment");
-    memcpy(list->name, name, name_len);
+    /* name_len <= BFS_NAME_MAX, the size of list->name. */
+    memcpy(list->name, name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     list->name_len = name_len;
     list->count++;
     return !list->stop_after_one;
@@ -231,7 +232,8 @@ static uint32_t append_file(bfs_fs_t *fs, uint32_t dir, const char *name,
     uint32_t ino;
     bfs_file_t file;
     require(bfs_fs_reserve(fs, 5), "reserve");
-    require(bfs_fs_create_file_with_stamp(fs, dir, name, (uint8_t)strlen(name),
+    /* name is one of the workload's short string literals. */
+    require(bfs_fs_create_file_with_stamp(fs, dir, name, (uint8_t)strlen(name), /* Flawfinder: ignore */
                                           sample_stamp, NULL, &ino), "create-append");
     require(bfs_file_open(&file, fs, ino), "open-append");
     for (uint32_t offset = 0; offset < total; offset += step) {

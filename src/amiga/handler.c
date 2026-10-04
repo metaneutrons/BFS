@@ -1316,7 +1316,8 @@ static bfs_err_t CommitDirty(struct bfs_handler *h)
 
 static bool ControlWordMatches(const UBYTE *text, LONG length, const char *word)
 {
-    LONG word_length = (LONG)strlen(word);
+    /* word is a string literal of the caller. */
+    LONG word_length = (LONG)strlen(word); /* Flawfinder: ignore */
     for (LONG start = 0; start + word_length <= length; start++) {
         LONG i = 0;
         while (i < word_length) {
@@ -1543,7 +1544,8 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
 
     /* Pattern match */
     if (ec->eac->eac_MatchString) {
-        memcpy(ec->skipped, name, name_len); ec->skipped[name_len] = 0;
+        /* name_len <= BFS_NAME_MAX, and skipped holds BFS_NAME_MAX + 1. */
+        memcpy(ec->skipped, name, name_len); ec->skipped[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         if (!MatchPatternNoCase(ec->eac->eac_MatchString, ec->skipped)) {
             ec->position++;
             ec->eac->eac_LastKey = (ULONG)ec->position;
@@ -1589,7 +1591,8 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     struct ExAllData *ead = (struct ExAllData *)ec->pos;
     memset(ead, 0, fixed_size);
     UBYTE *str = ec->pos + fixed_size;
-    memcpy(str, name, name_len); str[name_len] = 0;
+    /* entry_size above includes name_len + 1 bytes behind the fixed part. */
+    memcpy(str, name, name_len); str[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     ead->ed_Name = str; str += name_len + 1;
     if (ec->type >= ED_TYPE) ead->ed_Type = (entry_type == BFS_INODE_DIR) ? ST_USERDIR : ST_FILE;
     if (ec->type >= ED_SIZE) ead->ed_Size = fsize > INT32_MAX ? INT32_MAX : (ULONG)fsize;

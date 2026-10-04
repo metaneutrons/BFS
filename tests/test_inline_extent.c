@@ -66,7 +66,8 @@ static bool check_has_errors(void)
 
 static bool create_open(const char *name, uint32_t *ino, bfs_file_t *file)
 {
-    return bfs_fs_create_file(&fs, BFS_ROOT_INO, name, (uint8_t)strlen(name), ino) == BFS_OK &&
+    /* Test names are short string literals. */
+    return bfs_fs_create_file(&fs, BFS_ROOT_INO, name, (uint8_t)strlen(name), ino) == BFS_OK && /* Flawfinder: ignore */
            bfs_file_open(file, &fs, *ino) == BFS_OK;
 }
 

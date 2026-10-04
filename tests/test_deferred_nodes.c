@@ -282,7 +282,8 @@ static bool write_new_file(bfs_fs_t *fs, const char *name, const uint8_t *data,
 {
     uint32_t ino;
     bfs_file_t file;
-    return bfs_fs_create_file(fs, BFS_ROOT_INO, name, (uint8_t)strlen(name), &ino) == BFS_OK &&
+    /* Test names are short string literals. */
+    return bfs_fs_create_file(fs, BFS_ROOT_INO, name, (uint8_t)strlen(name), &ino) == BFS_OK && /* Flawfinder: ignore */
            bfs_file_open(&file, fs, ino) == BFS_OK &&
            bfs_file_write(&file, data, size) == (int32_t)size;
 }
@@ -318,7 +319,7 @@ static bfs_err_t open_named(bfs_fs_t *fs, const char *name, bfs_file_t *file)
 {
     uint32_t ino, type;
     bfs_err_t err = bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, name,
-                                   (uint8_t)strlen(name), &ino, &type);
+                                   (uint8_t)strlen(name), &ino, &type); /* Flawfinder: ignore */
     return err == BFS_OK ? bfs_file_open(file, fs, ino) : err;
 }
 
@@ -389,7 +390,7 @@ static bool name_exists(bfs_fs_t *fs, const char *name)
 {
     uint32_t ino, type;
     return bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, name,
-                          (uint8_t)strlen(name), &ino, &type) == BFS_OK;
+                          (uint8_t)strlen(name), &ino, &type) == BFS_OK; /* Flawfinder: ignore */
 }
 
 /* 1: old state, 2: complete new state, 0: anything else. */
@@ -506,6 +507,8 @@ static void test_deferral_saves_device_writes(void)
     bfs_cache_destroy(&cache);
     TEST_ASSERT_EQ(verify_image(bio), 2);
     bfs_bio_close(bio);
+    /* run_workload writes through the cache into f, so direct is not 0. */
+    // cppcheck-suppress unsignedLessThanZero
     TEST_ASSERT(deferred * 2 < direct);
     unlink(TEST_IMG);
 }

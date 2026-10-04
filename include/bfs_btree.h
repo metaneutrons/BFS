@@ -63,6 +63,7 @@ typedef struct bfs_btree_ops {
     /* Optional check of one leaf entry beyond the key order. A leaf is valid
      * only if every entry passes, so readers of validated leaves need not
      * repeat it. It must depend on the entry alone. */
+    // cppcheck-suppress unusedStructMember
     bool (*entry_ok)(const void *key, const void *val);
 } bfs_btree_ops_t;
 
@@ -160,10 +161,13 @@ typedef struct bfs_btree {
     /* Changes with every node write and every root or height change, so a
      * reader that remembers it can tell whether nodes it saw are still
      * current. It wraps only after 2^32 changes. */
+    // cppcheck-suppress unusedStructMember
     uint32_t          generation;
 
     /* The leaf the last search ended in, valid at hint_generation. */
+    // cppcheck-suppress unusedStructMember
     bfs_blk_t         hint_leaf;
+    // cppcheck-suppress unusedStructMember
     uint32_t          hint_generation;
 } bfs_btree_t;
 
@@ -253,12 +257,19 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
 
 /* A copy of the leaf a scan last copied, for resuming without a descent. */
 typedef struct {
+    // cppcheck-suppress unusedStructMember
     const bfs_btree_t *tree;
+    // cppcheck-suppress unusedStructMember
     uint8_t *leaf;          /* block-size copy, allocated on first use */
+    // cppcheck-suppress unusedStructMember
     uint32_t generation;    /* tree generation when the copy was taken */
+    // cppcheck-suppress unusedStructMember
     bfs_blk_t root;
+    // cppcheck-suppress unusedStructMember
     uint32_t stop_index;    /* entry whose callback stopped the scan, if any */
+    // cppcheck-suppress unusedStructMember
     bool stopped;
+    // cppcheck-suppress unusedStructMember
     bool valid;
 } bfs_btree_cursor_t;
 

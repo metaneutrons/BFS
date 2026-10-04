@@ -24,6 +24,7 @@ typedef struct bfs_freespace {
     bfs_blk_t reserve[BFS_ALLOC_RESERVE_SIZE];
     uint32_t reserve_count;
     bfs_blk_t roving;              /* roving allocation hint */
+    // cppcheck-suppress unusedStructMember
     bfs_blk_t data_roving;         /* first-fit hint for file data, ascending */
     uint32_t total_free;            /* total free blocks (accounting) */
     uint32_t global_reserve;        /* blocks reserved for metadata (not data) */

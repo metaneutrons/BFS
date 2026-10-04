@@ -90,7 +90,8 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
 
     bfs_cache_slot_t *slot = cache_find(c, blk);
     if (slot) {
-        memcpy(buf, slot->data, bio->block_size);
+        /* Slot buffers and BIO transfer buffers hold block_size bytes. */
+        memcpy(buf, slot->data, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         slot->age = ++c->clock;
         return BFS_OK;
     }
@@ -131,7 +132,8 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
      * Node writes may retain the bytes and the CRC computed by the B-tree. */
     bfs_cache_slot_t *slot = cache_find(c, blk);
     if (slot) {
-        memcpy(slot->data, buf, bio->block_size);
+        /* Slot buffers and BIO transfer buffers hold block_size bytes. */
+        memcpy(slot->data, buf, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         slot->age = ++c->clock;
         if (slot->dirty) {
             slot->dirty = false;

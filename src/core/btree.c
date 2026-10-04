@@ -593,12 +593,12 @@ bfs_err_t bfs_btree_lower_bound(bfs_btree_t *tree, const void *key, void *key_ou
         uint32_t idx = node_search(tree, node, key, &found);
         if (is_leaf(node)) {
             if (idx < num_keys(node)) {
-                memcpy(key_out, node_key(tree, node, idx), tree->ops->key_size);
+                memcpy(key_out, node_key(tree, node, idx), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
                 result = BFS_OK;
             } else if (bounds.have_upper) {
                 /* Every greater key lives right of this leaf: at or above the
                  * parent separator that bounds it. */
-                memcpy(key_out, bounds.upper, tree->ops->key_size);
+                memcpy(key_out, bounds.upper, tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
                 result = BFS_ERR_AGAIN;
             } else {
                 result = BFS_ERR_NOTFOUND;
@@ -724,7 +724,7 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
             tree->hint_leaf = blk;
             tree->hint_generation = tree->generation;
             if (!found) { free_buf(tree, buf); return BFS_ERR_NOTFOUND; }
-            memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size);
+            memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
             free_buf(tree, buf);
             return BFS_OK;
         }
@@ -2196,8 +2196,8 @@ bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
                 return BFS_OK;
             }
             if (idx > 0) {
-                memcpy(key_out, node_key(tree, node, idx - 1), tree->ops->key_size);
-                memcpy(val_out, leaf_val(tree, node, idx - 1), tree->ops->val_size);
+                memcpy(key_out, node_key(tree, node, idx - 1), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+                memcpy(val_out, leaf_val(tree, node, idx - 1), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
                 free_buf(tree, buf);
                 return BFS_OK;
             }

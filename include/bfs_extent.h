@@ -30,8 +30,10 @@ typedef struct {
     bfs_btree_t tree;
     bfs_freespace_t *fs;  /* for allocating/freeing data blocks */
     bool data_checksums;   /* compute/verify per-extent data CRC32 */
+    // cppcheck-suppress unusedStructMember
     bfs_blk_t inline_start; /* host order; meaningful when inline_length != 0 */
     uint32_t inline_length;
+    // cppcheck-suppress unusedStructMember
     uint32_t inline_crc;
 } bfs_extent_tree_t;
 

@@ -34,14 +34,18 @@
 
 typedef struct bfs_cache_slot {
     bfs_blk_t blk;         /* cached block number (UINT32_MAX = empty) */
+    // cppcheck-suppress unusedStructMember
     uint16_t  next;        /* next slot in the same hash chain */
     uint32_t  age;          /* LRU counter (higher = more recent) */
     uint8_t  *data;         /* block data */
     bool      node_crc_valid; /* cached node bytes have a valid CRC */
     bool      node_structure_valid;
+    // cppcheck-suppress unusedStructMember
     bool      dirty;          /* deferred node image not yet written */
     bfs_node_validation_t node_validation;
+    // cppcheck-suppress unusedStructMember
     bfs_node_finalize_fn finalize; /* completes a dirty image before writing */
+    // cppcheck-suppress unusedStructMember
     const void *layout;
 } bfs_cache_slot_t;
 
@@ -55,11 +59,15 @@ typedef struct bfs_cache {
     bfs_bio_t         *dev;     /* underlying device */
     bfs_cache_slot_t  *slots;   /* dynamically allocated slot array */
     uint32_t           num_slots;
+    // cppcheck-suppress unusedStructMember
     uint16_t          *buckets; /* hash index: first slot of each chain */
+    // cppcheck-suppress unusedStructMember
     uint32_t           bucket_shift; /* 32 minus log2 of the bucket count */
     uint32_t           clock;   /* LRU clock */
     bool               retain_written_nodes;
+    // cppcheck-suppress unusedStructMember
     uint32_t           dirty_count;  /* slots holding deferred node images */
+    // cppcheck-suppress unusedStructMember
     uint32_t           dirty_limit;  /* 0: no deferred node writes */
     bfs_cache_scratch_slot_t scratch[BFS_CACHE_SCRATCH_SLOTS];
 } bfs_cache_t;

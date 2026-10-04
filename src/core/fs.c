@@ -116,7 +116,8 @@ bfs_err_t bfs_fs_format(bfs_bio_t *bio, const char *volname, uint32_t options)
         sb.emergency_pool[i] = bfs_be32(data_start + i);
     sb.emergency_count = bfs_be32(epool_count);
     fs->txn.sb_new.emergency_count = sb.emergency_count;
-    memcpy(fs->txn.sb_new.emergency_pool, sb.emergency_pool, sizeof(sb.emergency_pool));
+    /* Both arrays are the emergency_pool member of a bfs_superblock_t. */
+    memcpy(fs->txn.sb_new.emergency_pool, sb.emergency_pool, sizeof(sb.emergency_pool)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
 
     uint32_t greserve = bc / BFS_GRESERVE_FRACTION;
     if (greserve < BFS_GRESERVE_TARGET)

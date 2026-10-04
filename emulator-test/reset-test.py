@@ -58,7 +58,8 @@ def progress_sequence(path):
 
 def free_display():
     for number in range(91, 120):
-        if not Path(f"/tmp/.X{number}-lock").exists():
+        # X servers keep their display locks there; the path is only tested.
+        if not Path(f"/tmp/.X{number}-lock").exists():  # nosec B108
             return f":{number}"
     raise ValueError("no free X display")
 

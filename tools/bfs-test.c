@@ -1824,13 +1824,13 @@ static void test_exall_delete(void)
 static void test_exall_packing(void)
 {
     const char *T = "exallpack_50";
-    UBYTE seen[64] = {0};
-    static ULONG storage[1024];
     struct ExAllControl *control = AllocDosObject(DOS_EXALLCONTROL, NULL);
     BOOL ok = control && make_items("exallpack", 40);
     BPTR lock = ok ? Lock(vpath("exallpack"), SHARED_LOCK) : 0;
     if (!lock) ok = FALSE;
     if (ok) {
+        UBYTE seen[64] = {0};
+        static ULONG storage[1024];
         BOOL more = ExAll(lock, (struct ExAllData *)storage, 4096, ED_COMMENT, control);
         if (more) {
             ok = FALSE;

@@ -1024,6 +1024,8 @@ static void test_scan_cursor_resumes_in_leaf(void)
         /* Asking again from inside the same leaf needs no device read. */
         if (k > 0 && cursor_next(&tree, &cursor, k - 2, false, &peek)) {
             TEST_ASSERT_EQ(peek, k);
+            /* cursor_next reads through tree.bio, which is &counting.bio. */
+            // cppcheck-suppress knownConditionTrueFalse
             if (counting.reads == before) reads_in_leaf++;
         }
     }

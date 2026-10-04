@@ -151,6 +151,7 @@ typedef struct BFS_PACKED {
     uint32_t type;            /* BFS_INODE_* */
     uint32_t size_hi;         /* file size high 32 bits */
     uint32_t size_lo;         /* file size low 32 bits */
+    // cppcheck-suppress unusedStructMember
     uint32_t extent_root;     /* extent-tree root, inline extent start, or 0 */
     uint32_t link_count;      /* hard link count */
     uint32_t protection;      /* Amiga protection bits */
