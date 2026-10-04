@@ -11,7 +11,7 @@
     {"id": "disk-full", "direct": true, "mounted": true, "contract": "BFS-CONF-007", "amiga_test_ids": ["fill_08", "diskfull_23"], "expected": {"core": ["pass"], "posix": ["skip"]}},
     {"id": "directory-scale", "direct": true, "mounted": true, "contract": "BFS-CONF-008", "amiga_test_ids": ["manydir_17"], "expected": {"core": ["pass"], "posix": ["pass", "skip"]}},
     {"id": "hard-link", "direct": true, "mounted": true, "contract": "BFS-CONF-009", "expected": {"core": ["pass"], "posix": ["skip"]}},
-    {"id": "soft-link", "direct": true, "mounted": true, "contract": "BFS-CONF-010", "amiga_test_ids": ["softlink_51"], "expected": {"core": ["pass"], "posix": ["pass", "skip"]}},
+    {"id": "soft-link", "direct": true, "mounted": true, "contract": "BFS-CONF-010", "amiga_test_ids": ["softlink_51", "softresolve_52"], "expected": {"core": ["pass"], "posix": ["pass", "skip"]}},
     {"id": "name-encoding", "direct": true, "mounted": true, "contract": "BFS-CONF-011", "expected": {"core": ["pass"], "posix": ["pass", "skip"]}},
     {"id": "comment-metadata", "direct": true, "mounted": true, "contract": "BFS-CONF-012", "amiga_test_ids": ["comment_13"], "expected": {"core": ["pass"], "posix": ["pass", "skip"]}},
     {"id": "sparse-range", "direct": true, "mounted": true, "contract": "BFS-CONF-013", "amiga_test_ids": ["sparse_30", "seekend_29"], "expected": {"core": ["pass"], "posix": ["skip"]}},

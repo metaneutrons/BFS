@@ -53,6 +53,29 @@ packet tests cover the boundaries independently of the installed dos.library's
 choice of protocol. This is wire-level testing under AROS, not qualification of
 native MorphOS, OS4 or physical Apollo hardware.
 
+## Soft links
+
+`ACTION_MAKE_LINK` with `LINK_SOFT` takes the target in `dp_Arg3` as a pointer
+to a NUL-terminated string, not as a BSTR; a hard link passes a lock there.
+Targets hold 1 to 65535 bytes, the limit of the on-disk format.
+
+The handler does not follow soft links itself. A soft link met as a directory
+component of any path, and one named by `ACTION_LOCATE_OBJECT` or an open,
+returns `ERROR_IS_SOFT_LINK`; dos.library then asks `ACTION_READ_LINK` for the
+path that replaces the link and retries. Deleting, renaming, protecting or
+commenting a path that ends in a soft link acts on the link itself. Examine,
+ExNext and ExAll report a link as `ST_SOFTLINK`.
+
+`ACTION_READ_LINK` takes the lock and the path of the failed request as a C
+string. It builds the replacement as PFS3 does: the text before the link, the
+target and the text after the link. A target containing `:` is absolute and
+drops the text before the link, except that a target starting with `:` keeps
+its volume or assign name. A target ending in `/` absorbs the slash that
+follows the link, and otherwise a single trailing slash of the remaining text
+is dropped. `dp_Res1` is the length of the result, -1 on error, or -2 if the
+buffer cannot hold the result and its terminator, so that dos.library retries
+with a larger buffer.
+
 ## Format diagnostics
 
 `BFS_ACTION_FORMAT_ERROR` (3004) is a read-only BFS extension. Argument 1 is a
@@ -124,6 +147,10 @@ mounted read-only view.
 
 - [AmigaOS SetProtection](https://developer.amigaos3.net/autodocs/dos.library/SetProtection.html)
 - [AmigaOS SetFileSize](https://developer.amigaos3.net/autodocs/dos.library/SetFileSize.html)
+- [AmigaOS MakeLink](https://developer.amigaos3.net/autodocs/dos.library/MakeLink.html)
+- [AmigaOS ReadLink](https://developer.amigaos3.net/autodocs/dos.library/ReadLink.html)
+- [AROS soft link resolution in Lock](https://github.com/aros-development-team/AROS/blob/master/rom/dos/lock.c)
+- [PFS3 soft link paths](https://github.com/aros-development-team/AROS/blob/master/rom/filesys/pfs3/fs/directory.c)
 - [AROS SameLock packet translation](https://github.com/aros-development-team/AROS/blob/master/rom/dos/samelock.c)
 - [AROS DOS64 definitions](https://github.com/aros-development-team/AROS/blob/master/compiler/include/dos/dos64.h)
 - [PFS3 OS4 packet handling](https://github.com/aros-development-team/AROS/blob/master/rom/filesys/pfs3/fs/dd_funcs.c)
