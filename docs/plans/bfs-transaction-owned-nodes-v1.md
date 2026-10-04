@@ -7,14 +7,17 @@ Stage A and the measurement tooling are implemented on
 (multi-block transfers from the caller's buffer, honouring Mask and
 MaxTransfer) on `perf/write-path-stages`. Inline extents became part of
 on-disk format v3 ([plan](bfs-format-v3-v1.md)) on
-`format/v3-inline-extents`. Stage C
+`format/v3-inline-extents`. The three branches reached main as #83; their
+individual commits are kept under the tag `archive/format-v3-inline-extents`.
+Stage C
 keeps dirty nodes in the block cache rather than in the B-tree layer, so every
 reader of a block, including trees opened without the filesystem's free sink,
 sees the current image; the dirty limit is half of the cache slots instead of
 an independent budget, and the oldest dirty node is written early instead of
 forcing a commit. The prototype numbers below come
 from compile-time experiments on `perf/group-commit-inplace-experiments`
-(`1d7483a`) and are indications, not qualification evidence. The goal remains
+(`1d7483a`, kept under the tag `archive/group-commit-inplace-experiments`)
+and are indications, not qualification evidence. The goal remains
 at most five times PFS3 elapsed time in every checked AmigaDOS workload while
 keeping committed-state integrity, snapshot isolation and crash recovery.
 
