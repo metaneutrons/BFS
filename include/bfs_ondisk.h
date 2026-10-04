@@ -164,8 +164,11 @@ typedef struct BFS_PACKED {
     uint16_t modify_days;
     uint16_t modify_mins;
     uint16_t modify_ticks;
+    // cppcheck-suppress unusedStructMember
     uint32_t flags;           /* BFS_INODE_FLAG_* */
+    // cppcheck-suppress unusedStructMember
     uint32_t inline_length;   /* blocks of the inline extent, else 0 */
+    // cppcheck-suppress unusedStructMember
     uint32_t inline_crc32;    /* data CRC of a one-block inline extent, else 0 */
 } bfs_inode_t;
 

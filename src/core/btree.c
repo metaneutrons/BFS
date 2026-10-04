@@ -2190,8 +2190,8 @@ bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
 
         if (is_leaf(node)) {
             if (found) {
-                memcpy(key_out, node_key(tree, node, idx), tree->ops->key_size);
-                memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size);
+                memcpy(key_out, node_key(tree, node, idx), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+                memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
                 free_buf(tree, buf);
                 return BFS_OK;
             }
