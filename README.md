@@ -114,19 +114,22 @@ make amiga
 
 Output: `build/amiga/bfshandler`
 
-### Native AROS x86_64 cross-build
+### Native AROS x86_64
 
-After building the `pc-x86_64` AROS-NX SDK, use its locked toolchain:
+`make aros` builds the handler, `bfs` and the integration test program for
+native AROS x86_64 from an AROS-NX checkout with a `pc-x86_64` build. The
+checkout's `aros-toolchains.lock.toml` selects the cross-toolchain, which the
+`aros` CLI installs and verifies, and the SDK comes from the same build:
 
 ```sh
-AROS_ROOT=/path/to/AROS-NX
-AROS_TOOLCHAIN="$(cd "$AROS_ROOT" && aros toolchain path --preset pc-x86_64)"
-make aros AROS_BUILD="$AROS_ROOT/build/pc-x86_64" AROS_TOOLCHAIN="$AROS_TOOLCHAIN"
+make aros AROS_ROOT=/path/to/AROS-NX
+make aros-ci-test AROS_ROOT=/path/to/AROS-NX
 ```
 
-This produces `build/aros/pc-x86_64/bfshandler` and
-`build/aros/pc-x86_64/bfs`. A successful cross-build is not a guest runtime
-qualification; mounting and packet tests require a bootable AROS target.
+The outputs are in `build/aros/pc-x86_64`. `make aros-ci-test` boots the
+checkout's `aros-x86_64-pc.iso` in QEMU, extended by the handler, a Mountlist
+and the test program, and runs the same integration test as the FS-UAE run
+on a raw BFS disk. It needs `qemu-system-x86_64` and `xorriso`.
 
 ### AmigaOS administration
 
@@ -250,15 +253,24 @@ make emulator-test
    Copy bfshandler L:bfshandler
    ```
 
-2. Add a Mountlist entry (e.g., `DEVS:DOSDrivers/BFS`):
+2. Add a Mountlist entry (e.g., `DEVS:DOSDrivers/BFS`) with the device and
+   the partition's geometry. BFS is a file system, so the entry uses
+   `FileSystem`; `Mount` passes a `Handler` no device or geometry.
 
    ```bash
    BFS:
-       Handler   = L:bfshandler
-       Stacksize = 16384
-       Priority  = 5
-       GlobVec   = -1
-       Mount     = 1
+       FileSystem     = L:bfshandler
+       Device         = scsi.device
+       Unit           = 0
+       Surfaces       = 16
+       BlocksPerTrack = 63
+       LowCyl         = 2
+       HighCyl        = 1023
+       DosType        = 0x42465300
+       Stacksize      = 32768
+       Priority       = 5
+       GlobVec        = -1
+       Mount          = 1
    ```
 
 3. Format the partition:

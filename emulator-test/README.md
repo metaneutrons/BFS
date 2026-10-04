@@ -69,6 +69,26 @@ without that record reports the timeout.
 Under Kickstart the reset test also requires the machine to boot again after
 the reset; the AROS ROM halts at that point, also without BFS.
 
+## Native AROS x86_64
+
+`make aros-ci-test AROS_ROOT=/path/to/AROS-NX` runs the same integration
+suite on native AROS x86_64. It builds the handler and `bfs-test` with the
+checkout's locked toolchain and SDK, then `aros-ci-test.py`:
+
+1. formats a raw 32 MiB BFS disk with the host `bfs` command,
+2. adds `L:bfshandler`, the Mountlist `DEVS:DOSDrivers/BFS0` for the first
+   AHCI port, `C:bfs-test` and an `S:User-Startup` that runs
+   `bfs-test BFS0: SERIAL` to the checkout's `aros-x86_64-pc.iso` with
+   `xorriso`,
+3. boots it in QEMU on the q35 machine, as `aros test` does,
+4. collects the result log, which `SERIAL` mirrors line by line to the debug
+   console, from the serial port, and verifies it like the FS-UAE result.
+
+On 64-bit AROS the two 64-bit packet tests use the OS4- and MorphOS-style
+calls of `dos64.library`, because these packets carry their values in the
+ordinary pointer-sized packet fields there. The evidence directory, with the
+serial log and the extended ISO, is printed at the start.
+
 ## External Benchmark Assets
 
 The optional BFS/PFS3 comparison uses third-party or licensed Amiga files that must not be
