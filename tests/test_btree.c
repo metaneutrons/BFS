@@ -1053,6 +1053,96 @@ static void test_scan_cursor_resumes_in_leaf(void)
     unlink(SCAN_IMG);
 }
 
+typedef struct {
+    uint32_t skip;
+    bool skipping;
+    uint32_t key;
+    bool got;
+} resume_key_t;
+
+/* As the directory layer resumes: the start key is the entry returned last,
+ * which is passed over once. */
+static bool take_one_past_start(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    resume_key_t *next = ctx;
+    uint32_t k = read_key(key);
+    if (next->skipping) {
+        next->skipping = false;
+        if (k == next->skip) return true;
+    }
+    next->key = k;
+    next->got = true;
+    return false;
+}
+
+static bool cursor_resume(bfs_btree_t *tree, bfs_btree_cursor_t *cursor, uint32_t last,
+                          bool first, uint32_t *out)
+{
+    uint32_t start;
+    make_key(&start, first ? 0 : last);
+    resume_key_t next = { last, !first, 0, false };
+    if (bfs_btree_scan_cursor(tree, cursor, &start, take_one_past_start, &next) != BFS_OK)
+        return false;
+    *out = next.key;
+    return next.got;
+}
+
+/* Resuming from the entry the previous scan stopped at returns every key once,
+ * reads the device only when it crosses into another leaf, and follows
+ * changes that move or remove the stop entry. */
+static void test_scan_cursor_resumes_at_stop_entry(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    counting_bio_t counting = { .bio = { .ops = &counting_ops, .block_size = SCAN_BLK_SIZE,
+                                          .block_count = SCAN_BLK_COUNT }, .dev = raw };
+    tree.bio = &counting.bio;
+    bfs_btree_cursor_t cursor;
+    bfs_btree_cursor_init(&cursor);
+
+    uint32_t k = 0, count = 0, read_steps = 0;
+    bool first = true;
+    for (;;) {
+        unsigned before = counting.reads;
+        if (!cursor_resume(&tree, &cursor, k, first, &k)) break;
+        if (counting.reads != before) read_steps++;
+        TEST_ASSERT_EQ(k, 2 * count);
+        TEST_ASSERT(cursor.stopped);
+        count++;
+        first = false;
+    }
+    TEST_ASSERT_EQ(count, SCAN_KEYS);
+    TEST_ASSERT(read_steps < SCAN_KEYS / 50);
+
+    /* The stop entry removed: the scan finds the place after it. */
+    uint32_t next;
+    TEST_ASSERT(cursor_resume(&tree, &cursor, 98, false, &next));
+    TEST_ASSERT_EQ(next, 100);
+    uint32_t victim;
+    make_key(&victim, 100);
+    TEST_ASSERT_EQ(bfs_btree_delete(&tree, &victim), BFS_OK);
+    TEST_ASSERT(cursor_resume(&tree, &cursor, 100, false, &next));
+    TEST_ASSERT_EQ(next, 102);
+    /* A key inserted behind the stop entry is returned next. */
+    uint32_t added, value;
+    make_key(&added, 103);
+    make_key(&value, 0);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &added, &value), BFS_OK);
+    TEST_ASSERT(cursor_resume(&tree, &cursor, 102, false, &next));
+    TEST_ASSERT_EQ(next, 103);
+    /* Resuming from another entry than the stop entry searches the leaf. */
+    TEST_ASSERT(cursor_resume(&tree, &cursor, 110, false, &next));
+    TEST_ASSERT_EQ(next, 112);
+
+    bfs_btree_cursor_release(&cursor);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
 static bool stop_at_first(const void *key, const void *val, void *ctx)
 {
     (void)key;
@@ -2305,6 +2395,7 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_scan_three_levels);
     TEST_RUN(test_scan_survives_callback_changes);
     TEST_RUN(test_scan_cursor_resumes_in_leaf);
+    TEST_RUN(test_scan_cursor_resumes_at_stop_entry);
     TEST_RUN(test_update_key_stays_inside_its_leaf);
     TEST_RUN(test_search_hint_follows_changes);
     TEST_RUN(test_be32_search_matches_comparator);

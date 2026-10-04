@@ -252,6 +252,8 @@ typedef struct {
     uint8_t *leaf;          /* block-size copy, allocated on first use */
     uint32_t generation;    /* tree generation when the copy was taken */
     bfs_blk_t root;
+    uint32_t stop_index;    /* entry whose callback stopped the scan, if any */
+    bool stopped;
     bool valid;
 } bfs_btree_cursor_t;
 
@@ -261,9 +263,11 @@ void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor);
 
 /* As bfs_btree_scan, but start in the cursor's leaf copy when the tree has
  * not changed since it was taken and start_key lies between the copy's first
- * and last keys: in a B+tree every key of that range is in that leaf. The
- * scan leaves its last copied leaf in the cursor. NULL behaves as
- * bfs_btree_scan; failing to allocate the copy only costs the shortcut. */
+ * and last keys: in a B+tree every key of that range is in that leaf. If
+ * start_key equals the entry at which a callback stopped the previous scan,
+ * that entry is the start without a search. The scan leaves its last copied
+ * leaf in the cursor. NULL behaves as bfs_btree_scan; failing to allocate
+ * the copy only costs the shortcut. */
 bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
                                 const void *start_key, bfs_scan_cb cb, void *ctx);
 

@@ -1869,16 +1869,30 @@ void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor)
     memset(cursor, 0, sizeof(*cursor));
 }
 
+static bool cursor_current(const bfs_btree_t *tree, const bfs_btree_cursor_t *cursor)
+{
+    return cursor->valid && cursor->tree == tree && cursor->root == tree->root &&
+           cursor->generation == tree->generation;
+}
+
 /* True if the cursor's copy is the current leaf that holds key. */
 static bool cursor_covers(const bfs_btree_t *tree, const bfs_btree_cursor_t *cursor,
                           const void *key)
 {
-    if (!cursor->valid || cursor->tree != tree || cursor->root != tree->root ||
-        cursor->generation != tree->generation)
-        return false;
+    if (!cursor_current(tree, cursor)) return false;
     uint32_t n = num_keys(cursor->leaf);
     return n > 0 && tree->ops->key_compare(node_key(tree, cursor->leaf, 0), key) <= 0 &&
            tree->ops->key_compare(key, node_key(tree, cursor->leaf, n - 1)) <= 0;
+}
+
+/* True if key is the current entry at which the previous scan stopped, as
+ * when an enumeration resumes from the entry it last returned. */
+static bool cursor_stopped_at(const bfs_btree_t *tree, const bfs_btree_cursor_t *cursor,
+                              const void *key)
+{
+    return cursor->stopped && cursor_current(tree, cursor) &&
+           cursor->stop_index < num_keys(cursor->leaf) &&
+           tree->ops->key_compare(node_key(tree, cursor->leaf, cursor->stop_index), key) == 0;
 }
 
 bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
@@ -1909,13 +1923,20 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
     /* A leaf taken from the cursor has no recorded path from the root. */
     bool have_path = true;
     bfs_err_t err = BFS_OK;
-    if (cursor && start_key && cursor_covers(tree, cursor, start_key)) {
+    bool positioned = false;
+    if (cursor && start_key && cursor_stopped_at(tree, cursor, start_key)) {
+        leaf = cursor->leaf;
+        have_path = false;
+        idx = cursor->stop_index;
+        positioned = true;
+    } else if (cursor && start_key && cursor_covers(tree, cursor, start_key)) {
         leaf = cursor->leaf;
         have_path = false;
     } else {
         err = scan_descend(tree, start_key, buf, &path, &leaf);
     }
-    if (err == BFS_OK && start_key) {
+    if (cursor) cursor->stopped = false;
+    if (err == BFS_OK && start_key && !positioned) {
         bool found;
         idx = node_search(tree, leaf, start_key, &found);
     }
@@ -1944,6 +1965,10 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
             for (uint32_t i = idx; i < n; i++) {
                 if (!cb(node_key(tree, leaf, i), leaf_val(tree, leaf, i), ctx)) {
                     stopped = true;
+                    if (cursor) {
+                        cursor->stop_index = i;
+                        cursor->stopped = true;
+                    }
                     break;
                 }
                 /* The rest of this copy may be stale once the tree changed. */
