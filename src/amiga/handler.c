@@ -1720,7 +1720,9 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     LONG fixed_size = ExAllFixedSize(ec->type);
     LONG entry_size = fixed_size + name_len + 1;
     if (ec->type >= ED_COMMENT) entry_size += cl + 1;
-    entry_size = (entry_size + 3) & ~3;
+    /* Entries hold pointers: align to their width (4 on m68k, 8 on 64-bit
+     * AROS). */
+    entry_size = (entry_size + (LONG)sizeof(APTR) - 1) & ~((LONG)sizeof(APTR) - 1);
     if ((size_t)(ec->end - ec->pos) < (size_t)entry_size) {
         ec->overflow = true;
         return false; /* stop scan */
