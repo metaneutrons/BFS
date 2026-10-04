@@ -1204,6 +1204,11 @@ static bool reserve_block_is_emergency(const bfs_freespace_t *fs, bfs_blk_t blk)
     return false;
 }
 
+bool bfs_freespace_pool_block(const bfs_freespace_t *fs, bfs_blk_t blk)
+{
+    return fs && reserve_block_is_emergency(fs, blk);
+}
+
 static void sort_reserve_blocks(bfs_blk_t *blocks, uint32_t count)
 {
     for (uint32_t i = 1; i < count; i++) {

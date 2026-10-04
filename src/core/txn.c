@@ -185,6 +185,21 @@ static bfs_err_t reclaim_block_ranges(bfs_fs_t *fs, const bfs_blk_t *blocks,
     return BFS_OK;
 }
 
+/* Move emergency pool blocks to the front, keeping both parts sorted, and
+ * return their number. */
+static uint32_t pool_blocks_first(const bfs_fs_t *fs, bfs_blk_t *blocks,
+                                  uint32_t count)
+{
+    uint32_t pool = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_blk_t blk = blocks[i];
+        if (!bfs_freespace_pool_block(&fs->freespace, blk)) continue;
+        for (uint32_t j = i; j > pool; j--) blocks[j] = blocks[j - 1];
+        blocks[pool++] = blk;
+    }
+    return pool;
+}
+
 static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
 {
     uint32_t count = fs->pending_count;
@@ -207,11 +222,25 @@ static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
     if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
         err = reclaim_shared_blocks(fs, blocks, count);
     } else {
-        err = allow_leaf_batch && count > 1
-            ? bfs_freespace_free_sorted_blocks(&fs->freespace, blocks, count)
-            : BFS_ERR_UNSUPPORTED;
-        if (err == BFS_ERR_UNSUPPORTED)
-            err = reclaim_block_ranges(fs, blocks, count);
+        /* Emergency pool blocks return to the pool one by one. In a range or
+         * a leaf batch they would enter the free tree instead, and a depleted
+         * pool can keep this reclaim from ever settling: every pass then
+         * retires the free tree root it has just rewritten. */
+        uint32_t pool = pool_blocks_first(fs, blocks, count);
+        err = BFS_OK;
+        for (uint32_t i = 0; i < pool && err == BFS_OK; i++) {
+            err = bfs_freespace_free(&fs->freespace, blocks[i], 1);
+            if (err != BFS_OK && !preserve_pending_tail(fs, blocks, i + 1, count))
+                err = BFS_ERR_NOSPC;
+        }
+        uint32_t rest = count - pool;
+        if (err == BFS_OK && rest > 0) {
+            err = allow_leaf_batch && rest > 1
+                ? bfs_freespace_free_sorted_blocks(&fs->freespace, blocks + pool, rest)
+                : BFS_ERR_UNSUPPORTED;
+            if (err == BFS_ERR_UNSUPPORTED)
+                err = reclaim_block_ranges(fs, blocks + pool, rest);
+        }
     }
     free(blocks);
     return err;

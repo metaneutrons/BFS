@@ -61,6 +61,10 @@ bfs_err_t bfs_freespace_add(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count
  * callers must abandon/recover rather than publish or retry that live state. */
 bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count);
 
+/* True if blk is one of the superblock's emergency pool blocks, active or
+ * not. Freeing such a block alone returns it to the pool. */
+bool bfs_freespace_pool_block(const bfs_freespace_t *fs, bfs_blk_t blk);
+
 /* Free count blocks starting at start. Merges with adjacent free extents. */
 bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count);
 
