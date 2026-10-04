@@ -95,7 +95,7 @@ int main(void)
     struct Process *process = (struct Process *)FindTask(NULL);
     APTR old_window = process->pr_WindowPtr;
     struct RDArgs *rdargs;
-    LONG arguments[5] = {0, 0, 0, 0, 0};
+    bfs_cli_word_t arguments[5] = {0, 0, 0, 0, 0};
     const char *command;
     const char *first;
     const char *second;

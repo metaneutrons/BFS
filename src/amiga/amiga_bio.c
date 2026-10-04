@@ -129,8 +129,8 @@ static bfs_err_t amiga_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
  * of the start address; for the last byte only the address range counts. */
 static bool amiga_dma_ok(const amiga_bio_t *ab, const void *buf, ULONG length)
 {
-    ULONG start = (ULONG)buf;
-    ULONG last = start + length - 1u;
+    bfs_amiga_addr_t start = (bfs_amiga_addr_t)buf;
+    bfs_amiga_addr_t last = start + length - 1u;
     return ab->mask != 0 && length != 0 && last >= start &&
            (start & ~ab->mask) == 0 && (last & ~(ab->mask | 0xFu)) == 0;
 }

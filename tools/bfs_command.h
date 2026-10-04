@@ -6,6 +6,15 @@
 
 #include <exec/types.h>
 
+#ifdef BFS_AROS
+typedef SIPTR bfs_cli_word_t;
+typedef IPTR bfs_cli_uword_t;
+#else
+typedef LONG bfs_cli_word_t;
+typedef ULONG bfs_cli_uword_t;
+#endif
+#define BFS_CLI_PTR(value) ((bfs_cli_word_t)(value))
+
 #define BFS_NAME_BSTR_MAX 34
 #define BFS_SNAPSHOT_ENTRY_META_OFFSET 260
 

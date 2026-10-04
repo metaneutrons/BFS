@@ -20,6 +20,7 @@ enum {
     BFS_ACTION_EXAMINE_FH64 = 26410
 };
 
+#ifndef BFS_AROS
 typedef struct {
     struct Message *link;
     struct MsgPort *port;
@@ -44,5 +45,6 @@ _Static_assert(offsetof(bfs_dos_packet64_t, offset) == 40, "64-bit offset ABI");
 _Static_assert(offsetof(bfs_dos_packet64_t, mode) == 48, "64-bit mode ABI");
 _Static_assert(sizeof(bfs_dos_packet64_t) == 64, "64-bit packet ABI");
 _Static_assert(offsetof(struct FileInfoBlock, fib_Reserved) == 228, "MorphOS FIB ABI");
+#endif
 
 #endif

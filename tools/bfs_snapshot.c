@@ -76,7 +76,7 @@ static int snapshot_create_or_delete(struct MsgPort *port, const char *operation
                                                    : "Deleting snapshot \"");
     bfs_put(name);
     bfs_put("\"...\n");
-    if (DoPkt(port, action, (LONG)MKBADDR(bfs_bstr_bytes(&bstr)), 0, 0, 0, 0)) {
+    if (DoPkt(port, action, BFS_CLI_PTR(MKBADDR(bfs_bstr_bytes(&bstr))), 0, 0, 0, 0)) {
         bfs_put(bfs_equal_nocase(operation, "create") ? "Snapshot created.\n"
                                                        : "Snapshot deleted.\n");
         return 0;
@@ -100,7 +100,7 @@ static int snapshot_list(struct MsgPort *port, const char *drive, const char *na
     bfs_put(drive);
     bfs_put("\n");
     while (1) {
-        LONG result = DoPkt(port, BFS_ACTION_SNAPSHOT_LIST, (LONG)buffer,
+        LONG result = DoPkt(port, BFS_ACTION_SNAPSHOT_LIST, BFS_CLI_PTR(buffer),
                             (LONG)sizeof(buffer), (LONG)last_id, 0, 0);
         ULONG next_id;
         ULONG snapshot_id, timestamp;
@@ -184,8 +184,8 @@ static int snapshot_directory(struct MsgPort *port, const char *drive, int detai
     bfs_put(drive);
     bfs_put("\n");
     while (1) {
-        LONG result = DoPkt(port, BFS_ACTION_SNAPSHOT_SHOW, (LONG)MKBADDR(bfs_bstr_bytes(&request)),
-                            (LONG)buffer, (LONG)sizeof(buffer), (LONG)last_key, 0);
+        LONG result = DoPkt(port, BFS_ACTION_SNAPSHOT_SHOW, BFS_CLI_PTR(MKBADDR(bfs_bstr_bytes(&request))),
+                            BFS_CLI_PTR(buffer), (LONG)sizeof(buffer), (LONG)last_key, 0);
         ULONG next_key;
         char type;
         UBYTE entry_length;
@@ -245,7 +245,7 @@ static int snapshot_directory(struct MsgPort *port, const char *drive, int detai
 static int snapshot_capability(struct MsgPort *port, ULONG required)
 {
     bfs_snapshot_capability_t capability = {0, 0};
-    if (!DoPkt(port, BFS_ACTION_SNAPSHOT_CAPABILITY, (LONG)&capability,
+    if (!DoPkt(port, BFS_ACTION_SNAPSHOT_CAPABILITY, BFS_CLI_PTR(&capability),
                sizeof(capability), 0, 0, 0) ||
         capability.version != BFS_SNAPSHOT_STARTUP_VERSION ||
         (capability.flags & required) == 0) {
@@ -272,7 +272,7 @@ static int snapshot_mount(struct MsgPort *port, const char *drive,
     result = snapshot_capability(port, BFS_SNAPSHOT_CAP_MOUNT_SOURCE);
     if (result) return result;
     if (!DoPkt(port, BFS_ACTION_SNAPSHOT_MOUNT,
-               (LONG)MKBADDR(bfs_bstr_bytes(&request)), (LONG)target, 0, 0, 0)) {
+               BFS_CLI_PTR(MKBADDR(bfs_bstr_bytes(&request))), BFS_CLI_PTR(target), 0, 0, 0)) {
         PrintFault(IoErr(), "bfs");
         return 20;
     }

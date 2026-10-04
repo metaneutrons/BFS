@@ -114,6 +114,20 @@ make amiga
 
 Output: `build/amiga/bfshandler`
 
+### Native AROS x86_64 cross-build
+
+After building the `pc-x86_64` AROS-NX SDK, use its locked toolchain:
+
+```sh
+AROS_ROOT=/path/to/AROS-NX
+AROS_TOOLCHAIN="$(cd "$AROS_ROOT" && aros toolchain path --preset pc-x86_64)"
+make aros AROS_BUILD="$AROS_ROOT/build/pc-x86_64" AROS_TOOLCHAIN="$AROS_TOOLCHAIN"
+```
+
+This produces `build/aros/pc-x86_64/bfshandler` and
+`build/aros/pc-x86_64/bfs`. A successful cross-build is not a guest runtime
+qualification; mounting and packet tests require a bootable AROS target.
+
 ### AmigaOS administration
 
 Release archives publish one administration binary, `bfs`:

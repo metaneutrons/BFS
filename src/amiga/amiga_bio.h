@@ -8,6 +8,14 @@
 #include "bfs_bio.h"
 #include "bfs_superblock.h"
 
+/* A memory address as an integer. 64-bit AROS has 64-bit addresses and a
+ * pointer-sized de_Mask. */
+#ifdef BFS_AROS
+typedef IPTR bfs_amiga_addr_t;
+#else
+typedef ULONG bfs_amiga_addr_t;
+#endif
+
 typedef struct amiga_bio {
     bfs_bio_t base;
     struct IOExtTD *request;
@@ -27,7 +35,7 @@ typedef struct amiga_bio {
     // cppcheck-suppress unusedStructMember
     ULONG max_transfer;
     // cppcheck-suppress unusedStructMember
-    ULONG mask;
+    bfs_amiga_addr_t mask;
     // cppcheck-suppress unusedStructMember
     ULONG buf_mem_type;
     /* One block of device-suitable memory for bounced transfers. */

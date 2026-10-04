@@ -23,7 +23,7 @@ int bfs_check_command(const char *drive)
         return 20;
     }
 
-    if (!DoPkt(port, BFS_ACTION_CHECK, (LONG)report, sizeof(report), 0, 0, 0)) {
+    if (!DoPkt(port, BFS_ACTION_CHECK, BFS_CLI_PTR(report), sizeof(report), 0, 0, 0)) {
         PrintFault(IoErr(), "bfs");
         FreeDeviceProc(device);
         return 20;
