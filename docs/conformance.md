@@ -1,7 +1,7 @@
 # BFS Conformance and Format Oracle
 
 Status: M4 execution artifact. This document defines the test harness protocol;
-it does not add a filesystem capability or change the v2 format.
+it does not add a filesystem capability or change the on-disk format.
 
 ## Boundaries
 
@@ -11,7 +11,7 @@ it does not add a filesystem capability or change the v2 format.
 | --- | --- | --- |
 | `build/host/bfs-conformance-core` | Yes | Creates and removes its own temporary image, then exercises documented core operations over the production POSIX transport. |
 | `build/host/bfs-conformance-posix` | No | Observes a supplied mounted directory through OS calls only. It is read-only until a later milestone explicitly adds mutation cases. |
-| `tools/bfs-format-oracle.py` | No | Independently decodes committed v2 bytes and emits a normalized manifest. It has no write path. |
+| `tools/bfs-format-oracle.py` | No | Independently decodes committed v3 bytes and emits a normalized manifest. It has no write path. |
 
 `tools/check-conformance-linkage.sh` rejects a mounted backend that exports a
 `bfs_*` symbol. Its test compiles a deliberately contaminated counterprobe to
@@ -85,10 +85,11 @@ guessing intent.
 
 `tools/bfs-format-oracle.py IMAGE` reads a complete regular image and emits a
 stable JSON manifest for its selected committed superblock, live namespace,
-file content SHA-256 values, and visible snapshots. It implements the v2
+file content SHA-256 values, and visible snapshots. It implements the v3
 superblock selection, CRC32, node layout, bounded recursive tree walk, range,
-cycle, capacity, key ordering, directory-name hash, inode, extent, and snapshot
-rules directly from `docs/on-disk-format.md`. It does not import headers,
+cycle, capacity, key ordering, directory-name hash, inode, inline and tree
+extent, comment-flag, and snapshot rules directly from
+`docs/on-disk-format.md`. It does not import headers,
 link `libbfs`, or call a production codec/tree routine.
 
 The oracle fails closed on incompatible versions/options, CRC failure, invalid

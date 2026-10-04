@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Read-only independent inspector for committed BFS v2 images.
+"""Read-only independent inspector for committed BFS v3 images.
 
 This intentionally duplicates only documented byte rules. It imports no BFS
 module, has no writer path, and does not reuse the production tree engine.
@@ -15,14 +15,18 @@ import zlib
 
 MAGIC = 0x42465300
 NODE_MAGIC = 0x42544E44
+FORMAT_VERSION = 3
 SUPPORTED_OPTIONS = 0x7
+INODE_INLINE_EXTENT = 0x1
+INODE_HAS_COMMENT = 0x2
+COMMENT_PARENT = 0x80000000
 MIN_BLOCK = 1024
 MAX_BLOCK = 65536
 MAX_WALK_NODES = 1_000_000
 ZERO_CHUNK = b"\0" * 65536
 LAYOUTS = {
     "directory": (264, 8),
-    "inode": (4, 44),
+    "inode": (4, 56),
     "extent": (4, 12),
     "free": (4, 4),
     "refcount": (4, 4),
@@ -63,7 +67,7 @@ def parse_superblock(slot, image_size):
     block_size = be32(slot, 8)
     block_count = be32(slot, 12)
     options = be32(slot, 56)
-    if version != 2:
+    if version != FORMAT_VERSION:
         raise OracleError(f"unsupported BFS version {version}")
     if options & ~SUPPORTED_OPTIONS:
         raise OracleError(f"unsupported BFS options 0x{options & ~SUPPORTED_OPTIONS:08x}")
@@ -196,10 +200,24 @@ def walk_tree(image, superblock, root, kind):
     return leaves
 
 
+def inode_extents(image, superblock, inode):
+    """Return the inode's extent records: one inline record or a tree's."""
+    flags = be32(inode, 44)
+    root, inline_length, inline_crc = be32(inode, 16), be32(inode, 48), be32(inode, 52)
+    if flags & ~(INODE_INLINE_EXTENT | INODE_HAS_COMMENT):
+        raise OracleError("unknown inode flags")
+    if not flags & INODE_INLINE_EXTENT:
+        if inline_length or inline_crc:
+            raise OracleError("inline fields without inline extent")
+        return walk_tree(image, superblock, root, "extent") if root else []
+    if root == 0 or inline_length == 0:
+        raise OracleError("invalid inline extent")
+    return [(bytes(4), inode[16:20] + inode[48:56])]
+
+
 def digest_file(image, superblock, inode):
     size = be64(inode, 8)
-    root = be32(inode, 16)
-    extents = walk_tree(image, superblock, root, "extent") if root else []
+    extents = inode_extents(image, superblock, inode)
     digest = hashlib.sha256()
     remaining = size
     cursor = 0
@@ -236,14 +254,28 @@ def build_manifest(image, superblock):
                     walk_tree(image, superblock, superblock["inode_root"], "inode")}
     directory = walk_tree(image, superblock, superblock["directory_root"], "directory")
     entries = {}
+    commented = set()
     for key, value in directory:
         parent, name_length = be32(key, 0), key[8]
         name = key[9:9 + name_length]
-        if parent & 0x80000000 or name == b"..":
+        if parent & COMMENT_PARENT:
+            owner = parent & ~COMMENT_PARENT
+            if owner in commented or be32(value, 0) != owner or not 1 <= name_length <= 79:
+                raise OracleError("invalid comment entry")
+            commented.add(owner)
+            continue
+        if name == b"..":
             continue
         entries.setdefault(parent, []).append((name, be32(value, 0), be32(value, 4)))
     if 1 not in inode_values:
         raise OracleError("root inode missing")
+    flagged = {number for number, inode in inode_values.items()
+               if be32(inode, 44) & INODE_HAS_COMMENT}
+    if flagged != commented:
+        raise OracleError("comment flag disagrees with comment entries")
+    for inode in inode_values.values():
+        if be32(inode, 4) == 1 and (be32(inode, 16) or be32(inode, 44) & INODE_INLINE_EXTENT):
+            raise OracleError("directory inode with extents")
     manifest = []
     directory_ancestors = set()
 

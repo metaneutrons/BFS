@@ -48,7 +48,9 @@ static void fault_free(void *pointer)
 #define bfs_cache_destroy isolated_cache_destroy
 #define bfs_cache_invalidate isolated_cache_invalidate
 #define bfs_cache_set_node_write_retention isolated_cache_set_node_write_retention
+#define bfs_cache_set_deferred_node_limit isolated_cache_set_deferred_node_limit
 #include "../src/core/cache.c"
+#undef bfs_cache_set_deferred_node_limit
 #undef bfs_cache_set_node_write_retention
 #undef bfs_cache_invalidate
 #undef bfs_cache_destroy

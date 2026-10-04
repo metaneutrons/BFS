@@ -73,11 +73,15 @@ The B+tree engine is shared across all metadata types, utilizing a **dynamic tra
 `data=ordered` and metadata compaction are core API capabilities. The current
 Amiga `bfs format` does not expose arbitrary format-option flags.
 
-The normative v2 byte layout is documented in [the on-disk format specification](docs/on-disk-format.md).
+The normative v3 byte layout is documented in [the on-disk format specification](docs/on-disk-format.md).
+Format v3 replaced v2 and cannot read v2 volumes: copy their data with a v0.1
+driver, then format the volume with `bfs format`, which replaces an older BFS
+format (see [format compatibility](docs/format-compatibility.md#replacing-an-older-format)).
 
 - **Directory tree** — (parent_id, hash, name) → (inode, type)
-- **Extent tree** — file_block → (disk_block, length, data CRC32)
-- **Inode tree** — inode_id → metadata
+- **Extent tree** — file_block → (disk_block, length, data CRC32); a file whose
+  content is one contiguous run keeps it in its inode instead
+- **Inode tree** — inode_id → metadata, flags and the optional inline extent
 - **Free space tree** — block_nr → length (self-hosting)
 - **Refcount tree** — block_nr → refcount (snapshot block sharing)
 - **Snapshot tree** — snapshot_id → record (tree roots + cursor + name)
@@ -248,6 +252,32 @@ make emulator-test
    ```bash
    bfs format BFS: Work
    ```
+
+### Commit policy
+
+The handler commits changes in the background, like PFS3: 200 ms after the
+last packet, and at the latest one second after the first uncommitted change.
+It also commits before replying to `ACTION_FLUSH`, before an inhibit, write
+protection, `bfs check`, snapshot operations, a format or `ACTION_DIE`, and
+from a keyboard reset handler before a warm reboot (after that warning, every
+change is committed before its reply). A successful `Close` is
+therefore durable within about one second, or immediately after a flush. A
+crash or power loss in that window loses the changes since the last commit but
+never leaves an inconsistent volume, because copy-on-write and the dual
+superblocks remain the only publication mechanism.
+
+`Control = "COMMIT=SYNC"` in the Mountlist entry restores a commit at every
+close and every standalone metadata operation. `bfs commit DRIVE: SYNC` or
+`DELAYED` switches a mounted volume until the next mount; `bfs commit DRIVE:`
+shows the active mode.
+
+### DMA settings
+
+File data moves between the device and the caller's buffer in transfers of
+up to `MaxTransfer` bytes. BFS uses the caller's memory directly only if it
+lies within the partition's `Mask`; otherwise, or if the Mountlist gives no
+`Mask`, it copies through a one-block buffer of `BufMemType`. Set `Mask` and
+`MaxTransfer` to what the controller supports, as for FFS or PFS3.
 
 ## License
 

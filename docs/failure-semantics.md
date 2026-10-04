@@ -1,6 +1,6 @@
 # Filesystem failure semantics
 
-The normative byte layout is [BFS v2 on-disk format](on-disk-format.md). This
+The normative byte layout is [BFS v3 on-disk format](on-disk-format.md). This
 document defines operation and recovery behavior, not an alternate layout.
 
 BFS uses copy-on-write metadata and an alternating superblock commit boundary.
@@ -22,7 +22,7 @@ the inode with `link_count == 0`. Only handles explicitly marked through
 inode with zero links. The adapter reclaims that inode after the last retained
 handle closes. No new lookup or normal file open can reach it.
 
-A zero-link inode is an intentional, recoverable v2 state, not a public
+A zero-link inode is an intentional, recoverable state, not a public
 namespace object. A writable mount reclaims every such non-directory inode
 before exposing the live namespace; a read-only mount preserves it and must
 not expose it. Thus a crash after an unlink or replacement rename may discard
@@ -41,6 +41,22 @@ reload itself fails, mutations, sync and file operations reject further use unti
 the filesystem is abandoned or unmounted and mounted again. An error from a
 commit does not prove that no part of the commit reached storage.
 
+The AmigaOS handler commits delayed changes from a timer: within about one
+second of a change, and before it replies to a flush, inhibit, write
+protection, check, snapshot, format or shutdown packet. A successful AmigaDOS
+`Close` is therefore not yet durable; a crash before the next commit loses the
+changes since the last one and recovers the previous committed state. The
+Mountlist option `COMMIT=SYNC` commits at every close and standalone metadata
+operation instead. A failed timed commit is retried about once per second and
+reported by the next flush; if the core latched a recovery error, later
+mutating packets fail as well. A keyboard reset (Ctrl-Amiga-Amiga) first
+commits through the handler's reset handler; from that warning until the
+machine resets, every change is committed before its packet is answered.
+`make reset-test` checks this on FS-UAE: every write the guest saw return
+before the reset is on the volume, and the volume is clean. CI runs it on the
+AROS ROM; locally it also runs on Kickstart 3.2, where the machine must boot
+again after the reset.
+
 A writable mount synchronizes the selected readable state before exposing
 allocation or running mount-time recovery. This also covers a newer valid
 superblock left only in volatile device storage by a failed publication flush.
@@ -49,6 +65,24 @@ does not perform this synchronization or make a durability assertion.
 
 A failed namespace rollback latches a recovery error: removing the device fault
 does not make the partial namespace committable. Abandon/remount is required.
+
+A B-tree node that the live transaction allocated, and that no committed
+superblock or snapshot can reference, is rewritten in place instead of being
+copied again. Such rewrites are published only after every allocation and
+every other fallible step of the mutation succeeded, so an earlier failure
+leaves the node unchanged. A device write failure while publishing them makes
+the transaction's graph uncertain: it is latched like an ownership-uncertain
+reclamation and the caller recovers the latest committed roots. Committed
+nodes are never rewritten in place; whether a node is owned is decided from an
+in-memory record of the transaction's own allocations, not from the node's
+on-disk transaction id. With the Amiga handler's node cache, owned nodes are
+not written at every change: the cache keeps them dirty, at most half of its
+slots, and the commit writes every dirty node before its metadata fence and
+superblock. A dirty node may be written earlier to make room, which is safe
+because no committed state references it. A crash before the commit loses
+only the uncommitted transaction; a failed write of a dirty node fails the
+commit or the operation that needed the room, and the node stays dirty until
+recovery discards the transaction.
 Failed extent-remap rollback marks block ownership uncertain so the file layer
 recovers committed roots rather than freeing a possibly referenced replacement.
 

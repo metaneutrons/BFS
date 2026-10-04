@@ -20,6 +20,7 @@
 
 #include "bfs_txn.h"
 #include "bfs_fs.h"
+#include "bfs_internal.h"
 #include <string.h>
 #include <stdlib.h>
 #ifdef BFS_PERF_PROBE
@@ -184,6 +185,21 @@ static bfs_err_t reclaim_block_ranges(bfs_fs_t *fs, const bfs_blk_t *blocks,
     return BFS_OK;
 }
 
+/* Move emergency pool blocks to the front, keeping both parts sorted, and
+ * return their number. */
+static uint32_t pool_blocks_first(const bfs_fs_t *fs, bfs_blk_t *blocks,
+                                  uint32_t count)
+{
+    uint32_t pool = 0;
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_blk_t blk = blocks[i];
+        if (!bfs_freespace_pool_block(&fs->freespace, blk)) continue;
+        for (uint32_t j = i; j > pool; j--) blocks[j] = blocks[j - 1];
+        blocks[pool++] = blk;
+    }
+    return pool;
+}
+
 static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
 {
     uint32_t count = fs->pending_count;
@@ -206,12 +222,73 @@ static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
     if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
         err = reclaim_shared_blocks(fs, blocks, count);
     } else {
-        err = allow_leaf_batch && count > 1
-            ? bfs_freespace_free_sorted_blocks(&fs->freespace, blocks, count)
-            : BFS_ERR_UNSUPPORTED;
-        if (err == BFS_ERR_UNSUPPORTED)
-            err = reclaim_block_ranges(fs, blocks, count);
+        /* Emergency pool blocks return to the pool one by one. In a range or
+         * a leaf batch they would enter the free tree instead, and a depleted
+         * pool can keep this reclaim from ever settling: every pass then
+         * retires the free tree root it has just rewritten. */
+        uint32_t pool = pool_blocks_first(fs, blocks, count);
+        err = BFS_OK;
+        for (uint32_t i = 0; i < pool && err == BFS_OK; i++) {
+            err = bfs_freespace_free(&fs->freespace, blocks[i], 1);
+            if (err != BFS_OK && !preserve_pending_tail(fs, blocks, i + 1, count))
+                err = BFS_ERR_NOSPC;
+        }
+        uint32_t rest = count - pool;
+        if (err == BFS_OK && rest > 0) {
+            err = allow_leaf_batch && rest > 1
+                ? bfs_freespace_free_sorted_blocks(&fs->freespace, blocks + pool, rest)
+                : BFS_ERR_UNSUPPORTED;
+            if (err == BFS_ERR_UNSUPPORTED)
+                err = reclaim_block_ranges(fs, blocks + pool, rest);
+        }
     }
+    free(blocks);
+    return err;
+}
+
+/* With snapshots, a retired block that a snapshot still shares only loses the
+ * live reference: its count drops and it stays allocated. Doing this before
+ * publication keeps the published refcounts exact, so a crash before the
+ * post-publication reclaim can only leak unshared blocks. Blocks that become
+ * free still wait for publication. If the queue cannot hold the refcount
+ * tree's own retirements, the rest keep the post-publication path. */
+static bfs_err_t settle_shared_retirements(bfs_fs_t *fs)
+{
+    uint32_t count = fs->pending_count;
+    if (count == 0) return BFS_OK;
+    if (count > bfs_fs_pending_cap(fs) ||
+        (uint64_t)count * sizeof(bfs_blk_t) > SIZE_MAX)
+        return BFS_ERR_CORRUPT;
+    bfs_blk_t *blocks = malloc(count * sizeof(*blocks));
+    if (!blocks) return BFS_ERR_NOMEM;
+    /* The source capacity and exactly matching allocation size were checked above. */
+    memcpy(blocks, bfs_fs_pending_items(fs), count * sizeof(*blocks)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    fs->pending_count = 0;
+    bfs_err_t err = BFS_OK;
+    uint32_t i = 0;
+    for (; i < count; i++) {
+        uint32_t refs;
+        err = bfs_refcount_get_checked(&fs->refcount, blocks[i], &refs);
+        if (err != BFS_OK) break;
+        if (refs > 1) {
+            /* Room for every block not yet decided plus this mutation's
+             * own retirements. */
+            uint64_t need = (uint64_t)fs->pending_count + (count - i) +
+                            BFS_BTREE_MAX_OP_FREES;
+            if (need > UINT32_MAX ||
+                bfs_fs_reserve_pending(fs, (uint32_t)need) != BFS_OK)
+                break;
+            bool freed = false;
+            err = bfs_refcount_dec(&fs->refcount, blocks[i], &freed);
+            if (err == BFS_OK && freed) err = BFS_ERR_CORRUPT;
+            if (err != BFS_OK) break;
+        } else {
+            bfs_fs_pending_items(fs)[fs->pending_count++] = blocks[i];
+        }
+    }
+    /* Undecided blocks keep the post-publication path. */
+    if (err == BFS_OK && !preserve_pending_tail(fs, blocks, i, count))
+        err = BFS_ERR_NOSPC;
     free(blocks);
     return err;
 }
@@ -219,15 +296,25 @@ static bfs_err_t reclaim_pending_batch(bfs_fs_t *fs, bool allow_leaf_batch)
 static bfs_err_t txn_commit_working(bfs_fs_t *fs)
 {
     bool sealed = false;
-    bfs_err_t err = bfs_freespace_seal_commit(fs, &sealed);
+    bfs_err_t err = BFS_OK;
+    if (fs->has_snapshots && fs->refcount.tree.root != BFS_BLK_NULL) {
+        err = settle_shared_retirements(fs);
+        if (err != BFS_OK) return err;
+    }
+    err = bfs_freespace_seal_commit(fs, &sealed);
     if (err != BFS_OK) return err;
     if (!sealed) {
         err = bfs_freespace_return_reserve(&fs->freespace);
+        if (err != BFS_OK) return err;
+        /* Deferred nodes of the transaction must precede its superblock. */
+        err = bfs_bio_flush_deferred(fs->bio);
         if (err != BFS_OK) return err;
     } else {
         /* Durable graph before publish: an unsuccessful later flush may
          * persist only the new SB. It must never expose a missing leaf or
          * COW/data node. Keep allocation frozen across both barriers. */
+        err = bfs_bio_flush_deferred(fs->bio);
+        if (err != BFS_OK) return err;
         err = bfs_bio_sync(fs->bio);
         if (err != BFS_OK) return err;
 #ifdef BFS_PERF_PROBE
@@ -292,6 +379,9 @@ static bfs_err_t txn_commit_working(bfs_fs_t *fs)
          * but can perpetually create another retired ordinary root here.
          * Keep the established settlement path for this fixed-point tail. */
         err = bfs_freespace_settle_reserve(&fs->freespace);
+        if (err != BFS_OK) return err;
+
+        err = bfs_bio_flush_deferred(fs->bio);
         if (err != BFS_OK) return err;
 
         /* Final commit of free tree changes */

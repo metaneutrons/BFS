@@ -59,7 +59,17 @@ typedef struct bfs_btree_ops {
      * Invalidate the BIO cache before changing comparator semantics. Default
      * false retains full structural validation for arbitrary comparators. */
     bool cache_key_order;
+
+    /* Optional check of one leaf entry beyond the key order. A leaf is valid
+     * only if every entry passes, so readers of validated leaves need not
+     * repeat it. It must depend on the entry alone. */
+    // cppcheck-suppress unusedStructMember
+    bool (*entry_ok)(const void *key, const void *val);
 } bfs_btree_ops_t;
+
+/* Comparator for big-endian u32 keys. Trees that use it get node searches
+ * that compare the values directly instead of calling it for each step. */
+int bfs_btree_key_compare_be32(const void *a, const void *b);
 
 /* ── Engine limits ─────────────────────────────────────────── */
 
@@ -77,6 +87,36 @@ typedef struct bfs_btree_ops {
 /* ── B+tree handle ─────────────────────────────────────────── */
 
 /* ── Deferred-free sink ────────────────────────────────────── */
+
+/* Metadata blocks that B-tree mutations allocated in the live transaction.
+ * No committed superblock or snapshot references them, so they are the only
+ * nodes the engine may rewrite in place. The on-disk txn_id alone is not proof
+ * of ownership: a damaged image can carry it on committed nodes. Entries are
+ * valid only while txn_id equals the live transaction; a different id clears
+ * the set. If the set cannot grow, a block is simply not registered and keeps
+ * the copy-on-write path. The members are used in btree.c and fs.c. */
+typedef struct bfs_btree_owned {
+    // cppcheck-suppress unusedStructMember
+    bfs_blk_t *slots;     /* open addressing; BFS_BLK_NULL empty, UINT32_MAX removed */
+    // cppcheck-suppress unusedStructMember
+    uint32_t   capacity;  /* power of two, or 0 before first use */
+    // cppcheck-suppress unusedStructMember
+    uint32_t   used;      /* occupied plus removed slots */
+    // cppcheck-suppress unusedStructMember
+    uint64_t   txn_id;    /* transaction the entries belong to */
+    /* Keep every change copy-on-write, e.g. to qualify the reserve and
+     * metadata-stock paths that only run under copy-on-write churn. */
+    // cppcheck-suppress unusedStructMember
+    bool       disabled;
+    /* Owner's sticky recovery error, set when an in-place rewrite fails. */
+    // cppcheck-suppress unusedStructMember
+    bfs_err_t *recovery_state;
+} bfs_btree_owned_t;
+
+/* Forget every entry, e.g. after reloading the committed state. */
+void bfs_btree_owned_reset(bfs_btree_owned_t *owned);
+/* Release the set's memory. */
+void bfs_btree_owned_destroy(bfs_btree_owned_t *owned);
 
 /* During COW the engine frees blocks that belonged to an older transaction;
  * they can only return to the allocator after the current transaction commits,
@@ -96,6 +136,10 @@ typedef struct {
     bfs_err_t (*reserve)(void *ctx, uint32_t slots);
     /* Fixed capacity when reserve is absent; baseline capacity otherwise. */
     uint32_t capacity;
+    /* Live-transaction node ownership; NULL keeps every change copy-on-write.
+     * Set by bfs_fs_free_sink in fs.c, read in btree.c. */
+    // cppcheck-suppress unusedStructMember
+    bfs_btree_owned_t *owned;
 } bfs_free_sink_t;
 
 typedef struct bfs_btree {
@@ -113,6 +157,18 @@ typedef struct bfs_btree {
     /* Sticky ownership error from reclamation or a failed composite rollback.
      * Callers must recover or abandon instead of publishing uncertain mappings. */
     bfs_err_t         free_sink_err;
+
+    /* Changes with every node write and every root or height change, so a
+     * reader that remembers it can tell whether nodes it saw are still
+     * current. It wraps only after 2^32 changes. */
+    // cppcheck-suppress unusedStructMember
+    uint32_t          generation;
+
+    /* The leaf the last search ended in, valid at hint_generation. */
+    // cppcheck-suppress unusedStructMember
+    bfs_blk_t         hint_leaf;
+    // cppcheck-suppress unusedStructMember
+    uint32_t          hint_generation;
 } bfs_btree_t;
 
 static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
@@ -140,9 +196,22 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out);
  * Updates tree->root if the root splits. */
 bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val);
 
+/* Give an empty tree a root leaf holding count sorted entries, in one
+ * mutation: on failure the tree stays empty. */
+bfs_err_t bfs_btree_create_root_leaf(bfs_btree_t *tree, const void *keys,
+                                     const void *vals, uint32_t count);
+
 /* Replace a height-one tree with a complete, sorted leaf in one COW step. */
 bfs_err_t bfs_btree_replace_root_leaf(bfs_btree_t *tree, const void *keys,
                                       const void *vals, uint32_t count);
+
+/* As bfs_btree_replace_root_leaf, but a root the live transaction owns is
+ * rewritten in place, so the root block may stay the same. *published is set
+ * once the replacement is committed to the tree, even if the call then
+ * reports a latched publication or reclamation error. */
+bfs_err_t bfs_btree_rewrite_root_leaf(bfs_btree_t *tree, const void *keys,
+                                      const void *vals, uint32_t count,
+                                      bool *published);
 
 /* Read the transaction id of a valid height-one root leaf. */
 bfs_err_t bfs_btree_root_leaf_txn_id(bfs_btree_t *tree, uint64_t *txn_id_out);
@@ -171,11 +240,52 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
 bfs_err_t bfs_btree_rekey_equal(bfs_btree_t *tree, const void *old_key,
                                 const void *new_key);
 
+/* Replace a stored key and its value with new_key and new_val in one path
+ * rewrite, as bfs_btree_update does for a value. new_key must lie strictly
+ * between the neighbouring keys and inside the separators that lead to the
+ * leaf; otherwise BFS_ERR_UNSUPPORTED is returned and the tree is unchanged,
+ * and the caller can delete and insert instead. */
+bfs_err_t bfs_btree_update_key(bfs_btree_t *tree, const void *old_key,
+                               const void *new_key, const void *new_val);
+
 /* Scan keys >= start_key. Calls cb for each key/value pair. Traversal follows
  * parent/child links, not the on-disk right_sibling legacy leaf hint. If
- * start_key is NULL, scanning starts from the beginning. */
+ * start_key is NULL, scanning starts from the beginning. A callback may
+ * change the tree; the scan then continues after the last reported key. */
 bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
                            bfs_scan_cb cb, void *ctx);
+
+/* A copy of the leaf a scan last copied, for resuming without a descent. */
+typedef struct {
+    // cppcheck-suppress unusedStructMember
+    const bfs_btree_t *tree;
+    // cppcheck-suppress unusedStructMember
+    uint8_t *leaf;          /* block-size copy, allocated on first use */
+    // cppcheck-suppress unusedStructMember
+    uint32_t generation;    /* tree generation when the copy was taken */
+    // cppcheck-suppress unusedStructMember
+    bfs_blk_t root;
+    // cppcheck-suppress unusedStructMember
+    uint32_t stop_index;    /* entry whose callback stopped the scan, if any */
+    // cppcheck-suppress unusedStructMember
+    bool stopped;
+    // cppcheck-suppress unusedStructMember
+    bool valid;
+} bfs_btree_cursor_t;
+
+void bfs_btree_cursor_init(bfs_btree_cursor_t *cursor);
+/* Free the copy. A cursor must not outlive the mount of its tree. */
+void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor);
+
+/* As bfs_btree_scan, but start in the cursor's leaf copy when the tree has
+ * not changed since it was taken and start_key lies between the copy's first
+ * and last keys: in a B+tree every key of that range is in that leaf. If
+ * start_key equals the entry at which a callback stopped the previous scan,
+ * that entry is the start without a search. The scan leaves its last copied
+ * leaf in the cursor. NULL behaves as bfs_btree_scan; failing to allocate
+ * the copy only costs the shortcut. */
+bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+                                const void *start_key, bfs_scan_cb cb, void *ctx);
 
 /* Search for the largest key <= search_key.
  * Returns BFS_OK if found, BFS_ERR_NOTFOUND if tree is empty or all keys > search_key.
@@ -183,11 +293,24 @@ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
 bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
                                     void *key_out, void *val_out);
 
+/* Locate the first key >= key without copying resident nodes. BFS_OK: it is
+ * copied to key_out. BFS_ERR_AGAIN: the leaf that would hold it has none;
+ * every greater key is >= key_out, that leaf's exclusive upper bound.
+ * BFS_ERR_NOTFOUND: no key >= key exists. */
+bfs_err_t bfs_btree_lower_bound(bfs_btree_t *tree, const void *key, void *key_out);
+
 
 /* Walk all node blocks in the tree. Calls cb(blk, ctx) for each. Returns the
  * first node-read/structural error, or BFS_OK. Refcounting callers must check. */
 typedef void (*bfs_node_walk_cb)(bfs_blk_t blk, void *ctx);
 bfs_err_t bfs_btree_walk_nodes(bfs_btree_t *tree, bfs_node_walk_cb cb, void *ctx);
+
+/* One pass over the tree that reads each node once: entry_cb (optional) sees
+ * every leaf entry in key order and may stop the walk by returning false;
+ * node_cb (optional) sees each node block after its subtree. Errors as for
+ * bfs_btree_walk_nodes; a stop by entry_cb is not an error. */
+bfs_err_t bfs_btree_walk(bfs_btree_t *tree, bfs_node_walk_cb node_cb,
+                         bfs_scan_cb entry_cb, void *ctx);
 
 /* Compaction, build-and-swap half: re-pack the tree into fresh dense blocks and
  * swap tree->root to them, WITHOUT freeing the old nodes. Sets *old_root_out to

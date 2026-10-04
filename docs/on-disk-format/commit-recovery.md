@@ -1,6 +1,6 @@
 # Commit, Recovery, and Checker Boundaries
 
-BFS v2 publishes metadata through copy-on-write trees and an alternating
+BFS publishes metadata through copy-on-write trees and an alternating
 superblock boundary. This chapter defines the resulting observable committed
 states and the limits of that design.
 
@@ -11,7 +11,10 @@ on a next transaction ID. Mutating a B+tree writes new nodes, changes in-memory
 tree roots, and retains older nodes until publication. A normal commit:
 
 1. Requests a device sync first when `BFS_OPT_DATA_ORDERED` is set.
-2. Returns unused allocator-reserve blocks to the free-space tree.
+2. With snapshots, decrements the reference count of every retired block that
+   a snapshot still shares; such a block loses only its live reference and
+   stays allocated. Blocks that become free wait for step 5. Returns unused
+   allocator-reserve blocks to the free-space tree.
 3. Copies current directory, inode, free-space, refcount, snapshot, and inode
    allocation state into the working superblock.
 4. Writes and syncs the older superblock slot with that working state.
@@ -44,7 +47,8 @@ atomicity of an in-place overwrite.
 
 A crash after root publication and before deferred reclamation can leave
 allocated but unreachable blocks. That is space leakage, not an alternate
-namespace. `bfs check IMAGE --repair` rebuilds free-space accounting. The
+namespace. Reference counts are exact in every published state, because the
+decrements of shared blocks are part of the transaction they belong to. `bfs check IMAGE --repair` rebuilds free-space accounting. The
 deferred-free queue itself is never written as a recovery journal.
 
 ## Snapshot deletion state machine
@@ -82,7 +86,8 @@ A read-only checker may inspect the selected compatible superblock, all
 reachable B+tree nodes, keys, record constraints, and extent ranges. It MUST
 not choose an alternative state from a lower transaction ID merely because a
 newer valid copy looks unfamiliar. An intact unsupported copy requires a
-version-aware tool and must not be modified by a v2 repair pass.
+version-aware tool and must not be modified by a repair pass of another
+version.
 
 A repairing checker reconstructs allocation ownership from the selected roots,
 reserves fixed regions and the emergency pool, and then rebuilds free-space

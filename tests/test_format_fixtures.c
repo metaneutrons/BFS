@@ -1,5 +1,5 @@
 /*
- * Independent v2 byte fixtures. Do not include BFS layout headers or call
+ * Independent v3 byte fixtures. Do not include BFS layout headers or call
  * production codecs here: this test is meant to catch shared-layout mistakes.
  */
 
@@ -95,7 +95,7 @@ static bool fixture_node_valid(const uint8_t *node, size_t block_size,
 
 static const uint8_t fixture_superblock[512] = {
     [0] = 0x42, [1] = 0x46, [2] = 0x53,
-    [7] = 0x02,
+    [7] = 0x03,
     [10] = 0x10,
     [15] = 0x40,
     [23] = 0x01,
@@ -104,10 +104,10 @@ static const uint8_t fixture_superblock[512] = {
     [64] = 'T', [65] = 'e', [66] = 's', [67] = 't',
     [68] = 'V', [69] = 'o', [70] = 'l',
     [101] = 0x02,
-    [236] = 0x10, [237] = 0xEB, [238] = 0x3C, [239] = 0xFC,
+    [236] = 0xDC, [237] = 0x68, [238] = 0x38, [239] = 0xF5,
 };
 
-static const uint8_t fixture_inode[44] = {
+static const uint8_t fixture_inode[56] = {
     [3] = 0x02,
     [11] = 0x01,
     [12] = 0x23, [13] = 0x45, [14] = 0x67, [15] = 0x89,
@@ -117,6 +117,8 @@ static const uint8_t fixture_inode[44] = {
     [28] = 0x01, [29] = 0x23, [30] = 0x04, [31] = 0x56,
     [33] = 0x0A, [35] = 0x14, [37] = 0x1E,
     [39] = 0x28, [41] = 0x32, [43] = 0x3C,
+    [47] = 0x03,
+    [51] = 0x04,
 };
 
 static const uint8_t fixture_dir_key[264] = {
@@ -179,15 +181,15 @@ static const uint8_t fixture_internal[1024] = {
 static void test_superblock_fixture(void)
 {
     TEST_ASSERT_EQ(read_be32(fixture_superblock), UINT32_C(0x42465300));
-    TEST_ASSERT_EQ(read_be32(fixture_superblock + 4), 2);
+    TEST_ASSERT_EQ(read_be32(fixture_superblock + 4), 3);
     TEST_ASSERT_EQ(read_be32(fixture_superblock + 8), 4096);
     TEST_ASSERT_EQ(read_be32(fixture_superblock + 12), 64);
     TEST_ASSERT_EQ(read_be32(fixture_superblock + 48), 62);
     TEST_ASSERT_EQ(read_be32(fixture_superblock + 60), 2);
     TEST_ASSERT_EQ(read_be32(fixture_superblock + 100), 131072);
     TEST_ASSERT_EQ(crc32_with_zeroed_range(fixture_superblock, 236, 236, 0),
-                   UINT32_C(0x10EB3CFC));
-    TEST_ASSERT_EQ(read_be32(fixture_superblock + 236), UINT32_C(0x10EB3CFC));
+                   UINT32_C(0xDC6838F5));
+    TEST_ASSERT_EQ(read_be32(fixture_superblock + 236), UINT32_C(0xDC6838F5));
     for (size_t i = 240; i < sizeof(fixture_superblock); i++)
         TEST_ASSERT_EQ(fixture_superblock[i], 0);
 }
@@ -199,6 +201,11 @@ static void test_record_fixtures(void)
     TEST_ASSERT_EQ(read_be32(fixture_inode + 12), UINT32_C(0x23456789));
     TEST_ASSERT_EQ(read_be16(fixture_inode + 28), UINT16_C(0x0123));
     TEST_ASSERT_EQ(read_be16(fixture_inode + 42), UINT16_C(0x003C));
+    /* v3: INLINE_EXTENT and HAS_COMMENT, four blocks from extent_root 0x10. */
+    TEST_ASSERT_EQ(read_be32(fixture_inode + 16), 0x10);
+    TEST_ASSERT_EQ(read_be32(fixture_inode + 44), 3);
+    TEST_ASSERT_EQ(read_be32(fixture_inode + 48), 4);
+    TEST_ASSERT_EQ(read_be32(fixture_inode + 52), 0);
 
     TEST_ASSERT_EQ(read_be32(fixture_dir_key), 1);
     TEST_ASSERT_EQ(fixture_dir_key[8], 5);

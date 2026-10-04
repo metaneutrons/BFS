@@ -22,6 +22,7 @@
 #include <proto/dos.h>
 #include "../src/amiga/dos_packets.h"
 #include "snapshot_protocol.h"
+#include "commit_protocol.h"
 
 /* Request 32KB stack from AmigaOS */
 LONG __stack = 32768;
@@ -684,35 +685,95 @@ static void test_protect(void)
 cl: DeleteFile(p);
 }
 
+static BOOL cstr_equal(const char *a, const char *b)
+{
+    while (*a && *a == *b) { a++; b++; }
+    return *a == *b;
+}
+
+/* The comment of name in the volume root as seen by ExNext. */
+static BOOL exnext_comment(const char *name, const char *expected)
+{
+    BPTR lock = Lock(vol, SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    BOOL found = FALSE;
+    if (lock && fib && Examine(lock, fib)) {
+        while (!found && ExNext(lock, fib))
+            found = cstr_equal(fib->fib_FileName, name) &&
+                    cstr_equal(fib->fib_Comment, expected);
+    }
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    return found;
+}
+
+static BOOL examine_comment(const char *p, const char *expected)
+{
+    BPTR lock = Lock(p, SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    BOOL ok = lock && fib && Examine(lock, fib) && cstr_equal(fib->fib_Comment, expected);
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    return ok;
+}
+
+/* ExamineFH reports the file's name as well as its comment. */
+static BOOL examine_fh_comment(const char *p, const char *name, const char *expected)
+{
+    BPTR fh = Open(p, MODE_OLDFILE);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    BOOL ok = fh && fib && ExamineFH(fh, fib) && cstr_equal(fib->fib_Comment, expected) &&
+              cstr_equal(fib->fib_FileName, name);
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (fh) Close(fh);
+    return ok;
+}
+
 static void test_comment(void)
 {
     const char *T = "comment_13";
-    const char *p = vpath("cmt.dat");
+    char p[128];
+    const char *path = vpath("cmt.dat");
+    if (!path || tool_strlen(path) >= (int)sizeof(p)) { fail(T, "path"); return; }
+    for (int i = 0; (p[i] = path[i]) != 0; i++) {}
     fill(databuf, 10, 0xBBBB);
     BPTR fh = Open(p, MODE_NEWFILE);
     if (!fh) { fail(T, "write"); return; }
     write_exact(fh, databuf, 10); close_checked(fh);
 
+    /* An object without a comment reports an empty one everywhere. */
+    if (!examine_comment(p, "") || !exnext_comment("cmt.dat", "")) {
+        fail(T, "empty");
+        goto cl;
+    }
     if (!SetComment(p, "BFS integrity test")) {
         fail(T, "set comment");
         goto cl;
     }
+    if (!examine_comment(p, "BFS integrity test")) { fail(T, "examine"); goto cl; }
+    if (!exnext_comment("cmt.dat", "BFS integrity test")) { fail(T, "exnext"); goto cl; }
+    if (!examine_fh_comment(p, "cmt.dat", "BFS integrity test")) { fail(T, "examinefh"); goto cl; }
 
-    BPTR lock = Lock(p, SHARED_LOCK);
-    if (!lock) { fail(T, "lock"); goto cl; }
-    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
-    if (!fib) { UnLock(lock); fail(T, "fib"); goto cl; }
-    if (!Examine(lock, fib)) {
-        FreeDosObject(DOS_FIB, fib);
-        UnLock(lock);
-        fail(T, "examine");
+    /* 79 characters is the limit and survives unchanged; 80 is refused. */
+    char longest[81];
+    for (int i = 0; i < 80; i++) longest[i] = (char)('a' + i % 26);
+    longest[80] = 0;
+    if (SetComment(p, longest) || IoErr() != ERROR_COMMENT_TOO_BIG) {
+        fail(T, "too big");
         goto cl;
     }
-    BOOL ok = (fib->fib_Comment[0] == 'B');
-    FreeDosObject(DOS_FIB, fib);
-    UnLock(lock);
+    longest[79] = 0;
+    if (!SetComment(p, longest) || !examine_comment(p, longest) ||
+        !exnext_comment("cmt.dat", longest)) {
+        fail(T, "79 characters");
+        goto cl;
+    }
 
-    if (!ok) { fail(T, "mismatch"); goto cl; }
+    /* An empty comment removes it. */
+    if (!SetComment(p, "") || !examine_comment(p, "") || !exnext_comment("cmt.dat", "")) {
+        fail(T, "clear");
+        goto cl;
+    }
     pass(T);
 cl: DeleteFile(p);
 }
@@ -1170,7 +1231,8 @@ static void test_morphos_packets(void)
 
 static BOOL scan_exall_batches(BPTR lock, struct ExAllControl *control)
 {
-    ULONG storage[40];
+    /* Room for one entry with its comment, so the listing takes batches. */
+    ULONG storage[16];
     ULONG seen = 0, batches = 0;
     for (;;) {
         BOOL more = ExAll(lock, (struct ExAllData *)storage, sizeof(storage), ED_COMMENT, control);
@@ -1458,6 +1520,34 @@ static void test_mixed_sizes(void)
     pass(T);
 }
 
+/* ── Commit policy ─────────────────────────────────────────── */
+
+/* The default policy commits from a timer; SYNC restores per-operation
+ * commits. Files stay readable across mode changes and timed commits. */
+static void test_commit_mode(void)
+{
+    const char *T = "commit_47";
+    const char *p = vpath("commit.dat");
+    struct MsgPort *port = DeviceProc(vol);
+    if (!port) { fail(T, "no port"); return; }
+    if (DoPkt(port, BFS_ACTION_COMMIT_MODE, BFS_COMMIT_MODE_QUERY, 0, 0, 0, 0) !=
+        BFS_COMMIT_MODE_DELAYED) { fail(T, "default"); return; }
+    if (!write_seeded(p, 5000, 0x4747)) { fail(T, "write delayed"); return; }
+    if (DoPkt(port, BFS_ACTION_COMMIT_MODE, BFS_COMMIT_MODE_SYNC, 0, 0, 0, 0) !=
+        BFS_COMMIT_MODE_SYNC) { fail(T, "sync"); DeleteFile(p); return; }
+    if (!verify_seeded(p, 5000, 0x4747)) { fail(T, "verify sync"); DeleteFile(p); return; }
+    if (DoPkt(port, BFS_ACTION_COMMIT_MODE, 7, 0, 0, 0, 0) != DOSFALSE ||
+        IoErr() != ERROR_BAD_NUMBER) { fail(T, "invalid"); DeleteFile(p); return; }
+    if (!write_seeded(p, 6000, 0x4848)) { fail(T, "write sync"); DeleteFile(p); return; }
+    if (DoPkt(port, BFS_ACTION_COMMIT_MODE, BFS_COMMIT_MODE_DELAYED, 0, 0, 0, 0) !=
+        BFS_COMMIT_MODE_DELAYED) { fail(T, "delayed"); DeleteFile(p); return; }
+    if (!write_seeded(p, 7000, 0x4949)) { fail(T, "rewrite"); DeleteFile(p); return; }
+    Delay(75); /* past the latest timed commit */
+    if (!verify_seeded(p, 7000, 0x4949)) { fail(T, "verify timed"); DeleteFile(p); return; }
+    DeleteFile(p);
+    pass(T);
+}
+
 /* ── Snapshot tests (via DoPkt to handler) ─────────────────── */
 
 static void test_snapshot_create_delete(void)
@@ -1601,62 +1691,164 @@ static void test_owner_uid_gid(void)
     pass(T);
 }
 
-/* ── Test: ExNext enumerates all entries (hash collision regression) ── */
+/* ── Directory enumeration ──────────────────────────────── */
+
+/* dir/item_NN for item i. */
+static const char *item_path(const char *dir, int i)
+{
+    char rel[32]; char *p = rel;
+    const char *s = dir;
+    while (*s) *p++ = *s++;
+    s = "/item_";
+    while (*s) *p++ = *s++;
+    *p++ = '0' + (i / 10); *p++ = '0' + (i % 10); *p = 0;
+    return vpath(rel);
+}
+
+static BOOL make_items(const char *dir, int count)
+{
+    BPTR lock = CreateDir(vpath(dir));
+    if (!lock) return FALSE;
+    UnLock(lock);
+    for (int i = 0; i < count; i++) {
+        BPTR fh = Open(item_path(dir, i), MODE_NEWFILE);
+        if (!fh) return FALSE;
+        if (!close_checked(fh)) return FALSE;
+    }
+    return TRUE;
+}
+
+/* Remove what make_items left; items an enumeration deleted are gone. */
+static BOOL remove_items(const char *dir, int count)
+{
+    for (int i = 0; i < count; i++) DeleteFile(item_path(dir, i));
+    return DeleteFile(vpath(dir));
+}
+
+/* Mark item_NN as seen; FALSE for any other name or a repeat. */
+static BOOL mark_item(const char *name, int count, UBYTE *seen)
+{
+    if (tool_strlen(name) != 7 || tool_memcmp(name, "item_", 5) ||
+        name[5] < '0' || name[5] > '9' || name[6] < '0' || name[6] > '9')
+        return FALSE;
+    int i = (name[5] - '0') * 10 + (name[6] - '0');
+    if (i >= count || seen[i]) return FALSE;
+    seen[i] = 1;
+    return TRUE;
+}
+
+static BOOL all_seen(const UBYTE *seen, int count)
+{
+    for (int i = 0; i < count; i++) if (!seen[i]) return FALSE;
+    return TRUE;
+}
+
+/* ExNext over a subdirectory lists every file exactly once and nothing
+ * else; enough files span several leaves and hash collisions. With
+ * delete_each, every entry is deleted as soon as ExNext returns it, as a
+ * recursive delete does, and the listing must still be complete. */
+static BOOL exnext_items(const char *dir, int count, BOOL delete_each)
+{
+    UBYTE seen[64] = {0};
+    BPTR lock = Lock(vpath(dir), SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    BOOL ok = lock && fib && Examine(lock, fib);
+    while (ok && ExNext(lock, fib)) {
+        ok = mark_item(fib->fib_FileName, count, seen);
+        if (ok && delete_each) {
+            int i = (fib->fib_FileName[5] - '0') * 10 + (fib->fib_FileName[6] - '0');
+            ok = DeleteFile(item_path(dir, i));
+        }
+    }
+    if (ok) ok = IoErr() == ERROR_NO_MORE_ENTRIES && all_seen(seen, count);
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    return ok;
+}
 
 static void test_exnext_complete(void)
 {
     const char *T = "exnext_37";
-    int i;
-    int file_count = quick_mode ? 16 : 50;
-    BOOL ok = TRUE;
-    BPTR lock = CreateDir(vpath("exdir"));
-    if (!lock) { fail(T, "mkdir"); return; }
-    UnLock(lock);
+    int count = quick_mode ? 16 : 50;
+    BOOL ok = make_items("exdir", count) && exnext_items("exdir", count, FALSE);
+    if (!remove_items("exdir", count)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "listing or cleanup");
+}
 
-    /* Create 50 files — enough to span multiple leaves and trigger collisions */
-    for (i = 0; i < file_count; i++) {
-        char rel[32]; char *p = rel;
-        const char *s = "exdir/item_";
-        while (*s) *p++ = *s++;
-        *p++ = '0' + (i / 10); *p++ = '0' + (i % 10); *p = 0;
-        BPTR fh = Open(vpath(rel), MODE_NEWFILE);
-        if (!fh) { fail(T, "create"); return; }
-        close_checked(fh);
-    }
+static void test_exnext_delete(void)
+{
+    const char *T = "exnextdel_48";
+    int count = quick_mode ? 16 : 50;
+    BOOL ok = make_items("exdel", count) && exnext_items("exdel", count, TRUE);
+    if (!remove_items("exdel", count)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "listing while deleting or cleanup");
+}
 
-    /* Count entries via ExNext */
-    lock = Lock(vpath("exdir"), SHARED_LOCK);
-    if (!lock) { fail(T, "lock"); return; }
-    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocVec(sizeof(*fib), MEMF_CLEAR);
-    if (!fib) { UnLock(lock); fail(T, "alloc"); return; }
-    if (!Examine(lock, fib)) {
-        FreeVec(fib);
-        UnLock(lock);
-        fail(T, "examine");
-        return;
+/* ExAll in small batches, deleting each batch before asking for the next,
+ * returns every file once. */
+static void test_exall_delete(void)
+{
+    const char *T = "exalldel_49";
+    int count = quick_mode ? 16 : 50;
+    UBYTE seen[64] = {0};
+    ULONG storage[32];
+    int batches = 0;
+    struct ExAllControl *control = AllocDosObject(DOS_EXALLCONTROL, NULL);
+    BOOL ok = control && make_items("exalldel", count);
+    BPTR lock = ok ? Lock(vpath("exalldel"), SHARED_LOCK) : 0;
+    if (!lock) ok = FALSE;
+    BOOL more = ok;
+    while (ok && more) {
+        more = ExAll(lock, (struct ExAllData *)storage, sizeof(storage), ED_NAME, control);
+        LONG error = IoErr();
+        struct ExAllData *entry = (struct ExAllData *)storage;
+        for (ULONG n = 0; ok && n < control->eac_Entries; n++, entry = entry->ed_Next) {
+            ok = entry && mark_item((const char *)entry->ed_Name, count, seen);
+            if (ok) {
+                int i = (entry->ed_Name[5] - '0') * 10 + (entry->ed_Name[6] - '0');
+                ok = DeleteFile(item_path("exalldel", i));
+            }
+        }
+        if (!more && error != ERROR_NO_MORE_ENTRIES) ok = FALSE;
+        if (++batches > 64) ok = FALSE;
     }
-    int count = 0;
-    while (ExNext(lock, fib)) count++;
-    FreeVec(fib);
-    UnLock(lock);
+    if (ok) ok = batches > 1 && all_seen(seen, count);
+    if (lock) UnLock(lock);
+    if (control) FreeDosObject(DOS_EXALLCONTROL, control);
+    if (!remove_items("exalldel", count)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "batched listing while deleting or cleanup");
+}
 
-    /* Every file plus the '..' entry must be returned exactly once. */
-    if (count != file_count + 1) {
-        ok = FALSE;
-        put("  got="); putnum(count);
-        put(" want="); putnum(file_count + 1); put("\n");
+/* ExAll packs entries by the requested type and the real comment length,
+ * so 40 entries without comments fit one 4 KiB call with ED_COMMENT. */
+static void test_exall_packing(void)
+{
+    const char *T = "exallpack_50";
+    struct ExAllControl *control = AllocDosObject(DOS_EXALLCONTROL, NULL);
+    BOOL ok = control && make_items("exallpack", 40);
+    BPTR lock = ok ? Lock(vpath("exallpack"), SHARED_LOCK) : 0;
+    if (!lock) ok = FALSE;
+    if (ok) {
+        UBYTE seen[64] = {0};
+        static ULONG storage[1024];
+        BOOL more = ExAll(lock, (struct ExAllData *)storage, 4096, ED_COMMENT, control);
+        if (more) {
+            ok = FALSE;
+            ExAllEnd(lock, (struct ExAllData *)storage, 4096, ED_COMMENT, control);
+        }
+        if (ok) ok = IoErr() == ERROR_NO_MORE_ENTRIES && control->eac_Entries == 40;
+        struct ExAllData *entry = (struct ExAllData *)storage;
+        for (ULONG n = 0; ok && n < control->eac_Entries; n++, entry = entry->ed_Next) {
+            ok = entry && mark_item((const char *)entry->ed_Name, 40, seen) &&
+                 entry->ed_Type == ST_FILE && entry->ed_Size == 0 &&
+                 entry->ed_Comment && entry->ed_Comment[0] == 0;
+        }
+        if (ok) ok = all_seen(seen, 40);
     }
-
-    /* Cleanup */
-    for (i = 0; i < file_count; i++) {
-        char rel[32]; char *p = rel;
-        const char *s = "exdir/item_";
-        while (*s) *p++ = *s++;
-        *p++ = '0' + (i / 10); *p++ = '0' + (i % 10); *p = 0;
-        if (!DeleteFile(vpath(rel))) ok = FALSE;
-    }
-    if (!DeleteFile(vpath("exdir"))) ok = FALSE;
-    if (ok) pass(T); else fail(T, "count or cleanup");
+    if (lock) UnLock(lock);
+    if (control) FreeDosObject(DOS_EXALLCONTROL, control);
+    if (!remove_items("exallpack", 40)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "one packed call with every entry");
 }
 
 /* ── Test table ────────────────────────────────────────────── */

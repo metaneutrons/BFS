@@ -28,6 +28,11 @@ typedef struct bfs_node_validation {
     bfs_blk_t block_count;
 } bfs_node_validation_t;
 
+/* Completes a deferred B-tree node image in place (canonical padding and CRC)
+ * right before it is written. layout is the opaque value passed with it. */
+typedef bfs_err_t (*bfs_node_finalize_fn)(const void *layout, uint32_t block_size,
+                                          uint8_t *buf);
+
 /* Block device operations — vtable for backend implementations */
 typedef struct bfs_bio_ops {
     /* Read one block. buf must be at least block_size bytes. */
@@ -59,7 +64,8 @@ typedef struct bfs_bio_ops {
      * for the exact resident bytes and context. This excludes parent bounds
      * and the traversal's expected level, which must be checked every time.
      * Every write (including trusted node writes), failed write, eviction and
-     * invalidation clears this result. A node write alone cannot set it.
+     * invalidation clears this result. A node write alone cannot set it; the
+     * B-tree marks a deferred node image only after validating those bytes.
      * The backend must keep resident bytes unchanged throughout the caller's
      * read/validation/mark sequence (e.g. whole-operation serialization). */
     bool (*node_structure_valid)(bfs_bio_t *bio, bfs_blk_t blk,
@@ -72,6 +78,52 @@ typedef struct bfs_bio_ops {
      * independent of other live buffers and resident node-cache bytes. */
     void *(*alloc_buffer)(bfs_bio_t *bio, size_t size);
     void (*free_buffer)(bfs_bio_t *bio, void *buffer);
+
+    /* Optional write-back of B-tree nodes that no committed superblock or
+     * snapshot references. defer_node_block keeps the image resident and
+     * dirty; reads of blk return it, and finalize runs before it is written.
+     * It returns BFS_ERR_UNSUPPORTED when the image cannot be held, so the
+     * caller writes it through. The backend may write a dirty image at any
+     * time to make room; a failure to do so does not refuse the new image. flush_deferred writes every dirty image; a failed
+     * image stays dirty. discard_deferred drops the image of blk, or of every
+     * block for BFS_BLK_NULL, without writing it. All three are present or
+     * absent together. */
+    bfs_err_t (*defer_node_block)(bfs_bio_t *bio, bfs_blk_t blk, const void *buf,
+                                  bfs_node_finalize_fn finalize, const void *layout);
+    bfs_err_t (*flush_deferred)(bfs_bio_t *bio);
+    void (*discard_deferred)(bfs_bio_t *bio, bfs_blk_t blk);
+    /* Optional, with the hooks above and alloc_buffer/free_buffer: as
+     * defer_node_block, but *buf, a block-size buffer from alloc_buffer, becomes
+     * the resident image without a copy. On success *buf is replaced by
+     * another such buffer, which the caller releases with free_buffer; on
+     * failure *buf is unchanged and still the caller's. */
+    bfs_err_t (*adopt_node_block)(bfs_bio_t *bio, bfs_blk_t blk, void **buf,
+                                  bfs_node_finalize_fn finalize, const void *layout);
+
+    /* Optional: transfer count consecutive blocks in as few device requests
+     * as the device allows. buf is ordinary caller memory; a backend with
+     * DMA restrictions bounces it. On a write error *written is the number of
+     * leading blocks known to be written; later blocks of the range may hold
+     * old, new or partial contents. Without these hooks the wrappers below
+     * loop over single blocks. */
+    bfs_err_t (*read_blocks)(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count, void *buf);
+    bfs_err_t (*write_blocks)(bfs_bio_t *bio, bfs_blk_t blk, uint32_t count,
+                              const void *buf, uint32_t *written);
+
+    /* Optional: the resident bytes of blk if they hold a node whose CRC and
+     * node-local structure are already validated for context (see
+     * node_structure_valid), else NULL. The pointer is read-only and valid
+     * only until the next call into this BIO. */
+    const void *(*peek_valid_node)(bfs_bio_t *bio, bfs_blk_t blk,
+                                   const bfs_node_validation_t *context);
+
+    /* Optional, with the deferral hooks: as peek_valid_node, but only for a
+     * dirty image that has not been written since it was deferred, and
+     * writable. The caller changes the node in place and keeps its structure
+     * valid for context; the image stays dirty and is finalized when written.
+     * The pointer is valid only until the next call into this BIO. */
+    void *(*modify_dirty_node)(bfs_bio_t *bio, bfs_blk_t blk,
+                               const bfs_node_validation_t *context);
 } bfs_bio_ops_t;
 
 /* Base block device — all implementations embed this as first member */
@@ -148,6 +200,94 @@ static inline bool bfs_bio_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk) {
 static inline void bfs_bio_mark_node_crc_valid(bfs_bio_t *bio, bfs_blk_t blk) {
     if (bio && bio->ops && bio->ops->mark_node_crc_valid)
         bio->ops->mark_node_crc_valid(bio, blk);
+}
+
+static inline bool bfs_bio_range_valid(const bfs_bio_t *bio, bfs_blk_t blk,
+                                       uint32_t count) {
+    return count > 0 && blk < bio->block_count && count <= bio->block_count - blk;
+}
+
+static inline bfs_err_t bfs_bio_read_blocks(bfs_bio_t *bio, bfs_blk_t blk,
+                                            uint32_t count, void *buf) {
+    if (!bio || !bio->ops || !bio->ops->read_block || !buf ||
+        !bfs_bio_range_valid(bio, blk, count))
+        return BFS_ERR_INVAL;
+    if (bio->ops->read_blocks) return bio->ops->read_blocks(bio, blk, count, buf);
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_err_t err = bio->ops->read_block(bio, blk + i,
+                                             (uint8_t *)buf + (size_t)i * bio->block_size);
+        if (err != BFS_OK) return err;
+    }
+    return BFS_OK;
+}
+
+static inline bfs_err_t bfs_bio_write_blocks(bfs_bio_t *bio, bfs_blk_t blk,
+                                             uint32_t count, const void *buf,
+                                             uint32_t *written) {
+    uint32_t done = 0;
+    if (!written) written = &done;
+    *written = 0;
+    if (!bio || !bio->ops || !bio->ops->write_block || !buf ||
+        !bfs_bio_range_valid(bio, blk, count))
+        return BFS_ERR_INVAL;
+    if (bio->ops->write_blocks)
+        return bio->ops->write_blocks(bio, blk, count, buf, written);
+    for (uint32_t i = 0; i < count; i++) {
+        bfs_err_t err = bio->ops->write_block(
+            bio, blk + i, (const uint8_t *)buf + (size_t)i * bio->block_size);
+        if (err != BFS_OK) return err;
+        *written = i + 1;
+    }
+    return BFS_OK;
+}
+
+static inline bool bfs_bio_can_defer_nodes(const bfs_bio_t *bio) {
+    return bio && bio->ops && bio->ops->defer_node_block &&
+           bio->ops->flush_deferred && bio->ops->discard_deferred;
+}
+
+static inline bfs_err_t bfs_bio_defer_node(bfs_bio_t *bio, bfs_blk_t blk,
+                                           const void *buf,
+                                           bfs_node_finalize_fn finalize,
+                                           const void *layout) {
+    if (!bfs_bio_can_defer_nodes(bio)) return BFS_ERR_UNSUPPORTED;
+    if (!buf || !finalize || blk >= bio->block_count) return BFS_ERR_INVAL;
+    return bio->ops->defer_node_block(bio, blk, buf, finalize, layout);
+}
+
+static inline bfs_err_t bfs_bio_adopt_node(bfs_bio_t *bio, bfs_blk_t blk,
+                                           void **buf,
+                                           bfs_node_finalize_fn finalize,
+                                           const void *layout) {
+    if (!bfs_bio_can_defer_nodes(bio) || !bio->ops->adopt_node_block ||
+        !bio->ops->alloc_buffer || !bio->ops->free_buffer)
+        return BFS_ERR_UNSUPPORTED;
+    if (!buf || !*buf || !finalize || blk >= bio->block_count) return BFS_ERR_INVAL;
+    return bio->ops->adopt_node_block(bio, blk, buf, finalize, layout);
+}
+
+static inline bfs_err_t bfs_bio_flush_deferred(bfs_bio_t *bio) {
+    return bfs_bio_can_defer_nodes(bio) ? bio->ops->flush_deferred(bio) : BFS_OK;
+}
+
+static inline void bfs_bio_discard_deferred(bfs_bio_t *bio, bfs_blk_t blk) {
+    if (bfs_bio_can_defer_nodes(bio)) bio->ops->discard_deferred(bio, blk);
+}
+
+static inline bool bfs_bio_can_modify_nodes(const bfs_bio_t *bio) {
+    return bfs_bio_can_defer_nodes(bio) && bio->ops->modify_dirty_node;
+}
+
+static inline void *bfs_bio_modify_dirty_node(
+    bfs_bio_t *bio, bfs_blk_t blk, const bfs_node_validation_t *context) {
+    return bfs_bio_can_modify_nodes(bio) && context
+               ? bio->ops->modify_dirty_node(bio, blk, context) : NULL;
+}
+
+static inline const void *bfs_bio_peek_valid_node(
+    bfs_bio_t *bio, bfs_blk_t blk, const bfs_node_validation_t *context) {
+    return bio && bio->ops && context && bio->ops->peek_valid_node
+               ? bio->ops->peek_valid_node(bio, blk, context) : NULL;
 }
 
 static inline bool bfs_bio_node_structure_valid(

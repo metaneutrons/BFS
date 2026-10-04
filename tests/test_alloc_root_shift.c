@@ -230,6 +230,80 @@ static void test_first_fit_run_carve_emits_one_root_leaf_write(void)
     fixture_destroy(&fixture);
 }
 
+/* File data starts at the lowest free block, continues behind its goal and
+ * never takes the tail of the highest extent, where metadata comes from. */
+static void test_data_alloc_ascends_from_goal(void)
+{
+    allocator_fixture_t fixture;
+    TEST_ASSERT(fixture_init(&fixture));
+    free_extent_list_t before, after;
+    TEST_ASSERT(read_free_extents(&fixture, &before));
+    TEST_ASSERT_EQ(before.count, 2);
+    bfs_blk_t low = before.items[0].start;
+    uint32_t low_len = before.items[0].length;
+    uint32_t total = fixture.space.total_free;
+    fixture.device.writes = 0;
+
+    bfs_blk_t first = bfs_freespace_alloc_data(&fixture.space, 1, BFS_BLK_NULL);
+    TEST_ASSERT_EQ(first, low);
+    bfs_blk_t second = bfs_freespace_alloc_data(&fixture.space, 1, first + 1);
+    TEST_ASSERT_EQ(second, first + 1);
+    bfs_blk_t run = bfs_freespace_alloc_data(&fixture.space, RUN_COUNT, second + 1);
+    TEST_ASSERT_EQ(run, second + 1);
+    /* Each takes the head of the extent by moving its key: one leaf write. */
+    TEST_ASSERT_EQ(fixture.device.writes, 3);
+    TEST_ASSERT_EQ(fixture.space.total_free, total - 2 - RUN_COUNT);
+    TEST_ASSERT_EQ(fixture.space.data_roving, run + RUN_COUNT);
+    TEST_ASSERT(read_free_extents(&fixture, &after));
+    TEST_ASSERT_EQ(after.count, 2);
+    TEST_ASSERT_EQ(after.items[0].start, low + 2 + RUN_COUNT);
+    TEST_ASSERT_EQ(after.items[0].length, low_len - 2 - RUN_COUNT);
+    TEST_ASSERT_EQ(after.items[1].start, before.items[1].start);
+    TEST_ASSERT_EQ(after.items[1].length, before.items[1].length);
+    fixture_destroy(&fixture);
+}
+
+/* A goal inside an extent splits it and a goal at its end shortens it, each
+ * with one leaf write; a goal that is not free falls back to the first fit
+ * at the data roving pointer. */
+static void test_data_alloc_goal_inside_end_and_taken(void)
+{
+    allocator_fixture_t fixture;
+    TEST_ASSERT(fixture_init(&fixture));
+    free_extent_list_t before, after;
+    TEST_ASSERT(read_free_extents(&fixture, &before));
+    TEST_ASSERT_EQ(before.count, 2);
+    bfs_blk_t low = before.items[0].start;
+    uint32_t low_len = before.items[0].length;
+    bfs_blk_t high = before.items[1].start;
+    uint32_t high_len = before.items[1].length;
+    TEST_ASSERT(low_len > 20);
+    fixture.device.writes = 0;
+
+    TEST_ASSERT_EQ(bfs_freespace_alloc_data(&fixture.space, 2, low + 10), low + 10);
+    TEST_ASSERT_EQ(fixture.device.writes, 1);
+    TEST_ASSERT(read_free_extents(&fixture, &after));
+    TEST_ASSERT_EQ(after.count, 3);
+    TEST_ASSERT_EQ(after.items[0].start, low);
+    TEST_ASSERT_EQ(after.items[0].length, 10);
+    TEST_ASSERT_EQ(after.items[1].start, low + 12);
+    TEST_ASSERT_EQ(after.items[1].length, low_len - 12);
+
+    bfs_blk_t end = high + high_len - 1;
+    TEST_ASSERT_EQ(bfs_freespace_alloc_data(&fixture.space, 1, end), end);
+    TEST_ASSERT_EQ(fixture.device.writes, 2);
+    TEST_ASSERT(read_free_extents(&fixture, &after));
+    TEST_ASSERT_EQ(after.items[2].length, high_len - 1);
+
+    /* low + 10 is taken; the roving pointer behind end wraps to low. */
+    TEST_ASSERT_EQ(fixture.space.data_roving, end + 1);
+    TEST_ASSERT_EQ(bfs_freespace_alloc_data(&fixture.space, 1, low + 10), low);
+    /* Too few free blocks at the goal fall back as well: the first fit
+     * behind low is the rest of the first extent. */
+    TEST_ASSERT_EQ(bfs_freespace_alloc_data(&fixture.space, 3, low + 8), low + 1);
+    fixture_destroy(&fixture);
+}
+
 static bool expected_carve(const free_extent_list_t *before, uint32_t index,
                            uint32_t count, free_extent_list_t *after)
 {
@@ -941,6 +1015,8 @@ static void test_large_append_sync_readonly_remount_and_strict_fsck(void)
 
 TEST_SUITE_BEGIN("Atomic root-leaf allocator run shift")
     TEST_RUN(test_first_fit_run_carve_emits_one_root_leaf_write);
+    TEST_RUN(test_data_alloc_ascends_from_goal);
+    TEST_RUN(test_data_alloc_goal_inside_end_and_taken);
     TEST_RUN(test_roving_wrap_skips_short_first_fit_extent);
     TEST_RUN(test_exact_fit_and_single_block_keep_legacy_selection);
     TEST_RUN(test_deeper_free_tree_keeps_legacy_mutation_path);

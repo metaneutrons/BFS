@@ -24,6 +24,8 @@ typedef struct bfs_freespace {
     bfs_blk_t reserve[BFS_ALLOC_RESERVE_SIZE];
     uint32_t reserve_count;
     bfs_blk_t roving;              /* roving allocation hint */
+    // cppcheck-suppress unusedStructMember
+    bfs_blk_t data_roving;         /* first-fit hint for file data, ascending */
     uint32_t total_free;            /* total free blocks (accounting) */
     uint32_t global_reserve;        /* blocks reserved for metadata (not data) */
     bool in_alloc;                  /* recursion guard */
@@ -60,6 +62,19 @@ bfs_err_t bfs_freespace_add(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count
  * A nonzero tree.free_sink_err means ownership is uncertain: standalone
  * callers must abandon/recover rather than publish or retry that live state. */
 bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count);
+
+/* Allocate count contiguous blocks for file data. If goal is not
+ * BFS_BLK_NULL and [goal, goal + count) is free, that range is taken, so a
+ * file that grows block by block stays contiguous. Otherwise the first fit at
+ * or after the data roving pointer is taken. File data never takes the tail
+ * of the highest extent, where single metadata blocks are allocated, so the
+ * two do not interleave. Failure reporting is as for bfs_freespace_alloc. */
+bfs_blk_t bfs_freespace_alloc_data(bfs_freespace_t *fs, uint32_t count,
+                                   bfs_blk_t goal);
+
+/* True if blk is one of the superblock's emergency pool blocks, active or
+ * not. Freeing such a block alone returns it to the pool. */
+bool bfs_freespace_pool_block(const bfs_freespace_t *fs, bfs_blk_t blk);
 
 /* Free count blocks starting at start. Merges with adjacent free extents. */
 bfs_err_t bfs_freespace_free(bfs_freespace_t *fs, bfs_blk_t start, uint32_t count);

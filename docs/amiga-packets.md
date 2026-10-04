@@ -19,6 +19,22 @@ The LOCK_SAME/LOCK_SAME_VOLUME codes belong to the dos.library function, not
 the packet. Empty final path components retain the resolved directory after
 parent traversal or a volume-prefix reset, rather than reusing the base lock.
 
+ExNext and ExAll list the members of a directory in key order and never the
+internal parent entry. `fib_DiskKey` and `eac_LastKey` carry the number of
+entries the enumeration has consumed, and the lock remembers the name consumed
+last. When the number matches, the next call continues after that name. A
+listing therefore takes linear time, and deleting entries while it runs, as a
+recursive delete does, does not skip any of the rest. The lock also keeps a
+copy of the directory leaf it read last; while the directory tree is
+unchanged, the next entries come from that copy without a descent from the
+root. An ExAll entry holds the fields up to the requested type, as
+dos.library lays them out, then the name and the actual comment; an entry
+that does not fit the buffer is returned by the next call. An entry created during a
+listing may or may not appear. If the number does not match (a second
+enumeration on the same lock) or the memory for the resume point is missing,
+the handler counts entries from the start. ExamineFH reports the file name: an
+object in use cannot be renamed, so the parent recorded at open still holds it.
+
 64-bit DOS extensions have two distinct wire contracts. They must not be decoded
 as pairs of ordinary packet arguments:
 
@@ -43,14 +59,18 @@ native MorphOS, OS4 or physical Apollo hardware.
 text-buffer pointer; argument 2 is its capacity, at least `BFS_FORMAT_ERROR_MAX`
 (192 bytes). Invalid arguments return DOSFALSE / `ERROR_BAD_NUMBER` without
 writing to the buffer. Otherwise the handler writes 192 bytes, including a
-NUL-terminated diagnosis and zero padding. DOSTRUE / error 0 means an
-incompatible format was recognized; DOSFALSE / error 0 means no such diagnosis
-exists. It is available before a successful mount and while inhibited. Older
-handlers return `ERROR_ACTION_NOT_KNOWN`.
+NUL-terminated diagnosis and zero padding. DOSTRUE means an incompatible
+format was recognized; its secondary result is `BFS_FORMAT_REPLACEABLE` (1)
+when the medium holds only older BFS formats, which `ACTION_FORMAT` replaces,
+and 0 when `ACTION_FORMAT` refuses the medium. DOSFALSE / error 0 means no such
+diagnosis exists. It is available before a successful mount and while
+inhibited. Older handlers return `ERROR_ACTION_NOT_KNOWN`.
 
 Ordinary packets still use the standard numeric `ERROR_NOT_IMPLEMENTED` for an
-incompatible format. Interactive callers additionally receive a one-time
-requester naming the actual format version and supported version. The caller's
+incompatible format. So does `ACTION_FORMAT`, unless the medium is replaceable
+as defined in the [compatibility contract](format-compatibility.md#replacing-an-older-format).
+Interactive callers additionally receive a one-time requester naming the
+actual format version and supported version. The caller's
 `pr_WindowPtr == -1` suppresses this requester. Unknown option bits are reported
 separately from newer or older unsupported versions.
 
@@ -63,12 +83,35 @@ structural errors, warnings, leaked blocks and repaired blocks. Invalid
 arguments return DOSFALSE / `ERROR_BAD_NUMBER`; a handler or I/O failure
 returns DOSFALSE with the translated DOS error.
 
-The handler creates a short-lived read-only mount over its cached block device,
-checks the last committed filesystem state, then drops that mount. It never
-repairs or commits data, and does not modify the handler's live mount. Packet
+The handler first commits outstanding delayed changes, then creates a
+short-lived read-only mount over its cached block device, checks the committed
+filesystem state and drops that mount. It never repairs data and does not
+otherwise modify the handler's live mount. Packet
 handling is serial, so ordinary filesystem I/O waits until the scan completes.
 `bfs check DRIVE:` is the matching AmigaDOS command. Older handlers return
 `ERROR_ACTION_NOT_KNOWN`.
+
+## Commit policy
+
+`BFS_ACTION_COMMIT_MODE` (3012) queries or changes when the handler commits.
+Argument 1 is 0 to query, 1 for delayed commits (the default) or 2 for a
+commit at every close and standalone metadata packet. Switching to 2 first
+commits outstanding changes and fails with the translated DOS error if that
+commit fails. Result 1 is the active mode after the request; any other
+argument returns DOSFALSE / `ERROR_BAD_NUMBER`. The mode lasts until the
+volume is mounted again; the Mountlist `Control` string `COMMIT=SYNC` selects
+mode 2 at mount time. `bfs commit DRIVE: [SYNC|DELAYED]` is the matching
+AmigaDOS command. Older handlers return `ERROR_ACTION_NOT_KNOWN`.
+
+In delayed mode the handler commits 200 ms after the last packet and at the
+latest one second after the timer was first armed, and before it replies to
+`ACTION_FLUSH`, `ACTION_INHIBIT(DOSTRUE)`, `ACTION_WRITE_PROTECT(DOSTRUE)`,
+`BFS_ACTION_CHECK`, snapshot creation and deletion, `ACTION_FORMAT` and
+`ACTION_DIE`. Notifications are sent when a change completes, not when it is
+committed. A keyboard reset handler commits before a warm reboot when
+`keyboard.device` accepts it; until the machine resets, the handler then
+commits every change before its reply. A disk change discards uncommitted changes, as
+before.
 
 ## Snapshot volumes
 

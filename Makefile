@@ -21,7 +21,9 @@ HOST_CFLAGS  = -std=c99 -Wall -Wextra -Werror -g -O2 -pthread \
 AMIGA_PREFIX = $(shell brew --prefix amiga-gcc 2>/dev/null || echo /opt/homebrew/opt/amiga-gcc)/m68k-amigaos
 # The NDK declares STRPTR as unsigned char* in C, unlike standard C strings.
 # Suppress only that header-boundary diagnostic and reject every other warning.
-AMIGA_WARNINGS = -Wall -Wextra -Werror -Wno-pointer-sign
+# The handler runs on a 128 KiB stack shared by the packet frame and the whole
+# core call chain; a filesystem state on the stack once overflowed it.
+AMIGA_WARNINGS = -Wall -Wextra -Werror -Wno-pointer-sign -Wframe-larger-than=16384
 AMIGA_CFLAGS = -std=c99 $(AMIGA_WARNINGS) -O2 -m68020 -noixemul -fomit-frame-pointer \
                -Isrc/amiga $(INCLUDES) -DBFS_AMIGA=1 \
                -I$(AMIGA_PREFIX)/ndk-include
@@ -63,6 +65,7 @@ TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
 	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
 	fault-qualification fault-qualification-verify amiga-fs-compare-bench amiga-fs-profile-bench \
+	core-workload-profile \
 	amiga-perf-probe-handler
 
 .PHONY: fuse
@@ -273,6 +276,15 @@ $(BUILD_HOST)/bench_btree: tests/bench_btree.c $(CORE_SRC) $(EMU_SRC)
 	@mkdir -p $(BUILD_HOST)
 	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
 
+# Host replica of the AmigaDOS compare workload for deterministic profiling.
+core-workload-profile: $(BUILD_HOST)/core-workload
+	@tools/core-workload-profile.sh sync
+	@tools/core-workload-profile.sh group
+
+$(BUILD_HOST)/core-workload: tools/core-workload.c $(CORE_SRC) $(EMU_SRC)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -o $@ $< $(CORE_SRC) $(EMU_SRC)
+
 clean:
 	rm -rf build/ *.img
 
@@ -331,13 +343,22 @@ $(BUILD_AMIGA)/bfs: $(TOOL_SRCS_BFS) tools/bfs_command.h \
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o $@ $(TOOL_SRCS_BFS) $(AMIGA_TOOL_LDFLAGS)
 
-.PHONY: compatibility-test
-compatibility-test: amiga $(BUILD_HOST)/bfs $(BUILD_AMIGA)/bfs
-	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
-		-o build/amiga/compatibility-probe tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
+$(BUILD_AMIGA)/compatibility-probe: tests/amiga/compatibility_probe.c include/bfs_diagnostics.h
+	@mkdir -p $(BUILD_AMIGA)
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) -o $@ tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
+
+.PHONY: compatibility-test reset-test
+compatibility-test: amiga $(BUILD_HOST)/bfs $(BUILD_AMIGA)/bfs $(BUILD_AMIGA)/compatibility-probe
 	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/amiga/cli-fixture tests/amiga/cli_fixture.c $(AMIGA_TOOL_LDFLAGS)
 	python3 emulator-test/compatibility-test.py
+
+# A keyboard reset must commit what the delayed-commit timer still holds.
+# Needs Xvfb and xdotool in addition to fs-uae.
+reset-test: amiga $(BUILD_HOST)/bfs
+	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+		-o build/amiga/reset-probe tests/amiga/reset_probe.c $(AMIGA_TOOL_LDFLAGS)
+	python3 emulator-test/reset-test.py
 
 # ── CI integration test ─────────────────────────────────────
 ci-test: amiga amiga-test $(BUILD_AMIGA)/bfs $(BUILD_HOST)/bfs

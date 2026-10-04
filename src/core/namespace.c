@@ -27,9 +27,8 @@ typedef struct {
     bool corrupt;
 } comment_key_ctx_t;
 
-static bfs_err_t fs_find_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
-                                          comment_key_ctx_t *key);
-static bfs_err_t fs_remove_comments_unlocked(bfs_fs_t *fs, uint32_t ino);
+static bfs_err_t fs_find_comment_unlocked(bfs_fs_t *fs, const bfs_inode_t *inode,
+                                          uint32_t ino, comment_key_ctx_t *key);
 
 static bfs_err_t fs_restore_comment(bfs_fs_t *fs, uint32_t ino,
                                      const comment_key_ctx_t *comment)
@@ -177,7 +176,7 @@ static void fs_sort_blocks(bfs_blk_t *items, size_t count)
 }
 
 static bfs_err_t fs_collect_extent_tree_for_delete(bfs_fs_t *fs,
-                                                   bfs_blk_t root,
+                                                   const bfs_inode_t *inode,
                                                    fs_delete_blocks_t *blocks)
 {
     uint32_t cap = bfs_fs_pending_cap(fs);
@@ -185,7 +184,7 @@ static bfs_err_t fs_collect_extent_tree_for_delete(bfs_fs_t *fs,
                     cap > BFS_FS_OP_FREE_RESERVE
                         ? cap - BFS_FS_OP_FREE_RESERVE : 0;
     bfs_err_t err = bfs_extent_walk(fs->bio, &fs->freespace, fs->live_txn_id,
-                                    root, fs_collect_delete_block,
+                                    inode, fs_collect_delete_block,
                                     fs_collect_delete_block, blocks);
     if (err != BFS_OK) return err;
     if (blocks->err != BFS_OK) return blocks->err;
@@ -328,15 +327,14 @@ static bfs_err_t fs_delete_file_unlocked(bfs_fs_t *fs, uint32_t parent_ino,
     }
 
     fs_delete_blocks_t blocks = {0};
-    err = fs_collect_extent_tree_for_delete(fs, bfs_be32(inode.extent_root),
-                                            &blocks);
+    err = fs_collect_extent_tree_for_delete(fs, &inode, &blocks);
     if (err != BFS_OK) {
         fs_delete_blocks_destroy(&blocks);
         return err;
     }
 
     comment_key_ctx_t comment;
-    err = fs_find_comment_unlocked(fs, ino, &comment);
+    err = fs_find_comment_unlocked(fs, &inode, ino, &comment);
     if (err != BFS_OK) goto delete_out;
     if (comment.found) {
         err = bfs_dir_remove(&fs->dir_tree, ino | 0x80000000u,
@@ -373,14 +371,14 @@ static bfs_err_t fs_reap_unlinked_file_unlocked(bfs_fs_t *fs, uint32_t ino)
     if (bfs_be32(inode.type) == BFS_INODE_DIR) return BFS_ERR_INVAL;
 
     fs_delete_blocks_t blocks = {0};
-    err = fs_collect_extent_tree_for_delete(fs, bfs_be32(inode.extent_root), &blocks);
+    err = fs_collect_extent_tree_for_delete(fs, &inode, &blocks);
     if (err != BFS_OK) {
         fs_delete_blocks_destroy(&blocks);
         return err;
     }
 
     comment_key_ctx_t comment;
-    err = fs_find_comment_unlocked(fs, ino, &comment);
+    err = fs_find_comment_unlocked(fs, &inode, ino, &comment);
     if (err == BFS_OK && comment.found)
         err = bfs_dir_remove(&fs->dir_tree, ino | 0x80000000u, comment.name, comment.len);
     if (err == BFS_OK)
@@ -407,10 +405,7 @@ static bool fs_collect_unlinked_inode(const void *key, const void *value, void *
     const bfs_inode_t *inode = value;
     uint32_t type = bfs_be32(inode->type);
     uint32_t links = bfs_be32(inode->link_count);
-    if (ino == 0 || ino >= 0x80000000u || bfs_be32(inode->inode_nr) != ino ||
-        type > BFS_INODE_HARDLINK ||
-        (bfs_be32(inode->extent_root) != BFS_BLK_NULL &&
-         bfs_be32(inode->extent_root) >= scan->fs->bio->block_count)) {
+    if (!bfs_inode_valid(&scan->fs->inode_tree, ino, inode)) {
         scan->error = BFS_ERR_CORRUPT;
         return false;
     }
@@ -478,8 +473,11 @@ static bfs_err_t fs_rmdir_unlocked(bfs_fs_t *fs, uint32_t parent_ino, const char
     if (err != BFS_OK) return err;
     if (ec.count > 0) return BFS_ERR_NOTEMPTY;
 
+    bfs_inode_t dir_inode;
+    err = bfs_inode_read(&fs->inode_tree, dir_ino, &dir_inode);
+    if (err != BFS_OK) return err == BFS_ERR_NOTFOUND ? BFS_ERR_CORRUPT : err;
     comment_key_ctx_t comment;
-    err = fs_find_comment_unlocked(fs, dir_ino, &comment);
+    err = fs_find_comment_unlocked(fs, &dir_inode, dir_ino, &comment);
     if (err != BFS_OK) return err;
     if (comment.found) {
         err = bfs_dir_remove(&fs->dir_tree, dir_ino | 0x80000000u,
@@ -599,8 +597,11 @@ static bfs_err_t fs_dispose_replaced_dir_unlocked(bfs_fs_t *fs, uint32_t ino)
     bfs_err_t err = bfs_dir_scan(&fs->dir_tree, ino, empty_check_cb, &empty);
     if (err != BFS_OK) return err;
     if (empty.count != 0) return BFS_ERR_NOTEMPTY;
+    bfs_inode_t inode;
+    err = bfs_inode_read(&fs->inode_tree, ino, &inode);
+    if (err == BFS_ERR_NOTFOUND) err = BFS_ERR_CORRUPT;
     comment_key_ctx_t comment;
-    err = fs_find_comment_unlocked(fs, ino, &comment);
+    if (err == BFS_OK) err = fs_find_comment_unlocked(fs, &inode, ino, &comment);
     if (err == BFS_OK && comment.found)
         err = bfs_dir_remove(&fs->dir_tree, ino | 0x80000000u, comment.name, comment.len);
     if (err == BFS_OK) err = bfs_dir_remove(&fs->dir_tree, ino, "..", 2);
@@ -832,27 +833,16 @@ static bool comment_key_cb(const char *name, uint8_t name_len,
     return true;
 }
 
-static bfs_err_t fs_find_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
-                                          comment_key_ctx_t *key)
+/* HAS_COMMENT is authoritative: without it there is no entry to look for,
+ * with it exactly one entry must exist. */
+static bfs_err_t fs_find_comment_unlocked(bfs_fs_t *fs, const bfs_inode_t *inode,
+                                          uint32_t ino, comment_key_ctx_t *key)
 {
     memset(key, 0, sizeof(*key));
-    uint32_t comment_parent = ino | 0x80000000u;
-    bfs_err_t err = bfs_dir_scan(&fs->dir_tree, comment_parent, comment_key_cb, key);
+    if (!(bfs_be32(inode->flags) & BFS_INODE_FLAG_HAS_COMMENT)) return BFS_OK;
+    bfs_err_t err = bfs_dir_scan(&fs->dir_tree, ino | 0x80000000u, comment_key_cb, key);
     if (err != BFS_OK) return err;
-    return key->corrupt ? BFS_ERR_CORRUPT : BFS_OK;
-}
-
-static bfs_err_t fs_remove_comments_unlocked(bfs_fs_t *fs, uint32_t ino)
-{
-    uint32_t comment_parent = ino | 0x80000000u;
-    for (;;) {
-        comment_key_ctx_t key;
-        bfs_err_t err = fs_find_comment_unlocked(fs, ino, &key);
-        if (err != BFS_OK) return err;
-        if (!key.found) return BFS_OK;
-        err = bfs_dir_remove(&fs->dir_tree, comment_parent, key.name, key.len);
-        if (err != BFS_OK) return err;
-    }
+    return key->corrupt || !key->found ? BFS_ERR_CORRUPT : BFS_OK;
 }
 
 static bfs_err_t fs_set_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
@@ -865,24 +855,44 @@ static bfs_err_t fs_set_comment_unlocked(bfs_fs_t *fs, uint32_t ino,
     if (err != BFS_OK) return err;
     if (ino >= 0x80000000u) return BFS_ERR_CORRUPT;
 
-    comment_key_ctx_t old_comment;
-    err = fs_find_comment_unlocked(fs, ino, &old_comment);
-    if (err != BFS_OK) return err;
-
-    err = fs_remove_comments_unlocked(fs, ino);
-    if (err != BFS_OK) return err;
-    if (len == 0) return BFS_OK;
-
+    /* Setting a comment is rare, so look at the directory tree itself rather
+     * than trusting the flag: a stray entry or a stray flag left by damaged
+     * metadata is replaced instead of blocking the update. */
     uint32_t comment_parent = ino | 0x80000000u;
-    err = bfs_dir_insert(&fs->dir_tree, comment_parent, comment, len, ino, 0);
-    if (err != BFS_OK && old_comment.found) {
-        fs_latch_dir_retirement_error(fs);
-        bfs_err_t rollback_err = bfs_dir_insert(&fs->dir_tree, comment_parent,
-                                                old_comment.name,
-                                                old_comment.len, ino, 0);
-        return fs_cleanup_result(fs, err, rollback_err);
+    comment_key_ctx_t old_comment;
+    memset(&old_comment, 0, sizeof(old_comment));
+    err = bfs_dir_scan(&fs->dir_tree, comment_parent, comment_key_cb, &old_comment);
+    if (err != BFS_OK) return err;
+    if (old_comment.corrupt) return BFS_ERR_CORRUPT;
+
+    if (old_comment.found) {
+        err = bfs_dir_remove(&fs->dir_tree, comment_parent, old_comment.name,
+                             old_comment.len);
+        if (err != BFS_OK) return err;
     }
-    return err;
+    if (len != 0) {
+        err = bfs_dir_insert(&fs->dir_tree, comment_parent, comment, len, ino, 0);
+        if (err != BFS_OK) {
+            if (!old_comment.found) return err;
+            fs_latch_dir_retirement_error(fs);
+            return fs_cleanup_result(fs, err, fs_restore_comment(fs, ino, &old_comment));
+        }
+    }
+
+    /* The flag follows the entry in the same transaction. */
+    uint32_t flags = bfs_be32(inode.flags);
+    bool flagged = (flags & BFS_INODE_FLAG_HAS_COMMENT) != 0;
+    if ((len != 0) == flagged) return BFS_OK;
+    inode.flags = bfs_be32(flags ^ BFS_INODE_FLAG_HAS_COMMENT);
+    err = bfs_inode_write(&fs->inode_tree, ino, &inode);
+    if (err == BFS_OK) return BFS_OK;
+    fs_latch_dir_retirement_error(fs);
+    bfs_err_t rollback_err = BFS_OK;
+    if (len != 0)
+        rollback_err = bfs_dir_remove(&fs->dir_tree, comment_parent, comment, len);
+    bfs_err_t restore_err = fs_restore_comment(fs, ino, &old_comment);
+    if (rollback_err == BFS_OK) rollback_err = restore_err;
+    return fs_cleanup_result(fs, err, rollback_err);
 }
 
 typedef struct {
@@ -916,11 +926,12 @@ static bfs_err_t fs_get_comment_unlocked(bfs_fs_t *fs, uint32_t ino, char *buf, 
     bfs_err_t err = bfs_inode_read(&fs->inode_tree, ino, &inode);
     if (err != BFS_OK) return err;
     if (ino >= 0x80000000u) return BFS_ERR_CORRUPT;
+    if (!(bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT)) return BFS_ERR_NOTFOUND;
     uint32_t comment_parent = ino | 0x80000000u;
     comment_ctx_t cc = { .buf = buf, .max_len = max_len, .found = false };
     err = bfs_dir_scan(&fs->dir_tree, comment_parent, comment_scan_cb, &cc);
     if (err != BFS_OK) return err;
-    return cc.found ? BFS_OK : BFS_ERR_NOTFOUND;
+    return cc.found ? BFS_OK : BFS_ERR_CORRUPT;
 }
 bfs_err_t bfs_fs_create_file(bfs_fs_t *fs, uint32_t parent_ino, const char *name, uint8_t name_len, uint32_t *ino_out)
 {

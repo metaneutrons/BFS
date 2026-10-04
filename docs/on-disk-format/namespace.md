@@ -1,7 +1,7 @@
 # Namespace and Metadata Conventions
 
 This chapter records the persistent namespace conventions built on the
-directory and inode trees. It is normative for v2 readers and writers; platform
+directory and inode trees. It is normative for v3 readers and writers; platform
 path syntax and permission translation remain adapter policy.
 
 ## Root and directories
@@ -44,9 +44,10 @@ create a second case alias.
 
 ## Files, links, and comments
 
-Regular files carry their content through the per-inode extent tree. A soft
-link is inode type 2 whose target path is stored as normal file content, with
-the inode size giving the target length. It has no separate target record.
+Regular files carry their content through their inode's inline extent or
+extent tree. A soft link is inode type 2 whose target path is stored as normal
+file content, with the inode size giving the target length. It has no separate
+target record.
 
 Hard links use more than one normal directory entry for a type-0 file inode and
 increment its `link_count`. Inode type 3 is recognized by the core but is not
@@ -59,7 +60,7 @@ directory entry, not a new inode type, and not a separate orphan-list record.
 Only the handle-aware core path can read or update it. The last close reclaims
 the inode and its extents; writable mount recovery reclaims any such inode
 left by a crashed adapter. Readers must neither expose it nor treat it as an
-ordinary positive-link inode, but checkers must include its extent tree in
+ordinary positive-link inode, but checkers must include its extents in
 ownership accounting until recovery runs.
 
 Each inode can have at most one current Amiga file comment. A comment is stored
@@ -76,10 +77,20 @@ directory. A zero-length comment removes the hidden entry. A reader should not
 display this internal parent as a filesystem directory. Comments are namespace
 metadata rather than bytes in the inode value.
 
+The inode flag `HAS_COMMENT` is set exactly when this entry exists. A writer
+changes the entry and the flag in the same committed state. Readers treat the
+flag as authoritative: without it they report no comment and do not search
+the directory tree, and deleting the inode leaves no entry behind. A set flag
+without an entry, an entry without the flag, a second entry for one inode, or
+an entry whose inode does not exist is corruption, which a checker reports.
+Setting a comment is the exception on the writer side: the current writer
+looks up the entry itself and replaces a single stray entry or clears a stray
+flag instead of failing.
+
 ## Metadata interpretation
 
 `protection` is the raw Amiga protection bitmap. `uid` and `gid` are raw
-16-bit Amiga owner fields. BFS v2 does not persist POSIX mode bits, ACLs,
+16-bit Amiga owner fields. BFS v3 does not persist POSIX mode bits, ACLs,
 nanosecond timestamps, generic xattrs, or device numbers. It has no separate
 Unix orphan-list structure; the constrained zero-link state above is its
 complete retained-open-file representation.

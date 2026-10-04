@@ -23,11 +23,18 @@ typedef struct {
 
 _Static_assert(sizeof(bfs_extent_val_t) == 12, "extent_val size");
 
-/* Extent tree handle — wraps a B+tree for a single file */
+/* Extent mapping of one file. It is either empty, one inline extent at
+ * logical block 0 stored in the inode, or a B+tree rooted at tree.root; never
+ * both. Mapping changes convert an inline extent into a tree when needed. */
 typedef struct {
     bfs_btree_t tree;
     bfs_freespace_t *fs;  /* for allocating/freeing data blocks */
     bool data_checksums;   /* compute/verify per-extent data CRC32 */
+    // cppcheck-suppress unusedStructMember
+    bfs_blk_t inline_start; /* host order; meaningful when inline_length != 0 */
+    uint32_t inline_length;
+    // cppcheck-suppress unusedStructMember
+    uint32_t inline_crc;
 } bfs_extent_tree_t;
 
 /* Initialize an extent tree for a file.
@@ -35,11 +42,31 @@ typedef struct {
 bfs_err_t bfs_extent_init(bfs_extent_tree_t *et, bfs_bio_t *bio,
                       bfs_freespace_t *fs, bfs_blk_t root, uint64_t txn_id);
 
+/* Initialize from the extent fields of an inode (tree root or inline extent). */
+bfs_err_t bfs_extent_open(bfs_extent_tree_t *et, bfs_bio_t *bio,
+                          bfs_freespace_t *fs, const bfs_inode_t *inode,
+                          uint64_t txn_id);
+
+/* Store the mapping into an inode's extent fields; other flags are kept. */
+void bfs_extent_store(const bfs_extent_tree_t *et, bfs_inode_t *inode);
+
+/* True when the inode's extent fields describe exactly this mapping. */
+bool bfs_extent_matches(const bfs_extent_tree_t *et, const bfs_inode_t *inode);
+
+static inline bool bfs_extent_is_inline(const bfs_extent_tree_t *et) {
+    return et->inline_length != 0;
+}
+
 /* Look up the physical block for a file-relative block offset.
  * Returns BFS_OK and sets *disk_block, BFS_ERR_NOTFOUND for a hole, or the
  * underlying tree/corruption error. */
 bfs_err_t bfs_extent_lookup(bfs_extent_tree_t *et, uint32_t file_block,
                               bfs_blk_t *disk_block);
+
+/* As bfs_extent_lookup, and the number of contiguous blocks mapped from
+ * file_block to the end of its extent (at least 1). */
+bfs_err_t bfs_extent_lookup_run(bfs_extent_tree_t *et, uint32_t file_block,
+                                bfs_blk_t *disk_block, uint32_t *run_blocks);
 
 /* Append 'count' blocks to the end of the file (at file_block offset).
  * Allocates physical blocks from the free space allocator.
@@ -66,7 +93,8 @@ bfs_err_t bfs_extent_truncate(bfs_extent_tree_t *et, uint32_t from_block);
 bfs_err_t bfs_extent_truncate_batch(bfs_extent_tree_t *et, uint32_t from_block,
                                      uint32_t max_ops);
 
-/* Get the current root block of the extent tree (for storing in inode). */
+/* Get the current root block of the extent tree; zero while the mapping is
+ * empty or inline. */
 static inline bfs_blk_t bfs_extent_root(const bfs_extent_tree_t *et) {
     return et->tree.root;
 }
@@ -92,11 +120,11 @@ bfs_err_t bfs_extent_remap_block_crc(bfs_extent_tree_t *et, uint32_t file_block,
                                      bfs_blk_t new_disk_block, uint32_t crc,
                                      bfs_blk_t *old_disk_block_out);
 
-/* Walk every node block (node_cb) and every data block (block_cb) of the extent
- * tree at `root`. Either cb may be NULL; both receive (block, ctx). The extent
- * decode and length bounds-check live here. Returns the first error. */
+/* Walk every extent-tree node block (node_cb) and every data block (block_cb)
+ * mapped by the inode. Either cb may be NULL; both receive (block, ctx). The
+ * extent decode and length bounds-check live here. Returns the first error. */
 bfs_err_t bfs_extent_walk(bfs_bio_t *bio, bfs_freespace_t *fsp, uint64_t txn_id,
-                          bfs_blk_t root, bfs_node_walk_cb node_cb,
+                          const bfs_inode_t *inode, bfs_node_walk_cb node_cb,
                           bfs_node_walk_cb block_cb, void *ctx);
 
 #endif /* BFS_EXTENT_H */

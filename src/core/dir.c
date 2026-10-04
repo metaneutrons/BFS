@@ -83,11 +83,27 @@ static int dir_key_compare(const void *a, const void *b)
     return 0;
 }
 
+/* An entry names something and its stored hash matches the name, which the
+ * order relies on; its value refers to a possible inode of a known type.
+ * Validated leaves hold only such entries, so scans need not check them. */
+static bool dir_entry_ok(const void *key, const void *val)
+{
+    const uint8_t *k = (const uint8_t *)key;
+    const bfs_dir_val_t *v = (const bfs_dir_val_t *)val;
+    uint8_t name_len = k[8];
+    uint32_t inode_nr = bfs_be32(v->inode_nr);
+    return name_len != 0 &&
+           bfs_load_be32(k + 4) == bfs_dir_name_hash((const char *)(k + 9), name_len) &&
+           inode_nr != 0 && inode_nr < 0x80000000u &&
+           bfs_be32(v->entry_type) <= BFS_INODE_HARDLINK;
+}
+
 static const bfs_btree_ops_t dir_ops = {
     .key_compare = dir_key_compare,
     .key_size = DIR_KEY_SIZE,
     .val_size = sizeof(bfs_dir_val_t),
     .cache_key_order = true,
+    .entry_ok = dir_entry_ok,
 };
 
 /* ── Init ──────────────────────────────────────────────────── */
@@ -201,6 +217,7 @@ typedef struct {
     bfs_dir_scan_cb cb;
     void *ctx;
     bfs_err_t err;
+    const uint8_t *skip_key; /* resume point that is not reported again */
 } dir_scan_ctx_t;
 
 static bool dir_scan_cb(const void *key, const void *val, void *ctx)
@@ -211,33 +228,69 @@ static bool dir_scan_cb(const void *key, const void *val, void *ctx)
 
     uint32_t pid = bfs_load_be32(k);
     if (pid != sc->parent_id) return false; /* different parent, stop */
-
-    uint8_t name_len = k[8];
-    uint32_t inode_nr = bfs_be32(v->inode_nr);
-    uint32_t type = bfs_be32(v->entry_type);
-    if (name_len == 0 || bfs_load_be32(k + 4) !=
-                             bfs_dir_name_hash((const char *)(k + 9), name_len) ||
-        inode_nr == 0 || inode_nr >= 0x80000000u ||
-        type > BFS_INODE_HARDLINK) {
-        sc->err = BFS_ERR_CORRUPT;
-        return false;
+    if (sc->skip_key) {
+        /* The scan starts at the first key not below the resume key, so
+         * only that first key can be the resume entry itself. */
+        bool resume_entry = dir_key_compare(k, sc->skip_key) == 0;
+        sc->skip_key = NULL;
+        if (resume_entry) return true;
     }
-    return sc->cb((const char *)(k + 9), name_len,
-                  inode_nr, type, sc->ctx);
+
+    /* Leaf validation has checked the entry (dir_entry_ok). */
+    return sc->cb((const char *)(k + 9), k[8], bfs_be32(v->inode_nr),
+                  bfs_be32(v->entry_type), sc->ctx);
+}
+
+bfs_err_t bfs_dir_may_have_entries(bfs_dir_tree_t *dt, uint32_t parent_id,
+                                   bool *maybe)
+{
+    if (!dt || !maybe) return BFS_ERR_INVAL;
+    uint8_t start_key[DIR_KEY_SIZE], found[DIR_KEY_SIZE];
+    memset(start_key, 0, DIR_KEY_SIZE);
+    bfs_store_be32(start_key, parent_id);
+    bfs_err_t err = bfs_btree_lower_bound(&dt->tree, start_key, found);
+    if (err == BFS_ERR_NOTFOUND) {
+        *maybe = false;
+        return BFS_OK;
+    }
+    if (err != BFS_OK && err != BFS_ERR_AGAIN) return err;
+    /* A found key, or the bound above which all greater keys lie: entries of
+     * parent_id are possible only if it still carries parent_id. */
+    *maybe = bfs_load_be32(found) == parent_id;
+    return BFS_OK;
+}
+
+bfs_err_t bfs_dir_scan_cursor(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
+                              uint32_t parent_id, const char *name,
+                              uint8_t name_len, bfs_dir_scan_cb cb, void *ctx)
+{
+    if (!dt || !cb || (name_len != 0 && !name)) return BFS_ERR_INVAL;
+    uint8_t start_key[DIR_KEY_SIZE];
+    dir_scan_ctx_t sc = {
+        .parent_id = parent_id, .cb = cb, .ctx = ctx, .err = BFS_OK,
+    };
+    if (name_len != 0) {
+        make_dir_key(start_key, parent_id, name, name_len);
+        sc.skip_key = start_key;
+    } else {
+        /* The parent with zeros for the rest sorts before its entries. */
+        memset(start_key, 0, DIR_KEY_SIZE);
+        bfs_store_be32(start_key, parent_id);
+    }
+    bfs_err_t err = bfs_btree_scan_cursor(&dt->tree, cursor, start_key, dir_scan_cb, &sc);
+    return sc.err != BFS_OK ? sc.err : err;
 }
 
 bfs_err_t bfs_dir_scan(bfs_dir_tree_t *dt, uint32_t parent_id,
                          bfs_dir_scan_cb cb, void *ctx)
 {
-    if (!dt || !cb) return BFS_ERR_INVAL;
-    /* Build a start key with parent_id and zeros for the rest */
-    uint8_t start_key[DIR_KEY_SIZE];
-    memset(start_key, 0, DIR_KEY_SIZE);
-    bfs_store_be32(start_key, parent_id);
+    return bfs_dir_scan_cursor(dt, NULL, parent_id, NULL, 0, cb, ctx);
+}
 
-    dir_scan_ctx_t sc = {
-        .parent_id = parent_id, .cb = cb, .ctx = ctx, .err = BFS_OK,
-    };
-    bfs_err_t err = bfs_btree_scan(&dt->tree, start_key, dir_scan_cb, &sc);
-    return sc.err != BFS_OK ? sc.err : err;
+bfs_err_t bfs_dir_scan_after(bfs_dir_tree_t *dt, uint32_t parent_id,
+                             const char *name, uint8_t name_len,
+                             bfs_dir_scan_cb cb, void *ctx)
+{
+    if (!name || name_len == 0) return BFS_ERR_INVAL;
+    return bfs_dir_scan_cursor(dt, NULL, parent_id, name, name_len, cb, ctx);
 }

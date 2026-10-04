@@ -2,8 +2,8 @@
 /*
  * BFS — Inode B+tree
  *
- * Persists file/directory metadata (size, extent_root, timestamps).
- * Key = inode_nr (uint32_t), Value = bfs_inode_t (44 bytes).
+ * Persists file/directory metadata (size, extent mapping, flags, timestamps).
+ * Key = inode_nr (uint32_t), Value = bfs_inode_t (56 bytes).
  */
 
 #ifndef BFS_INODE_H
@@ -32,6 +32,11 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
                      bfs_allocator_t *alloc, bfs_blk_t root, uint64_t txn_id);
 
 bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out);
+
+/* Structural checks shared by every reader: identity, type, flags, and the
+ * extent fields. The link-count state is checked by the read functions. */
+bool bfs_inode_valid(const bfs_btree_t *tree, uint32_t ino,
+                     const bfs_inode_t *inode);
 
 /* Read/write a zero-link inode retained solely for an open POSIX handle. Such
  * inodes are never reachable through the namespace and are reclaimed on the

@@ -536,6 +536,154 @@ class BenchVerifierTests(unittest.TestCase):
             capture_output=True, text=True, check=False,
         )  # nosec B603 - executable path and mode are fixed by this test
 
+    def load_durable_evidence(self, directory, header="FS_DURABLE_COMPARE\t1",
+                              marker="BFS-PFS3-DURABLE-COMPLETE",
+                              suffix="durable.tsv"):
+        source = EVIDENCE / directory
+        shutil.copyfile(source / "info-after-format.txt",
+                        self.results / "info-after-format.txt")
+        (self.results / "complete.txt").write_text(marker + "\n", encoding="ascii")
+        for filesystem in ("bfs", "pfs3"):
+            lines = (source / f"{filesystem}.tsv").read_text(
+                encoding="ascii").splitlines()
+            self.assertEqual(lines[0], "FS_COMPARE_BENCH\t1")
+            lines[0] = header
+            (self.results / f"{filesystem}.{suffix}").write_text(
+                "\n".join(lines) + "\n", encoding="ascii")
+
+    def test_durable_compare_evidence_passes(self):
+        for directory in ("compare-bfs-first", "compare-pfs3-first"):
+            with self.subTest(directory=directory):
+                self.load_durable_evidence(directory)
+                result = self.verify("durable-compare")
+                self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_durable_compare_rejects_plain_compare_schema(self):
+        self.load_durable_evidence("compare-bfs-first", header="FS_COMPARE_BENCH\t1")
+        self.assertNotEqual(self.verify("durable-compare").returncode, 0)
+
+    def test_durable_compare_rejects_plain_compare_marker(self):
+        self.load_durable_evidence("compare-bfs-first", marker="BFS-PFS3-COMPLETE")
+        self.assertNotEqual(self.verify("durable-compare").returncode, 0)
+
+    def test_compare_rejects_durable_schema(self):
+        self.load_durable_evidence("compare-bfs-first", marker="BFS-PFS3-COMPLETE",
+                                   suffix="tsv")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+    def upgrade_compare_to_v2(self, suffix="tsv", header="FS_COMPARE_BENCH",
+                              filesystems=("bfs", "pfs3")):
+        for filesystem in filesystems:
+            path = self.results / f"{filesystem}.{suffix}"
+            lines = path.read_text(encoding="ascii").splitlines()
+            self.assertEqual(lines[0], f"{header}\t1")
+            lines[0] = f"{header}\t2"
+            position = next(index for index, line in enumerate(lines)
+                            if line.startswith("SMALL_READ_40_US\t")) + 1
+            lines[position:position] = ["LIST_EXNEXT_400_US\t7000", "LIST_EXALL_400_US\t3000"]
+            path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+    def test_compare_v2_accepts_listing_phases(self):
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v2()
+        result = self.verify("compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_durable_compare_v2_accepts_listing_phases(self):
+        self.load_durable_evidence("compare-bfs-first")
+        self.upgrade_compare_to_v2(suffix="durable.tsv", header="FS_DURABLE_COMPARE")
+        result = self.verify("durable-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_compare_v2_rejects_mixed_versions_and_missing_listing(self):
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v2(filesystems=("bfs",))
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+        self.load_evidence("compare-bfs-first", "tsv")
+        for filesystem in ("bfs", "pfs3"):
+            path = self.results / f"{filesystem}.tsv"
+            lines = path.read_text(encoding="ascii").splitlines()
+            lines[0] = "FS_COMPARE_BENCH\t2"
+            path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v2()
+        path = self.results / "pfs3.tsv"
+        lines = path.read_text(encoding="ascii").splitlines()
+        lines = [line for line in lines if not line.startswith("LIST_EXALL_400_US")]
+        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+    def upgrade_compare_to_v3(self, suffix="tsv", header="FS_COMPARE_BENCH",
+                              filesystems=("bfs", "pfs3")):
+        self.upgrade_compare_to_v2(suffix, header, filesystems)
+        for filesystem in filesystems:
+            path = self.results / f"{filesystem}.{suffix}"
+            lines = path.read_text(encoding="ascii").splitlines()
+            lines[0] = f"{header}\t3"
+            position = next(index for index, line in enumerate(lines)
+                            if line.startswith("SMALL_DELETE_40_US\t")) + 1
+            lines[position:position] = ["APPEND_4K_1M_US\t30000",
+                                        "APPEND_1K_256K_US\t20000",
+                                        "APPEND_READ_1280K_US\t40000"]
+            path.write_text("\n".join(lines) + "\n", encoding="ascii")
+
+    def test_compare_v3_accepts_append_phases(self):
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v3()
+        result = self.verify("compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_durable_compare_v3_accepts_append_phases(self):
+        self.load_durable_evidence("compare-bfs-first")
+        self.upgrade_compare_to_v3(suffix="durable.tsv", header="FS_DURABLE_COMPARE")
+        result = self.verify("durable-compare")
+        self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_compare_v3_rejects_mixed_versions_and_missing_or_reordered_append(self):
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v3(filesystems=("bfs",))
+        self.upgrade_compare_to_v2(filesystems=("pfs3",))
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v2()
+        for filesystem in ("bfs", "pfs3"):
+            path = self.results / f"{filesystem}.tsv"
+            lines = path.read_text(encoding="ascii").splitlines()
+            lines[0] = "FS_COMPARE_BENCH\t3"
+            path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v3()
+        path = self.results / "bfs.tsv"
+        lines = path.read_text(encoding="ascii").splitlines()
+        lines = [line for line in lines if not line.startswith("APPEND_1K_256K_US")]
+        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+        self.load_evidence("compare-bfs-first", "tsv")
+        self.upgrade_compare_to_v3()
+        path = self.results / "pfs3.tsv"
+        lines = path.read_text(encoding="ascii").splitlines()
+        first = next(index for index, line in enumerate(lines)
+                     if line.startswith("APPEND_4K_1M_US\t"))
+        lines[first], lines[first + 1] = lines[first + 1], lines[first]
+        path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
+    def test_compare_rejects_unknown_schema_version(self):
+        self.load_evidence("compare-bfs-first", "tsv")
+        for filesystem in ("bfs", "pfs3"):
+            path = self.results / f"{filesystem}.tsv"
+            lines = path.read_text(encoding="ascii").splitlines()
+            lines[0] = "FS_COMPARE_BENCH\t4"
+            path.write_text("\n".join(lines) + "\n", encoding="ascii")
+        self.assertNotEqual(self.verify("compare").returncode, 0)
+
     def test_real_deep_compare_evidence_passes(self):
         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
         result = self.verify("deep-compare")

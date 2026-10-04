@@ -20,22 +20,42 @@ void bfs_inode_apply_stamp(bfs_inode_t *inode, const bfs_inode_stamp_t *stamp,
 }
 
 static const bfs_btree_ops_t bfs_inode_ops = {
-    .key_compare = bfs_cmp_be32,
+    .key_compare = bfs_btree_key_compare_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(bfs_inode_t),
     .cache_key_order = true,
 };
 
+bool bfs_inode_valid(const bfs_btree_t *tree, uint32_t ino,
+                     const bfs_inode_t *inode)
+{
+    if (!tree || !tree->bio || !inode || ino == 0 || ino >= 0x80000000u ||
+        bfs_be32(inode->inode_nr) != ino ||
+        bfs_be32(inode->type) > BFS_INODE_HARDLINK)
+        return false;
+    bfs_blk_t extent_root = bfs_be32(inode->extent_root);
+    if (extent_root != BFS_BLK_NULL && extent_root >= tree->bio->block_count)
+        return false;
+    uint32_t flags = bfs_be32(inode->flags);
+    uint32_t inline_length = bfs_be32(inode->inline_length);
+    if (flags & ~BFS_INODE_FLAGS_KNOWN)
+        return false;
+    if (bfs_be32(inode->type) == BFS_INODE_DIR &&
+        (extent_root != BFS_BLK_NULL || (flags & BFS_INODE_FLAG_INLINE_EXTENT)))
+        return false;
+    if (flags & BFS_INODE_FLAG_INLINE_EXTENT)
+        /* The extent layer checks the reserved regions; the range must at
+         * least lie on the device. */
+        return extent_root != BFS_BLK_NULL && inline_length != 0 &&
+               inline_length <= tree->bio->block_count - extent_root;
+    return inline_length == 0 && inode->inline_crc32 == 0;
+}
+
 static bfs_err_t validate_inode(const bfs_btree_t *tree, uint32_t ino,
                                 const bfs_inode_t *inode, bool unlinked)
 {
-    if (!tree || !inode || ino == 0 || ino >= 0x80000000u ||
-        bfs_be32(inode->inode_nr) != ino ||
-        bfs_be32(inode->type) > BFS_INODE_HARDLINK ||
+    if (!bfs_inode_valid(tree, ino, inode) ||
         (bfs_be32(inode->link_count) == 0) != unlinked)
-        return BFS_ERR_INVAL;
-    bfs_blk_t extent_root = bfs_be32(inode->extent_root);
-    if (extent_root != BFS_BLK_NULL && (!tree->bio || extent_root >= tree->bio->block_count))
         return BFS_ERR_INVAL;
     return BFS_OK;
 }

@@ -17,7 +17,7 @@ for those zero regions.
 | Empty byte string | `00000000` |
 | ASCII `123456789` | `CBF43926` |
 | Four `FF` bytes | `FFFFFFFF` |
-| v2 test superblock bytes 0..235 | `10EB3CFC` |
+| v3 test superblock bytes 0..235 | `DC6838F5` |
 | 1024-byte free-tree leaf below, CRC field zeroed | `748BE97E` |
 | 1024-byte free-tree internal node below, CRC field zeroed | `C18D6088` |
 
@@ -27,13 +27,16 @@ All groups are big-endian hexadecimal bytes.
 
 | Record | Bytes |
 | --- | --- |
-| Inode, 44 bytes | `00000002 00000000 00000001 23456789 00000010 00000002 0000000F 0123 0456 000A 0014 001E 0028 0032 003C` |
+| Inode, 56 bytes | `00000002 00000000 00000001 23456789 00000010 00000002 0000000F 0123 0456 000A 0014 001E 0028 0032 003C 00000003 00000004 00000000` |
 | Directory key, 264 bytes | `00000001 32543B0B 05 48656C6C6F 00 x 250` |
 | Directory value, 8 bytes | `00000002 00000000` |
 | Extent key/value, 16 bytes | `00000003 00000020 00000002 CAFEBABE` |
 | Free-space key/value, 8 bytes | `00000020 00000002` |
 | Refcount key/value, 8 bytes | `00000020 00000003` |
 | Snapshot key/value, 56 bytes | `00000007 00000010 00000020 00000001 00000002 00000000 736E6170 00 x 28` |
+
+The inode fixture sets `INLINE_EXTENT` and `HAS_COMMENT`; its inline extent
+covers four blocks starting at block `0x10`.
 
 The directory fixture is parent 1 and original spelling `Hello`. Its folded
 byte sequence is `HELLO`, whose required FNV-1a hash is `32543B0B`.
@@ -60,12 +63,12 @@ vectors detect an erroneous interleaved key/value implementation.
 
 ## Superblock fixture
 
-The 512-byte v2 slot has these nonzero ranges; all other bytes are zero:
+The 512-byte v3 slot has these nonzero ranges; all other bytes are zero:
 
 | Offset | Bytes |
 | ---: | --- |
 | 0 | `42465300` |
-| 4 | `00000002` |
+| 4 | `00000003` |
 | 8 | `00001000` |
 | 12 | `00000040` |
 | 16 | `0000000000000001` |
@@ -73,7 +76,7 @@ The 512-byte v2 slot has these nonzero ranges; all other bytes are zero:
 | 60 | `00000002` |
 | 64 | `54657374566F6C` |
 | 100 | `00020000` |
-| 236 | `10EB3CFC` |
+| 236 | `DC6838F5` |
 
 It describes a 64-block, 4096-byte-block TestVol with backup slot B at byte
 131072. The CRC covers bytes 0 through 235 and the 272-byte slot tail is zero.

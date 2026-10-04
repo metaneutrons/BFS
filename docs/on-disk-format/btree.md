@@ -1,6 +1,6 @@
 # B+Tree Blocks and Records
 
-All persistent indexing in BFS v2 uses one copy-on-write B+tree block format.
+All persistent indexing in BFS uses one copy-on-write B+tree block format.
 This chapter defines that format and every key/value record. It is independent
 of host C structure packing.
 
@@ -66,7 +66,7 @@ At the minimum 1024-byte block size, capacities are:
 | Tree | K | V | Leaf capacity | Internal capacity |
 | --- | ---: | ---: | ---: | ---: |
 | Directory | 264 | 8 | 3 | 3 |
-| Inode | 4 | 44 | 20 | 124 |
+| Inode | 4 | 56 | 16 | 124 |
 | File extent | 4 | 12 | 62 | 124 |
 | Free-space | 4 | 4 | 124 | 124 |
 | Refcount | 4 | 4 | 124 | 124 |
@@ -106,7 +106,7 @@ directory cannot contain two entries that differ only under this folding.
 
 The superblock's `inode_tree_root` names a tree keyed by a big-endian `u32`
 inode number. Valid public inode numbers are `1` through `0x7FFFFFFF`; root is
-inode 1. The 44-byte leaf value is:
+inode 1. The 56-byte leaf value is:
 
 | Offset | Width | Field | Meaning |
 | ---: | ---: | --- | --- |
@@ -114,7 +114,7 @@ inode 1. The 44-byte leaf value is:
 | 4 | 4 | `type` | `0` file, `1` directory, `2` soft link, `3` legacy hard-link type |
 | 8 | 4 | `size_hi` | High half of logical byte size |
 | 12 | 4 | `size_lo` | Low half of logical byte size |
-| 16 | 4 | `extent_root` | Per-file extent-tree root, or zero for no extents |
+| 16 | 4 | `extent_root` | Per-file extent-tree root, first physical block of the inline extent when `INLINE_EXTENT` is set, or zero for no extents |
 | 20 | 4 | `link_count` | Positive namespace link count; zero is a recoverable retained-open-file marker |
 | 24 | 4 | `protection` | Amiga protection bitmap, carried as an opaque `u32` by the core |
 | 28 | 2 | `uid` | Amiga owner UID |
@@ -125,8 +125,19 @@ inode 1. The 44-byte leaf value is:
 | 38 | 2 | `modify_days` | Amiga DateStamp days field |
 | 40 | 2 | `modify_mins` | Amiga DateStamp minutes field |
 | 42 | 2 | `modify_ticks` | Amiga DateStamp ticks field |
+| 44 | 4 | `flags` | Bit 0 `INLINE_EXTENT`, bit 1 `HAS_COMMENT`; every other bit is zero |
+| 48 | 4 | `inline_length` | Block count of the inline extent; zero unless `INLINE_EXTENT` |
+| 52 | 4 | `inline_crc32` | Data CRC of a one-block inline extent on a checksummed volume; zero otherwise |
 
-The core checks the type, link count, inode identity, and extent-root range. A
+A reader MUST reject an inode with an unknown flag bit as corrupt; the flags
+word is not a feature negotiation mechanism. With `INLINE_EXTENT` set, the
+inode is not a directory, `extent_root` is nonzero, `inline_length` is at
+least one, and the inline range satisfies the same rules as an extent-tree
+record (below). With it clear, `inline_length` and `inline_crc32` are zero. A
+directory inode has `extent_root` zero and `INLINE_EXTENT` clear.
+`HAS_COMMENT` is defined in the namespace chapter.
+
+The core checks the type, link count, inode identity, flags and extent fields. A
 normal namespace reader requires a positive link count. A zero link count is
 valid only for a non-directory inode retained after final-link POSIX unlink or
 replacement rename; it has no directory entry and is reclaimed on the next
@@ -135,10 +146,21 @@ validate a DateStamp's calendar range or interpret protection and owner values.
 A hard link made by the current writer is another directory entry for a type-0
 file and increments `link_count`; it does not emit type 3.
 
-## Per-file extent trees
+## Per-file extents
 
-Each nonempty file or soft-link may have an extent tree rooted by its inode.
-Its key and 12-byte value are:
+A file or soft link maps its content either through one inline extent stored
+in its inode or through an extent tree rooted by its inode, never both.
+
+An inline extent maps logical blocks `[0, inline_length)` to physical blocks
+`[extent_root, extent_root + inline_length)`, exactly like one tree record with
+key zero. Logical blocks at or beyond `inline_length` are holes. A writer
+stores the first mapping of a file without extents inline when it starts at
+logical block zero and extends it while later runs continue it contiguously
+on disk. Any other mapping change converts the file to an extent tree in one
+committed state. A writer need not fold a single-record tree back into the
+inode, so a reader must accept both representations for any file.
+
+An extent tree's key and 12-byte value are:
 
 | Part | Offset | Width | Field |
 | --- | ---: | ---: | --- |
@@ -151,13 +173,16 @@ An entry maps logical blocks `[file_block, file_block + length)` to physical
 blocks `[disk_block, disk_block + length)`. `length` is nonzero and the mapped
 range must stay within the device, start at or after the data-start block, and
 avoid the B-containing block, emergency pool, and active allocator reserve.
-The current writer commonly emits one-block extents; a valid reader must handle
-longer representable extents.
+The current writer extends the last record when a new run continues it both
+logically and on disk, except on a checksummed volume (below). A reader must
+not assume any particular record length or split.
 
 With `BFS_OPT_DATA_CHECKSUMS`, `data_crc32` is the CRC of the full physical
 data block for a single-block checked extent. A stored zero disables validation.
 The value is otherwise metadata, not an additional trailer in the data block.
-Sparse ranges have no extent entry and read as holes through the file layer.
+On such a volume an inline extent is exactly one block long and
+`inline_crc32` follows the same rule. Sparse ranges have no extent entry and
+read as holes through the file layer.
 
 ## Free-space and refcount trees
 

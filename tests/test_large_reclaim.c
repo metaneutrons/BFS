@@ -22,7 +22,7 @@ static bfs_err_t append_large_extent(uint32_t ino, bfs_blk_t *first)
     bfs_inode_t inode;
     err = bfs_inode_read(&fs.inode_tree, ino, &inode);
     if (err != BFS_OK) return err;
-    inode.extent_root = bfs_be32(file.extents.tree.root);
+    bfs_extent_store(&file.extents, &inode);
     inode.size_lo = bfs_be32(DATA_BLOCKS * BS);
     return bfs_inode_write(&fs.inode_tree, ino, &inode);
 }

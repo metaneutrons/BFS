@@ -1,10 +1,13 @@
-# BFS v2 On-Disk Format
+# BFS v3 On-Disk Format
 
-Status: normative for format version 2. This document defines the bytes a
+Status: normative for format version 3. This document defines the bytes a
 reader or writer must understand. It does not qualify a particular device,
 operating system, driver release, or maximum volume size.
 
-All rules here were reconciled against the v0.1.3 source baseline
+Version 3 differs from version 2 only in the inode record, which gained a
+flags word, an inline extent and a comment flag, and in the version number.
+The superblock envelope, the node format and every other record are
+unchanged. Version 2 was reconciled against the v0.1.3 source baseline
 `431ead6159e5d4217f029ac2b6dd02a51db7d8a2`. Where an implementation has a
 known limitation, it is stated as a limitation rather than being promoted to a
 format guarantee.
@@ -18,8 +21,8 @@ number; its byte offset is `block_number * block_size`.
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` express format requirements. A reader
 MUST reject a malformed committed structure rather than treating it as an
-alternate layout. A writer MUST NOT use unused bytes, reserved fields, or a
-v2 option bit as a private extension mechanism.
+alternate layout. A writer MUST NOT use unused bytes, reserved fields, or an
+option bit as a private extension mechanism.
 
 The chapters are deliberately split by concern:
 
@@ -29,20 +32,20 @@ The chapters are deliberately split by concern:
 - [Commit, recovery, and checker boundaries](on-disk-format/commit-recovery.md)
 - [Hand-reviewed byte fixtures](on-disk-format/fixtures.md)
 
-The layout chapters above are the only normative definition of v2. The
+The layout chapters above are the only normative definition of v3. The
 [compatibility contract](format-compatibility.md) defines recognition and
 refusal policy; [failure semantics](failure-semantics.md) defines observable
 operation and power-loss behavior. Neither substitutes a second layout.
 
 ## Global invariants
 
-- The format version is exactly `2`. A CRC-valid superblock with another
+- The format version is exactly `3`. A CRC-valid superblock with another
   version, or with an unknown option bit, is an intact unsupported format, not
-  damaged v2 media.
+  damaged v3 media. This includes version 2.
 - The only legal block sizes are powers of two from 1024 through 65536 bytes.
   Formatting requires at least 256 physical blocks. A device size that would
   require more than `UINT32_MAX` physical blocks at the selected block size is
-  outside the representable v2 geometry.
+  outside the representable geometry.
 - Block number zero is the null pointer sentinel. It is never a B+tree root,
   child, metadata node, or allocation result.
 - Metadata and file-data block addresses are 32 bit. At 4096-byte blocks the
@@ -63,7 +66,7 @@ The device byte length is `N * B`.
 | Region | Byte range or rule | Status |
 | --- | --- | --- |
 | Primary superblock slot A | `[0, 511]` | Required |
-| Bootstrap area | `[512, 4095]` | Reserved; no v2 metadata may be allocated here |
+| Bootstrap area | `[512, 4095]` | Reserved; no metadata may be allocated here |
 | First eligible physical block | `ceil(4096 / B)` | First possible metadata or data block, subject to the reservations below |
 | Backup superblock slot B | `[N * B / 2, N * B / 2 + 511]` | Required |
 | Physical block containing slot B | `floor((N * B / 2) / B)` | Reserved in its entirety from allocation |
@@ -79,15 +82,15 @@ table. Every active root is discovered from the selected superblock.
 
 ## Compatibility boundary
 
-The 240-byte superblock payload and its 512-byte slot are frozen. The remaining
-272 bytes of the slot are written as zero and are not extension space. Existing
-v2 padding, node flags, legacy fields, and recognized-but-unused option bits
-must be preserved or left at their documented v2 values; none may acquire new
-meaning.
+The 240-byte superblock payload and its 512-byte slot are frozen; version 3
+keeps the version 2 layout byte for byte apart from the version number. The
+remaining 272 bytes of the slot are written as zero and are not extension
+space. Padding, node flags, legacy fields, reserved inode flag bits, and
+recognized-but-unused option bits must be preserved or left at their
+documented values; none may acquire new meaning.
 
 A format that needs wider addresses, different records, different checksum
 semantics, or new persistent state requires a new format version. It must not
-silently reinterpret v2 bytes or make a valid v2 superblock describe a newer
-filesystem. A newer driver should retain a valid legacy recognition envelope
-only when it can guarantee that an older v2 driver cannot mount stale state as a
-usable filesystem after interruption.
+silently reinterpret existing bytes or make a valid superblock of one version
+describe a filesystem of another. Version 3 kept the recognition envelope, so
+a version 2 driver refuses a version 3 volume as too new without writing it.

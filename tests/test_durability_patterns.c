@@ -52,13 +52,13 @@ static void test_txn_stale_handle_consistency(void)
         char buf[64];
         snprintf(buf, sizeof(buf), "data %d", i);
         TEST_ASSERT(bfs_file_write(&f, buf, 64) == 64);
-        bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); inode.extent_root = bfs_be32(f.extents.tree.root); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
+        bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); bfs_extent_store(&f.extents, &inode); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
     }
 
     /* If the handle didn't track txn_id_ptr, it would now likely fail or corrupt
      * on the next write due to COW logic using a stale txn_id. */
     TEST_ASSERT(bfs_file_write(&f, "final", 5) == 5);
-    bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); inode.extent_root = bfs_be32(f.extents.tree.root); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
+    bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); bfs_extent_store(&f.extents, &inode); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
 
     teardown();
 }
@@ -86,7 +86,7 @@ static void test_backup_sb_protection(void)
         if (bfs_file_write(&f, zeros, BLK_SIZE) != BLK_SIZE) break;
     }
     free(zeros);
-    bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); inode.extent_root = bfs_be32(f.extents.tree.root); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
+    bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); bfs_extent_store(&f.extents, &inode); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
 
     /* Read backup SB directly and verify it's still a valid SB and matches primary magic */
     uint8_t *sb_buf = malloc(BLK_SIZE);
@@ -116,7 +116,7 @@ static void test_fragmented_truncate_reclamation(void)
         bfs_blk_t db;
         TEST_ASSERT_EQ(bfs_extent_append(&f.extents, i, 1, &db), BFS_OK);
     }
-    bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); inode.extent_root = bfs_be32(f.extents.tree.root); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
+    bfs_inode_t inode; bfs_inode_read(&g_fs.inode_tree, ino, &inode); bfs_extent_store(&f.extents, &inode); bfs_inode_write(&g_fs.inode_tree, ino, &inode); TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
 
     uint32_t free_before = g_fs.freespace.total_free;
     
@@ -272,7 +272,7 @@ static void test_online_compaction(void)
     setup();
     /* Create a fragmented directory tree with 500 entries */
     for (int i = 0; i < 500; i++) {
-        char name[16]; snprintf(name, sizeof(name), "file_%d", i);
+        char name[24]; snprintf(name, sizeof(name), "file_%d", i);
         bfs_fs_create_file(&g_fs, BFS_ROOT_INO, name, strlen(name), NULL);
     }
     bfs_fs_sync(&g_fs);
@@ -287,7 +287,7 @@ static void test_online_compaction(void)
 
     /* Verify all files still exist and are accessible after compaction */
     for (int i = 0; i < 500; i++) {
-        char name[16]; snprintf(name, sizeof(name), "file_%d", i);
+        char name[24]; snprintf(name, sizeof(name), "file_%d", i);
         uint32_t ino, type;
         TEST_ASSERT_EQ(bfs_dir_lookup(&g_fs.dir_tree, BFS_ROOT_INO, name, strlen(name), &ino, &type), BFS_OK);
     }

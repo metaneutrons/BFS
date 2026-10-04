@@ -82,6 +82,8 @@ static void test_corrupt_extent_length(void)
     TEST_ASSERT_EQ(bfs_file_open(&f, &fs, ino), BFS_OK);
     uint8_t blk[BS];
     memset(blk, 'X', sizeof blk);
+    /* A leading hole keeps the extent out of the inode, in a tree record. */
+    TEST_ASSERT_EQ(bfs_file_seek(&f, BS, BFS_SEEK_SET), BS);
     TEST_ASSERT(bfs_file_write(&f, blk, sizeof blk) == (int32_t)sizeof blk);
     bfs_fs_sync(&fs);
 

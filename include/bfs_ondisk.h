@@ -48,7 +48,7 @@
 #define BFS_OPT_DATA_ORDERED    (1u << 2)  /* flush data to disk before metadata commit */
 
 /* Superblock version */
-#define BFS_SB_VERSION  2
+#define BFS_SB_VERSION  3
 
 /* Emergency pool size (blocks stored in superblock for COW when free tree is exhausted) */
 #define BFS_EMERGENCY_POOL_SIZE 32
@@ -102,10 +102,10 @@ typedef struct BFS_PACKED {
 
 BFS_PACKED_END
 _Static_assert(sizeof(bfs_superblock_t) <= BFS_SB_SIZE, "superblock must fit in one sector");
-_Static_assert(sizeof(bfs_superblock_t) == 240, "v2 superblock layout is frozen");
-_Static_assert(offsetof(bfs_superblock_t, version) == 4, "v2 version offset");
-_Static_assert(offsetof(bfs_superblock_t, options) == 56, "v2 options offset");
-_Static_assert(offsetof(bfs_superblock_t, crc32) == 236, "v2 CRC offset");
+_Static_assert(sizeof(bfs_superblock_t) == 240, "superblock layout is frozen");
+_Static_assert(offsetof(bfs_superblock_t, version) == 4, "version offset");
+_Static_assert(offsetof(bfs_superblock_t, options) == 56, "options offset");
+_Static_assert(offsetof(bfs_superblock_t, crc32) == 236, "CRC offset");
 
 /*
  * B+tree node header — first bytes of every B+tree block.
@@ -137,13 +137,22 @@ _Static_assert(sizeof(bfs_btnode_hdr_t) == 28, "btnode header size");
 #define BFS_INODE_SOFTLINK 2
 #define BFS_INODE_HARDLINK 3
 
+/* Inode flags. An unknown bit makes the inode corrupt.
+ * INLINE_EXTENT: logical blocks [0, inline_length) live at physical blocks
+ * [extent_root, extent_root + inline_length); there is no extent tree.
+ * HAS_COMMENT: the hidden comment directory entry of this inode exists. */
+#define BFS_INODE_FLAG_INLINE_EXTENT (1u << 0)
+#define BFS_INODE_FLAG_HAS_COMMENT   (1u << 1)
+#define BFS_INODE_FLAGS_KNOWN (BFS_INODE_FLAG_INLINE_EXTENT | BFS_INODE_FLAG_HAS_COMMENT)
+
 BFS_PACKED_BEGIN
 typedef struct BFS_PACKED {
     uint32_t inode_nr;        /* unique inode number */
     uint32_t type;            /* BFS_INODE_* */
     uint32_t size_hi;         /* file size high 32 bits */
     uint32_t size_lo;         /* file size low 32 bits */
-    uint32_t extent_root;     /* root block of per-file extent B+tree (0=inline/empty) */
+    // cppcheck-suppress unusedStructMember
+    uint32_t extent_root;     /* extent-tree root, inline extent start, or 0 */
     uint32_t link_count;      /* hard link count */
     uint32_t protection;      /* Amiga protection bits */
     uint16_t uid;
@@ -155,10 +164,18 @@ typedef struct BFS_PACKED {
     uint16_t modify_days;
     uint16_t modify_mins;
     uint16_t modify_ticks;
+    // cppcheck-suppress unusedStructMember
+    uint32_t flags;           /* BFS_INODE_FLAG_* */
+    // cppcheck-suppress unusedStructMember
+    uint32_t inline_length;   /* blocks of the inline extent, else 0 */
+    // cppcheck-suppress unusedStructMember
+    uint32_t inline_crc32;    /* data CRC of a one-block inline extent, else 0 */
 } bfs_inode_t;
 
 BFS_PACKED_END
-_Static_assert(sizeof(bfs_inode_t) == 44, "inode size");
+_Static_assert(sizeof(bfs_inode_t) == 56, "inode size");
+_Static_assert(offsetof(bfs_inode_t, flags) == 44, "inode flags offset");
+_Static_assert(offsetof(bfs_inode_t, inline_crc32) == 52, "inline CRC offset");
 
 /*
  * Directory entry key — used in the directory B+tree.

@@ -338,17 +338,30 @@ static bool comment_scan(const char *name, uint8_t name_length, uint32_t inode,
     return false;
 }
 
-static bfs_err_t view_comment(const bfs_fuse_ctx_t *ctx, uint32_t inode,
-                              char buffer[BFS_FUSE_COMMENT_MAX], size_t *length)
+/* The comment of inode, whose record the caller has already read. */
+static bfs_err_t inode_comment(const bfs_fuse_ctx_t *ctx, uint32_t inode,
+                               const bfs_inode_t *node,
+                               char buffer[BFS_FUSE_COMMENT_MAX], size_t *length)
 {
-    if (!ctx || !buffer || !length || inode >= 0x80000000u) return BFS_ERR_INVAL;
+    if (!ctx || !node || !buffer || !length || inode >= 0x80000000u) return BFS_ERR_INVAL;
+    /* The inode flag says whether the hidden comment entry exists. */
+    if (!(bfs_be32(node->flags) & BFS_INODE_FLAG_HAS_COMMENT)) return BFS_ERR_NOTFOUND;
     comment_view_t result = { buffer, BFS_FUSE_COMMENT_MAX, 0, false, false };
     bfs_err_t error = bfs_dir_scan(ctx->dir_tree, inode | 0x80000000u, comment_scan, &result);
     if (error != BFS_OK) return error;
-    if (result.corrupt) return BFS_ERR_CORRUPT;
-    if (!result.found) return BFS_ERR_NOTFOUND;
+    if (result.corrupt || !result.found) return BFS_ERR_CORRUPT;
     *length = result.length;
     return BFS_OK;
+}
+
+static bfs_err_t view_comment(const bfs_fuse_ctx_t *ctx, uint32_t inode,
+                              char buffer[BFS_FUSE_COMMENT_MAX], size_t *length)
+{
+    if (!ctx || inode >= 0x80000000u) return BFS_ERR_INVAL;
+    bfs_inode_t node;
+    bfs_err_t error = read_inode(ctx, inode, &node);
+    if (error != BFS_OK) return error;
+    return inode_comment(ctx, inode, &node, buffer, length);
 }
 
 static bfs_err_t make_entry(const bfs_fuse_ctx_t *ctx, uint32_t inode_number,
@@ -780,7 +793,7 @@ static bfs_err_t xattr_value(const bfs_fuse_ctx_t *ctx, uint32_t inode,
     bfs_err_t error = read_inode(ctx, inode, &node);
     if (error != BFS_OK) return error;
     if (strcmp(name, "user.bfs.comment") == 0)
-        return view_comment(ctx, inode, value, length);
+        return inode_comment(ctx, inode, &node, value, length);
     if (strcmp(name, "user.bfs.protection") == 0) {
         format_protection(value, bfs_be32(node.protection));
         *length = 8;
@@ -838,12 +851,13 @@ static void bfs_fuse_listxattr(fuse_req_t request, fuse_ino_t inode, size_t size
         fuse_reply_err(request, EOVERFLOW);
         return;
     }
-    bfs_err_t error = read_inode(ctx, inode, &(bfs_inode_t){0});
+    bfs_inode_t node;
+    bfs_err_t error = read_inode(ctx, inode, &node);
     if (error != BFS_OK) {
         fuse_reply_err(request, fuse_error(error));
         return;
     }
-    error = view_comment(ctx, (uint32_t)inode, comment, &comment_length);
+    error = inode_comment(ctx, (uint32_t)inode, &node, comment, &comment_length);
     bool have_comment = error == BFS_OK;
     if (error != BFS_OK && error != BFS_ERR_NOTFOUND) {
         fuse_reply_err(request, fuse_error(error));

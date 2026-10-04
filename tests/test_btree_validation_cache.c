@@ -196,12 +196,12 @@ static void build_leaf(memory_bio_t *memory, const bfs_btree_ops_t *ops,
     finish_raw_node(memory, ops, block, buffer);
 }
 
-static void build_internal(memory_bio_t *memory, const bfs_btree_ops_t *ops,
-                           bfs_blk_t block, const uint32_t *keys,
-                           const bfs_blk_t *children, uint32_t count)
+static void build_internal_at(memory_bio_t *memory, const bfs_btree_ops_t *ops,
+                              bfs_blk_t block, uint16_t level, const uint32_t *keys,
+                              const bfs_blk_t *children, uint32_t count)
 {
     uint8_t buffer[BLOCK_SIZE];
-    init_raw_header(buffer, 1, count);
+    init_raw_header(buffer, level, count);
     bfs_btree_t layout = {.bio = &memory->bio, .ops = ops};
     for (uint32_t i = 0; i < count; i++) {
         uint32_t key = bfs_be32(keys[i]);
@@ -210,6 +210,13 @@ static void build_internal(memory_bio_t *memory, const bfs_btree_ops_t *ops,
     for (uint32_t i = 0; i <= count; i++)
         set_child(&layout, buffer, i, children[i]);
     finish_raw_node(memory, ops, block, buffer);
+}
+
+static void build_internal(memory_bio_t *memory, const bfs_btree_ops_t *ops,
+                           bfs_blk_t block, const uint32_t *keys,
+                           const bfs_blk_t *children, uint32_t count)
+{
+    build_internal_at(memory, ops, block, 1, keys, children, count);
 }
 
 static void make_validation_token(const bfs_btree_ops_t *ops,
@@ -625,6 +632,40 @@ static void test_expected_level_checked_for_warmed_child(void)
     cache_fixture_destroy(&fixture);
 }
 
+/* Searches use validated resident nodes in place. A warmed leaf reached where
+ * the parent expects an internal node must still be rejected. */
+static void test_warmed_leaf_at_internal_level_rejected(void)
+{
+    cache_fixture_t fixture;
+    memory_bio_t memory;
+    TEST_ASSERT(cache_fixture_init(&fixture, &memory, 8));
+    uint32_t leaf_keys[] = {10, 20}, leaf_values[] = {110, 120};
+    uint32_t right_keys[] = {60, 70}, right_values[] = {160, 170};
+    build_leaf(&memory, &ops_a, 3, leaf_keys, leaf_values, 2);
+    build_leaf(&memory, &ops_a, 4, right_keys, right_values, 2);
+    uint32_t inner_separator[] = {65};
+    bfs_blk_t inner_children[] = {4, 4};
+    build_internal(&memory, &ops_a, 2, inner_separator, inner_children, 1);
+    uint32_t root_separator[] = {50};
+    bfs_blk_t root_children[] = {3, 2};
+    build_internal_at(&memory, &ops_a, 1, 2, root_separator, root_children, 1);
+
+    bfs_btree_t standalone, root;
+    TEST_ASSERT(init_tree(&fixture, &standalone, &ops_a, 3));
+    uint32_t key = bfs_be32(10), value;
+    TEST_ASSERT_EQ(bfs_btree_search(&standalone, &key, &value), BFS_OK);
+    bfs_node_validation_t token;
+    make_validation_token(&ops_a, &memory, &token);
+    TEST_ASSERT(bfs_bio_node_structure_valid(&fixture.cache.bio, 3, &token));
+
+    TEST_ASSERT(init_tree(&fixture, &root, &ops_a, 1));
+    TEST_ASSERT_EQ(bfs_btree_search(&root, &key, &value), BFS_ERR_CORRUPT);
+    uint32_t found_key;
+    TEST_ASSERT_EQ(bfs_btree_search_floor(&root, &key, &found_key, &value),
+                   BFS_ERR_CORRUPT);
+    cache_fixture_destroy(&fixture);
+}
+
 static void test_parent_bounds_checked_for_warmed_child(void)
 {
     cache_fixture_t fixture;
@@ -668,4 +709,5 @@ TEST_SUITE_BEGIN("B+tree structure validation cache")
     TEST_RUN(test_trusted_count_zero_is_not_structurally_cached);
     TEST_RUN(test_expected_level_checked_for_warmed_child);
     TEST_RUN(test_parent_bounds_checked_for_warmed_child);
+    TEST_RUN(test_warmed_leaf_at_internal_level_rejected);
 TEST_SUITE_END()

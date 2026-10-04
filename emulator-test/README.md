@@ -47,6 +47,28 @@ The flow is:
 5. Run the complete on-Amiga integrity suite.
 6. Require a valid structured summary with zero failures.
 
+## Kickstart Runs
+
+CI uses only the AROS ROM. The same suites run locally on a lawfully obtained
+Kickstart ROM with Workbench commands from the asset directory below. The
+integration suite uses `ci-local.sh`; the compatibility, reset and baseline
+refusal checks take `--kickstart` and `--workbench`:
+
+```bash
+xvfb-run -a ./emulator-test/ci-local.sh 1800
+python3 emulator-test/compatibility-test.py \
+    --kickstart emulator-test/.assets/A1200.47.102.rom --workbench emulator-test/.assets
+python3 emulator-test/reset-test.py \
+    --kickstart emulator-test/.assets/A1200.47.102.rom --workbench emulator-test/.assets
+```
+
+`ci-local.sh` stops the emulator once `bfs-test` publishes its completion
+record next to the result log, or when the timeout expires. A run that ends
+without that record reports the timeout.
+
+Under Kickstart the reset test also requires the machine to boot again after
+the reset; the AROS ROM halts at that point, also without BFS.
+
 ## External Benchmark Assets
 
 The optional BFS/PFS3 comparison uses third-party or licensed Amiga files that must not be
@@ -80,12 +102,47 @@ Each run keeps its HDFs, FS-UAE configuration, format output, machine informatio
 workload outputs, and completion marker below `BFS_BENCH_RUN_DIR`; the scripts refuse to overwrite an
 existing result. Both HDFs have equal 255.5 MiB partitions on the same virtual device type.
 The workload measures 40 × 1 KiB file creation, 400 locks, 40 checked small reads,
+ten ExNext and ten ExAll listings of the 40 files (each must return every file once),
 8 MiB sequential write/read with byte verification, and 40 deletes. It times each phase
 using `timer.device`; write phases include `Flush` and `Close`. The run is valid only when
 both volumes were mounted, both complete TSVs passed verification, and the guest wrote its
 completion marker. Run `emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR"` to
 recheck retained outputs. The result is an emulated AmigaOS comparison, not a
 native-hardware throughput claim.
+
+Schema 2 of `FS_COMPARE_BENCH` and `FS_DURABLE_COMPARE` added the two listing
+phases. Schema 3 adds, after the deletes, a file grown to 1 MiB in 4 KiB
+writes, one grown to 256 KiB in 1 KiB writes, and a checked read of both in
+64 KiB reads, as copy tools with small buffers and log writers produce them.
+These phases come last, so the earlier ones run on the same volume state as
+before. The verifier still accepts schema 1 and 2 outputs. The deep profile
+keeps its phases and neither lists nor appends.
+
+To compare several handlers, `emulator-test/bench-series.sh LABEL COUNT MODE
+NAME=HANDLER...` runs COUNT fresh runs of each handler in turn, starting with
+BFS in odd runs and with PFS3 in even runs, and keeps each run below
+`build/benchmark/LABEL-NAME-I-ORDER`. `tools/bench-summary.py LABEL-NAME...`
+then prints per phase the means, their variation, the ratio of means, the
+per-run ratio range and median, and how many runs exceed five times PFS3.
+
+Set `BFS_BENCH_MODE=durable-compare` to run the same workload with an
+`ACTION_FLUSH` to the volume at the end of the create, write and delete phases,
+inside the timed region. Each filesystem then pays for its own commit within
+the phase that caused it; PFS3, which commits from a timer, otherwise defers
+that work past the measurement or into a later phase. The outputs are
+`bfs.durable.tsv` and `pfs3.durable.tsv` with the schema header
+`FS_DURABLE_COMPARE 3`; validate them with
+`emulator-test/verify-bench-results.sh "$BFS_BENCH_RUN_DIR" durable-compare`.
+
+For a deterministic, emulator-free view of where the core spends its work, run
+`make core-workload-profile` (requires `valgrind`). It replays the compare
+phases through the core API with the handler's calls and cache settings and
+prints the instruction count of each phase, once with a commit after every
+close and delete (`sync`) and once with one commit per mutating phase
+(`group`). `tools/core-workload-profile.sh MODE N` also lists the N most
+expensive functions of each phase. The counts are x86 host instructions; they
+show relative cost and regressions, not 68k cycles, because CRC and memory
+copies use assembler routines on the Amiga.
 
 For diagnostic phase profiling, build `make amiga-fs-profile-bench`, set
 `BFS_BENCH_MODE=profile`, and use a new `BFS_BENCH_RUN_DIR` with the same builder and

@@ -56,7 +56,7 @@ def mount(image, mountpoint, snapshot=None, read_write=False):
         if process.poll() is not None:
             _, errors = process.communicate()
             raise RuntimeError(f"bfs mount exited before mount: {errors}")
-        if mountpoint.is_mount():
+        if os.path.ismount(mountpoint):
             return process
         time.sleep(0.05)
     process.send_signal(signal.SIGTERM)
@@ -517,13 +517,15 @@ def create_interrupted_open_unlink_image(image, mountpoint, output):
         process.kill()
         process.wait(timeout=10)
         deadline = time.monotonic() + 10
-        while mountpoint.is_mount() and time.monotonic() < deadline:
+        # os.path.ismount() reports a disconnected endpoint as unmounted on
+        # every Python version; Path.is_mount() raises ENOTCONN before 3.12.
+        while os.path.ismount(mountpoint) and time.monotonic() < deadline:
             time.sleep(0.05)
         # A killed daemon can leave a disconnected FUSE endpoint behind even
-        # after Path.is_mount() becomes false. Detach it before remounting.
+        # after the mount check becomes false. Detach it before remounting.
         detached = run("fusermount3", "-u", "-z", str(mountpoint))
-        require(detached.returncode == 0 or not mountpoint.is_mount(), detached.stderr)
-        require(not mountpoint.is_mount(), "FUSE mount survived interrupted daemon")
+        require(detached.returncode == 0 or not os.path.ismount(mountpoint), detached.stderr)
+        require(not os.path.ismount(mountpoint), "FUSE mount survived interrupted daemon")
     finally:
         if descriptor is not None:
             try:
@@ -563,13 +565,16 @@ def exercise_rejections(image, temporary):
         data[0] ^= 1
         data[backup_offset] ^= 1
 
-    def future(data):
-        data[7] = 3
-        data[backup_offset + 7] = 3
-        update_superblock_crc(data, 0)
-        update_superblock_crc(data, backup_offset)
+    def version(number):
+        def mutate(data):
+            data[7] = number
+            data[backup_offset + 7] = number
+            update_superblock_crc(data, 0)
+            update_superblock_crc(data, backup_offset)
+        return mutate
 
-    for label, mutate in (("corrupt", corrupt), ("future", future)):
+    # Format 3 is current; the older format and a newer one are refused.
+    for label, mutate in (("corrupt", corrupt), ("older", version(2)), ("future", version(4))):
         bad_image = temporary / f"{label}.bfs"
         shutil.copyfile(image, bad_image)
         data = bytearray(bad_image.read_bytes())

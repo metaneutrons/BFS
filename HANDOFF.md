@@ -1,169 +1,203 @@
-# BFS: Uebergabe und Abschlussstand
+# BFS: Übergabe für die Weiterarbeit
 
-Stand: 2026-09-08. Repository: `metaneutrons/BFS`.
+Stand: 2026-10-04. Gearbeitet wird auf `main`. Die v3-Kette mit der Arbeit
+dieser Runde kommt mit PR #83 als ein Squash-Commit dorthin; ihre
+Einzelcommits bleiben auf `format/v3-inline-extents` (siehe Abschnitt 3).
+Die vorige Übergabe zum Release v0.1.1 liegt unter
+`docs/qualification/release-v0.1.1-handoff-2026-09-08.md`.
 
-## 1. Ergebnis
+## 1. Sitzungsstart
 
-Die Release-Abnahme M4 ist abgeschlossen. Die Release-Codebasis steht auf
-`f2deb47b2a689bd4e8dbcef36f3de449a5265095` (`chore(main): release 0.1.1`).
-Die Abschlussdokumentation wurde danach in PR #24 und PR #25 auf dieser
-Release-Codebasis ergaenzt. Der stabile Release `v0.1.1` ist oeffentlich als
-`latest` publiziert.
+```sh
+cd ~/Source/Amiga/BFS
+git status --short                  # lokale Änderungen zuerst sichern
+git fetch origin
+git switch main
+git pull --ff-only
+make -j8 host-test                  # Host-Tests
+make amiga amiga-test               # Handler und AROS-Testprogramm
+make ci-test                        # 50 AROS-Tests im Emulator
+emulator-test/ci-local.sh 1800      # dieselben Tests unter Kickstart 3.2
+```
 
-Qualifiziert und gebaut sind Amiga-Handler fuer 68020, 68030, 68040, 68060
-und Apollo 68080. Der 68080-Build verwendet kein AMMX. Es liegt keine
-physische Apollo-Hardwarequalifikation vor.
+Die lizenzierten Dateien liegen nicht im Repository und werden von Git
+ignoriert. Für Kickstart-Läufe und Messungen müssen vorhanden sein:
+`emulator-test/.assets/A1200.47.102.rom`, `emulator-test/.assets/{C,Libs}`
+mit den Workbench-3.2-Befehlen und `emulator-test/.cache/pfs3aio`. Auf dem
+Mac stammen ROM und `pfs3aio` aus `~/Downloads/bfs-claude-assets-2026-10-02.nBr8KF`
+(Prüfsummen dort), `C` und `Libs` aus der unveränderten `Workbench3.2.adf`,
+entpackt mit `xdftool`. `Format` liegt auf der Diskette in `System/` und muss
+nach `.assets/C` kopiert werden, sonst bleibt die PFS3-Partition der
+Messungen unformatiert und der Lauf hängt bis zum Timeout.
 
-Das Abschlusskriterium war:
+Auf dem Mac ist `make` im Shell-Snapshot von Claude Code eine defekte
+zsh-Funktion; `command make` umgeht sie. `make quality-gates` braucht
+ripgrep, das nicht installiert ist. In der letzten Sitzung lief es mit einem
+Wrapper, der das in Claude Code eingebaute `rg` aufruft.
 
-- funktionale Aenderungen reviewt, committed, gepusht und gemergt;
-- GCC, Clang, ASan/UBSan, Static Analyzer und Coverage bestanden;
-- CI inklusive `CI Success` und Amiga-FULL46 bestanden;
-- Release Please und der echte Release-Workflow end-to-end bestanden;
-- reproduzierbare Archive, SBOMs, Signaturen, Attestierungen und
-  oeffentliche Byte-Readbacks verifiziert;
-- Repo-Standard-Doctor ohne offene Findings bestanden.
+Der Reset-Test (`make reset-test`) braucht Xvfb und xdotool und läuft so nur
+unter Linux.
 
-Das ist eine belegte Release-Reife, keine Zusage allgemeiner Fehlerfreiheit.
+## 2. Ziel und Stand
 
-## 2. Gemergte Lieferungen
+Ziel: BFS in jedem geprüften AmigaDOS-Workload höchstens fünfmal so langsam
+wie PFS3, ohne Abstriche bei Integrität, Snapshots und Recovery.
 
-- PR #11 Repository-Konventionen: `13b3939`
-- PR #12 Filesystem-Core und Recovery: `cedda17f8c2fe4e6389fa9a520f1a89941695605`
-- PR #13 Amiga-Delivery: `b923962c4091ca05b951d08e985a21740d25390b`
-- PR #14 Release- und CI-Hardening: `243339acd2f575857b33095fc1a138c079e9880f`
-- PR #21 dynamische Allocator-Reserve: `b88c63d`
-- PR #22 Release-Please-Tag-/Workflow-Abgleich: `134aff5`
-- PR #23 Draft-Release-Fallback ueber die paginierte GitHub-API:
-  `23dd64e`
-- PR #4 Release Please `v0.1.1`: `f2deb47`
+Abschlussmessung auf Cachy (je 8 Läufe, Median des Verhältnisses je Lauf,
+Schema 3 mit Anhängen in kleinen Schritten). Im Modus `compare` liegt kein
+Lauf über 5×.
 
-Die Fremdbinaries sind nicht im Repository. Toolchains, AROS-ROMs, LHA und
-Cosign werden in den Workflows geladen und dort geprueft.
+| Workload | vorher (`5aff558`) | jetzt | jetzt, `durable-compare` |
+| --- | ---: | ---: | ---: |
+| Create 40 | 2,47× | 1,72× | 1,88× |
+| Lookup 400 | 1,10× | 1,06× | 1,12× |
+| Read 40 | 1,31× | 1,45× | 1,38× |
+| ExNext 400 | 2,84× | 2,69× | 2,72× |
+| ExAll 400 | 3,90× | 3,62× | 3,46× |
+| Write 8 MiB | 1,75× | 0,95× | 1,01× |
+| Read 8 MiB | 1,02× | 1,02× | 1,03× |
+| Delete 40 | 3,02× | 2,08× | 2,17× |
+| Anhängen 1 MiB in 4-KiB-Schritten | 4,82× | 2,15× | 2,36× |
+| Anhängen 256 KiB in 1-KiB-Schritten | 4,16× | 2,57× | 2,65× |
+| Lesen der angehängten Dateien | 1,43× | 1,05× | 1,05× |
 
-## 3. `fill_08` und `many_03`
+In `durable-compare` lag ein Lauf beim Anhängen in 1-KiB-Schritten bei 5,05×
+(sechs Läufe 60–64 ms, zwei 94 und 125 ms). Einzelheiten, Zwischenreihen,
+Kopienzahlen und Prüfsummen:
+`docs/qualification/bfs-write-path-in-place-performance-2026-10-04.md`.
 
-`fill_08` war ein realer Fehler in der Testdiagnostik, nicht der ausloesende
-Core-Fehler. Der Test nahm nach einem Short Write die partielle Datei nicht
-immer in das Cleanup auf. Ausserdem meldete `exnext_37` den Erfolg vor dem
-Cleanup. Beides ist korrigiert.
+Eine Bestätigungsreihe des Stands vom 3. Oktober auf dem Mac (Schema 2)
+hat die Cloud-Faktoren bestätigt; sie steht im selben Bericht.
 
-Der eigentliche Laufzeitfehler lag bei `many_03`: Die feste Reserve von 96
-Bloecken bewegte bei kleinen Transaktionen unnoetig viele Bloecke durch den
-Free-Space-Baum. Die Reserve wird jetzt aus der Baumhoehe abgeleitet und
-begrenzt. Danach bestand `many_03` lokal und in GitHub; der vollstaendige
-Amiga-Lauf meldete `# SUMMARY 46 46 0`.
+## 3. Zweige und Commits
 
-## 4. Test- und Ruleset-Evidenz
+- PR #83 bringt `format/v3-inline-extents` mit `perf/write-path-stages` und
+  `perf/txn-owned-nodes` (#82, ohne Merge geschlossen) als einen
+  Squash-Commit auf `main`, wie zuvor #81. Der Titel ist als Breaking
+  Change markiert (Format v3).
+- Die Einzelcommits bleiben auf diesen Zweigen. Die zehn Commits dieser
+  Runde auf `format/v3-inline-extents` bestehen jeder für sich
+  `make host-test`; die Commits mit Pufferübernahme und Änderungen an Ort
+  und Stelle zusätzlich `make sanitize`.
+  1. `4ab8756` test(bench): Anhänge-Phasen (Schema 3).
+  2. `7d14490` fix(core): Notfall-Pool-Blöcke beim Nachholen von Freigaben
+     in den Pool zurückgeben.
+  3. `1a0beef` feat(core): `bfs_btree_update_key`.
+  4. `de7ce9b` perf(core): Datenblöcke hinter dem letzten Block der Datei.
+  5. `a50428a` perf(core): Zwischenstände in den Cache übernehmen.
+  6. `21bfa29` perf(core): Enumeration am Stopp-Eintrag fortsetzen.
+  7. `db97ae1` perf(core): Blätter der laufenden Transaktion an Ort und
+     Stelle ändern.
+  8. `9353dbe` perf(core): Scans kopieren nur belegte Einträge.
+  9. `3304a15` perf(core): Verzeichniseinträge bei der Blattvalidierung
+     prüfen.
+  10. docs: Bericht, Evidenz und diese Übergabe.
 
-Lokale Nachweise auf dem finalen Code:
+Nichts mergen ohne Fabians Freigabe. PRs nur auf ausdrücklichen Wunsch.
 
-- `make host-test HOST_CC=gcc`: 31/31 Host-Binaries bestanden
-- `make host-test HOST_CC=clang`: 31/31 Host-Binaries bestanden
-- `make sanitize HOST_CC=clang`: alle Tests bestanden
-- `make analyze`: erfolgreich
-- `make coverage`: Core-Zeilen 88.4 % (`3997/4522`)
-- `make amiga-test`: erfolgreich
-- `BFS_TEST_TIMEOUT=1200 emulator-test/ci-test.sh`: `46/46`
-- Repository-Asset-Audit: keine getrackten Binaries
+## 4. Inhalt des v3-Zweigs
 
-GitHub-Nachweise:
+Format v3 (`e68aeb2`, Plan `docs/plans/bfs-format-v3-v1.md`): Inline-Extent
+im Inode, Kommentar-Flag, v2 wird abgelehnt, `bfs format` ersetzt Medien mit
+ausschließlich älteren Formaten.
 
-- PR #23 CI [34163038783](https://github.com/metaneutrons/BFS/actions/runs/34163038783):
-  alle Checks gruen, einschliesslich Amiga und `CI Success`
-- Release-Please [34164653505](https://github.com/metaneutrons/BFS/actions/runs/34164653505):
-  App-Token-Preflight, PR-Erzeugung und Dispatch bestanden
-- finaler Main-CI [34164653510](https://github.com/metaneutrons/BFS/actions/runs/34164653510):
-  alle Checks gruen, einschliesslich Amiga und `CI Success`
-- Branch-Ruleset `22394435`: `CI Success`, Squash-only, lineare Historie,
-  aktuelle Pflichtchecks und aufgeloeste Diskussionen
-- Tag-Ruleset `22394437`: immutable Tags
+Frühere Korrekturen und Leistungsarbeit: siehe
+`docs/qualification/bfs-directory-listing-performance-2026-10-03.md` und die
+Einzelcommits auf `format/v3-inline-extents`.
 
-Repo-Standard-Doctor:
+Diese Runde (siehe Abschnitt 3 und den Bericht vom 4. Oktober):
+Benchmark-Schema 3, Datenvergabe hinter dem letzten Dateiblock, Korrektur
+des Notfall-Pools, Pufferübernahme, Änderungen an Ort und Stelle,
+Stopp-Eintrag im Cursor, Teilkopie beim Scan, Eintragsprüfung bei der
+Validierung.
 
-- `check-repo-standard.sh metaneutrons/BFS --publishes`: 19 bestanden,
-  0 fehlgeschlagen, 2 Hinweise
-- Fixture-Test: 16 bestanden, 0 fehlgeschlagen
-- Hinweise: provider-spezifische Secret-Patterns sind fuer das Benutzerkonto
-  nicht abrufbar; die `release`-Umgebung hat bewusst kein statisches Secret.
-  Beide Hinweise sind account- bzw. OIDC-seitig und keine offenen Codebefunde.
+## 5. Invarianten für neue Arbeit
 
-## 5. Release-Evidenz
+- `bfs_btree_t.generation` ändert sich bei jedem Knotenschreiben, jeder
+  Änderung an Ort und Stelle und jeder Wurzel- oder Höhenänderung.
+  Scan-Cursor und Such-Hinweis verlassen sich darauf.
+- Ein Scan-Callback darf den Baum ändern. Der Scan sucht dann hinter dem
+  zuletzt gelieferten Schlüssel neu und liefert keine danach gelöschten
+  Schlüssel.
+- Ein Cursor gilt nur bei gleichem Baum, gleicher Wurzel und gleichem Zähler.
+  Sein Stopp-Eintrag gilt nur, wenn der Startschlüssel genau diesem Eintrag
+  entspricht. Er darf das Mounten seines Baums nicht überleben.
+- Eine Ansicht in den Cache (`peek_valid_node`, `modify_dirty_node`) gilt nur
+  bis zum nächsten BIO-Aufruf. Mit der Pufferübernahme gehört der alte
+  Slot-Puffer danach dem Aufrufer und wird freigegeben.
+- An Ort und Stelle geändert wird nur ein Blatt, das der laufenden Transaktion
+  gehört, als dirty im Cache liegt und validiert ist, und nur wenn die
+  Änderung das Blatt allein betrifft (keine Teilung, kein Umbau, Schlüssel
+  bleibt zwischen Nachbarn und Trennschlüsseln). Danach darf nichts mehr
+  fehlschlagen können.
+- Ein validiertes Verzeichnisblatt enthält nur Einträge, die `dir_entry_ok`
+  besteht; eine Änderung an Ort und Stelle prüft den Eintrag, den sie
+  schreibt. Scans prüfen Einträge nicht mehr selbst.
+- Dateidaten kommen aus `bfs_freespace_alloc_data`, Metadaten aus
+  `bfs_freespace_alloc` und dem Vorrat. Daten nehmen nie das Ende des
+  höchsten freien Bereichs.
+- Blöcke des Notfall-Pools werden einzeln freigegeben, damit sie in den Pool
+  zurückkehren.
+- Bäume mit u32-Schlüsseln verwenden `bfs_btree_key_compare_be32`.
+- ExAll-Einträge enthalten nur die Felder bis zum angefragten Typ; ein
+  Eintrag, der nicht passt, kommt im nächsten Aufruf.
 
-### Qualification
+## 6. Messen
 
-Der unveraenderliche Tag `v0.1.0-qualification.3` zeigt auf Commit
-`23dd64ef1027c7037ecbca17502c4c99a8807060` und wurde mit
-[Run 34163917438](https://github.com/metaneutrons/BFS/actions/runs/34163917438)
-qualifiziert. Der Run bestand mit reproduzierbarem Build, Clean-Room-Smoke,
-SBOMs, keyless Sigstore-Signaturen, GitHub-Attestierungen, Tamper-Rejection,
-Asset-Upload und oeffentlichem Readback.
+Messreihen laufen auf `cachy` (SSH-Alias, CachyOS-KVM-Gast, FS-UAE 3.2.35,
+Xvfb). Dort liegt eine per rsync gespiegelte Arbeitskopie unter
+`~/.cache/bfs-performance/work-2026-10-03` (ohne Git), das Kickstart-ROM unter
+`~/Amiga/kick.a1200.47.102.rom`. Gastprogramme und Handler werden auf dem Mac
+gebaut und kopiert; `make build/host/bfs` baut den Formatierer auf Cachy. Der
+Docker-Container `snapdog-runner` ist auf Fabians Wunsch gestoppt und bleibt
+aus.
 
-Die sechs Eintraege der Kandidaten-`SHA256SUMS` sind im oeffentlichen
-[Qualification-Release](https://github.com/metaneutrons/BFS/releases/tag/v0.1.0-qualification.3)
-verifiziert. Die zentralen Archive haben folgende Digests:
+```sh
+make amiga amiga-fs-compare-bench
+emulator-test/bench-series.sh NAME 8 compare alt=PFAD neu=build/amiga/bfshandler
+tools/bench-summary.py NAME-alt NAME-neu
+```
 
-| Asset | SHA-256 |
-| --- | --- |
-| `bfs-v0.1.0-qualification.3-amiga.tar.gz` | `435e15e34359c12121b782acdfc41828f2312b9762ab52d8f412f1a2dfd09e25` |
-| `bfs-v0.1.0-qualification.3-amiga.lha` | `e6f820943d8ce2f0de0f90bdc915c190d8612d56d4c024b435fb15f63fcfa439` |
-| `SHA256SUMS` | `83e0bca3f482783e8eee24c8eaeb090c904707963369cfffe8f37509742001cf` |
+Auf Cachy streuen einzelne Läufe stark (bis Faktor zwei in beiden
+Dateisystemen). Acht Läufe je Handler und der Median sind belastbarer als der
+Mittelwert. `make core-workload-profile` braucht Valgrind, das weder auf dem
+Mac noch auf Cachy installiert ist.
 
-Der vorherige Tag `v0.1.0-qualification.2` wurde wegen des API-Draft-Fehlers
-nicht wiederverwendet. Tags wurden nicht verschoben oder geloescht.
+## 7. Offene Punkte und Entscheidungen
 
-### Stable
+1. Nach dem Merge von #83 baut release-please den Release-PR #57 wegen
+   des Breaking Change neu auf.
+2. Codacy meldet für #83 zehn Funktionen oder Testdateien über der
+   Längengrenze von Lizard, darunter `freespace_alloc_core`,
+   `bfs_btree_scan_cursor` und `node_write_image`. Codacy ist kein
+   Pflicht-Check; die übrigen Befunde sind behoben oder begründet
+   unterdrückt.
+3. Ausreißer beim Anhängen: einzelne Läufe brauchen fast doppelt so lange.
+   Ungeklärt, ob Host-Störung oder ein Timer-Commit innerhalb der Phase.
+4. ExAll liegt bei rund 3,6×. Etwa 44 % der Host-Arbeit der Auflistung ist
+   das Inode-Lesen je Eintrag; eine Sortierung hilft beim einstufigen
+   Inode-Baum des Benchmarks nicht.
+5. Auf dem Copy-on-Write-Pfad werden Elternknoten auch dann neu geschrieben,
+   wenn das Blatt an Ort und Stelle bleibt; relevant erst bei höheren Bäumen.
+6. Feature-Masken im Superblock: Entscheidung offen.
+7. Kickstart-Job in der CI: ob Secret `CI_TEST_ENV` und das verschlüsselte
+   Archiv noch existieren, ist ungeklärt.
+8. Löschen sehr großer Dateien braucht pro Block einen Eintrag in der
+   Freigabe-Warteschlange, die auf dem Amiga per malloc wächst.
+9. Nicht getestet: echte Hardware, MorphOS und OS4 nativ, andere
+   Kickstart-Versionen, 68000.
 
-Der unveraenderliche Tag `v0.1.1` zeigt auf `f2deb47b2a689bd4e8dbcef36f3de449a5265095`.
-Der echte Stable-Workflow
-[34164683697](https://github.com/metaneutrons/BFS/actions/runs/34164683697)
-bestand vollstaendig. Die Release-Promotion lief erst nach allen
-Verifikationsstufen. Der oeffentliche Release ist
-[v0.1.1](https://github.com/metaneutrons/BFS/releases/tag/v0.1.1), nicht Draft,
-nicht Prerelease und `latest`.
+## 8. Arbeitsregeln
 
-Alle sieben Stable-Assets wurden heruntergeladen und gegen `SHA256SUMS`
-geprueft:
-
-| Asset | SHA-256 |
-| --- | --- |
-| `bfs-v0.1.1-amiga.tar.gz` | `22be69b83988040e723242eda7bcaaba037008a4391d3609d93f851a76b18f5e` |
-| `bfs-v0.1.1-amiga.lha` | `33c1f9394a3913b2e4d897d94a56aa573d4f7e92c3de134fc8e54afc2953c0eb` |
-| `bfs-v0.1.1-amiga.tar.gz.spdx.json` | `13ed599790f89d216d1d48fe9243313a2627ef60467a430b052e22dac5d8ec4b` |
-| `bfs-v0.1.1-amiga.lha.spdx.json` | `dcf6271b4a10135a344435331a0e2cf7edd1251d232fb3ab549e13170fb3f989` |
-| `bfs-v0.1.1-amiga.tar.gz.sigstore.json` | `cfc97b245732de4e3f6cf1720dbf626f6a5b6a1e5e85edb48317185cbcf59f7f` |
-| `bfs-v0.1.1-amiga.lha.sigstore.json` | `6081ca406309634ea17f97978e2c68b71a84b84ab775feb63407183f278eb548` |
-| `SHA256SUMS` | `afb7250081dc2bd324c0118923713a249edf8801aaceb0f1c9120f114c6a109f` |
-
-## 6. Dokumentation und Grenzen
-
-README und Release-Readiness-Plan dokumentieren:
-
-- Default-Handler 68020 sowie die Varianten 68030, 68040, 68060 und 68080;
-- 68080 ohne AMMX und ohne daraus abgeleitete Hardwarebehauptung;
-- `make release`, `make emulator-test` und die Amiga-Mount-/Format-Schritte;
-- reproduzierbare Archive, Checksummen, SBOM-/Sigstore-Pruefung und Runtime-
-  Lizenzen;
-- die Grenze zwischen Compiler-/Emulatornachweis und echter Hardwareabnahme.
-
-Es gibt keine behauptete physische Apollo-Qualifikation und keine AMMX-
-Optimierung. Dependabot-PRs #15 bis #19 sind normale Wartungsarbeiten und
-nicht Teil dieser abgeschlossenen Release-Abnahme; bei ihrer Annahme ist die
-volle CI erneut zu bewerten.
-
-Die bereinigten beschreibbaren Refs enthalten keine Fremdbinaries. GitHub kann
-serverseitig versteckte alte PR-Refs weiterhin aufbewahren. Das ist eine
-separate Support-Angelegenheit; dafuer keine weiteren lokalen Filter-Laeufe
-oder Force-Pushes ausfuehren.
-
-## 7. Wiederaufnahme-Regeln
-
-- Keine Tags verschieben, loeschen oder wiederverwenden.
-- Fremdbinaries ausschliesslich in CI laden und dort per Hash/Identitaet
-  pruefen.
-- Keine Hardwarequalifikation aus Emulator- oder Compiler-Evidenz ableiten.
-- Neue funktionale Arbeit von aktuellem `origin/main` abzweigen und in
-  funktional gruppierten Conventional-Commits liefern.
-- Vor jeder neuen Release-Aussage alle betroffenen CI-, Asset- und Readback-
-  Nachweise mit neuer Identitaet wiederholen.
-- Keine Secrets, ROMs, HDFs oder Buildartefakte committen.
+- Commits nach Conventional Commits, auf Englisch, als
+  `metaneutrons <436979+metaneutrons@users.noreply.github.com>`, ohne
+  KI-Zuschreibung; `tools/check-commit-hygiene.sh` lässt sonst die CI
+  scheitern.
+- ROMs, Workbench-Dateien, PFS3, HDFs und Buildartefakte nie committen.
+- Shell: `cp`, `mv` und `rm` sind auf `-i` gesetzt und zsh läuft mit
+  `noclobber`. In Skripten `command cp`, `cp -f` oder Python verwenden und
+  `>!` statt `>`.
+- Vor einem Push mindestens `make -j8 host-test`, `make sanitize`,
+  `make analyze`, `make quality-gates`, `make conformance-test` und
+  `make ci-test`; bei Handler-Änderungen zusätzlich Kickstart und
+  `make compatibility-test`.

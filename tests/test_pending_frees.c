@@ -26,6 +26,7 @@
 #include "bfs_file.h"
 #include "bfs_inode.h"
 #include "bfs_snapshot.h"
+#include "bfs_fsck.h"
 #include "block_device_emu.h"
 #include <unistd.h>
 #include <stdio.h>
@@ -226,9 +227,71 @@ static void test_overflow_is_loud_not_silent(void)
     teardown();
 }
 
+static bool free_tree_holds(bfs_blk_t blk)
+{
+    uint32_t key = bfs_be32(blk), found_key, found_len;
+    if (bfs_btree_search_floor(&g_fs.freespace.tree, &key, &found_key, &found_len) != BFS_OK)
+        return false;
+    return blk - bfs_be32(found_key) < bfs_be32(found_len);
+}
+
+/* Emergency pool blocks retired together with other blocks must return to
+ * the pool. Freed as a batch or a range they would enter the free tree, and
+ * with the pool short the post-publication reclaim can retire every free tree
+ * root it rewrites without ever settling. */
+static void test_pending_pool_blocks_return_to_pool(void)
+{
+    setup();
+    TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
+    bfs_superblock_t *sb = g_fs.freespace.sb;
+    uint32_t active = bfs_be32(sb->emergency_count);
+    TEST_ASSERT(active >= 2);
+
+    /* An ordinary block beside a pool block, allocated in an earlier
+     * transaction: an unchanged free tree root keeps the commit below off the
+     * sealed path, so the blocks are reclaimed after publication. */
+    bfs_blk_t goal = bfs_be32(sb->emergency_pool[active - 1]) + 1;
+    bfs_blk_t neighbour = bfs_freespace_alloc_data(&g_fs.freespace, 1, goal);
+    TEST_ASSERT(neighbour != BFS_BLK_NULL);
+    TEST_ASSERT(!bfs_freespace_pool_block(&g_fs.freespace, neighbour));
+    TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
+
+    /* Take two pool blocks as COW paths do, then retire all three blocks in
+     * one transaction. */
+    active = bfs_be32(sb->emergency_count);
+    TEST_ASSERT(active >= 2);
+    bfs_blk_t first = bfs_be32(sb->emergency_pool[active - 1]);
+    bfs_blk_t second = bfs_be32(sb->emergency_pool[active - 2]);
+    sb->emergency_count = bfs_be32(active - 2);
+    bfs_blk_t *pending = bfs_fs_pending_items(&g_fs);
+    pending[g_fs.pending_count++] = first;
+    pending[g_fs.pending_count++] = second;
+    pending[g_fs.pending_count++] = neighbour;
+
+    TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);
+    TEST_ASSERT_EQ(g_fs.pending_count, 0);
+    TEST_ASSERT_EQ(bfs_be32(sb->emergency_count), active);
+    TEST_ASSERT(!free_tree_holds(first));
+    TEST_ASSERT(!free_tree_holds(second));
+    TEST_ASSERT(free_tree_holds(neighbour));
+    TEST_ASSERT_EQ(bfs_fs_unmount(&g_fs), BFS_OK);
+
+    bfs_fs_t check;
+    bfs_fsck_report_t report = {0};
+    TEST_ASSERT_EQ(bfs_fs_mount_readonly(&check, g_bio), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_check(&check, false, &report), BFS_OK);
+    TEST_ASSERT_EQ(report.errors, 0);
+    TEST_ASSERT_EQ(report.leaked_blocks, 0);
+    bfs_fs_unmount(&check);
+    bfs_bio_close(g_bio);
+    g_bio = NULL;
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("Pending-Free Queue (#41)")
     TEST_RUN(test_small_cap_delete_storm_no_leak);
     TEST_RUN(test_small_cap_delete_storm_snapshots);
     TEST_RUN(test_compaction_mass_free_no_leak);
     TEST_RUN(test_overflow_is_loud_not_silent);
+    TEST_RUN(test_pending_pool_blocks_return_to_pool);
 TEST_SUITE_END()

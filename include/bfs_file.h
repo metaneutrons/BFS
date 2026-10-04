@@ -29,7 +29,7 @@ typedef struct {
     bool                unlinked;  /* retained POSIX orphan; see mark_unlinked */
 } bfs_file_t;
 
-/* Open a file by inode number. Reads inode from inode tree for extent_root/size. */
+/* Open a file by inode number. Reads its extent mapping and size from the inode. */
 bfs_err_t bfs_file_open(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr);
 
 /* Open a file from an explicitly selected immutable inode tree. This is for

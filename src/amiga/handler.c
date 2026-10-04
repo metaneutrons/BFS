@@ -19,6 +19,7 @@
 #include <dos/exall.h>
 #include <devices/trackdisk.h>
 #include <devices/timer.h>
+#include <devices/keyboard.h>
 #include <utility/tagitem.h>
 #include <proto/exec.h>
 #include <proto/dos.h>
@@ -94,6 +95,7 @@
 #endif
 
 #include "dos_packets.h"
+#include "commit_protocol.h"
 
 #define BFS_SNAPSHOT_ENTRY_META_OFFSET 260
 #define BFS_SNAPSHOT_ENTRY_SIZE        284
@@ -135,6 +137,7 @@ struct bfs_handler {
     bool dirty;
     bool write_protected;
     bfs_err_t mount_error;
+    bool format_replaceable;  /* unsupported medium holds only older formats */
     char format_error[BFS_FORMAT_ERROR_MAX];
     bool format_error_reported;
     struct DosList *volnode;
@@ -152,7 +155,29 @@ struct bfs_handler {
     BYTE diskchange_sig;
     struct IOExtTD *diskchange_req;
     struct Interrupt *diskchange_int;
+    /* Commit policy. Delayed: commit after a quiet period, at the latest
+     * after COMMIT_MAX_PERIODS, and before any packet that needs durable or
+     * quiescent state. Sync: also commit at every close and standalone
+     * metadata packet. */
+    bool sync_commits;
+    bool reset_pending;       /* reset warning seen: commit before every reply */
+    bool commit_failed;      /* after a failure, retry only every max period */
+    bool commit_activity;    /* a packet arrived since the timer was armed */
+    bool commit_timer_pending;
+    uint8_t commit_periods;  /* timer periods since the timer was first armed */
+    struct MsgPort *commit_port;
+    struct timerequest *commit_timer;
+    bool commit_timer_open;
+    /* Keyboard reset handler: commit before a warm reboot. */
+    BYTE reset_sig;
+    struct IOStdReq *reset_req;
+    struct Interrupt *reset_int;
+    bool reset_handler_added;
 };
+
+/* Delayed commit timing: one quiet period of 200 ms, at most five periods. */
+#define COMMIT_PERIOD_MICROS 200000
+#define COMMIT_MAX_PERIODS   5
 
 /* The source handler keeps this code resident for each mounted snapshot.
  * Snapshot workers are explicit processes with this entry point, rather than
@@ -160,11 +185,25 @@ struct bfs_handler {
 void EntryPoint(void);
 
 /* Lock structure — stored as BPTR in FileLock */
+/* Resume point of a directory enumeration on a lock: the name consumed last
+ * and how many entries had been consumed. ExNext and ExAll carry that count
+ * in fib_DiskKey and eac_LastKey; when it matches, the next call continues
+ * after the name in key order instead of counting from the first entry. That
+ * keeps a listing linear and keeps its place when entries are deleted while
+ * it runs. The leaf copy in tree lets most calls skip the descent. */
+typedef struct {
+    uint32_t position;
+    uint8_t name_len;
+    char name[BFS_NAME_MAX];
+    bfs_btree_cursor_t tree;
+} bfs_scan_cursor_t;
+
 typedef struct {
     struct FileLock fl;
     uint32_t ino;
     uint32_t type; /* BFS_INODE_FILE or BFS_INODE_DIR */
     uint32_t parent_ino;
+    bfs_scan_cursor_t *cursor; /* allocated by the first enumeration */
 } bfs_lock_t;
 
 typedef struct bfs_open_file {
@@ -185,6 +224,14 @@ struct DosLibrary *DOSBase;
 static ULONG DiskChangeHandler(register struct bfs_handler *h __asm("a1"))
 {
     Signal(h->msgport->mp_SigTask, 1UL << h->diskchange_sig);
+    return 0;
+}
+
+/* Runs in the keyboard reset interrupt: the handler task commits and then
+ * acknowledges with KBD_RESETHANDLERDONE. */
+static ULONG ResetHandler(register struct bfs_handler *h __asm("a1"))
+{
+    Signal(h->msgport->mp_SigTask, 1UL << h->reset_sig);
     return 0;
 }
 
@@ -560,6 +607,8 @@ static void SetMountError(struct bfs_handler *h, bfs_err_t err,
     /* Both arrays have BFS_FORMAT_ERROR_MAX bytes. */
     memcpy(h->format_error, message, sizeof(message)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     h->mount_error = err;
+    h->format_replaceable = err == BFS_ERR_UNSUPPORTED &&
+                            bfs_amiga_bio_format_replaceable((amiga_bio_t *)(h + 1));
 }
 
 static void ReportFormatError(struct bfs_handler *h, struct MsgPort *reply_port)
@@ -586,8 +635,11 @@ static bfs_err_t InitNodeCache(struct bfs_handler *h, amiga_bio_t *ab)
 {
     bfs_err_t err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
                                    h->dosenvec->de_NumBuffers);
-    if (err == BFS_OK)
+    if (err == BFS_OK) {
         bfs_cache_set_node_write_retention(&h->cache, true);
+        /* Nodes of the live transaction stay dirty until its commit. */
+        bfs_cache_set_deferred_node_limit(&h->cache, h->cache.num_slots / 2);
+    }
     return err;
 }
 
@@ -719,6 +771,15 @@ static bfs_lock_t *MakeLock(struct bfs_handler *h, uint32_t ino,
     return lk;
 }
 
+static void DisposeLock(bfs_lock_t *lock)
+{
+    if (lock->cursor) {
+        bfs_btree_cursor_release(&lock->cursor->tree);
+        FreeVec(lock->cursor);
+    }
+    FreeVec(lock);
+}
+
 static bool FreeLock(struct bfs_handler *h, bfs_lock_t *lock)
 {
     if (!lock || !h->volnode) return false;
@@ -728,7 +789,7 @@ static bool FreeLock(struct bfs_handler *h, bfs_lock_t *lock)
         bfs_lock_t *current = (bfs_lock_t *)BADDR(*link);
         if (current == lock) {
             *link = current->fl.fl_Link;
-            FreeVec(current);
+            DisposeLock(current);
             if (h->lock_count > 0) h->lock_count--;
             return true;
         }
@@ -834,10 +895,10 @@ static bool FindLockName(const char *name, uint8_t name_len,
     return false;
 }
 
-static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
-                             char *name, uint8_t *name_len)
+static bfs_err_t NameForObject(struct bfs_handler *h, uint32_t ino,
+                               uint32_t parent_ino, char *name, uint8_t *name_len)
 {
-    if (lock->ino == BFS_ROOT_INO) {
+    if (ino == BFS_ROOT_INO) {
         uint8_t len = 0;
         const char *volname = h->snapshot_startup ? h->snapshot_startup->mount_name
                                                   : (const char *)h->fs.txn.sb.volname;
@@ -850,17 +911,23 @@ static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
     }
 
     lock_name_ctx_t lookup = {
-        .ino = lock->ino,
+        .ino = ino,
         .name = name,
         .name_len = 0,
         .found = false,
     };
-    bfs_err_t err = bfs_dir_scan(&h->fs.dir_tree, lock->parent_ino,
+    bfs_err_t err = bfs_dir_scan(&h->fs.dir_tree, parent_ino,
                                  FindLockName, &lookup);
     if (err != BFS_OK) return err;
     if (!lookup.found) return BFS_ERR_NOTFOUND;
     *name_len = lookup.name_len;
     return BFS_OK;
+}
+
+static bfs_err_t NameForLock(struct bfs_handler *h, const bfs_lock_t *lock,
+                             char *name, uint8_t *name_len)
+{
+    return NameForObject(h, lock->ino, lock->parent_ino, name, name_len);
 }
 
 /* ── BSTR / path helpers ──────────────────────────────────── */
@@ -1066,6 +1133,47 @@ static void HandleDosPacket64(bfs_dos_packet64_t *packet, struct bfs_handler *h)
     if (!packet->error && !getter) packet->result = DOSTRUE;
 }
 
+/* ── Directory enumeration ────────────────────────────────── */
+
+/* The internal parent entry of a subdirectory is no directory member. */
+static bool IsParentEntry(const char *name, uint8_t name_len)
+{
+    return name_len == 2 && name[0] == '.' && name[1] == '.';
+}
+
+/* Cleared memory is an initialized, empty tree cursor. */
+static bfs_scan_cursor_t *CursorFor(bfs_lock_t *lk)
+{
+    if (!lk->cursor) lk->cursor = AllocVec(sizeof(*lk->cursor), MEMF_ANY | MEMF_CLEAR);
+    return lk->cursor;
+}
+
+static void CursorRemember(bfs_lock_t *lk, uint32_t position,
+                           const char *name, uint8_t name_len)
+{
+    if (!CursorFor(lk)) return; /* the next call counts from the start */
+    lk->cursor->position = position;
+    lk->cursor->name_len = name_len;
+    memcpy(lk->cursor->name, name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+}
+
+/* Scan the directory of lk from the entry after position. *skip tells the
+ * callback how many entries to pass over first. */
+static bfs_err_t ScanDirectoryFrom(struct bfs_handler *h, bfs_lock_t *lk,
+                                   uint32_t position, bfs_dir_scan_cb cb,
+                                   void *ctx, uint32_t *skip)
+{
+    bfs_scan_cursor_t *cursor = CursorFor(lk);
+    bfs_btree_cursor_t *tree_cursor = cursor ? &cursor->tree : NULL;
+    if (position > 0 && cursor && cursor->position == position) {
+        *skip = 0;
+        return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino, cursor->name,
+                                   cursor->name_len, cb, ctx);
+    }
+    *skip = position;
+    return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino, NULL, 0, cb, ctx);
+}
+
 /* ── Directory scan context for EXAMINE_NEXT ──────────────── */
 
 typedef struct {
@@ -1083,6 +1191,7 @@ static bool exam_next_cb(const char *name, uint8_t name_len,
 {
     exam_next_ctx_t *ec = (exam_next_ctx_t *)ctx;
 
+    if (IsParentEntry(name, name_len)) return true;
     if (ec->seen < ec->skip_count) {
         ec->seen++;
         return true; /* skip */
@@ -1139,6 +1248,36 @@ static void FillFib64(struct FileInfoBlock *fib, uint64_t size)
     if (blocks > INT32_MAX) fib->fib_NumBlocks = 0;
 }
 
+/* Read an object's comment into a C string of BFS_COMMENT_BUFFER bytes. Only
+ * an inode with HAS_COMMENT has one, so most objects need no directory
+ * lookup. *length is 0 for an object without comment. */
+#define BFS_COMMENT_BUFFER 80
+static bfs_err_t ReadComment(struct bfs_handler *h, uint32_t ino,
+                             const bfs_inode_t *inode,
+                             char buffer[BFS_COMMENT_BUFFER], int *length)
+{
+    buffer[0] = 0;
+    *length = 0;
+    if (!(bfs_be32(inode->flags) & BFS_INODE_FLAG_HAS_COMMENT)) return BFS_OK;
+    bfs_err_t err = bfs_fs_get_comment(&h->fs, ino, buffer, BFS_COMMENT_BUFFER);
+    if (err != BFS_OK) return err;
+    while (*length < BFS_COMMENT_BUFFER - 1 && buffer[*length]) (*length)++;
+    return BFS_OK;
+}
+
+/* fib_Comment is a BSTR: a length byte and at most 79 characters. */
+static bfs_err_t FillFibComment(struct bfs_handler *h, struct FileInfoBlock *fib,
+                                uint32_t ino, const bfs_inode_t *inode)
+{
+    char comment[BFS_COMMENT_BUFFER];
+    int length;
+    bfs_err_t err = ReadComment(h, ino, inode, comment, &length);
+    if (err != BFS_OK) return err;
+    fib->fib_Comment[0] = (UBYTE)length;
+    memcpy(&fib->fib_Comment[1], comment, length); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    return BFS_OK;
+}
+
 /* ── Notification helper ───────────────────────────────────── */
 
 static void SendNotifications(struct bfs_handler *h)
@@ -1152,6 +1291,184 @@ static void SendNotifications(struct bfs_handler *h)
         }
         n = n->next;
     }
+}
+
+/* Notifications report that a change is visible, not that it is durable, so
+ * they do not wait for the commit. */
+static void SendPendingNotifications(struct bfs_handler *h)
+{
+    if (h->notify_pending) SendNotifications(h);
+    h->notify_pending = false;
+}
+
+/* ── Commit policy ─────────────────────────────────────────── */
+
+/* Commit the live transaction if it holds changes. */
+static bfs_err_t CommitDirty(struct bfs_handler *h)
+{
+    if (!h->dirty || !h->fs.mounted) return BFS_OK;
+    bfs_err_t err = bfs_fs_sync(&h->fs);
+    if (err != BFS_OK) return err;
+    h->dirty = false;
+    h->commit_failed = false;
+    return BFS_OK;
+}
+
+static bool ControlWordMatches(const UBYTE *text, LONG length, const char *word)
+{
+    /* word is a string literal of the caller. */
+    LONG word_length = (LONG)strlen(word); /* Flawfinder: ignore */
+    for (LONG start = 0; start + word_length <= length; start++) {
+        LONG i = 0;
+        while (i < word_length) {
+            UBYTE c = text[start + i];
+            if (c >= 'a' && c <= 'z') c = (UBYTE)(c - 'a' + 'A');
+            if (c != (UBYTE)word[i]) break;
+            i++;
+        }
+        if (i == word_length) return true;
+    }
+    return false;
+}
+
+/* Mountlist: Control = "COMMIT=SYNC" restores a commit at every close and
+ * standalone metadata packet. DOS stores the Control string as a BSTR. */
+static bool ControlRequestsSyncCommits(const struct DosEnvec *env)
+{
+    if (!env || env->de_TableSize < DE_CONTROL || !env->de_Control) return false;
+    const UBYTE *control = (const UBYTE *)BADDR(env->de_Control);
+    return ControlWordMatches(control + 1, control[0], "COMMIT=SYNC");
+}
+
+static void OpenCommitTimer(struct bfs_handler *h)
+{
+    h->commit_port = CreateMsgPort();
+    if (!h->commit_port) return;
+    h->commit_timer = (struct timerequest *)CreateIORequest(h->commit_port,
+                                                            sizeof(struct timerequest));
+    if (!h->commit_timer) return;
+    h->commit_timer_open = OpenDevice((CONST_STRPTR)TIMERNAME, UNIT_VBLANK,
+                                      (struct IORequest *)h->commit_timer, 0) == 0;
+}
+
+static void CloseCommitTimer(struct bfs_handler *h)
+{
+    if (h->commit_timer_pending) {
+        AbortIO((struct IORequest *)h->commit_timer);
+        WaitIO((struct IORequest *)h->commit_timer);
+        h->commit_timer_pending = false;
+    }
+    if (h->commit_timer_open) CloseDevice((struct IORequest *)h->commit_timer);
+    h->commit_timer_open = false;
+    if (h->commit_timer) DeleteIORequest((struct IORequest *)h->commit_timer);
+    h->commit_timer = NULL;
+    if (h->commit_port) DeleteMsgPort(h->commit_port);
+    h->commit_port = NULL;
+}
+
+static ULONG CommitTimerMask(const struct bfs_handler *h)
+{
+    return h->commit_timer_open ? 1UL << h->commit_port->mp_SigBit : 0;
+}
+
+/* Arm the commit timer while delayed changes are outstanding. */
+static void ArmCommitTimer(struct bfs_handler *h)
+{
+    if (!h->commit_timer_open || h->commit_timer_pending || !h->dirty ||
+        h->sync_commits || !h->fs.mounted)
+        return;
+    h->commit_timer->tr_node.io_Command = TR_ADDREQUEST;
+    h->commit_timer->tr_time.tv_secs = 0;
+    h->commit_timer->tr_time.tv_micro = COMMIT_PERIOD_MICROS;
+    SendIO((struct IORequest *)h->commit_timer);
+    h->commit_timer_pending = true;
+    h->commit_activity = false;
+}
+
+/* A timer period ended: commit after a quiet period or at the latest after
+ * COMMIT_MAX_PERIODS. Errors stay latched in the core; ACTION_FLUSH and the
+ * next packets report them. */
+static void CommitTimerExpired(struct bfs_handler *h)
+{
+    if (!h->commit_timer_pending ||
+        !CheckIO((struct IORequest *)h->commit_timer))
+        return;
+    WaitIO((struct IORequest *)h->commit_timer);
+    h->commit_timer_pending = false;
+    if (!h->dirty) {
+        h->commit_periods = 0;
+        return;
+    }
+    if (h->commit_periods < COMMIT_MAX_PERIODS) h->commit_periods++;
+    bool due = h->commit_periods >= COMMIT_MAX_PERIODS ||
+               (!h->commit_activity && !h->commit_failed);
+    if (due && !h->sync_commits) {
+        if (CommitDirty(h) == BFS_OK) {
+            SendPendingNotifications(h);
+        } else {
+            h->commit_failed = true;
+        }
+        h->commit_periods = 0;
+    }
+}
+
+/* PFS3 commits from a keyboard reset handler as well. Best effort: without
+ * keyboard.device, a warm reboot loses the changes of the last second. */
+static void AddCommitResetHandler(struct bfs_handler *h)
+{
+    h->reset_sig = AllocSignal(-1);
+    if (h->reset_sig < 0) return;
+    h->reset_int = (struct Interrupt *)AllocVec(sizeof(struct Interrupt), MEMF_CLEAR | MEMF_PUBLIC);
+    if (!h->reset_int) return;
+    h->reset_int->is_Node.ln_Type = NT_INTERRUPT;
+    h->reset_int->is_Node.ln_Name = (char *)"BFS-Commit";
+    h->reset_int->is_Data = h;
+    h->reset_int->is_Code = (void (*)(void))ResetHandler;
+    h->reset_req = (struct IOStdReq *)CreateIORequest(h->devport, sizeof(struct IOStdReq));
+    if (!h->reset_req) return;
+    if (OpenDevice((CONST_STRPTR)"keyboard.device", 0,
+                   (struct IORequest *)h->reset_req, 0) != 0) {
+        DeleteIORequest((struct IORequest *)h->reset_req);
+        h->reset_req = NULL;
+        return;
+    }
+    h->reset_req->io_Command = KBD_ADDRESETHANDLER;
+    h->reset_req->io_Data = h->reset_int;
+    h->reset_req->io_Length = 0;
+    h->reset_handler_added = DoIO((struct IORequest *)h->reset_req) == 0;
+}
+
+static void RemoveCommitResetHandler(struct bfs_handler *h)
+{
+    if (h->reset_handler_added) {
+        h->reset_req->io_Command = KBD_REMRESETHANDLER;
+        h->reset_req->io_Data = h->reset_int;
+        h->reset_req->io_Length = 0;
+        DoIO((struct IORequest *)h->reset_req);
+        h->reset_handler_added = false;
+    }
+    if (h->reset_req) {
+        CloseDevice((struct IORequest *)h->reset_req);
+        DeleteIORequest((struct IORequest *)h->reset_req);
+        h->reset_req = NULL;
+    }
+    if (h->reset_int) FreeVec(h->reset_int);
+    h->reset_int = NULL;
+    if (h->reset_sig >= 0) FreeSignal(h->reset_sig);
+    h->reset_sig = -1;
+}
+
+/* The machine resets once every handler has answered. Packets can still
+ * arrive before it does, so from now on each change is committed before the
+ * reply that acknowledges it. */
+static void CommitBeforeReset(struct bfs_handler *h)
+{
+    h->reset_pending = true;
+    if (CommitDirty(h) == BFS_OK) SendPendingNotifications(h);
+    h->reset_req->io_Command = KBD_RESETHANDLERDONE;
+    h->reset_req->io_Data = h->reset_int;
+    h->reset_req->io_Length = 0;
+    DoIO((struct IORequest *)h->reset_req);
 }
 
 /* ── Packet dispatch ───────────────────────────────────────── */
@@ -1184,12 +1501,33 @@ typedef struct {
     UBYTE *pos;
     UBYTE *end;
     LONG type;
+    bfs_lock_t *lock;
     uint32_t skip_count;
     uint32_t seen;
+    uint32_t position;     /* entries consumed by the whole enumeration */
     struct ExAllData *last_ead;
     bool overflow;
     bfs_err_t err;
+    /* The entry consumed last, for the lock's resume point: its name in the
+     * caller's buffer, or in skipped for an entry the pattern rejected. */
+    const char *last_name;
+    uint8_t last_len;
+    char skipped[BFS_NAME_MAX + 1];
 } exall_optimized_ctx_t;
+
+/* Size of the fixed part of an ExAllData entry for each type. */
+static LONG ExAllFixedSize(LONG type)
+{
+    switch (type) {
+    case ED_NAME: return (LONG)offsetof(struct ExAllData, ed_Type);
+    case ED_TYPE: return (LONG)offsetof(struct ExAllData, ed_Size);
+    case ED_SIZE: return (LONG)offsetof(struct ExAllData, ed_Prot);
+    case ED_PROTECTION: return (LONG)offsetof(struct ExAllData, ed_Days);
+    case ED_DATE: return (LONG)offsetof(struct ExAllData, ed_Comment);
+    case ED_COMMENT: return (LONG)offsetof(struct ExAllData, ed_OwnerUID);
+    default: return (LONG)sizeof(struct ExAllData);
+    }
+}
 
 /* Stateful callback for single-pass linear directory scanning.
  * Manages skip_count, pattern matching, and user buffer overflow. */
@@ -1198,30 +1536,23 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
 {
     exall_optimized_ctx_t *ec = (exall_optimized_ctx_t *)ctx;
 
+    if (IsParentEntry(name, name_len)) return true;
     if (ec->seen < ec->skip_count) {
         ec->seen++;
         return true;
     }
 
-    char namebuf[BFS_NAME_MAX + 1];
-    memcpy(namebuf, name, name_len); namebuf[name_len] = 0;
-
     /* Pattern match */
-    if (ec->eac->eac_MatchString && !MatchPatternNoCase(ec->eac->eac_MatchString, namebuf)) {
-        ec->seen++;
-        ec->skip_count++;
-        ec->eac->eac_LastKey = (ULONG)ec->skip_count;
-        return true;
-    }
-
-    /* Calculate entry size */
-    LONG entry_size = (LONG)sizeof(struct ExAllData) + name_len + 1;
-    if (ec->type >= ED_COMMENT) entry_size += 80;
-    entry_size = (entry_size + 3) & ~3;
-
-    if ((size_t)(ec->end - ec->pos) < (size_t)entry_size) {
-        ec->overflow = true;
-        return false; /* stop scan */
+    if (ec->eac->eac_MatchString) {
+        /* name_len <= BFS_NAME_MAX, and skipped holds BFS_NAME_MAX + 1. */
+        memcpy(ec->skipped, name, name_len); ec->skipped[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+        if (!MatchPatternNoCase(ec->eac->eac_MatchString, ec->skipped)) {
+            ec->position++;
+            ec->eac->eac_LastKey = (ULONG)ec->position;
+            ec->last_name = ec->skipped;
+            ec->last_len = name_len;
+            return true;
+        }
     }
 
     /* Read inode for metadata fields */
@@ -1237,11 +1568,31 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
         fsize = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
         prot = bfs_be32(inode.protection);
     }
+    char cbuf[BFS_COMMENT_BUFFER];
+    int cl = 0;
+    if (ec->type >= ED_COMMENT) {
+        /* ED_COMMENT implies ED_SIZE, so the inode has been read. */
+        ec->err = ReadComment(ec->h, inode_nr, &inode, cbuf, &cl);
+        if (ec->err != BFS_OK) return false;
+    }
+
+    /* Only the fields up to the requested type, then the strings, as
+     * dos.library lays out ExAllData. An entry that does not fit is left for
+     * the next call. */
+    LONG fixed_size = ExAllFixedSize(ec->type);
+    LONG entry_size = fixed_size + name_len + 1;
+    if (ec->type >= ED_COMMENT) entry_size += cl + 1;
+    entry_size = (entry_size + 3) & ~3;
+    if ((size_t)(ec->end - ec->pos) < (size_t)entry_size) {
+        ec->overflow = true;
+        return false; /* stop scan */
+    }
 
     struct ExAllData *ead = (struct ExAllData *)ec->pos;
-    memset(ead, 0, entry_size);
-    UBYTE *str = ec->pos + sizeof(struct ExAllData);
-    memcpy(str, namebuf, name_len); str[name_len] = 0;
+    memset(ead, 0, fixed_size);
+    UBYTE *str = ec->pos + fixed_size;
+    /* entry_size above includes name_len + 1 bytes behind the fixed part. */
+    memcpy(str, name, name_len); str[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     ead->ed_Name = str; str += name_len + 1;
     if (ec->type >= ED_TYPE) ead->ed_Type = (entry_type == BFS_INODE_DIR) ? ST_USERDIR : ST_FILE;
     if (ec->type >= ED_SIZE) ead->ed_Size = fsize > INT32_MAX ? INT32_MAX : (ULONG)fsize;
@@ -1252,14 +1603,6 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
         ead->ed_Ticks = bfs_be16(inode.modify_ticks);
     }
     if (ec->type >= ED_COMMENT) {
-        char cbuf[80]; cbuf[0] = 0;
-        bfs_err_t comment_err = bfs_fs_get_comment(&ec->h->fs, inode_nr,
-                                                    cbuf, 79);
-        if (comment_err != BFS_OK && comment_err != BFS_ERR_NOTFOUND) {
-            ec->err = comment_err;
-            return false;
-        }
-        int cl = 0; while (cbuf[cl]) cl++;
         memcpy(str, cbuf, cl); str[cl] = 0;
         ead->ed_Comment = str;
     }
@@ -1269,9 +1612,10 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     ec->last_ead = ead;
     ec->pos += entry_size;
     ec->eac->eac_Entries++;
-    ec->seen++;
-    ec->skip_count++;
-    ec->eac->eac_LastKey = (ULONG)ec->skip_count;
+    ec->position++;
+    ec->eac->eac_LastKey = (ULONG)ec->position;
+    ec->last_name = (const char *)ead->ed_Name;
+    ec->last_len = name_len;
 
     return true;
 }
@@ -1405,13 +1749,12 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         /* Packet capacity was checked above; the source has exactly this size. */
         memcpy(buffer, h->format_error, BFS_FORMAT_ERROR_MAX); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         res1 = h->format_error[0] ? DOSTRUE : DOSFALSE;
-        res2 = 0;
+        res2 = h->format_error[0] && h->format_replaceable ? BFS_FORMAT_REPLACEABLE : 0;
         break;
     }
 
     case BFS_ACTION_CHECK: {
         ULONG *summary = (ULONG *)pkt->dp_Arg1;
-        bfs_fs_t checked;
         bfs_fsck_report_t report;
         bfs_err_t err;
 
@@ -1423,15 +1766,27 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
         /* The handler processes packets serially. Scan a separate read-only
          * mount so CHECK observes the last committed state without changing
-         * the live write transaction. */
-        err = bfs_fs_mount_readonly(&checked, &h->cache.bio);
+         * the live write transaction. Delayed changes are committed first so
+         * the check covers everything accepted so far. */
+        err = CommitDirty(h);
         if (err != BFS_OK) {
             res2 = Pfs4ToDosError(err);
             break;
         }
-        err = bfs_fs_check(&checked, false, &report);
-        if (bfs_fs_unmount(&checked) != BFS_OK && err == BFS_OK)
-            err = BFS_ERR_IO;
+        SendPendingNotifications(h);
+        /* A filesystem state is too large for the packet stack frame. */
+        bfs_fs_t *checked = AllocVec(sizeof(*checked), MEMF_CLEAR);
+        if (!checked) {
+            res2 = ERROR_NO_FREE_STORE;
+            break;
+        }
+        err = bfs_fs_mount_readonly(checked, &h->cache.bio);
+        if (err == BFS_OK) {
+            err = bfs_fs_check(checked, false, &report);
+            if (bfs_fs_unmount(checked) != BFS_OK && err == BFS_OK)
+                err = BFS_ERR_IO;
+        }
+        FreeVec(checked);
         if (err != BFS_OK && err != BFS_ERR_CORRUPT) {
             res2 = Pfs4ToDosError(err);
             break;
@@ -1691,15 +2046,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     case ACTION_END: {
         bfs_file_t *f = (bfs_file_t *)pkt->dp_Arg1;
         if (!FindOpenFile(h, f)) { res2 = ERROR_INVALID_LOCK; break; }
-        bfs_err_t err = BFS_OK;
-        if (h->dirty) {
-            err = bfs_fs_sync(&h->fs);
-            if (err == BFS_OK) {
-                h->dirty = false;
-                if (h->notify_pending) SendNotifications(h);
-                h->notify_pending = false;
-            }
-        }
+        /* Delayed commits leave the change to the commit timer. */
+        bfs_err_t err = h->sync_commits ? CommitDirty(h) : BFS_OK;
+        if (err == BFS_OK) SendPendingNotifications(h);
         FreeOpenFile(h, f);
         res1 = (err == BFS_OK) ? DOSTRUE : DOSFALSE;
         res2 = Pfs4ToDosError(err);
@@ -1826,17 +2175,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         FillFib(fib, name, name_len, lk->ino, lk->type, size, prot,
                 &inode);
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_OBJECT64) FillFib64(fib, size);
-        /* Read file comment */
-        { char cb[80];
-          err = bfs_fs_get_comment(&h->fs, lk->ino, cb, 79);
-          if (err != BFS_OK && err != BFS_ERR_NOTFOUND) {
-              res2 = Pfs4ToDosError(err); break;
-          }
-          if (err == BFS_OK) {
-              int cl = 0; while (cb[cl]) cl++;
-              fib->fib_Comment[0] = cl; memcpy(&fib->fib_Comment[1], cb, cl);
-          }
-        }
+        err = FillFibComment(h, fib, lk->ino, &inode);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         /* Store scan index 0 in fib_DiskKey for EXAMINE_NEXT */
         fib->fib_DiskKey = 0;
         res1 = DOSTRUE;
@@ -1853,14 +2193,14 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (!LockIsOwned(h, lk)) { res2 = ERROR_INVALID_LOCK; break; }
 
         char namebuf[BFS_NAME_MAX + 1];
+        uint32_t position = (uint32_t)fib->fib_DiskKey;
         exam_next_ctx_t ctx;
-        ctx.skip_count = (uint32_t)fib->fib_DiskKey;
         ctx.seen = 0;
         ctx.name_out = namebuf;
         ctx.got_entry = false;
 
-        bfs_err_t err = bfs_dir_scan(&h->fs.dir_tree, lk->ino,
-                                     exam_next_cb, &ctx);
+        bfs_err_t err = ScanDirectoryFrom(h, lk, position, exam_next_cb, &ctx,
+                                          &ctx.skip_count);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
         if (!ctx.got_entry) {
@@ -1877,7 +2217,10 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         en_prot = bfs_be32(en_inode.protection);
         FillFib(fib, namebuf, ctx.name_len, ctx.ino_out, ctx.type_out, en_size, en_prot, &en_inode);
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_NEXT64) FillFib64(fib, en_size);
-        fib->fib_DiskKey = (LONG)(ctx.skip_count + 1);
+        err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        CursorRemember(lk, position + 1, namebuf, ctx.name_len);
+        fib->fib_DiskKey = (LONG)(position + 1);
         res1 = DOSTRUE;
         res2 = 0;
         break;
@@ -1989,10 +2332,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
     }
 
     /* ── INHIBIT ───────────────────────────────────────────── */
-    case ACTION_INHIBIT:
+    case ACTION_INHIBIT: {
+        /* Whoever inhibits the volume may read or replace it directly. */
+        bfs_err_t err = pkt->dp_Arg1 ? CommitDirty(h) : BFS_OK;
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        SendPendingNotifications(h);
         res1 = DOSTRUE;
         res2 = 0;
         break;
+    }
 
     /* ── ACTION_MAKE_LINK (hard/soft links) ────────────────── */
     case ACTION_MAKE_LINK: {
@@ -2077,6 +2425,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         UBYTE *bcomment = (UBYTE *)BADDR(pkt->dp_Arg4);
         if (!bcomment) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
         uint8_t clen = bcomment[0];
+        if (clen > 79) { res2 = ERROR_COMMENT_TOO_BIG; break; }
         err = bfs_fs_set_comment(&h->fs, ino, (const char *)&bcomment[1], clen);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         res1 = DOSTRUE;
@@ -2142,13 +2491,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         eac->eac_Entries = 0;
         exall_optimized_ctx_t ectx = {
             .h = h, .eac = eac, .buffer = buffer, .pos = buffer,
-            .end = buffer + bufsize, .type = type,
-            .skip_count = (uint32_t)eac->eac_LastKey, .seen = 0,
+            .end = buffer + bufsize, .type = type, .lock = lk,
+            .seen = 0, .position = (uint32_t)eac->eac_LastKey,
             .last_ead = NULL, .overflow = false, .err = BFS_OK
         };
 
-        bfs_err_t err = bfs_dir_scan(&h->fs.dir_tree, lk->ino,
-                                     exall_optimized_cb, &ectx);
+        bfs_err_t err = ScanDirectoryFrom(h, lk, ectx.position, exall_optimized_cb,
+                                          &ectx, &ectx.skip_count);
+        if (ectx.last_name)
+            CursorRemember(lk, ectx.position, ectx.last_name, ectx.last_len);
         if (err == BFS_OK) err = ectx.err;
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
@@ -2468,11 +2819,32 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         bfs_err_t err = bfs_fs_sync(&h->fs);
         if (err == BFS_OK) {
             h->dirty = false;
-            if (h->notify_pending) SendNotifications(h);
-            h->notify_pending = false;
+            h->commit_failed = false;
+            SendPendingNotifications(h);
         }
         res1 = (err == BFS_OK) ? DOSTRUE : DOSFALSE;
         res2 = Pfs4ToDosError(err);
+        break;
+    }
+
+    /* ── BFS_ACTION_COMMIT_MODE ────────────────────────────── */
+    case BFS_ACTION_COMMIT_MODE: {
+        LONG mode = pkt->dp_Arg1;
+        if (mode != BFS_COMMIT_MODE_QUERY && mode != BFS_COMMIT_MODE_DELAYED &&
+            mode != BFS_COMMIT_MODE_SYNC) {
+            res2 = ERROR_BAD_NUMBER;
+            break;
+        }
+        if (mode == BFS_COMMIT_MODE_SYNC) {
+            bfs_err_t err = CommitDirty(h);
+            if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+            SendPendingNotifications(h);
+            h->sync_commits = true;
+        } else if (mode == BFS_COMMIT_MODE_DELAYED) {
+            h->sync_commits = false;
+        }
+        res1 = h->sync_commits ? BFS_COMMIT_MODE_SYNC : BFS_COMMIT_MODE_DELAYED;
+        res2 = 0;
         break;
     }
 
@@ -2482,16 +2854,22 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         break;
 
     /* ── ACTION_WRITE_PROTECT ──────────────────────────────── */
-    case ACTION_WRITE_PROTECT:
+    case ACTION_WRITE_PROTECT: {
+        /* Changes accepted before protection must not reach the medium
+         * later, so they are committed first. */
+        bfs_err_t err = pkt->dp_Arg1 ? CommitDirty(h) : BFS_OK;
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         h->write_protected = (pkt->dp_Arg1 != 0);
         res1 = DOSTRUE;
         res2 = 0;
         break;
+    }
 
     /* ── ACTION_FORMAT ─────────────────────────────────────── */
     case ACTION_FORMAT: {
         if (h->write_protected) { res2 = ERROR_DISK_WRITE_PROTECTED; break; }
-        if (h->mount_error == BFS_ERR_UNSUPPORTED) {
+        /* Formatting replaces older BFS formats, never a newer one. */
+        if (h->mount_error == BFS_ERR_UNSUPPORTED && !h->format_replaceable) {
             ReportFormatError(h, pkt->dp_Port);
             res2 = Pfs4ToDosError(h->mount_error); break;
         }
@@ -2626,8 +3004,17 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         uint64_t size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
         uint32_t type = bfs_be32(inode.type);
-        FillFib(fib, "", 0, f->inode_nr, type, size, bfs_be32(inode.protection), &inode);
+        /* Objects in use cannot be renamed, so the parent recorded at open
+         * still holds the name. */
+        char name[BFS_NAME_MAX + 1];
+        uint8_t name_len = 0;
+        err = NameForObject(h, f->inode_nr, ((bfs_open_file_t *)f)->parent_ino,
+                            name, &name_len);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        FillFib(fib, name, name_len, f->inode_nr, type, size, bfs_be32(inode.protection), &inode);
         if (pkt->dp_Type == BFS_ACTION_EXAMINE_FH64) FillFib64(fib, size);
+        err = FillFibComment(h, fib, f->inode_nr, &inode);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         fib->fib_DiskKey = 0;
         res1 = DOSTRUE;
         res2 = 0;
@@ -2734,8 +3121,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         break;
     }
 
-    /* Sync standalone metadata operations. File mutations are committed by
-     * ACTION_END so rapid writes to one open handle share one transaction. */
+    /* Standalone metadata operations are complete here. In sync mode they
+     * are committed; file mutations wait for ACTION_END so rapid writes to
+     * one open handle share one transaction. */
     if (h->dirty && res2 == 0 &&
                     (pkt->dp_Type == ACTION_DELETE_OBJECT ||
                      pkt->dp_Type == ACTION_CREATE_DIR ||
@@ -2747,14 +3135,21 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                      pkt->dp_Type == ACTION_SET_OWNER ||
                      pkt->dp_Type == ACTION_RENAME_DISK ||
                      pkt->dp_Type == ACTION_FORMAT)) {
-        bfs_err_t sync_err = bfs_fs_sync(&h->fs);
+        bfs_err_t sync_err = h->sync_commits ? CommitDirty(h) : BFS_OK;
         if (sync_err == BFS_OK) {
-            h->dirty = false;
-            if (h->notify_pending) SendNotifications(h);
-            h->notify_pending = false;
+            SendPendingNotifications(h);
         } else {
             res1 = DOSFALSE;
             res2 = Pfs4ToDosError(sync_err);
+        }
+    }
+    if (h->reset_pending && h->dirty && res2 == 0) {
+        bfs_err_t reset_err = CommitDirty(h);
+        if (reset_err != BFS_OK) {
+            res1 = (pkt->dp_Type == ACTION_READ || pkt->dp_Type == ACTION_WRITE ||
+                    pkt->dp_Type == ACTION_SEEK || pkt->dp_Type == ACTION_SET_FILE_SIZE ||
+                    pkt->dp_Type == ACTION_READ_LINK) ? -1 : DOSFALSE;
+            res2 = Pfs4ToDosError(reset_err);
         }
     }
 
@@ -2843,6 +3238,7 @@ void EntryPoint(void)
 
     /* Allocate handler state */
     h = AllocMem(sizeof(struct bfs_handler) + sizeof(amiga_bio_t), MEMF_CLEAR);
+    if (h) h->reset_sig = -1;
     if (!h) {
         pkt->dp_Res1 = DOSFALSE;
         pkt->dp_Res2 = ERROR_NO_FREE_STORE;
@@ -3005,6 +3401,14 @@ void EntryPoint(void)
         }
     }
 
+    /* Live volumes commit delayed changes from a timer and before a reset.
+     * Snapshot workers are read-only. */
+    if (!snapshot_startup) {
+        h->sync_commits = ControlRequestsSyncCommits(h->dosenvec);
+        OpenCommitTimer(h);
+        AddCommitResetHandler(h);
+    }
+
     /* Reply to startup packet — success */
     pkt->dp_Res1 = DOSTRUE;
     pkt->dp_Res2 = 0;
@@ -3019,8 +3423,13 @@ void EntryPoint(void)
 
     /* ── Main packet loop ──────────────────────────────────── */
     while (running) {
+        ULONG reset_mask = h->reset_handler_added ? 1UL << h->reset_sig : 0;
         ULONG sigs = Wait((1UL << h->msgport->mp_SigBit) |
-                          ((h->diskchange_sig >= 0) ? (1UL << h->diskchange_sig) : 0));
+                          ((h->diskchange_sig >= 0) ? (1UL << h->diskchange_sig) : 0) |
+                          CommitTimerMask(h) | reset_mask);
+
+        if (sigs & CommitTimerMask(h)) CommitTimerExpired(h);
+        if (sigs & reset_mask) CommitBeforeReset(h);
 
         if (h->diskchange_sig >= 0 && (sigs & (1UL << h->diskchange_sig))) {
             /* The old medium is gone: discard cached state without writing it
@@ -3036,16 +3445,19 @@ void EntryPoint(void)
 
         while ((pkt = GetPacket(h->msgport)) != NULL) {
             HandlePacket(pkt, h);
+            h->commit_activity = true;
             if (h->should_exit) {
                 running = FALSE;
                 break;
             }
             if (h->media_changed && !HandlerIsInUse(h)) TryRemountMedia(h);
         }
-
+        if (running) ArmCommitTimer(h);
     }
 
     /* Cleanup */
+    RemoveCommitResetHandler(h);
+    CloseCommitTimer(h);
     h->devnode->dn_Task = NULL;
     if (h->diskchange_req) {
         h->diskchange_req->iotd_Req.io_Command = TD_REMCHANGEINT;
@@ -3068,6 +3480,7 @@ void EntryPoint(void)
         RemoveVolumeNode(h);
     }
     bfs_cache_destroy(&h->cache);
+    bfs_amiga_bio_release((amiga_bio_t *)(h + 1));
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_close();
 #endif
@@ -3091,6 +3504,7 @@ fail_startup:
         else RemoveVolumeNode(h);
         if (h->fs.mounted) bfs_fs_abandon(&h->fs);
         bfs_cache_destroy(&h->cache);
+        bfs_amiga_bio_release((amiga_bio_t *)(h + 1));
 #ifdef BFS_PERF_PROBE
         bfs_perf_probe_close();
 #endif

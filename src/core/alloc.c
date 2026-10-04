@@ -46,7 +46,7 @@ static uint32_t reserve_refill_target(const bfs_freespace_t *fs)
 /* ── B+tree ops for free space tree ────────────────────────── */
 
 static const bfs_btree_ops_t free_ops = {
-    .key_compare = bfs_cmp_be32,
+    .key_compare = bfs_btree_key_compare_be32,
     .key_size = sizeof(uint32_t),
     .val_size = sizeof(uint32_t),
     .cache_key_order = true,
@@ -492,13 +492,93 @@ static bfs_err_t alloc_tail_from_highest(bfs_freespace_t *fs, uint32_t requested
 
 static bfs_err_t alloc_partial_root_leaf(bfs_freespace_t *fs,
                                           bfs_blk_t start, uint32_t length,
-                                          uint32_t count);
+                                          bfs_blk_t take, uint32_t count,
+                                          bfs_blk_t *roving, bool *declined);
 
-#ifdef BFS_PERF_PROBE
-static bfs_blk_t freespace_alloc_work(bfs_freespace_t *fs, uint32_t count)
-#else
-bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
-#endif
+/* Remove [take, take + count) from the free extent (start, length) and move
+ * *roving behind it. File data takes the head of an extent by moving its key
+ * in place. Otherwise a single root leaf is rewritten once (for metadata only
+ * for runs); when that does not apply or a split does not fit the leaf, the
+ * extent is deleted or shortened and any remainder inserted, undoing the
+ * first step if the second fails. */
+static bfs_err_t take_free_range(bfs_freespace_t *fs, bfs_blk_t start,
+                                 uint32_t length, bfs_blk_t take, uint32_t count,
+                                 bool data, bfs_blk_t *roving)
+{
+    if (data && take == start && length > count) {
+        /* The head of an extent: its start moves up in place, which keeps
+         * the key between its neighbours unless a stale separator lies in
+         * the way. */
+        uint32_t old_key = bfs_be32(start);
+        uint32_t new_key = bfs_be32(start + count);
+        uint32_t new_len = bfs_be32(length - count);
+        bfs_err_t err = bfs_btree_update_key(&fs->tree, &old_key, &new_key, &new_len);
+        if (err == BFS_OK) {
+            fs->total_free -= count;
+            *roving = take + count;
+        }
+        if (err != BFS_ERR_UNSUPPORTED) return err;
+    }
+    /* Metadata keeps the single-leaf rewrite for runs only. */
+    bool partial_leaf = data || count > 1;
+    if (partial_leaf && length > count && fs->tree.height == 1) {
+        bool declined = false;
+        bfs_err_t err = alloc_partial_root_leaf(fs, start, length, take, count,
+                                                roving, &declined);
+        if (!declined) return err;
+    }
+    uint32_t head = take - start;
+    uint32_t tail = length - head - count;
+    uint32_t old_key = bfs_be32(start);
+    uint32_t old_len = bfs_be32(length);
+    bfs_err_t err;
+    if (head == 0) {
+        err = bfs_btree_delete(&fs->tree, &old_key);
+    } else {
+        uint32_t head_len = bfs_be32(head);
+        err = bfs_btree_update(&fs->tree, &old_key, &head_len);
+    }
+    if (err != BFS_OK) return err;
+    if (tail > 0) {
+        uint32_t rem_start = bfs_be32(take + count);
+        uint32_t rem_len = bfs_be32(tail);
+        err = bfs_btree_insert(&fs->tree, &rem_start, &rem_len);
+        if (err != BFS_OK) {
+            bfs_err_t rollback_err = head == 0 ?
+                bfs_btree_insert(&fs->tree, &old_key, &old_len) :
+                bfs_btree_update(&fs->tree, &old_key, &old_len);
+            return rollback_err == BFS_OK ? err : rollback_err;
+        }
+    }
+    fs->total_free -= count;
+    *roving = take + count;
+    return BFS_OK;
+}
+
+/* Take [goal, goal + count) if one free extent covers it. BFS_ERR_NOTFOUND
+ * leaves the tree unchanged for the caller's first-fit search. */
+static bfs_err_t alloc_data_at_goal(bfs_freespace_t *fs, bfs_blk_t goal,
+                                    uint32_t count)
+{
+    bfs_blk_t block_count = fs->tree.bio->block_count;
+    if (goal == BFS_BLK_NULL || goal >= block_count || count > block_count - goal)
+        return BFS_ERR_NOTFOUND;
+    uint32_t key = bfs_be32(goal);
+    uint32_t found_key, found_len;
+    bfs_err_t err = bfs_btree_search_floor(&fs->tree, &key, &found_key, &found_len);
+    if (err != BFS_OK) return err;
+    bfs_blk_t start = bfs_be32(found_key);
+    uint32_t length = bfs_be32(found_len);
+    if (length == 0 || start == BFS_BLK_NULL || start >= block_count ||
+        length > block_count - start)
+        return BFS_ERR_CORRUPT;
+    if (goal - start > length || count > length - (goal - start))
+        return BFS_ERR_NOTFOUND;
+    return take_free_range(fs, start, length, goal, count, true, &fs->data_roving);
+}
+
+static bfs_blk_t freespace_alloc_core(bfs_freespace_t *fs, uint32_t count,
+                                      bool data, bfs_blk_t goal)
 {
     if (!fs || !fs->tree.bio || count == 0) return BFS_BLK_NULL;
     fs->last_error = BFS_OK;
@@ -539,7 +619,26 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
 
     fs->in_alloc = true;
 
-    if (count == 1) {
+    if (data) {
+#ifdef BFS_PERF_PROBE
+        ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
+            BFS_PERF_FREE_TREE_PHASE_ALLOCATION_BODY);
+#endif
+        bfs_err_t goal_err = alloc_data_at_goal(fs, goal, count);
+#ifdef BFS_PERF_PROBE
+        bfs_perf_probe_free_tree_phase_leave(previous_phase);
+#endif
+        if (goal_err == BFS_OK) {
+            fs->in_alloc = false;
+            fs->last_error = BFS_OK;
+            return goal;
+        }
+        if (goal_err != BFS_ERR_NOTFOUND) {
+            fs->in_alloc = false;
+            fs->last_error = goal_err;
+            return BFS_BLK_NULL;
+        }
+    } else if (count == 1) {
         bfs_blk_t result = BFS_BLK_NULL;
         uint32_t taken = 0;
 #ifdef BFS_PERF_PROBE
@@ -571,7 +670,8 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
         .err = BFS_OK,
     };
 
-    uint32_t start_key = bfs_be32(fs->roving);
+    bfs_blk_t *roving = data ? &fs->data_roving : &fs->roving;
+    uint32_t start_key = bfs_be32(*roving);
     bfs_err_t scan_err = bfs_btree_scan(&fs->tree, &start_key, alloc_scan_cb, &sc);
     if (scan_err != BFS_OK) {
         fs->in_alloc = false;
@@ -585,7 +685,7 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
     }
 
     /* If not found, wrap around from beginning */
-    if (sc.found_start == BFS_BLK_NULL && fs->roving > 0) {
+    if (sc.found_start == BFS_BLK_NULL && *roving > 0) {
         scan_err = bfs_btree_scan(&fs->tree, NULL, alloc_scan_cb, &sc);
         if (scan_err != BFS_OK) {
             fs->in_alloc = false;
@@ -614,74 +714,45 @@ bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
     ULONG previous_phase = bfs_perf_probe_free_tree_phase_enter(
         BFS_PERF_FREE_TREE_PHASE_ALLOCATION_BODY);
 #endif
-    bfs_err_t err;
-    if (count > 1 && sc.found_len > count && fs->tree.height == 1) {
-        err = alloc_partial_root_leaf(fs, sc.found_start, sc.found_len, count);
-#ifdef BFS_PERF_PROBE
-        bfs_perf_probe_free_tree_phase_leave(previous_phase);
-#endif
-        fs->in_alloc = false;
-        fs->last_error = err;
-        return err == BFS_OK ? sc.found_start : BFS_BLK_NULL;
-    }
-
-    /* Exact fits and deeper trees retain the existing delete/reinsert path. */
-    uint32_t old_key = bfs_be32(sc.found_start);
-    uint32_t old_len = bfs_be32(sc.found_len);
-    err = bfs_btree_delete(&fs->tree, &old_key);
-    if (err != BFS_OK) {
-#ifdef BFS_PERF_PROBE
-        bfs_perf_probe_free_tree_phase_leave(previous_phase);
-#endif
-        fs->in_alloc = false;
-        fs->last_error = err;
-        return BFS_BLK_NULL;
-    }
-
-    /* If extent is larger than needed, re-insert the remainder */
-    bfs_blk_t result = sc.found_start;
-    if (sc.found_len > count) {
-        uint32_t rem_start = bfs_be32(sc.found_start + count);
-        uint32_t rem_len = bfs_be32(sc.found_len - count);
-        err = bfs_btree_insert(&fs->tree, &rem_start, &rem_len);
-        if (err != BFS_OK) {
-            bfs_err_t rollback_err = bfs_btree_insert(&fs->tree, &old_key, &old_len);
-#ifdef BFS_PERF_PROBE
-            bfs_perf_probe_free_tree_phase_leave(previous_phase);
-#endif
-            fs->in_alloc = false;
-            fs->last_error = rollback_err == BFS_OK ? err : rollback_err;
-            return BFS_BLK_NULL;
-        }
-    }
+    bfs_err_t err = take_free_range(fs, sc.found_start, sc.found_len,
+                                    sc.found_start, count, data, roving);
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_free_tree_phase_leave(previous_phase);
 #endif
-
-    fs->total_free -= count;
-    fs->roving = result + count;
     fs->in_alloc = false;
-
-    fs->last_error = BFS_OK;
-
-    return result;
+    fs->last_error = err;
+    return err == BFS_OK ? sc.found_start : BFS_BLK_NULL;
 }
 
 #ifdef BFS_PERF_PROBE
 /* Public extent withdrawals, including invalid/error returns. A metadata
  * iface sample may contain this interval; these totals are not additive. */
-bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
+static bfs_blk_t freespace_alloc_sampled(bfs_freespace_t *fs, uint32_t count,
+                                         bool data, bfs_blk_t goal)
 {
     struct EClockVal started = {0};
     bfs_perf_probe_counters.freespace_alloc_calls++;
     bfs_perf_probe_begin(&started);
-    bfs_blk_t result = freespace_alloc_work(fs, count);
+    bfs_blk_t result = freespace_alloc_core(fs, count, data, goal);
     uint64_t ticks = bfs_perf_probe_elapsed(&started);
     bfs_perf_probe_counters.freespace_alloc_samples++;
     bfs_perf_probe_counters.freespace_alloc_sample_ticks += ticks;
     return result;
 }
+#else
+#define freespace_alloc_sampled freespace_alloc_core
 #endif
+
+bfs_blk_t bfs_freespace_alloc(bfs_freespace_t *fs, uint32_t count)
+{
+    return freespace_alloc_sampled(fs, count, false, BFS_BLK_NULL);
+}
+
+bfs_blk_t bfs_freespace_alloc_data(bfs_freespace_t *fs, uint32_t count,
+                                   bfs_blk_t goal)
+{
+    return freespace_alloc_sampled(fs, count, true, goal);
+}
 
 /* ── Free ──────────────────────────────────────────────────── */
 
@@ -919,11 +990,14 @@ static void encode_free_leaf_entries(free_leaf_entries_t *entries)
     }
 }
 
-/* Shift the selected first-fit extent without a transient delete/reinsert.
- * The normal B-tree API retains the old root's established retirement path. */
+/* Take [take, take + count) from the selected extent without a transient
+ * delete/reinsert: shift its start, shorten it, or split it in two. A split
+ * that does not fit the leaf sets *declined before any change. The normal
+ * B-tree API retains the old root's established retirement path. */
 static bfs_err_t alloc_partial_root_leaf(bfs_freespace_t *fs,
                                           bfs_blk_t start, uint32_t length,
-                                          uint32_t count)
+                                          bfs_blk_t take, uint32_t count,
+                                          bfs_blk_t *roving, bool *declined)
 {
     if (fs->tree.height != 1) return BFS_ERR_CORRUPT;
     uint32_t capacity = bfs_btree_leaf_capacity(&fs->tree);
@@ -951,20 +1025,38 @@ static bfs_err_t alloc_partial_root_leaf(bfs_freespace_t *fs,
         if (entries.keys[i] == start) selected = i;
     }
     if (selected == entries.count || entries.lengths[selected] != length ||
-        length <= count) {
+        length <= count || take < start || take - start > length - count) {
         err = BFS_ERR_CORRUPT;
         goto done;
     }
-    entries.keys[selected] += count;
-    entries.lengths[selected] -= count;
+    uint32_t head = take - start;
+    uint32_t tail = length - head - count;
+    if (head == 0) {
+        entries.keys[selected] += count;
+        entries.lengths[selected] -= count;
+    } else if (tail == 0) {
+        entries.lengths[selected] = head;
+    } else {
+        if (entries.count == entries.capacity) {
+            *declined = true;
+            goto done;
+        }
+        for (uint32_t i = entries.count; i > selected + 1; i--) {
+            entries.keys[i] = entries.keys[i - 1];
+            entries.lengths[i] = entries.lengths[i - 1];
+        }
+        entries.keys[selected + 1] = take + count;
+        entries.lengths[selected + 1] = tail;
+        entries.lengths[selected] = head;
+        entries.count++;
+    }
     encode_free_leaf_entries(&entries);
-    bfs_blk_t old_root = fs->tree.root;
-    err = bfs_btree_replace_root_leaf(&fs->tree, entries.keys, entries.lengths,
-                                      entries.count);
-    bool changed = fs->tree.root != old_root;
+    bool changed = false;
+    err = bfs_btree_rewrite_root_leaf(&fs->tree, entries.keys, entries.lengths,
+                                      entries.count, &changed);
     if (changed) {
         fs->total_free -= count;
-        fs->roving = start + count;
+        *roving = take + count;
     }
     if (err != BFS_OK && (changed || fs->tree.free_sink_err != BFS_OK) &&
         fs->recovery_state && *fs->recovery_state == BFS_OK) {
@@ -1076,14 +1168,15 @@ static bfs_err_t replace_free_root_leaf(bfs_freespace_t *fs,
 {
     encode_free_leaf_entries(entries);
     bfs_blk_t old_root = fs->tree.root;
+    bool published = false;
     fs->in_alloc = true;
     bfs_err_t err = take_current_root
         ? bfs_btree_replace_owned_root_leaf(&fs->tree, old_root, entries->keys,
                                             entries->lengths, entries->count)
-        : bfs_btree_replace_root_leaf(&fs->tree, entries->keys,
-                                       entries->lengths, entries->count);
+        : bfs_btree_rewrite_root_leaf(&fs->tree, entries->keys,
+                                      entries->lengths, entries->count, &published);
     fs->in_alloc = false;
-    if (fs->tree.root != old_root) fs->total_free += count;
+    if (published || fs->tree.root != old_root) fs->total_free += count;
     fs->last_error = err;
     return err;
 }
@@ -1202,6 +1295,11 @@ static bool reserve_block_is_emergency(const bfs_freespace_t *fs, bfs_blk_t blk)
         if (bfs_be32(fs->sb->emergency_pool[i]) == blk) return true;
     }
     return false;
+}
+
+bool bfs_freespace_pool_block(const bfs_freespace_t *fs, bfs_blk_t blk)
+{
+    return fs && reserve_block_is_emergency(fs, blk);
 }
 
 static void sort_reserve_blocks(bfs_blk_t *blocks, uint32_t count)

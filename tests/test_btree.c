@@ -5,6 +5,7 @@
 #include "test_harness.h"
 #include "bfs_btree.h"
 #include "bfs_btree_internal.h"
+#include "bfs_alloc.h"
 #include "bfs_cache.h"
 #include "block_device_emu.h"
 #include <unistd.h>
@@ -370,6 +371,223 @@ static void test_empty_tree_search(void)
     unlink(TEST_IMG);
 }
 
+/* ── Test: owned nodes ─────────────────────────────────────── */
+
+static void read_block(bfs_bio_t *bio, bfs_blk_t blk, uint8_t *buf)
+{
+    TEST_ASSERT_EQ(bfs_bio_read(bio, blk, buf), BFS_OK);
+}
+
+/* Insert key k with value k * 10. */
+static bfs_err_t insert_tenfold(bfs_btree_t *tree, uint32_t k)
+{
+    uint32_t key, val;
+    make_key(&key, k);
+    val = bfs_be32(k * 10u);
+    return bfs_btree_insert(tree, &key, &val);
+}
+
+static void test_owned_rewrite_requires_registration(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    bfs_btree_owned_t owned = {0};
+    tree.free_sink.owned = &owned;
+
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 1), BFS_OK);
+    bfs_blk_t root = tree.root;
+    bfs_blk_t next = ba->next_block;
+
+    /* A node the live transaction allocated is rewritten in place. */
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 2), BFS_OK);
+    TEST_ASSERT_EQ(tree.root, root);
+    TEST_ASSERT_EQ(ba->next_block, next);
+
+    /* The same txn_id without registration, as on a damaged image, is not
+     * proof of ownership: the node is copied and its bytes stay intact. */
+    bfs_btree_owned_reset(&owned);
+    uint8_t before[BLK_SIZE], after[BLK_SIZE];
+    read_block(bio, root, before);
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 3), BFS_OK);
+    TEST_ASSERT(tree.root != root);
+    read_block(bio, root, after);
+    TEST_ASSERT_MEM_EQ(after, before, BLK_SIZE);
+
+    /* The copy is registered and rewritten in place again. */
+    root = tree.root;
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 4), BFS_OK);
+    TEST_ASSERT_EQ(tree.root, root);
+
+    /* A different transaction id invalidates every entry. */
+    tree.txn_id_fallback = 2;
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 5), BFS_OK);
+    TEST_ASSERT(tree.root != root);
+
+    /* The disabled switch keeps every change copy-on-write. */
+    root = tree.root;
+    owned.disabled = true;
+    TEST_ASSERT_EQ(insert_tenfold(&tree, 6), BFS_OK);
+    TEST_ASSERT(tree.root != root);
+
+    uint32_t key, val;
+    for (uint32_t i = 1; i <= 6; i++) {
+        make_key(&key, i);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+        TEST_ASSERT_EQ(bfs_load_be32(&val), i * 10);
+    }
+    bfs_btree_owned_destroy(&owned);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static void test_owned_rewrite_publishes_after_fallible_steps(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    bfs_btree_owned_t owned = {0};
+    tree.free_sink.owned = &owned;
+
+    /* Fill one owned root leaf to capacity; the next insert must split. */
+    uint32_t capacity = bfs_btree_leaf_capacity(&tree);
+    uint32_t key, val;
+    for (uint32_t i = 0; i < capacity; i++) {
+        make_key(&key, i * 2u); val = bfs_be32(i);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    }
+    TEST_ASSERT_EQ(tree.height, 1);
+    bfs_blk_t root = tree.root;
+    uint8_t before[BLK_SIZE], after[BLK_SIZE];
+    read_block(bio, root, before);
+
+    /* The split cannot allocate: the owned leaf must keep its old bytes. */
+    ba->max_block = ba->next_block;
+    make_key(&key, 1u); val = bfs_be32(99);
+    TEST_ASSERT(bfs_btree_insert(&tree, &key, &val) != BFS_OK);
+    TEST_ASSERT_EQ(tree.root, root);
+    TEST_ASSERT_EQ(tree.height, 1);
+    read_block(bio, root, after);
+    TEST_ASSERT_MEM_EQ(after, before, BLK_SIZE);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_ERR_NOTFOUND);
+    for (uint32_t i = 0; i < capacity; i++) {
+        make_key(&key, i * 2u);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+    }
+
+    /* With space again the same insert succeeds. */
+    ba->max_block = BLK_COUNT;
+    make_key(&key, 1u); val = bfs_be32(99);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    TEST_ASSERT_EQ(tree.height, 2);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+    bfs_btree_owned_destroy(&owned);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+static int wide_compare(const void *a, const void *b)
+{
+    return u32_compare(a, b);
+}
+
+static const bfs_btree_ops_t wide_ops = {
+    .key_compare = wide_compare,
+    .key_size = BFS_MAX_KEY_SIZE,
+    .val_size = sizeof(uint32_t),
+};
+
+static void wide_key(uint8_t *key, uint32_t value)
+{
+    memset(key, 0, BFS_MAX_KEY_SIZE);
+    make_key((uint32_t *)(void *)key, value);
+}
+
+/* Insert ascending keys until the tree reaches height three and report the
+ * key count at which that happened. */
+static void wide_height_three_at(bfs_bio_t *bio, uint32_t *count_out)
+{
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &wide_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    uint8_t key[BFS_MAX_KEY_SIZE];
+    uint32_t val = 0, count = 0;
+    *count_out = 0;
+    while (tree.height < 3 && count < 1000) {
+        wide_key(key, ++count);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, key, &val), BFS_OK);
+    }
+    free(ba);
+    *count_out = count;
+}
+
+static void test_owned_rewrite_abort_after_staging_keeps_bytes(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    uint32_t split_at;
+    wide_height_three_at(bio, &split_at);
+    TEST_ASSERT(split_at > 1 && split_at < 1000);
+
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &wide_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    bfs_btree_owned_t owned = {0};
+    tree.free_sink.owned = &owned;
+    uint8_t key[BFS_MAX_KEY_SIZE];
+    uint32_t val = 0;
+    for (uint32_t i = 1; i < split_at; i++) {
+        wide_key(key, i);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, key, &val), BFS_OK);
+    }
+    TEST_ASSERT_EQ(tree.height, 2);
+
+    /* The rightmost leaf and the root are full and owned. Allow only the leaf
+     * split: the owned leaf is staged before the root split fails. */
+    bfs_blk_t root = tree.root;
+    uint8_t root_buf[BLK_SIZE];
+    read_block(bio, root, root_buf);
+    uint32_t root_keys = bfs_load_be32(&((bfs_btnode_hdr_t *)(void *)root_buf)->num_keys);
+    bfs_blk_t leaf = get_child(&tree, root_buf, root_keys);
+    uint8_t leaf_before[BLK_SIZE], root_before[BLK_SIZE], after[BLK_SIZE];
+    read_block(bio, leaf, leaf_before);
+    read_block(bio, root, root_before);
+    uint32_t freed_before = ba->freed_count;
+    ba->max_block = ba->next_block + 1;
+
+    wide_key(key, split_at);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, key, &val), BFS_ERR_NOSPC);
+    TEST_ASSERT_EQ(tree.root, root);
+    TEST_ASSERT_EQ(tree.height, 2);
+    TEST_ASSERT_EQ(ba->freed_count, freed_before + 1);
+    read_block(bio, leaf, after);
+    TEST_ASSERT_MEM_EQ(after, leaf_before, BLK_SIZE);
+    read_block(bio, root, after);
+    TEST_ASSERT_MEM_EQ(after, root_before, BLK_SIZE);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, key, &val), BFS_ERR_NOTFOUND);
+    for (uint32_t i = 1; i < split_at; i++) {
+        wide_key(key, i);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, key, &val), BFS_OK);
+    }
+    bfs_btree_owned_destroy(&owned);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 /* ── Test: single insert and search ────────────────────────── */
 
 static void test_single_insert_search(void)
@@ -570,6 +788,563 @@ static void test_scan_from_key(void)
     free(ba);
     bfs_bio_close(bio);
     unlink(TEST_IMG);
+}
+
+/* ── Test: scans across leaves of a three-level tree ───────── */
+
+#define SCAN_IMG "test_btree_scan.img"
+#define SCAN_BLK_SIZE 1024
+#define SCAN_BLK_COUNT 262144
+#define SCAN_KEYS 16000u
+
+typedef struct {
+    uint32_t *keys;
+    uint32_t count;
+    uint32_t capacity;
+} scan_list_t;
+
+static bool scan_list_add(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    scan_list_t *list = ctx;
+    if (list->count < list->capacity) list->keys[list->count] = read_key(key);
+    list->count++;
+    return true;
+}
+
+static bfs_freespace_t scan_space;
+
+/* Even keys 0 .. 2 * (SCAN_KEYS - 1) in a tree on 1 KiB blocks, three levels deep. */
+static void build_scan_tree(bfs_btree_t *tree, bfs_bio_t *bio)
+{
+    TEST_ASSERT_EQ(bfs_freespace_init(&scan_space, bio, BFS_BLK_NULL, 1), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_add(&scan_space, 2, SCAN_BLK_COUNT - 2), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&scan_space), BFS_OK);
+    TEST_ASSERT_EQ(bfs_btree_init(tree, bio, bfs_freespace_allocator(&scan_space), &u32_ops,
+                                  BFS_BLK_NULL, 1), BFS_OK);
+    for (uint32_t i = 0; i < SCAN_KEYS; i++) {
+        uint32_t k = (i * 7919u) % SCAN_KEYS;
+        uint32_t key, val;
+        make_key(&key, 2 * k);
+        make_key(&val, k);
+        TEST_ASSERT_EQ(bfs_btree_insert(tree, &key, &val), BFS_OK);
+    }
+    TEST_ASSERT(tree->height >= 3);
+}
+
+/* Scans from every kind of start key return exactly the keys at or after it,
+ * read through the device or through validated cache views. */
+static void test_scan_three_levels(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    static uint32_t keys[SCAN_KEYS];
+    static bfs_cache_t cache;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, raw, 64), BFS_OK);
+    static const uint32_t starts[] = {0, 1, 2, 247, 248, 249, 9999, 15000, 31996, 31997, 31998, 31999, 40000};
+    for (int via_cache = 0; via_cache < 2; via_cache++) {
+        tree.bio = via_cache ? &cache.bio : raw;
+        for (int pass = 0; pass < 2; pass++) {
+            scan_list_t list = { keys, 0, SCAN_KEYS };
+            TEST_ASSERT_EQ(bfs_btree_scan(&tree, NULL, scan_list_add, &list), BFS_OK);
+            TEST_ASSERT_EQ(list.count, SCAN_KEYS);
+            for (uint32_t i = 0; i < SCAN_KEYS; i++) TEST_ASSERT_EQ(keys[i], 2 * i);
+        }
+        for (size_t s = 0; s < sizeof(starts) / sizeof(starts[0]); s++) {
+            uint32_t start;
+            make_key(&start, starts[s]);
+            scan_list_t list = { keys, 0, SCAN_KEYS };
+            TEST_ASSERT_EQ(bfs_btree_scan(&tree, &start, scan_list_add, &list), BFS_OK);
+            uint32_t first = (starts[s] + 1) / 2;
+            uint32_t expected = first < SCAN_KEYS ? SCAN_KEYS - first : 0;
+            TEST_ASSERT_EQ(list.count, expected);
+            for (uint32_t i = 0; i < list.count; i++) TEST_ASSERT_EQ(keys[i], 2 * (first + i));
+        }
+    }
+    bfs_cache_destroy(&cache);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
+typedef struct {
+    bfs_btree_t *tree;
+    uint32_t previous;
+    uint32_t visited;
+    bool any;
+    bool ordered;
+    uint8_t *seen;      /* by key value */
+    bool *deleted;      /* by key value */
+} mutating_scan_t;
+
+/* At every visited key, delete the even key four ahead and insert odd keys
+ * behind and ahead of the scan position. */
+static bool mutate_while_scanning(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    mutating_scan_t *scan = ctx;
+    uint32_t k = read_key(key);
+    if (scan->any && k <= scan->previous) scan->ordered = false;
+    scan->previous = k;
+    scan->any = true;
+    if (k < 2 * SCAN_KEYS + 8) scan->seen[k]++;
+    scan->visited++;
+    if (k % 2 == 0 && k % 10 == 0) {
+        uint32_t victim, behind, ahead, v;
+        make_key(&victim, k + 4);
+        if (k + 4 < 2 * SCAN_KEYS && bfs_btree_delete(scan->tree, &victim) == BFS_OK)
+            scan->deleted[k + 4] = true;
+        make_key(&behind, k > 1 ? k - 1 : 1);
+        make_key(&ahead, k + 7);
+        make_key(&v, 0);
+        (void)bfs_btree_insert(scan->tree, &behind, &v);
+        (void)bfs_btree_insert(scan->tree, &ahead, &v);
+    }
+    return true;
+}
+
+/* A callback may change the scanned tree. The scan then still returns keys
+ * in strictly ascending order, each at most once, never a key deleted before
+ * the scan reached it, and every original key that was not deleted. */
+static void test_scan_survives_callback_changes(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    static bfs_cache_t cache;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, raw, 64), BFS_OK);
+    tree.bio = &cache.bio;
+    static uint8_t seen[2 * SCAN_KEYS + 8];
+    static bool deleted[2 * SCAN_KEYS + 8];
+    mutating_scan_t scan = { .tree = &tree, .ordered = true, .seen = seen, .deleted = deleted };
+    TEST_ASSERT_EQ(bfs_btree_scan(&tree, NULL, mutate_while_scanning, &scan), BFS_OK);
+    TEST_ASSERT(scan.ordered);
+    for (uint32_t k = 0; k < 2 * SCAN_KEYS; k += 2) {
+        TEST_ASSERT(seen[k] <= 1);
+        if (deleted[k]) TEST_ASSERT_EQ(seen[k], 0);
+        else TEST_ASSERT_EQ(seen[k], 1);
+    }
+    bfs_cache_destroy(&cache);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
+/* ── Test: resuming scans from a cursor ────────────────────── */
+
+typedef struct {
+    bfs_bio_t bio;
+    bfs_bio_t *dev;
+    unsigned reads;
+} counting_bio_t;
+
+static bfs_err_t counting_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+{
+    counting_bio_t *c = (counting_bio_t *)bio;
+    c->reads++;
+    return bfs_bio_read(c->dev, blk, buf);
+}
+
+static bfs_err_t counting_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf)
+{
+    return bfs_bio_write(((counting_bio_t *)bio)->dev, blk, buf);
+}
+
+static bfs_err_t counting_sync(bfs_bio_t *bio)
+{
+    return bfs_bio_sync(((counting_bio_t *)bio)->dev);
+}
+
+static void counting_close(bfs_bio_t *bio)
+{
+    (void)bio;
+}
+
+static const bfs_bio_ops_t counting_ops = {
+    .read_block = counting_read,
+    .write_block = counting_write,
+    .sync = counting_sync,
+    .close = counting_close,
+};
+
+typedef struct {
+    uint32_t key;
+    bool got;
+} next_key_t;
+
+static bool take_one_after(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    next_key_t *next = ctx;
+    next->key = read_key(key);
+    next->got = true;
+    return false;
+}
+
+/* The next key after k (exclusive), one scan call per key as ExNext does. */
+static bool cursor_next(bfs_btree_t *tree, bfs_btree_cursor_t *cursor, uint32_t k,
+                        bool first, uint32_t *out)
+{
+    uint32_t start;
+    make_key(&start, first ? 0 : k + 1);
+    next_key_t next = { 0, false };
+    if (bfs_btree_scan_cursor(tree, cursor, &start, take_one_after, &next) != BFS_OK)
+        return false;
+    *out = next.key;
+    return next.got;
+}
+
+/* Key-by-key iteration with a cursor equals a full scan, reads the device
+ * only at leaf boundaries, and stays correct when the tree changes between
+ * calls. */
+static void test_scan_cursor_resumes_in_leaf(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    counting_bio_t counting = { .bio = { .ops = &counting_ops, .block_size = SCAN_BLK_SIZE,
+                                          .block_count = SCAN_BLK_COUNT }, .dev = raw };
+    tree.bio = &counting.bio;
+    bfs_btree_cursor_t cursor;
+    bfs_btree_cursor_init(&cursor);
+
+    uint32_t k = 0, count = 0, reads_in_leaf = 0;
+    bool first = true;
+    while (cursor_next(&tree, &cursor, k, first, &k)) {
+        TEST_ASSERT_EQ(k, 2 * count);
+        count++;
+        first = false;
+        unsigned before = counting.reads;
+        uint32_t peek;
+        /* Asking again from inside the same leaf needs no device read. */
+        if (k > 0 && cursor_next(&tree, &cursor, k - 2, false, &peek)) {
+            TEST_ASSERT_EQ(peek, k);
+            /* cursor_next reads through tree.bio, which is &counting.bio. */
+            // cppcheck-suppress knownConditionTrueFalse
+            if (counting.reads == before) reads_in_leaf++;
+        }
+    }
+    TEST_ASSERT_EQ(count, SCAN_KEYS);
+    /* All but the first key of each leaf are found again without a read. */
+    TEST_ASSERT(reads_in_leaf > SCAN_KEYS - SCAN_KEYS / 50);
+
+    /* A change between calls invalidates the copy. */
+    uint32_t next;
+    TEST_ASSERT(cursor_next(&tree, &cursor, 98, false, &next));
+    TEST_ASSERT_EQ(next, 100);
+    uint32_t victim;
+    make_key(&victim, 102);
+    TEST_ASSERT_EQ(bfs_btree_delete(&tree, &victim), BFS_OK);
+    TEST_ASSERT(cursor_next(&tree, &cursor, 100, false, &next));
+    TEST_ASSERT_EQ(next, 104);
+    uint32_t added, value;
+    make_key(&added, 105);
+    make_key(&value, 0);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &added, &value), BFS_OK);
+    TEST_ASSERT(cursor_next(&tree, &cursor, 104, false, &next));
+    TEST_ASSERT_EQ(next, 105);
+
+    bfs_btree_cursor_release(&cursor);
+    TEST_ASSERT(cursor.leaf == NULL);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
+typedef struct {
+    uint32_t skip;
+    bool skipping;
+    uint32_t key;
+    bool got;
+} resume_key_t;
+
+/* As the directory layer resumes: the start key is the entry returned last,
+ * which is passed over once. */
+static bool take_one_past_start(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    resume_key_t *next = ctx;
+    uint32_t k = read_key(key);
+    if (next->skipping) {
+        next->skipping = false;
+        if (k == next->skip) return true;
+    }
+    next->key = k;
+    next->got = true;
+    return false;
+}
+
+static bool cursor_resume(bfs_btree_t *tree, bfs_btree_cursor_t *cursor, uint32_t last,
+                          bool first, uint32_t *out)
+{
+    uint32_t start;
+    make_key(&start, first ? 0 : last);
+    resume_key_t next = { last, !first, 0, false };
+    if (bfs_btree_scan_cursor(tree, cursor, &start, take_one_past_start, &next) != BFS_OK)
+        return false;
+    *out = next.key;
+    return next.got;
+}
+
+/* Resuming from the entry the previous scan stopped at returns every key once,
+ * reads the device only when it crosses into another leaf, and follows
+ * changes that move or remove the stop entry. */
+static void test_scan_cursor_resumes_at_stop_entry(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    counting_bio_t counting = { .bio = { .ops = &counting_ops, .block_size = SCAN_BLK_SIZE,
+                                          .block_count = SCAN_BLK_COUNT }, .dev = raw };
+    tree.bio = &counting.bio;
+    bfs_btree_cursor_t cursor;
+    bfs_btree_cursor_init(&cursor);
+
+    uint32_t k = 0, count = 0, read_steps = 0;
+    bool first = true;
+    for (;;) {
+        unsigned before = counting.reads;
+        if (!cursor_resume(&tree, &cursor, k, first, &k)) break;
+        if (counting.reads != before) read_steps++;
+        TEST_ASSERT_EQ(k, 2 * count);
+        TEST_ASSERT(cursor.stopped);
+        count++;
+        first = false;
+    }
+    TEST_ASSERT_EQ(count, SCAN_KEYS);
+    TEST_ASSERT(read_steps < SCAN_KEYS / 50);
+
+    /* The stop entry removed: the scan finds the place after it. */
+    uint32_t next;
+    TEST_ASSERT(cursor_resume(&tree, &cursor, 98, false, &next));
+    TEST_ASSERT_EQ(next, 100);
+    uint32_t victim;
+    make_key(&victim, 100);
+    TEST_ASSERT_EQ(bfs_btree_delete(&tree, &victim), BFS_OK);
+    TEST_ASSERT(cursor_resume(&tree, &cursor, 100, false, &next));
+    TEST_ASSERT_EQ(next, 102);
+    /* A key inserted behind the stop entry is returned next. */
+    uint32_t added, value;
+    make_key(&added, 103);
+    make_key(&value, 0);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &added, &value), BFS_OK);
+    TEST_ASSERT(cursor_resume(&tree, &cursor, 102, false, &next));
+    TEST_ASSERT_EQ(next, 103);
+    /* Resuming from another entry than the stop entry searches the leaf. */
+    TEST_ASSERT(cursor_resume(&tree, &cursor, 110, false, &next));
+    TEST_ASSERT_EQ(next, 112);
+
+    bfs_btree_cursor_release(&cursor);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
+static bool stop_at_first(const void *key, const void *val, void *ctx)
+{
+    (void)key;
+    (void)val;
+    (void)ctx;
+    return false;
+}
+
+typedef struct {
+    uint32_t count;
+    uint32_t last;
+    bool ordered;
+} order_check_t;
+
+static bool check_order(const void *key, const void *val, void *ctx)
+{
+    (void)val;
+    order_check_t *check = ctx;
+    uint32_t k = read_key(key);
+    if (check->count > 0 && k <= check->last) check->ordered = false;
+    check->last = k;
+    check->count++;
+    return true;
+}
+
+static bool key_value(bfs_btree_t *tree, uint32_t k, uint32_t *value)
+{
+    uint32_t key, val;
+    make_key(&key, k);
+    if (bfs_btree_search(tree, &key, &val) != BFS_OK) return false;
+    *value = read_key(&val);
+    return true;
+}
+
+static bool key_present(bfs_btree_t *tree, uint32_t k)
+{
+    uint32_t value;
+    return key_value(tree, k, &value);
+}
+
+static bfs_err_t move_key(bfs_btree_t *tree, uint32_t from, uint32_t to, uint32_t value)
+{
+    uint32_t old_key, new_key, val;
+    make_key(&old_key, from);
+    make_key(&new_key, to);
+    make_key(&val, value);
+    return bfs_btree_update_key(tree, &old_key, &new_key, &val);
+}
+
+/* A key moves in place only while it stays between its neighbours and below
+ * the separator that routes to its leaf; otherwise the tree is unchanged. */
+static void test_update_key_stays_inside_its_leaf(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+
+    TEST_ASSERT_EQ(move_key(&tree, 4, 5, 77), BFS_OK);
+    uint32_t value;
+    TEST_ASSERT(key_value(&tree, 5, &value));
+    TEST_ASSERT_EQ(value, 77);
+    TEST_ASSERT(!key_present(&tree, 4));
+    TEST_ASSERT_EQ(move_key(&tree, 2, 6, 1), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT(key_present(&tree, 2));
+    TEST_ASSERT_EQ(move_key(&tree, 3, 7, 1), BFS_ERR_NOTFOUND);
+
+    /* The last key of the first leaf; the next leaf starts two above it. */
+    bfs_btree_cursor_t cursor;
+    bfs_btree_cursor_init(&cursor);
+    TEST_ASSERT_EQ(bfs_btree_scan_cursor(&tree, &cursor, NULL, stop_at_first, NULL), BFS_OK);
+    uint32_t n = bfs_be32(((bfs_btnode_hdr_t *)cursor.leaf)->num_keys);
+    TEST_ASSERT(n > 1);
+    uint32_t last = read_key(node_key(&tree, cursor.leaf, n - 1));
+    bfs_btree_cursor_release(&cursor);
+    TEST_ASSERT(key_present(&tree, last + 2));
+    TEST_ASSERT_EQ(move_key(&tree, last, last + 1, 5), BFS_OK);
+
+    /* With the next leaf's first key gone, its separator still bounds this
+     * leaf, although no stored key lies between. */
+    uint32_t gone;
+    make_key(&gone, last + 2);
+    TEST_ASSERT_EQ(bfs_btree_delete(&tree, &gone), BFS_OK);
+    TEST_ASSERT_EQ(move_key(&tree, last + 1, last + 3, 5), BFS_ERR_UNSUPPORTED);
+    TEST_ASSERT(key_present(&tree, last + 1));
+    TEST_ASSERT(!key_present(&tree, last + 3));
+
+    order_check_t check = { 0, 0, true };
+    TEST_ASSERT_EQ(bfs_btree_scan(&tree, NULL, check_order, &check), BFS_OK);
+    TEST_ASSERT(check.ordered);
+    TEST_ASSERT_EQ(check.count, SCAN_KEYS - 1);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
+/* ── Test: searches reuse the last leaf only while it is current ── */
+
+static bool search_value(bfs_btree_t *tree, uint32_t k, uint32_t *value)
+{
+    uint32_t key, raw;
+    make_key(&key, k);
+    if (bfs_btree_search(tree, &key, &raw) != BFS_OK) return false;
+    *value = read_key(&raw);
+    return true;
+}
+
+static void test_search_hint_follows_changes(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    bfs_btree_t tree;
+    build_scan_tree(&tree, raw);
+    static bfs_cache_t cache;
+    TEST_ASSERT_EQ(bfs_cache_init(&cache, raw, 64), BFS_OK);
+    tree.bio = &cache.bio;
+
+    uint32_t value;
+    for (uint32_t k = 0; k < 2 * SCAN_KEYS; k += 2) {
+        TEST_ASSERT(search_value(&tree, k, &value));
+        TEST_ASSERT_EQ(value, k / 2);
+        /* An absent key inside the same leaf is absent. */
+        TEST_ASSERT(!search_value(&tree, k + 1, &value));
+    }
+    TEST_ASSERT(!search_value(&tree, 2 * SCAN_KEYS + 1, &value));
+
+    /* Each change makes the remembered leaf stale; the old copy of a
+     * rewritten leaf stays resident and must not answer. */
+    TEST_ASSERT(search_value(&tree, 1000, &value));
+    uint32_t key, replacement;
+    make_key(&key, 1002);
+    make_key(&replacement, 7777);
+    TEST_ASSERT_EQ(bfs_btree_update(&tree, &key, &replacement), BFS_OK);
+    TEST_ASSERT(search_value(&tree, 1002, &value));
+    TEST_ASSERT_EQ(value, 7777);
+    make_key(&key, 1004);
+    TEST_ASSERT_EQ(bfs_btree_delete(&tree, &key), BFS_OK);
+    TEST_ASSERT(!search_value(&tree, 1004, &value));
+    TEST_ASSERT(search_value(&tree, 1006, &value));
+    TEST_ASSERT_EQ(value, 503);
+    make_key(&key, 1005);
+    make_key(&replacement, 4242);
+    TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &replacement), BFS_OK);
+    TEST_ASSERT(search_value(&tree, 1005, &value));
+    TEST_ASSERT_EQ(value, 4242);
+
+    bfs_cache_destroy(&cache);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
+}
+
+/* ── Test: specialized search for big-endian u32 keys ──────── */
+
+static const bfs_btree_ops_t be32_ops = {
+    .key_compare = bfs_btree_key_compare_be32,
+    .key_size = sizeof(uint32_t),
+    .val_size = sizeof(uint32_t),
+    .cache_key_order = true,
+};
+
+/* Keys spread over the whole unsigned range, including values with the top
+ * bit set, are found exactly; the gaps between them are not. */
+static void test_be32_search_matches_comparator(void)
+{
+    unlink(SCAN_IMG);
+    bfs_bio_t *raw = bio_emu_create(SCAN_IMG, SCAN_BLK_SIZE, SCAN_BLK_COUNT);
+    TEST_ASSERT(raw != NULL);
+    TEST_ASSERT_EQ(bfs_freespace_init(&scan_space, raw, BFS_BLK_NULL, 1), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_add(&scan_space, 2, SCAN_BLK_COUNT - 2), BFS_OK);
+    TEST_ASSERT_EQ(bfs_freespace_refill_reserve(&scan_space), BFS_OK);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, raw, bfs_freespace_allocator(&scan_space), &be32_ops,
+                                  BFS_BLK_NULL, 1), BFS_OK);
+    const uint32_t count = 3000;
+    const uint32_t step = 0x00155555u; /* 3000 steps cover most of 2^32 */
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t k = ((i * 1237u) % count) * step + 7u, key, val;
+        make_key(&key, k);
+        make_key(&val, k ^ 0xA5A5A5A5u);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    }
+    TEST_ASSERT(tree.height >= 2);
+    for (uint32_t i = 0; i < count; i++) {
+        uint32_t k = i * step + 7u, key, val;
+        make_key(&key, k);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_OK);
+        TEST_ASSERT_EQ(read_key(&val), k ^ 0xA5A5A5A5u);
+        make_key(&key, k + 1u);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_ERR_NOTFOUND);
+        make_key(&key, k - 1u);
+        TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &val), BFS_ERR_NOTFOUND);
+    }
+    uint32_t key, val, found_key;
+    make_key(&key, 0x80000000u);
+    TEST_ASSERT_EQ(bfs_btree_search_floor(&tree, &key, &found_key, &val), BFS_OK);
+    TEST_ASSERT(read_key(&found_key) < 0x80000000u);
+    TEST_ASSERT(read_key(&found_key) + step > 0x80000000u);
+    bfs_bio_close(raw);
+    unlink(SCAN_IMG);
 }
 
 /* ── Test: COW preserves old root ──────────────────────────── */
@@ -1506,14 +2281,126 @@ static void test_cached_node_crc_revalidation(void)
     free(ba); bfs_bio_close(bio); unlink(TEST_IMG);
 }
 
+/* The read check hashes only used ranges of canonical nodes. It must still
+ * reject a change to any byte, and accept legacy non-zero padding. */
+static void flip_and_expect(bfs_btree_t *tree, bfs_blk_t blk, const uint8_t *good,
+                            uint32_t offset, bool recompute_crc, bfs_err_t expected)
+{
+    uint8_t bad[BLK_SIZE];
+    uint32_t key, found;
+    make_key(&key, 3);
+    memcpy(bad, good, BLK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    bad[offset] ^= 0x5a;
+    if (recompute_crc)
+        ((bfs_btnode_hdr_t *)bad)->crc32 = bfs_be32(reference_node_crc(bad, BLK_SIZE));
+    TEST_ASSERT_EQ(bfs_bio_write(tree->bio, blk, bad), BFS_OK);
+    TEST_ASSERT_EQ(bfs_btree_search(tree, &key, &found), expected);
+    TEST_ASSERT_EQ(bfs_bio_write(tree->bio, blk, good), BFS_OK);
+    TEST_ASSERT_EQ(bfs_btree_search(tree, &key, &found), BFS_OK);
+}
+
+static void test_read_crc_covers_every_byte(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    for (uint32_t i = 1; i <= 5; i++)
+        TEST_ASSERT_EQ(insert_tenfold(&tree, i), BFS_OK);
+    TEST_ASSERT_EQ(tree.height, 1);
+    uint8_t good[BLK_SIZE];
+    TEST_ASSERT_EQ(bfs_bio_read(bio, tree.root, good), BFS_OK);
+    uint32_t gap_start, values_start, values_end;
+    TEST_ASSERT(node_padding_ranges(&tree, good, &gap_start, &values_start, &values_end));
+    TEST_ASSERT(range_is_zero(good, gap_start, values_start));
+    TEST_ASSERT(range_is_zero(good, values_end, BLK_SIZE));
+
+    const uint32_t offsets[] = {
+        sizeof(bfs_btnode_hdr_t), gap_start - 1, gap_start, values_start - 1,
+        values_start, values_end - 1, values_end, values_end + 17, BLK_SIZE - 1,
+    };
+    for (uint32_t i = 0; i < sizeof(offsets) / sizeof(offsets[0]); i++)
+        flip_and_expect(&tree, tree.root, good, offsets[i], false, BFS_ERR_CORRUPT);
+    /* Non-zero padding with a full-block CRC, as older writers left it. */
+    flip_and_expect(&tree, tree.root, good, gap_start, true, BFS_OK);
+    flip_and_expect(&tree, tree.root, good, BLK_SIZE - 1, true, BFS_OK);
+
+    uint8_t legacy[BLK_SIZE];
+    TEST_ASSERT(seed_legacy_node_padding(&tree, tree.root, legacy, 7));
+    uint32_t key, found;
+    make_key(&key, 3);
+    TEST_ASSERT_EQ(bfs_btree_search(&tree, &key, &found), BFS_OK);
+    flip_and_expect(&tree, tree.root, legacy, BLK_SIZE - 2, false, BFS_ERR_CORRUPT);
+    flip_and_expect(&tree, tree.root, legacy, gap_start + 1, false, BFS_ERR_CORRUPT);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
+/* lower_bound either names the first key >= the query or, when that key is
+ * in a later leaf, a bound no smaller than the query below which no key
+ * lies. */
+static void test_lower_bound_matches_reference(void)
+{
+    unlink(TEST_IMG);
+    bfs_bio_t *bio = bio_emu_create(TEST_IMG, BLK_SIZE, BLK_COUNT);
+    TEST_ASSERT(bio != NULL);
+    bootstrap_alloc_t *ba = bootstrap_create(2, BLK_COUNT);
+    bfs_btree_t tree;
+    TEST_ASSERT_EQ(bfs_btree_init(&tree, bio, &ba->base, &u32_ops, BFS_BLK_NULL, 1),
+                   BFS_OK);
+    uint32_t key, val, out;
+    make_key(&key, 5);
+    TEST_ASSERT_EQ(bfs_btree_lower_bound(&tree, &key, &out), BFS_ERR_NOTFOUND);
+    const uint32_t count = 1500;
+    for (uint32_t i = 1; i <= count; i++) {
+        make_key(&key, i * 10u); val = bfs_be32(i);
+        TEST_ASSERT_EQ(bfs_btree_insert(&tree, &key, &val), BFS_OK);
+    }
+    TEST_ASSERT(tree.height >= 2);
+    unsigned again = 0;
+    for (uint32_t q = 0; q <= count * 10u + 1u; q += 3u) {
+        make_key(&key, q);
+        bfs_err_t err = bfs_btree_lower_bound(&tree, &key, &out);
+        uint32_t expected = q <= 10u ? 10u : ((q + 9u) / 10u) * 10u;
+        uint32_t got = read_key(&out);
+        if (expected > count * 10u) {
+            TEST_ASSERT_EQ(err, BFS_ERR_NOTFOUND);
+        } else if (err == BFS_OK) {
+            TEST_ASSERT_EQ(got, expected);
+        } else {
+            TEST_ASSERT_EQ(err, BFS_ERR_AGAIN);
+            TEST_ASSERT(got > q && got <= expected);
+            again++;
+        }
+    }
+    TEST_ASSERT(again > 0);
+    free(ba);
+    bfs_bio_close(bio);
+    unlink(TEST_IMG);
+}
+
 TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_empty_tree_search);
     TEST_RUN(test_single_insert_search);
+    TEST_RUN(test_owned_rewrite_requires_registration);
+    TEST_RUN(test_owned_rewrite_publishes_after_fallible_steps);
+    TEST_RUN(test_owned_rewrite_abort_after_staging_keeps_bytes);
     TEST_RUN(test_duplicate_insert);
     TEST_RUN(test_sequential_inserts);
     TEST_RUN(test_reverse_inserts);
     TEST_RUN(test_scan_all);
     TEST_RUN(test_scan_from_key);
+    TEST_RUN(test_scan_three_levels);
+    TEST_RUN(test_scan_survives_callback_changes);
+    TEST_RUN(test_scan_cursor_resumes_in_leaf);
+    TEST_RUN(test_scan_cursor_resumes_at_stop_entry);
+    TEST_RUN(test_update_key_stays_inside_its_leaf);
+    TEST_RUN(test_search_hint_follows_changes);
+    TEST_RUN(test_be32_search_matches_comparator);
     TEST_RUN(test_cow_old_root_preserved);
     TEST_RUN(test_single_delete);
     TEST_RUN(test_delete_all);
@@ -1537,4 +2424,6 @@ TEST_SUITE_BEGIN("B+tree")
     TEST_RUN(test_replace_root_leaf_write_failure);
     TEST_RUN(test_replace_root_leaf_deeper_unsupported);
     TEST_RUN(test_cached_node_crc_revalidation);
+    TEST_RUN(test_read_crc_covers_every_byte);
+    TEST_RUN(test_lower_bound_matches_reference);
 TEST_SUITE_END()
