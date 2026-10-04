@@ -1464,12 +1464,14 @@ static bool ControlWordMatches(const UBYTE *text, LONG length, const char *word)
 }
 
 /* Mountlist: Control = "COMMIT=SYNC" restores a commit at every close and
- * standalone metadata packet. DOS stores the Control string as a BSTR. */
+ * standalone metadata packet. DOS stores the Control string as a BSTR, which
+ * native AROS keeps NUL-terminated; Mount accepts at most 255 characters. */
 static bool ControlRequestsSyncCommits(const struct DosEnvec *env)
 {
     if (!env || env->de_TableSize < DE_CONTROL || !env->de_Control) return false;
     const UBYTE *control = (const UBYTE *)BADDR(env->de_Control);
-    return ControlWordMatches(control + 1, control[0], "COMMIT=SYNC");
+    return ControlWordMatches(BstrText(control), (LONG)BstrLength(control, 255),
+                              "COMMIT=SYNC");
 }
 
 static void OpenCommitTimer(struct bfs_handler *h)
