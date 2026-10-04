@@ -247,10 +247,11 @@ static void test_pending_pool_blocks_return_to_pool(void)
     uint32_t active = bfs_be32(sb->emergency_count);
     TEST_ASSERT(active >= 2);
 
-    /* An ordinary block, allocated in an earlier transaction: an unchanged
-     * free tree root keeps the commit below off the sealed path, so the
-     * blocks are reclaimed after publication. */
-    bfs_blk_t neighbour = bfs_freespace_alloc(&g_fs.freespace, 1);
+    /* An ordinary block beside a pool block, allocated in an earlier
+     * transaction: an unchanged free tree root keeps the commit below off the
+     * sealed path, so the blocks are reclaimed after publication. */
+    bfs_blk_t goal = bfs_be32(sb->emergency_pool[active - 1]) + 1;
+    bfs_blk_t neighbour = bfs_freespace_alloc_data(&g_fs.freespace, 1, goal);
     TEST_ASSERT(neighbour != BFS_BLK_NULL);
     TEST_ASSERT(!bfs_freespace_pool_block(&g_fs.freespace, neighbour));
     TEST_ASSERT_EQ(bfs_fs_sync(&g_fs), BFS_OK);

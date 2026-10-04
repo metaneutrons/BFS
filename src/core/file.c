@@ -305,6 +305,19 @@ static bfs_err_t file_alloc_error(const bfs_freespace_t *fs)
  * The AmigaOS benchmark issues 64 KiB writes (16 blocks at 4 KiB). */
 #define BFS_WRITE_RUN_BLOCKS 16u
 
+/* Allocation goal for file_block: the disk block after the one holding the
+ * previous file block, so data written in small steps continues the file's
+ * last extent. Only a hint: a hole or a failed lookup gives no goal, and the
+ * write path reports real extent errors itself. */
+static bfs_blk_t file_data_goal(bfs_file_t *f, uint32_t file_block)
+{
+    bfs_blk_t previous;
+    if (file_block == 0 ||
+        bfs_extent_lookup(&f->extents, file_block - 1, &previous) != BFS_OK)
+        return BFS_BLK_NULL;
+    return previous + 1;
+}
+
 static bfs_err_t file_prepare_new_run(bfs_file_t *f, uint32_t len,
                                       uint32_t file_block, uint32_t *run_count)
 {
@@ -406,7 +419,8 @@ static bfs_err_t file_write_new_run(bfs_file_t *f, const uint8_t *input,
     if (count == 0) return BFS_OK;
 
     bfs_fs_t *fs = f->fs;
-    bfs_blk_t start = bfs_freespace_alloc(&fs->freespace, count);
+    bfs_blk_t start = bfs_freespace_alloc_data(&fs->freespace, count,
+                                               file_data_goal(f, file_block));
     if (start == BFS_BLK_NULL) {
         err = file_alloc_error(&fs->freespace);
         if (err == BFS_ERR_NOSPC) return BFS_OK;
@@ -488,7 +502,8 @@ static int32_t file_write_with_metadata_unlocked(
                 return file_finish_write(metadata, f, total, BFS_ERR_NOSPC);
             }
             /* Allocate and initialize data before publishing its extent mapping. */
-            disk_blk = bfs_freespace_alloc(&f->fs->freespace, 1);
+            disk_blk = bfs_freespace_alloc_data(&f->fs->freespace, 1,
+                                                file_data_goal(f, file_blk));
             if (disk_blk == BFS_BLK_NULL)
                 return file_finish_write(metadata, f, total,
                                          file_alloc_error(&f->fs->freespace));
@@ -537,7 +552,8 @@ static int32_t file_write_with_metadata_unlocked(
                 return file_finish_write(metadata, f, total, BFS_ERR_NOSPC);
             }
 
-            bfs_blk_t new_blk = bfs_freespace_alloc(&f->fs->freespace, 1);
+            bfs_blk_t new_blk = bfs_freespace_alloc_data(&f->fs->freespace, 1,
+                                                         file_data_goal(f, file_blk));
             if (new_blk == BFS_BLK_NULL)
                 return file_finish_write(metadata, f, total,
                                          file_alloc_error(&f->fs->freespace));

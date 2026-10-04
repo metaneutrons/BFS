@@ -463,8 +463,8 @@ static void test_tree_record_grows_with_contiguous_runs(void)
 }
 
 /* Multi-block appends through the file layer to a file that starts with a
- * hole: the allocator places consecutive runs next to each other, so they
- * share a record. */
+ * hole: data allocation continues behind the previous block, so the block
+ * after the hole and the following runs share one record. */
 static void test_file_appends_after_hole_share_records(void)
 {
     TEST_ASSERT(setup(0));
@@ -478,12 +478,12 @@ static void test_file_appends_after_hole_share_records(void)
         if (i % 4 == 3) TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     }
     TEST_ASSERT(file.extents.tree.root != BFS_BLK_NULL);
-    /* The block after the hole is placed on its own; the following 47 blocks
-     * arrive as runs and end up in one record. */
-    TEST_ASSERT_EQ(record_count(&file.extents), 2);
+    /* The block after the hole is written on its own, the following 47
+     * blocks arrive as runs, and all 48 end up in one record. */
+    TEST_ASSERT_EQ(record_count(&file.extents), 1);
     bfs_extent_val_t value;
     TEST_ASSERT_EQ(bfs_extent_lookup_val(&file.extents, 51, &value), BFS_OK);
-    TEST_ASSERT_EQ(bfs_be32(value.length), 47);
+    TEST_ASSERT_EQ(bfs_be32(value.length), 48);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     TEST_ASSERT(check_clean());
     TEST_ASSERT_EQ(bfs_file_seek(&file, 4u * BS, BFS_SEEK_SET), (int64_t)(4u * BS));

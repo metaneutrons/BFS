@@ -634,11 +634,19 @@ static void test_file_deleted_in_transaction(void)
     bfs_cache_set_deferred_node_limit(&cache, CACHE_SLOTS / 2);
     TEST_ASSERT_EQ(bfs_fs_mount(&fs, &cache.bio), BFS_OK);
 
-    uint32_t ino;
+    uint32_t ino, split_ino;
     TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "gone", 4, &ino), BFS_OK);
-    bfs_file_t file;
+    bfs_file_t file, split;
     TEST_ASSERT_EQ(bfs_file_open(&file, &fs, ino), BFS_OK);
-    TEST_ASSERT_EQ(bfs_file_write(&file, payload, sizeof(payload)), (int32_t)sizeof(payload));
+    TEST_ASSERT_EQ(bfs_file_write(&file, payload, BLK_SIZE), (int32_t)BLK_SIZE);
+    /* Another file's block behind the first one splits this file into two
+     * extents, so it needs an extent tree. */
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "split", 5, &split_ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_open(&split, &fs, split_ino), BFS_OK);
+    TEST_ASSERT_EQ(bfs_file_write(&split, payload, BLK_SIZE), (int32_t)BLK_SIZE);
+    TEST_ASSERT_EQ(bfs_file_write(&file, payload + BLK_SIZE, sizeof(payload) - BLK_SIZE),
+                   (int32_t)(sizeof(payload) - BLK_SIZE));
+    TEST_ASSERT_EQ(bfs_fs_delete_file(&fs, BFS_ROOT_INO, "split", 5), BFS_OK);
     bfs_blk_t extent_root = file.extents.tree.root;
     TEST_ASSERT(extent_root != BFS_BLK_NULL);
     TEST_ASSERT(cache.dirty_count > 0);
