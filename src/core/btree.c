@@ -1947,6 +1947,22 @@ static bfs_err_t scan_next_leaf(const bfs_btree_t *tree, uint8_t *buf,
     return BFS_OK;
 }
 
+/* Copy the header and the used keys and values of a leaf. Scans read only
+ * these, and a directory leaf is often far from full. */
+static void copy_leaf_entries(const bfs_btree_t *tree, uint8_t *dst, uint8_t *src)
+{
+    uint32_t n = num_keys(src);
+    if (n > leaf_max_keys(tree)) {
+        memcpy(dst, src, tree->bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+        return;
+    }
+    size_t keys_end = sizeof(bfs_btnode_hdr_t) + (size_t)n * tree->ops->key_size;
+    memcpy(dst, src, keys_end); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    if (n > 0)
+        memcpy(leaf_val(tree, dst, 0), leaf_val(tree, src, 0), /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+               (size_t)n * tree->ops->val_size);
+}
+
 void bfs_btree_cursor_init(bfs_btree_cursor_t *cursor)
 {
     if (cursor) memset(cursor, 0, sizeof(*cursor));
@@ -2042,7 +2058,7 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
         if (idx < n) {
             /* Callbacks may do I/O, which can invalidate a view. */
             uint8_t *copy = cursor ? cursor->leaf : buf;
-            if (leaf != copy) memcpy(copy, leaf, tree->bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+            if (leaf != copy) copy_leaf_entries(tree, copy, leaf);
             leaf = copy;
             if (cursor) {
                 cursor->tree = tree;
