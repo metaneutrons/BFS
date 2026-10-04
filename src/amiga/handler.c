@@ -959,7 +959,18 @@ static bfs_err_t ResolveDirectories(struct bfs_handler *h, uint32_t *parent,
     return BFS_OK;
 }
 
-static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
+/* Length of a NUL-terminated string in caller memory, or limit if none of
+ * its first limit bytes is NUL. */
+static uint32_t BoundedStringLength(const char *text, uint32_t limit)
+{
+    uint32_t length = 0;
+    while (length < limit && text[length]) length++;
+    return length;
+}
+
+/* Resolve name (len bytes, NULL for none) relative to lock into the parent
+ * directory and the last component. */
+static bfs_err_t ResolveName(BPTR lock, const char *name, uint8_t len,
                              char *namebuf, uint8_t *namelen_out,
                              uint32_t *parent_out,
                              struct bfs_handler *h)
@@ -971,15 +982,12 @@ static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
     if (base_lock && !LockIsOwned(h, base_lock)) return BFS_ERR_INVAL;
 
     uint32_t parent_ino = LockIno(lock);
-    UBYTE *bstr = (UBYTE *)BADDR(bstr_name);
-    if (!bstr) {
+    if (!name) {
         *namelen_out = 0;
         namebuf[0] = 0;
         *parent_out = parent_ino;
         return BFS_OK;
     }
-    uint8_t len = bstr[0];
-    const char *name = (const char *)&bstr[1];
 
     /* Skip volume prefix (e.g. "VOL:") — resets to root */
     for (uint8_t i = 0; i < len; i++) {
@@ -994,12 +1002,22 @@ static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
     bfs_err_t err = ResolveDirectories(h, &parent_ino, &name, &len);
     if (err != BFS_OK) return err;
     if (len && name[len - 1] == '/') len--;
-    /* All callers supply BFS_NAME_MAX + 1 bytes; a BSTR length is at most 255. */
+    /* All callers supply BFS_NAME_MAX + 1 bytes; len is at most 255. */
     memcpy(namebuf, name, len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     namebuf[len] = 0;
     *namelen_out = len;
     *parent_out = parent_ino;
     return BFS_OK;
+}
+
+static bfs_err_t ResolvePath(BPTR lock, BPTR bstr_name,
+                             char *namebuf, uint8_t *namelen_out,
+                             uint32_t *parent_out,
+                             struct bfs_handler *h)
+{
+    const UBYTE *bstr = (const UBYTE *)BADDR(bstr_name);
+    return ResolveName(lock, bstr ? (const char *)&bstr[1] : NULL, bstr ? bstr[0] : 0,
+                       namebuf, namelen_out, parent_out, h);
 }
 
 /* ── BFS error to AmigaDOS error mapping ─────────────────── */
@@ -2363,13 +2381,15 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                                        target_ino);
             if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         } else {
-            UBYTE *bpath = (UBYTE *)BADDR(pkt->dp_Arg3);
-            if (!bpath || bpath[0] == 0) {
-                res2 = ERROR_REQUIRED_ARG_MISSING; break;
-            }
-            uint8_t plen = bpath[0];
+            /* A soft link's target is a C string, not a BSTR (MakeLink
+             * passes "a pointer to a null-terminated path string"). The
+             * format stores at most UINT16_MAX bytes. */
+            const char *target = (const char *)pkt->dp_Arg3;
+            uint32_t target_len = target ? BoundedStringLength(target, UINT16_MAX + 1u) : 0;
+            if (target_len == 0) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
+            if (target_len > UINT16_MAX) { res2 = ERROR_LINE_TOO_LONG; break; }
             err = bfs_fs_make_softlink(&h->fs, parent_ino, namebuf, len,
-                                       (const char *)&bpath[1], plen);
+                                       target, (uint16_t)target_len);
             if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         }
         res1 = DOSTRUE;
@@ -2381,26 +2401,49 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 
     /* ── ACTION_READ_LINK ──────────────────────────────────── */
     case ACTION_READ_LINK: {
+        /* dp_Arg1=lock, dp_Arg2=path (C string), dp_Arg3=buffer, dp_Arg4=size.
+         * Res1 is the target length, -1 on error, or -2 if the buffer is too
+         * small for the target and its terminator; dos.library then retries
+         * with a larger buffer. */
+        const char *path = (const char *)pkt->dp_Arg2;
+        uint32_t path_len = path ? BoundedStringLength(path, BFS_NAME_MAX + 1) : 0;
+        if (path_len > BFS_NAME_MAX) { res2 = ERROR_LINE_TOO_LONG; break; }
         char namebuf[BFS_NAME_MAX + 1];
         uint8_t len;
         uint32_t parent_ino;
-        bfs_err_t err = ResolvePath((BPTR)pkt->dp_Arg1,
-                                    (BPTR)pkt->dp_Arg2, namebuf, &len,
-                                    &parent_ino, h);
+        bfs_err_t err = ResolveName((BPTR)pkt->dp_Arg1, path, (uint8_t)path_len,
+                                    namebuf, &len, &parent_ino, h);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         uint32_t ino, type;
         err = bfs_dir_lookup(&h->fs.dir_tree, parent_ino, namebuf, len,
                              &ino, &type);
         if (err != BFS_OK || type != BFS_INODE_SOFTLINK) { res2 = ERROR_OBJECT_NOT_FOUND; break; }
 
-        bfs_file_t f;
-        err = bfs_file_open(&f, &h->fs, ino);
-        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         char *buf = (char *)pkt->dp_Arg3;
         LONG bufsize = pkt->dp_Arg4;
         if (!buf || bufsize <= 0) { res2 = ERROR_BAD_NUMBER; break; }
-        int32_t n = bfs_file_read(&f, buf, (uint32_t)(bufsize - 1));
+        bfs_inode_t inode;
+        err = bfs_inode_read(&h->fs.inode_tree, ino, &inode);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        uint64_t target_len = ((uint64_t)bfs_be32(inode.size_hi) << 32) |
+                              bfs_be32(inode.size_lo);
+        if (target_len == 0 || target_len > UINT16_MAX) { res2 = ERROR_NOT_A_DOS_DISK; break; }
+        if (target_len >= (uint64_t)bufsize) {
+            res1 = -2;
+            res2 = ERROR_LINE_TOO_LONG;
+            break;
+        }
+        bfs_file_t f;
+        err = bfs_file_open(&f, &h->fs, ino);
+        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        int32_t n = bfs_file_read(&f, buf, (uint32_t)target_len);
         if (n < 0) { res2 = Pfs4ToDosError((bfs_err_t)n); break; }
+        /* A stored target is non-empty and holds no NUL. */
+        if ((uint64_t)n != target_len ||
+            BoundedStringLength(buf, (uint32_t)n) != (uint32_t)n) {
+            res2 = ERROR_NOT_A_DOS_DISK;
+            break;
+        }
         buf[n] = 0;
         res1 = n;
         res2 = 0;

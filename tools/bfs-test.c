@@ -1851,6 +1851,34 @@ static void test_exall_packing(void)
     if (ok) pass(T); else fail(T, "one packed call with every entry");
 }
 
+/* MakeLink passes a soft link's target as a C string. ReadLink returns it
+ * with its length, and -2 when the buffer has no room for the terminator. */
+static void test_soft_link(void)
+{
+    const char *T = "softlink_51";
+    static const char target[] = "Work:dir/target.txt";
+    const LONG target_len = (LONG)sizeof(target) - 1;
+    char link[96];
+    const char *p = vpath("softlnk");
+    if (!p) { fail(T, "path"); return; }
+    tool_memcpy(link, p, tool_strlen(p) + 1);
+    struct MsgPort *port = DeviceProc(vol);
+    if (!port) { fail(T, "no port"); return; }
+    if (!MakeLink(link, (LONG)target, LINK_SOFT)) { fail(T, "make"); return; }
+
+    BPTR root = Lock(vol, SHARED_LOCK);
+    BOOL ok = root != 0;
+    if (ok) {
+        char buffer[64];
+        LONG length = ReadLink(port, root, link, buffer, sizeof(buffer));
+        ok = length == target_len && tool_memcmp(buffer, target, (int)sizeof(target)) == 0;
+        if (ok) ok = ReadLink(port, root, link, buffer, (ULONG)target_len) == -2;
+        UnLock(root);
+    }
+    if (!DeleteFile(link)) ok = FALSE;
+    if (ok) pass(T); else fail(T, "read back the target");
+}
+
 /* ── Test table ────────────────────────────────────────────── */
 
 typedef void (*test_fn)(void);
