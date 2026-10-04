@@ -230,11 +230,14 @@ static bfs_err_t cache_write_blocks(bfs_bio_t *bio, bfs_blk_t blk, uint32_t coun
 
 /* Keep a node image dirty. Its CRC is not computed yet, so the slot is marked
  * as a trusted node: readers skip the CRC check but still validate the
- * structure. */
-static bfs_err_t cache_defer_node(bfs_bio_t *bio, bfs_blk_t blk, const void *buf,
-                                  bfs_node_finalize_fn finalize, const void *layout)
+ * structure. The image is copied from buf, or with adopt the slot exchanges
+ * its buffer for *adopt. Every slot, scratch and adopted buffer is a
+ * block-size heap allocation, so they are interchangeable. */
+static bfs_err_t cache_hold_node(bfs_cache_t *c, bfs_blk_t blk, const void *buf,
+                                 void **adopt, bfs_node_finalize_fn finalize,
+                                 const void *layout)
 {
-    bfs_cache_t *c = (bfs_cache_t *)bio;
+    if (!buf == !adopt) return BFS_ERR_INVAL;
     if (c->dirty_limit == 0) return BFS_ERR_UNSUPPORTED;
     bfs_cache_slot_t *slot = cache_find(c, blk);
     if ((!slot || !slot->dirty) && c->dirty_count >= c->dirty_limit) {
@@ -253,8 +256,21 @@ static bfs_err_t cache_defer_node(bfs_bio_t *bio, bfs_blk_t blk, const void *buf
         slot = &c->slots[victim];
         cache_assign(c, victim, blk);
     }
-    /* Every slot buffer was allocated with this cache's block_size. */
-    memcpy(slot->data, buf, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    if (adopt) {
+        uint8_t *previous = slot->data;
+        slot->data = *adopt;
+        /* A leased scratch buffer keeps its lease on the slot's old buffer. */
+        for (uint32_t i = 0; i < BFS_CACHE_SCRATCH_SLOTS; i++) {
+            if (c->scratch[i].data == slot->data) {
+                c->scratch[i].data = previous;
+                break;
+            }
+        }
+        *adopt = previous;
+    } else if (buf) {
+        /* Every slot buffer was allocated with this cache's block_size. */
+        memcpy(slot->data, buf, c->bio.block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    }
     slot->age = ++c->clock;
     if (!slot->dirty) {
         slot->dirty = true;
@@ -265,6 +281,18 @@ static bfs_err_t cache_defer_node(bfs_bio_t *bio, bfs_blk_t blk, const void *buf
     slot->node_crc_valid = true;
     slot->node_structure_valid = false;
     return BFS_OK;
+}
+
+static bfs_err_t cache_defer_node(bfs_bio_t *bio, bfs_blk_t blk, const void *buf,
+                                  bfs_node_finalize_fn finalize, const void *layout)
+{
+    return cache_hold_node((bfs_cache_t *)bio, blk, buf, NULL, finalize, layout);
+}
+
+static bfs_err_t cache_adopt_node(bfs_bio_t *bio, bfs_blk_t blk, void **buf,
+                                  bfs_node_finalize_fn finalize, const void *layout)
+{
+    return cache_hold_node((bfs_cache_t *)bio, blk, NULL, buf, finalize, layout);
 }
 
 /* Write every dirty image in ascending block order. */
@@ -408,6 +436,7 @@ static const bfs_bio_ops_t cache_ops = {
     .alloc_buffer = cache_alloc_buffer,
     .free_buffer = cache_free_buffer,
     .defer_node_block = cache_defer_node,
+    .adopt_node_block = cache_adopt_node,
     .flush_deferred = cache_flush_deferred,
     .discard_deferred = cache_discard_deferred,
     .read_blocks = cache_read_blocks,

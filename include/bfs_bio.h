@@ -92,6 +92,13 @@ typedef struct bfs_bio_ops {
                                   bfs_node_finalize_fn finalize, const void *layout);
     bfs_err_t (*flush_deferred)(bfs_bio_t *bio);
     void (*discard_deferred)(bfs_bio_t *bio, bfs_blk_t blk);
+    /* Optional, with the hooks above and alloc_buffer/free_buffer: as
+     * defer_node_block, but *buf, a block-size buffer from alloc_buffer, becomes
+     * the resident image without a copy. On success *buf is replaced by
+     * another such buffer, which the caller releases with free_buffer; on
+     * failure *buf is unchanged and still the caller's. */
+    bfs_err_t (*adopt_node_block)(bfs_bio_t *bio, bfs_blk_t blk, void **buf,
+                                  bfs_node_finalize_fn finalize, const void *layout);
 
     /* Optional: transfer count consecutive blocks in as few device requests
      * as the device allows. buf is ordinary caller memory; a backend with
@@ -238,6 +245,17 @@ static inline bfs_err_t bfs_bio_defer_node(bfs_bio_t *bio, bfs_blk_t blk,
     if (!bfs_bio_can_defer_nodes(bio)) return BFS_ERR_UNSUPPORTED;
     if (!buf || !finalize || blk >= bio->block_count) return BFS_ERR_INVAL;
     return bio->ops->defer_node_block(bio, blk, buf, finalize, layout);
+}
+
+static inline bfs_err_t bfs_bio_adopt_node(bfs_bio_t *bio, bfs_blk_t blk,
+                                           void **buf,
+                                           bfs_node_finalize_fn finalize,
+                                           const void *layout) {
+    if (!bfs_bio_can_defer_nodes(bio) || !bio->ops->adopt_node_block ||
+        !bio->ops->alloc_buffer || !bio->ops->free_buffer)
+        return BFS_ERR_UNSUPPORTED;
+    if (!buf || !*buf || !finalize || blk >= bio->block_count) return BFS_ERR_INVAL;
+    return bio->ops->adopt_node_block(bio, blk, buf, finalize, layout);
 }
 
 static inline bfs_err_t bfs_bio_flush_deferred(bfs_bio_t *bio) {

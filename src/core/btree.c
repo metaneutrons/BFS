@@ -298,10 +298,15 @@ static bfs_err_t node_finalize_deferred(const void *layout, uint32_t block_size,
     return BFS_OK;
 }
 
-static bfs_err_t node_write(bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
+/* Write *image as node blk. With adopt, a deferring cache may keep *image
+ * itself as the resident node and hand back another buffer from alloc_buf in
+ * *image, which the caller frees as before. */
+static bfs_err_t node_write_image(bfs_btree_t *tree, bfs_blk_t blk, uint8_t **image,
+                                  bool adopt)
 {
     if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
         return BFS_ERR_CORRUPT;
+    uint8_t *buf = *image;
     tree->generation++;
     bfs_btnode_hdr_t *hdr = (bfs_btnode_hdr_t *)buf;
     hdr->magic = bfs_be32(BFS_NODE_MAGIC);
@@ -311,8 +316,13 @@ static bfs_err_t node_write(bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
      * its bytes may stay in the cache until the commit flushes them. Later
      * changes in the same transaction then cost neither a CRC nor a write. */
     if (bfs_bio_can_defer_nodes(tree->bio) && owned_contains(tree, blk)) {
-        bfs_err_t err = bfs_bio_defer_node(tree->bio, blk, buf,
-                                           node_finalize_deferred, tree->ops);
+        bfs_err_t err = adopt
+            ? bfs_bio_adopt_node(tree->bio, blk, (void **)image,
+                                 node_finalize_deferred, tree->ops)
+            : BFS_ERR_UNSUPPORTED;
+        if (err == BFS_ERR_UNSUPPORTED)
+            err = bfs_bio_defer_node(tree->bio, blk, buf,
+                                     node_finalize_deferred, tree->ops);
         /* The resident image is exactly these bytes: validate them now, as a
          * read would, so later searches can use the node in place. */
         if (err == BFS_OK && tree->ops->cache_key_order && node_structure_ok(tree, buf)) {
@@ -368,6 +378,11 @@ static bfs_err_t node_write(bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
         bfs_perf_probe_counters.other_tree_node_writes++;
 #endif
     return bfs_bio_write_node(tree->bio, blk, buf);
+}
+
+static bfs_err_t node_write(bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
+{
+    return node_write_image(tree, blk, &buf, false);
 }
 
 static bfs_err_t node_read_at_level(const bfs_btree_t *tree, bfs_blk_t blk,
@@ -879,7 +894,8 @@ static void mutation_commit(bfs_btree_t *tree, btree_mutation_t *mutation)
     for (uint32_t i = 0; i < mutation->staged_count; i++) {
         bfs_blk_t blk = mutation->staged_blocks[i];
         if (mutation_retires(mutation, blk)) continue;
-        bfs_err_t err = node_write(tree, blk, mutation->staged_images[i]);
+        /* The image is released below, so the cache may keep it uncopied. */
+        bfs_err_t err = node_write_image(tree, blk, &mutation->staged_images[i], true);
         if (err == BFS_OK) continue;
         latch_reclaim_error(tree, err);
         bfs_btree_owned_t *owned = tree->free_sink.owned;
