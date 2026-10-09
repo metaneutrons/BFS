@@ -182,8 +182,9 @@ quality-gates:
 	@python3 -m unittest discover -s tests/quality -p 'test_*.py' -v
 	@lefthook validate
 
+# Evidence bundles hold frozen, checksummed copies of scripts as they ran.
 shellcheck:
-	@shellcheck -x $$(git ls-files '*.sh')
+	@shellcheck -x $$(git ls-files '*.sh' ':(exclude)docs/qualification/evidence/**')
 
 actionlint:
 	@actionlint
@@ -212,6 +213,7 @@ coverage:
 	@$(MAKE) host-test BUILD_HOST=build/coverage \
 		HOST_CFLAGS='-std=c99 -Wall -Wextra -Werror -g -O0 -pthread --coverage $(INCLUDES) -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L'
 	@$(GCOVR) --root . --filter src/core --exclude-unreachable-branches \
+		--merge-mode-functions=separate \
 		--gcov-executable $(GCOV) \
 		--gcov-ignore-parse-errors=suspicious_hits.warn_once_per_file \
 		--fail-under-line 85 --print-summary --xml-pretty --output build/coverage.xml \
