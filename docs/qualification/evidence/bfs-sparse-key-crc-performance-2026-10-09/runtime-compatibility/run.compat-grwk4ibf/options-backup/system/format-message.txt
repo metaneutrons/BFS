@@ -1,0 +1,2 @@
+BFS format version 3 uses unsupported options 0x80000000.
+Use a compatible BFS driver.

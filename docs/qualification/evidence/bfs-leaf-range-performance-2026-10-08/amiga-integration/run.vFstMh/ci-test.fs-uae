@@ -1,0 +1,18 @@
+[fs-uae]
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 8192
+cpu = 68040
+uae_cpu_speed = max
+uae_cpu_24bit_addressing = false
+kickstart_file = build/emulator-identity/aros/aros-amiga-m68k-rom.bin
+kickstart_ext_file = build/emulator-identity/aros/aros-amiga-m68k-ext.bin
+hard_drive_0 = build/emulator-identity/run.vFstMh/system
+hard_drive_0_label = System
+hard_drive_0_priority = 0
+hard_drive_1 = build/emulator-identity/run.vFstMh/test.hdf
+hard_drive_1_file_system = build/emulator-identity/run.vFstMh/system/L/bfshandler
+floppy_speed = 0
+audio_driver = null
+window_hidden = 1
+automatic_input_grab = 0

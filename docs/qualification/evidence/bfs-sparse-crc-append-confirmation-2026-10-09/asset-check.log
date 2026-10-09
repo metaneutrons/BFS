@@ -1,0 +1,3 @@
+PASS: all 40 before/after runtime receipts match pinned identities
+PASS: all 67 non-handler asset receipts match across all 40 runs
+Receipts describe actual Cachy copies; licensed files/binaries are not in this bundle

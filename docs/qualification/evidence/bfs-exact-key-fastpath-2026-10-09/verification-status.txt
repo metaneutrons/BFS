@@ -1,0 +1,46 @@
+Date: 2026-10-09
+Branch: fix/metadata-listing-performance
+Base: 07216b7f17912c9f28b9b4a920caaa6828b00ccb
+Decision: REJECTED. Today's exact-key early-return source/test delta removed.
+Earlier M1-M5 work is preserved; leaf-range retention remains provisional.
+
+Candidate Clang host: 566 tests / 60 suites, PASS
+Candidate ASan/UBSan with leak detection/halt-on-error: 566 / 60, PASS
+Candidate focused hint suite: 12 tests, PASS
+Prior ordering with new oracle: intentional 11 PASS / 1 FAIL counter-probe
+Quality Python: 113 tests, PASS
+Quality-gate counter-probes in local Git repository: PASS
+Conformance: 21 tests, PASS
+Core/host Clang static analysis: PASS
+m68k candidate production/probe builds: PASS
+Amiga integration: 52 checks, PASS
+Kickstart compatibility: 9 scenarios, PASS
+Summary synthetic counter-probes: 7 tests, PASS
+Restored source host: 565 tests / 60 suites, PASS
+Restored source ASan/UBSan with leak detection/halt-on-error: 565 / 60, PASS
+Restored production/probe binary hashes: match previous qualified leaf-range
+Core/hint-test source hashes: match prior byte-for-byte; earlier edits preserved
+
+Pilot inventory: all 8 required runs verified, exploratory only
+Normal inventory: all 24 required runs verified, 8 per M3/range/fast
+Durable inventory: 3 started; 2 baselines complete/verified, fast1 interrupted
+Deep inventory: 0 started
+Retained raw directories: 35, including the interrupted candidate run
+Planned 50-run full inventory: INCOMPLETE, default summary rejects it as expected
+No PASS/outlier filtering; normal-only summary cannot claim full qualification
+No paired durable, diagnostic, handler-cache-cold, native AROS, FUSE or hardware claim
+Installed-copy digests match for all 35 started runs, recorded after measurement
+35 Format logs losslessly encoded; original byte digests verified
+
+Candidate/range normal paired median ratios (lower favors candidate):
+ExAll40 repeat 1.0035; ExAll400 repeat 1.0701 (5/8 slower);
+ExAll1000 repeat 1.0007; append4K 1.0646 (6/8 slower); append1K 0.9735.
+Warm-listing regression against M3 is not removed. No universal/causal speedup.
+Remaining measurements stopped after normal results failed to support retention.
+
+Prior evidence manifests (1146, 873, 103 files) verify unchanged.
+Original pre-new-oracle, Git-metadata gate and uncached-restoration attempt logs
+remain separate. These do not replace the final complete successful test logs.
+No remote CI, commit, push, merge or publishing. snapdog-runner remains stopped.
+Own full qualification process group stopped; no FS-UAE remains on Cachy.
+Rejected source is recoverable from archived patch and private frozen inputs.

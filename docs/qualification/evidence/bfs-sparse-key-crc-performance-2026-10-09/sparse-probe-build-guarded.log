@@ -1,0 +1,7 @@
+tests/amiga/crc32_sparse_probe.c:28:14: error: size of array 'sparse_length_matches_size_t' is negative
+ typedef char sparse_length_matches_size_t[
+              ^~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/amiga/crc32_sparse_probe.c:31:43: error: initialization from incompatible pointer type [-Werror=incompatible-pointer-types]
+ static CrcFunction volatile call_sparse = bfs_crc32_sparse;
+                                           ^~~~~~~~~~~~~~~~
+cc1: all warnings being treated as errors

@@ -1,0 +1,15 @@
+sequence	family	repeat	order	variant	run_name
+1	diag	1	bfs-first	base	goal-root-diag-base-1-bfs-first
+2	diag	1	bfs-first	candidate	goal-root-diag-candidate-1-bfs-first
+3	normal	1	bfs-first	base	goal-root-normal-base-1-bfs-first
+4	normal	1	bfs-first	candidate	goal-root-normal-candidate-1-bfs-first
+5	durable	1	bfs-first	base	goal-root-durable-base-1-bfs-first
+6	durable	1	bfs-first	candidate	goal-root-durable-candidate-1-bfs-first
+7	durable	2	pfs3-first	candidate	goal-root-durable-candidate-2-pfs3-first
+8	durable	2	pfs3-first	base	goal-root-durable-base-2-pfs3-first
+9	normal	2	pfs3-first	candidate	goal-root-normal-candidate-2-pfs3-first
+10	normal	2	pfs3-first	base	goal-root-normal-base-2-pfs3-first
+11	aa-normal	1	bfs-first	basea	goal-root-aa-normal-basea-1-bfs-first
+12	aa-normal	1	bfs-first	baseb	goal-root-aa-normal-baseb-1-bfs-first
+13	aa-durable	1	pfs3-first	basea	goal-root-aa-durable-basea-1-pfs3-first
+14	aa-durable	1	pfs3-first	baseb	goal-root-aa-durable-baseb-1-pfs3-first

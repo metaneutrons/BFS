@@ -1,0 +1,42 @@
+{
+  "checks": {
+    "at_least_three_primary_pairs_not_slower": false,
+    "both_primary_mode_medians_lower": false,
+    "diagnostic_buffer_requests_lower": true,
+    "no_repeated_ten_percent_phase_slowdown": false
+  },
+  "diagnostic_4k_buffer_requests": {
+    "denominator": 517,
+    "numerator": 262,
+    "ratio": 0.5067698259187621
+  },
+  "primary_4k_growth": {
+    "durable": {
+      "median": 1.007920106845818,
+      "ratios": [
+        1.002310834049871,
+        1.013529379641765
+      ]
+    },
+    "normal": {
+      "median": 1.0425435363877127,
+      "ratios": [
+        0.9509359798168462,
+        1.1341510929585792
+      ]
+    }
+  },
+  "primary_pairs_not_slower": 1,
+  "repeated_slowdowns": [
+    {
+      "mode": "durable",
+      "phase": "LIST_EXALL_1000_ENTRIES_FIRST_PASS",
+      "ratios": [
+        1.3072439633638635,
+        1.1735537190082646
+      ]
+    }
+  ],
+  "retain_locally": false,
+  "scope": "Pre-run local-retention rule, not production performance clearance. Correctness and identity validation must precede this calculation."
+}

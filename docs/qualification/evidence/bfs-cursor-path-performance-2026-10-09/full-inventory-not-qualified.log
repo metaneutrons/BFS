@@ -1,0 +1,34 @@
+ERROR: missing expected run directories:
+  cursor-durable-20261009-path-1-bfs-first
+  cursor-durable-20261009-path-2-pfs3-first
+  cursor-durable-20261009-path-3-bfs-first
+  cursor-durable-20261009-path-4-pfs3-first
+  cursor-durable-20261009-path-5-bfs-first
+  cursor-durable-20261009-path-6-pfs3-first
+  cursor-durable-20261009-path-7-bfs-first
+  cursor-durable-20261009-path-8-pfs3-first
+  cursor-durable-20261009-range-1-bfs-first
+  cursor-durable-20261009-range-2-pfs3-first
+  cursor-durable-20261009-range-3-bfs-first
+  cursor-durable-20261009-range-4-pfs3-first
+  cursor-durable-20261009-range-5-bfs-first
+  cursor-durable-20261009-range-6-pfs3-first
+  cursor-durable-20261009-range-7-bfs-first
+  cursor-durable-20261009-range-8-pfs3-first
+  cursor-normal-20261009-path-1-bfs-first
+  cursor-normal-20261009-path-2-pfs3-first
+  cursor-normal-20261009-path-3-bfs-first
+  cursor-normal-20261009-path-4-pfs3-first
+  cursor-normal-20261009-path-5-bfs-first
+  cursor-normal-20261009-path-6-pfs3-first
+  cursor-normal-20261009-path-7-bfs-first
+  cursor-normal-20261009-path-8-pfs3-first
+  cursor-normal-20261009-range-1-bfs-first
+  cursor-normal-20261009-range-2-pfs3-first
+  cursor-normal-20261009-range-3-bfs-first
+  cursor-normal-20261009-range-4-pfs3-first
+  cursor-normal-20261009-range-5-bfs-first
+  cursor-normal-20261009-range-6-pfs3-first
+  cursor-normal-20261009-range-7-bfs-first
+  cursor-normal-20261009-range-8-pfs3-first
+Inventory mode: full strict inventory; required=40. No valid-run filtering or outlier selection is applied.

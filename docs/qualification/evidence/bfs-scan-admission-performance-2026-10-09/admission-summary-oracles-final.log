@@ -1,0 +1,17 @@
+test_admission_inventory_names_and_runtime_hashes (test_summarize.SummarizerRejectionTests.test_admission_inventory_names_and_runtime_hashes) ... ok
+test_deep_schema_override_does_not_mutate_imported_parser (test_summarize.SummarizerRejectionTests.test_deep_schema_override_does_not_mutate_imported_parser) ... ok
+test_default_inventory_rejects_missing_runs (test_summarize.SummarizerRejectionTests.test_default_inventory_rejects_missing_runs) ... ok
+test_fake_pass_row_cannot_override_repository_verifier_rejection (test_summarize.SummarizerRejectionTests.test_fake_pass_row_cannot_override_repository_verifier_rejection) ... ok
+test_malformed_tsv_row_is_rejected (test_summarize.SummarizerRejectionTests.test_malformed_tsv_row_is_rejected) ... ok
+test_non_one_pass_value_is_rejected (test_summarize.SummarizerRejectionTests.test_non_one_pass_value_is_rejected) ... ok
+test_paired_output_includes_both_orders_and_correct_aggregate (test_summarize.SummarizerRejectionTests.test_paired_output_includes_both_orders_and_correct_aggregate) ... ok
+test_pilot_and_deep_selections_are_exact_four_run_inventories (test_summarize.SummarizerRejectionTests.test_pilot_and_deep_selections_are_exact_four_run_inventories) ... ok
+test_rdb_capacity_other_than_thirty_is_rejected (test_summarize.SummarizerRejectionTests.test_rdb_capacity_other_than_thirty_is_rejected) ... ok
+test_unexpected_run_directory_is_rejected (test_summarize.SummarizerRejectionTests.test_unexpected_run_directory_is_rejected) ... ok
+test_wrong_guest_digest_is_rejected (test_summarize.SummarizerRejectionTests.test_wrong_guest_digest_is_rejected) ... ok
+test_wrong_handler_digest_is_rejected (test_summarize.SummarizerRejectionTests.test_wrong_handler_digest_is_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 12 tests in 0.007s
+
+OK

@@ -1,0 +1,4 @@
+Directory "smoke:" on Compat:
+cli-file                           8  ----rwed  09-Oct-26
+cli-dir                          Dir    ----rwed  01-Jan-78
+2 entries

@@ -1,0 +1,67 @@
+clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/upgrade-focused/test_inode_lookup_hints tests/test_inode_lookup_hints.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+=== Inode B-tree lookup hints ===
+  test_warm_hint_skips_traversal_buffer_and_checks_index OK
+  test_distinct_key_range_hit_skips_root_traversal   OK
+  test_sparse_range_uses_checked_search_and_misses_fall_back OK
+  test_missing_and_saturated_epoch_disable_both_shortcuts OK
+  test_owned_leaf_update_and_later_cow_return_current_inode OK
+  test_direct_mapped_collisions_preserve_key_identity OK
+  test_unlinked_and_deleted_inodes_do_not_leak_through_hints OK
+  test_invalidation_rechecks_crc_and_inode_identity_after_raw_write OK
+  test_internal_path_raw_write_invalidates_both_leaf_shortcuts OK
+  test_range_table_is_sorted_bounded_and_replaces_old_leaves OK
+  test_reload_remount_pointer_lifetime_and_snapshot_view OK
+
+11 passed, 0 failed
+=== B+tree ===
+  test_empty_tree_search                             OK
+  test_single_insert_search                          OK
+  test_owned_rewrite_requires_registration           OK
+  test_owned_rewrite_publishes_after_fallible_steps  OK
+  test_owned_rewrite_abort_after_staging_keeps_bytes OK
+  test_duplicate_insert                              OK
+  test_sequential_inserts                            OK
+  test_reverse_inserts                               OK
+  test_scan_all                                      OK
+  test_scan_from_key                                 OK
+  test_scan_three_levels                             OK
+  test_scan_survives_callback_changes                OK
+  test_scan_cursor_resumes_in_leaf                   OK
+  test_scan_cursor_resumes_at_stop_entry             OK
+  test_update_key_stays_inside_its_leaf              OK
+  test_search_hint_follows_changes                   OK
+  test_be32_search_matches_comparator                OK
+  test_cow_old_root_preserved                        OK
+  test_single_delete                                 OK
+  test_delete_all                                    OK
+  test_delete_reverse                                OK
+  test_insert_delete_interleaved                     OK
+  test_search_floor_empty_tree                       OK
+  test_search_floor_key_smaller_than_all             OK
+  test_search_floor_key_larger_than_all              OK
+  test_search_floor_exact_match                      OK
+  test_owned_root_leaf_transfer                      OK
+  test_owned_root_leaf_rejects_committed_root        OK
+  test_owned_root_leaf_rejects_future_root           OK
+  test_owned_root_leaf_rejects_mismatched_root       OK
+  test_owned_root_leaf_write_failure_returns_scratch OK
+  test_owned_root_leaf_bypasses_full_pending_headroom OK
+  test_legacy_leaf_padding_cow_canonicalization      OK
+  test_legacy_full_leaf_no_key_gap                   OK
+  test_legacy_internal_padding_cow_canonicalization  OK
+  test_replace_root_leaf                             OK
+  test_replace_root_leaf_rejects_order               OK
+  test_replace_root_leaf_write_failure               OK
+  test_replace_root_leaf_deeper_unsupported          OK
+  test_cached_node_crc_revalidation                  OK
+  test_read_crc_covers_every_byte                    OK
+  test_lower_bound_matches_reference                 OK
+
+42 passed, 0 failed
+=== Performance probe host oracles ===
+  test_detail_sampling_disabled_tree_and_reset       OK
+  test_inode_read_wrappers_count_errors              OK
+  test_direct_and_deferred_tree_attribution          OK
+  test_filesystem_cache_finalizes_deferred_nodes     OK
+
+4 passed, 0 failed

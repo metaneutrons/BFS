@@ -1,0 +1,131 @@
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -777,9 +777,17 @@
+ {
+     if (!key_hint_cache_eligible(tree)) return false;
+ 
++    /* Exact hits precede range-table preparation. Their per-slot version
++     * guards do not establish owner/backend/layout identity, so check that
++     * identity here before accepting a resident leaf from this BIO. */
++    const bfs_btree_key_hint_cache_t *cache = tree->key_hint_cache;
++    if (cache->leaf_owner != tree || cache->leaf_bio != tree->bio ||
++        cache->leaf_ops != tree->ops)
++        return false;
++
+     uint32_t key_value = bfs_load_be32(key);
+     const bfs_btree_key_hint_t *hint =
+-        &tree->key_hint_cache->slots[key_hint_slot(key_value)];
++        &cache->slots[key_hint_slot(key_value)];
+     if (hint->leaf == BFS_BLK_NULL || hint->key != key_value ||
+         hint->root != tree->root || hint->generation != tree->generation ||
+         hint->mutation_epoch != mutation_epoch ||
+@@ -1020,8 +1028,6 @@
+         tree->hint_generation = 0;
+         tree->hint_mutation_epoch = 0;
+     }
+-    leaf_hint_prepare(tree, mutation_epoch_valid, mutation_epoch);
+-
+     if (mutation_epoch_valid &&
+         key_hint_read(tree, key, val_out, mutation_epoch)) {
+ #ifdef BFS_PERF_PROBE
+@@ -1030,6 +1036,11 @@
+         return BFS_OK;
+     }
+ 
++    /* An exact hit needs no range lookup or bookkeeping. On every miss the
++     * original preparation still invalidates stale/unsupported routes and
++     * clears exact slots whose owner/backend/layout identity changed. */
++    leaf_hint_prepare(tree, mutation_epoch_valid, mutation_epoch);
++
+     if (mutation_epoch_valid &&
+         leaf_hint_read(tree, key, val_out, mutation_epoch)) {
+ #ifdef BFS_PERF_PROBE
+--- a/tests/test_inode_lookup_hints.c
++++ b/tests/test_inode_lookup_hints.c
+@@ -267,6 +267,78 @@
+     fixture_close(&fixture);
+ }
+ 
++static void test_exact_hit_bypasses_range_preparation_but_miss_prepares(void)
++{
++    hint_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture, 0));
++    probe_install(&fixture);
++
++    /* Seed a current exact slot and a range table for the root inode. */
++    bfs_btree_key_hint_cache_reset(&fixture.fs->inode_key_hints);
++    fixture.fs->inode_tree.hint_leaf = BFS_BLK_NULL;
++    fixture.fs->inode_tree.hint_root = BFS_BLK_NULL;
++    fixture.fs->inode_tree.hint_generation = 0;
++    fixture.fs->inode_tree.hint_mutation_epoch = 0;
++    bfs_inode_t inode;
++    TEST_ASSERT_EQ(bfs_inode_read(&fixture.fs->inode_tree, BFS_ROOT_INO,
++                                  &inode), BFS_OK);
++    TEST_ASSERT(probe_alloc_calls > 0);
++
++    bfs_btree_key_hint_cache_t *cache = &fixture.fs->inode_key_hints;
++    bfs_btree_key_hint_t *exact = find_hint(cache, BFS_ROOT_INO);
++    TEST_ASSERT(exact != NULL);
++    TEST_ASSERT(cache->leaf_count > 0);
++    uint64_t epoch = 0;
++    TEST_ASSERT(bfs_bio_get_mutation_epoch(&fixture.cache.bio, &epoch));
++    TEST_ASSERT_EQ(exact->mutation_epoch, epoch);
++
++    /* These are range-table guards only. Keep the exact slot's tree, root,
++     * generation, and BIO epoch valid, but make range preparation necessary. */
++    cache->leaf_mutation_epoch = epoch ^ 1u;
++    cache->leaf_count = BFS_BTREE_LEAF_HINT_SLOTS + 1u;
++    uint16_t stale_count = cache->leaf_count;
++    uint16_t stale_victim = cache->leaf_next_victim;
++    bfs_blk_t stale_root = cache->leaf_root;
++    uint32_t stale_generation = cache->leaf_generation;
++    uint64_t stale_epoch = cache->leaf_mutation_epoch;
++    bfs_btree_leaf_hint_t stale_routes[BFS_BTREE_LEAF_HINT_SLOTS];
++    memcpy(stale_routes, cache->leaf_slots, sizeof(stale_routes));
++
++    /* With the unrelated last-leaf route disabled, a successful allocation-
++     * free read proves the exact slot served the lookup before range prep. */
++    fixture.fs->inode_tree.hint_leaf = BFS_BLK_NULL;
++    probe_alloc_calls = 0;
++    TEST_ASSERT_EQ(bfs_inode_read(&fixture.fs->inode_tree, BFS_ROOT_INO,
++                                  &inode), BFS_OK);
++    TEST_ASSERT_EQ(bfs_be32(inode.inode_nr), BFS_ROOT_INO);
++    TEST_ASSERT_EQ(probe_alloc_calls, 0);
++    TEST_ASSERT_EQ(cache->leaf_count, stale_count);
++    TEST_ASSERT_EQ(cache->leaf_next_victim, stale_victim);
++    TEST_ASSERT_EQ(cache->leaf_root, stale_root);
++    TEST_ASSERT_EQ(cache->leaf_generation, stale_generation);
++    TEST_ASSERT_EQ(cache->leaf_mutation_epoch, stale_epoch);
++    TEST_ASSERT_EQ(cache->leaf_owner, &fixture.fs->inode_tree);
++    TEST_ASSERT_EQ(cache->leaf_bio, &fixture.cache.bio);
++    TEST_ASSERT_EQ(cache->leaf_ops, fixture.fs->inode_tree.ops);
++    TEST_ASSERT(memcmp(cache->leaf_slots, stale_routes,
++                       sizeof(stale_routes)) == 0);
++
++    /* An exact miss still runs normal preparation and repairs stale range
++     * metadata before falling through to the B-tree traversal. */
++    fixture.fs->inode_tree.hint_leaf = BFS_BLK_NULL;
++    probe_alloc_calls = 0;
++    TEST_ASSERT_EQ(bfs_inode_read(&fixture.fs->inode_tree, 0x7FFFFFFFu,
++                                  &inode), BFS_ERR_NOTFOUND);
++    TEST_ASSERT(probe_alloc_calls > 0);
++    TEST_ASSERT_EQ(cache->leaf_count, 0);
++    TEST_ASSERT_EQ(cache->leaf_next_victim, 0);
++    TEST_ASSERT_EQ(cache->leaf_root, fixture.fs->inode_tree.root);
++    TEST_ASSERT_EQ(cache->leaf_generation, fixture.fs->inode_tree.generation);
++    TEST_ASSERT_EQ(cache->leaf_mutation_epoch, epoch);
++
++    fixture_close(&fixture);
++}
++
+ static void test_distinct_key_range_hit_skips_root_traversal(void)
+ {
+     enum { FILE_COUNT = 80 };
+@@ -929,6 +1001,7 @@
+ 
+ TEST_SUITE_BEGIN("Inode B-tree lookup hints")
+     TEST_RUN(test_warm_hint_skips_traversal_buffer_and_checks_index);
++    TEST_RUN(test_exact_hit_bypasses_range_preparation_but_miss_prepares);
+     TEST_RUN(test_distinct_key_range_hit_skips_root_traversal);
+     TEST_RUN(test_sparse_range_uses_checked_search_and_misses_fall_back);
+     TEST_RUN(test_missing_and_saturated_epoch_disable_both_shortcuts);

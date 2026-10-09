@@ -1,0 +1,4 @@
+486e3bbbf5c09a2b7d5cae0e3afd02a3a0a57d76a892d0aca6dfec31dbdb21f4  build/goal-root-2026-10-09/baseline/bfshandler
+d0589bb99ee8d897449a1480dadfcda5a8d4956ccefd4575a794778b3b45cec7  build/goal-root-2026-10-09/candidate/bfshandler
+e2f99ecc68e411358f96e5f85a9d452518af0d8c127b4cec4a3d3319d191d39c  build/goal-root-2026-10-09/baseline/bfshandler-write-probe
+656e17c292320b0a28deb7325d1ade8a4ff0feea806a815d2dc580e77dd8c1fe  build/goal-root-2026-10-09/candidate/bfshandler-write-probe

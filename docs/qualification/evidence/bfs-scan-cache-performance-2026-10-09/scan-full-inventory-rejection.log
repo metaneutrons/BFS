@@ -1,0 +1,34 @@
+ERROR: missing expected run directories:
+  scan-durable-20261009-cold-1-bfs-first
+  scan-durable-20261009-cold-2-pfs3-first
+  scan-durable-20261009-cold-3-bfs-first
+  scan-durable-20261009-cold-4-pfs3-first
+  scan-durable-20261009-cold-5-bfs-first
+  scan-durable-20261009-cold-6-pfs3-first
+  scan-durable-20261009-cold-7-bfs-first
+  scan-durable-20261009-cold-8-pfs3-first
+  scan-durable-20261009-m5-1-bfs-first
+  scan-durable-20261009-m5-2-pfs3-first
+  scan-durable-20261009-m5-3-bfs-first
+  scan-durable-20261009-m5-4-pfs3-first
+  scan-durable-20261009-m5-5-bfs-first
+  scan-durable-20261009-m5-6-pfs3-first
+  scan-durable-20261009-m5-7-bfs-first
+  scan-durable-20261009-m5-8-pfs3-first
+  scan-normal-20261009-cold-1-bfs-first
+  scan-normal-20261009-cold-2-pfs3-first
+  scan-normal-20261009-cold-3-bfs-first
+  scan-normal-20261009-cold-4-pfs3-first
+  scan-normal-20261009-cold-5-bfs-first
+  scan-normal-20261009-cold-6-pfs3-first
+  scan-normal-20261009-cold-7-bfs-first
+  scan-normal-20261009-cold-8-pfs3-first
+  scan-normal-20261009-m5-1-bfs-first
+  scan-normal-20261009-m5-2-pfs3-first
+  scan-normal-20261009-m5-3-bfs-first
+  scan-normal-20261009-m5-4-pfs3-first
+  scan-normal-20261009-m5-5-bfs-first
+  scan-normal-20261009-m5-6-pfs3-first
+  scan-normal-20261009-m5-7-bfs-first
+  scan-normal-20261009-m5-8-pfs3-first
+Inventory mode: full strict inventory; required=40. No run filtering or outlier selection is applied.

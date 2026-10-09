@@ -1,0 +1,1069 @@
+Quality gate positive and counter-probes passed.
+test_child_completion (test_amiga_runner.AmigaRunnerTests.test_child_completion) ... ok
+test_command_validation (test_amiga_runner.AmigaRunnerTests.test_command_validation) ... ok
+test_complete_full_and_quick (test_amiga_runner.AmigaRunnerTests.test_complete_full_and_quick) ... ok
+test_exit_and_timeout_are_failures (test_amiga_runner.AmigaRunnerTests.test_exit_and_timeout_are_failures) ... ok
+test_failed_case_with_honest_summary (test_amiga_runner.AmigaRunnerTests.test_failed_case_with_honest_summary) ... ok
+test_inventory_and_summary_counterprobes (test_amiga_runner.AmigaRunnerTests.test_inventory_and_summary_counterprobes) ... ok
+test_inventory_filter_is_strict_and_selective (test_amiga_runner.AmigaRunnerTests.test_inventory_filter_is_strict_and_selective) ... ok
+test_inventory_is_nonempty_unique_and_well_formed (test_amiga_runner.AmigaRunnerTests.test_inventory_is_nonempty_unique_and_well_formed) ... ok
+test_missing_or_corrupt_completion (test_amiga_runner.AmigaRunnerTests.test_missing_or_corrupt_completion) ... ok
+test_run_marker_must_match_status_order (test_amiga_runner.AmigaRunnerTests.test_run_marker_must_match_status_order) ... ok
+test_stale_record_cannot_pass (test_amiga_runner.AmigaRunnerTests.test_stale_record_cannot_pass) ... ok
+test_compare_rejects_durable_schema (test_bench_verifier.BenchVerifierTests.test_compare_rejects_durable_schema) ... ERROR
+test_compare_rejects_unknown_schema_version (test_bench_verifier.BenchVerifierTests.test_compare_rejects_unknown_schema_version) ... ERROR
+test_compare_v2_accepts_listing_phases (test_bench_verifier.BenchVerifierTests.test_compare_v2_accepts_listing_phases) ... ERROR
+test_compare_v2_rejects_mixed_versions_and_missing_listing (test_bench_verifier.BenchVerifierTests.test_compare_v2_rejects_mixed_versions_and_missing_listing) ... ERROR
+test_compare_v3_accepts_append_phases (test_bench_verifier.BenchVerifierTests.test_compare_v3_accepts_append_phases) ... ERROR
+test_compare_v3_rejects_mixed_versions_and_missing_or_reordered_append (test_bench_verifier.BenchVerifierTests.test_compare_v3_rejects_mixed_versions_and_missing_or_reordered_append) ... ERROR
+test_compare_v4_accepts_listing_scaling_phases (test_bench_verifier.BenchVerifierTests.test_compare_v4_accepts_listing_scaling_phases) ... ERROR
+test_compare_v4_rejects_mislabeled_listing_metric (test_bench_verifier.BenchVerifierTests.test_compare_v4_rejects_mislabeled_listing_metric) ... ERROR
+test_compare_v4_rejects_missing_listing_metric (test_bench_verifier.BenchVerifierTests.test_compare_v4_rejects_missing_listing_metric) ... ERROR
+test_compare_v4_rejects_mixed_schema_versions (test_bench_verifier.BenchVerifierTests.test_compare_v4_rejects_mixed_schema_versions) ... ERROR
+test_compare_v4_rejects_reordered_listing_metrics (test_bench_verifier.BenchVerifierTests.test_compare_v4_rejects_reordered_listing_metrics) ... ERROR
+test_deep_compare_counterprobes (test_bench_verifier.BenchVerifierTests.test_deep_compare_counterprobes) ... ERROR
+test_deep_compare_v10_accepts_cpu_probe_metrics (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_accepts_cpu_probe_metrics) ... ERROR
+test_deep_compare_v10_accepts_v9_upgrade_with_compatible_zero_counters (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_accepts_v9_upgrade_with_compatible_zero_counters) ... ERROR
+test_deep_compare_v10_does_not_apply_schema11_integer_bounds (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_does_not_apply_schema11_integer_bounds) ... ERROR
+test_deep_compare_v10_rejects_cpu_sample_mismatches (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_rejects_cpu_sample_mismatches) ... ERROR
+test_deep_compare_v10_rejects_missing_malformed_and_duplicate_cpu_rows (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_rejects_missing_malformed_and_duplicate_cpu_rows) ... ERROR
+test_deep_compare_v10_rejects_reserve_batch_and_sealed_accounting_errors (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_rejects_reserve_batch_and_sealed_accounting_errors) ... ERROR
+test_deep_compare_v11_accepts_inclusive_cpu_scopes_and_packet_partition (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_accepts_inclusive_cpu_scopes_and_packet_partition) ... ERROR
+test_deep_compare_v11_accepts_maximum_unsigned_scope_values (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_accepts_maximum_unsigned_scope_values) ... ERROR
+test_deep_compare_v11_rejects_missing_malformed_and_duplicate_scopes (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_missing_malformed_and_duplicate_scopes) ... ERROR
+test_deep_compare_v11_rejects_mixed_version_headers (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_mixed_version_headers) ... ERROR
+test_deep_compare_v11_rejects_packet_partition_call_and_tick_errors (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_packet_partition_call_and_tick_errors) ... ERROR
+test_deep_compare_v11_rejects_sample_and_zero_call_tick_errors (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_sample_and_zero_call_tick_errors) ... ERROR
+test_deep_compare_v11_rejects_unsigned_overflow_and_lossy_counts (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_unsigned_overflow_and_lossy_counts) ... ERROR
+test_deep_compare_v12_accepts_append_and_listing_probe_profile (test_bench_verifier.BenchVerifierTests.test_deep_compare_v12_accepts_append_and_listing_probe_profile) ... ERROR
+test_deep_compare_v12_rejects_lookup_accounting_invariant_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v12_rejects_lookup_accounting_invariant_violations) ... ERROR
+test_deep_compare_v12_rejects_missing_reordered_and_mixed_rows (test_bench_verifier.BenchVerifierTests.test_deep_compare_v12_rejects_missing_reordered_and_mixed_rows) ... ERROR
+test_deep_compare_v5_bucket_sums_pass_for_all_phases (test_bench_verifier.BenchVerifierTests.test_deep_compare_v5_bucket_sums_pass_for_all_phases) ... ERROR
+test_deep_compare_v5_rejects_bucket_sum_mismatch_in_every_phase (test_bench_verifier.BenchVerifierTests.test_deep_compare_v5_rejects_bucket_sum_mismatch_in_every_phase) ... ERROR
+test_deep_compare_v5_rejects_missing_or_malformed_bucket (test_bench_verifier.BenchVerifierTests.test_deep_compare_v5_rejects_missing_or_malformed_bucket) ... ERROR
+test_deep_compare_v6_accepts_consistent_reserve_and_commit_metrics (test_bench_verifier.BenchVerifierTests.test_deep_compare_v6_accepts_consistent_reserve_and_commit_metrics) ... ERROR
+test_deep_compare_v6_rejects_reserve_and_commit_invariant_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v6_rejects_reserve_and_commit_invariant_violations) ... ERROR
+test_deep_compare_v7_accepts_reserve_batch_metrics (test_bench_verifier.BenchVerifierTests.test_deep_compare_v7_accepts_reserve_batch_metrics) ... ERROR
+test_deep_compare_v7_rejects_batch_write_and_count_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v7_rejects_batch_write_and_count_violations) ... ERROR
+test_deep_compare_v8_accepts_reserve_return_classification (test_bench_verifier.BenchVerifierTests.test_deep_compare_v8_accepts_reserve_return_classification) ... ERROR
+test_deep_compare_v8_rejects_classification_and_write_sum_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v8_rejects_classification_and_write_sum_violations) ... ERROR
+test_deep_compare_v8_still_rejects_low_return_calls (test_bench_verifier.BenchVerifierTests.test_deep_compare_v8_still_rejects_low_return_calls) ... ERROR
+test_deep_compare_v9_accepts_all_sealed_commits_without_returns (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_accepts_all_sealed_commits_without_returns) ... ERROR
+test_deep_compare_v9_accepts_mixed_sealed_and_legacy_commits (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_accepts_mixed_sealed_and_legacy_commits) ... ERROR
+test_deep_compare_v9_accepts_raw_baseline_with_only_seal_rows_added (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_accepts_raw_baseline_with_only_seal_rows_added) ... ERROR
+test_deep_compare_v9_bounds_reclaim_passes_by_unsealed_commits (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_bounds_reclaim_passes_by_unsealed_commits) ... ERROR
+test_deep_compare_v9_rejects_inconsistent_return_batch_accounting (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_rejects_inconsistent_return_batch_accounting) ... ERROR
+test_deep_compare_v9_rejects_missing_malformed_and_duplicate_counters (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_rejects_missing_malformed_and_duplicate_counters) ... ERROR
+test_deep_compare_v9_rejects_seal_and_accounting_invariant_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_rejects_seal_and_accounting_invariant_violations) ... ERROR
+test_durable_compare_evidence_passes (test_bench_verifier.BenchVerifierTests.test_durable_compare_evidence_passes) ... 
+  test_durable_compare_evidence_passes (test_bench_verifier.BenchVerifierTests.test_durable_compare_evidence_passes) (directory='compare-bfs-first') ... ERROR
+  test_durable_compare_evidence_passes (test_bench_verifier.BenchVerifierTests.test_durable_compare_evidence_passes) (directory='compare-pfs3-first') ... ERROR
+test_durable_compare_rejects_plain_compare_marker (test_bench_verifier.BenchVerifierTests.test_durable_compare_rejects_plain_compare_marker) ... ERROR
+test_durable_compare_rejects_plain_compare_schema (test_bench_verifier.BenchVerifierTests.test_durable_compare_rejects_plain_compare_schema) ... ERROR
+test_durable_compare_v2_accepts_listing_phases (test_bench_verifier.BenchVerifierTests.test_durable_compare_v2_accepts_listing_phases) ... ERROR
+test_durable_compare_v3_accepts_append_phases (test_bench_verifier.BenchVerifierTests.test_durable_compare_v3_accepts_append_phases) ... ERROR
+test_durable_compare_v4_accepts_listing_scaling_phases (test_bench_verifier.BenchVerifierTests.test_durable_compare_v4_accepts_listing_scaling_phases) ... ERROR
+test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) ... 
+  test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-control-bfs-first') ... ERROR
+  test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-control-pfs3-first') ... ERROR
+  test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-attribution-pfs3-first') ... ERROR
+  test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-attribution-bfs-first') ... ERROR
+  test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-attribution-repeat-bfs-first') ... ERROR
+  test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-attribution-repeat-pfs3-first') ... ERROR
+test_real_deep_compare_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_deep_compare_evidence_passes) ... ERROR
+test_real_deep_profile_evidence_and_missing_peer (test_bench_verifier.BenchVerifierTests.test_real_deep_profile_evidence_and_missing_peer) ... ERROR
+test_completed_build (test_build_identity.BuildIdentityTests.test_completed_build) ... ok
+test_manifest_capabilities_exist_in_the_ledger (test_capability_manifest.CapabilityManifestTests.test_manifest_capabilities_exist_in_the_ledger) ... ERROR
+test_manifest_declares_each_implemented_source_surface (test_capability_manifest.CapabilityManifestTests.test_manifest_declares_each_implemented_source_surface) ... ERROR
+test_all_required_jobs_pass (test_ci_results.AggregateGateTests.test_all_required_jobs_pass) ... ok
+test_each_nonpassing_state_fails (test_ci_results.AggregateGateTests.test_each_nonpassing_state_fails) ... ok
+test_missing_and_extra_jobs_fail (test_ci_results.AggregateGateTests.test_missing_and_extra_jobs_fail) ... ok
+test_bearer_syntax_without_header_injection (test_github_preflight.GithubPreflightTests.test_bearer_syntax_without_header_injection) ... ok
+test_draft_and_promotion_states (test_github_preflight.GithubPreflightTests.test_draft_and_promotion_states) ... ok
+test_draft_release_lookup_falls_back_to_paginated_list (test_github_preflight.GithubPreflightTests.test_draft_release_lookup_falls_back_to_paginated_list) ... ok
+test_exact_asset_identity (test_github_preflight.GithubPreflightTests.test_exact_asset_identity) ... ok
+test_only_explicit_404_means_absent (test_github_preflight.GithubPreflightTests.test_only_explicit_404_means_absent) ... /opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: 'draft releases are omitted'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 401: 'fixture'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 403: 'fixture'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: 'fixture'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 429: 'fixture'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+ok
+test_release_lookup_rejects_missing_non_draft_release (test_github_preflight.GithubPreflightTests.test_release_lookup_rejects_missing_non_draft_release) ... ok
+test_valid_json_and_network_failure (test_github_preflight.GithubPreflightTests.test_valid_json_and_network_failure) ... ok
+test_write_access_advertisement_and_denial (test_github_preflight.GithubPreflightTests.test_write_access_advertisement_and_denial) ... ok
+test_invalid_tag_and_missing_draft_protection (test_release_identity.ReleaseIdentityTests.test_invalid_tag_and_missing_draft_protection) ... ok
+test_lightweight_and_annotated_prerelease (test_release_identity.ReleaseIdentityTests.test_lightweight_and_annotated_prerelease) ... ok
+test_wrong_commit_and_version (test_release_identity.ReleaseIdentityTests.test_wrong_commit_and_version) ... ok
+test_ambiguous_or_wrong_sbom (test_release_integrity.IntegrityTests.test_ambiguous_or_wrong_sbom) ... ok
+test_corrupted_compressed_archive (test_release_integrity.IntegrityTests.test_corrupted_compressed_archive) ... gzip: /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T/tmp2yrfdwtm/fixture.tar.gz: unexpected end of file
+gzip: /var/folders/kb/199rd0pn06q3sr27dv3frp180000gn/T/tmp2yrfdwtm/fixture.tar.gz: uncompress failed
+ok
+test_duplicate_and_extra_archive_entries (test_release_integrity.IntegrityTests.test_duplicate_and_extra_archive_entries) ... ok
+test_extra_directory_and_symlink (test_release_integrity.IntegrityTests.test_extra_directory_and_symlink) ... ok
+test_incomplete_sbom_inventory (test_release_integrity.IntegrityTests.test_incomplete_sbom_inventory) ... /opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: 'missing'>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 401: ''>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 403: ''>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 404: ''>
+  _warnings.warn(self.warn_message, ResourceWarning)
+/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/tempfile.py:484: ResourceWarning: Implicitly cleaning up <HTTPError 500: ''>
+  _warnings.warn(self.warn_message, ResourceWarning)
+ok
+test_metadata_identity_flags_and_digests (test_release_integrity.IntegrityTests.test_metadata_identity_flags_and_digests) ... ok
+test_missing_duplicate_or_unsafe_checksums (test_release_integrity.IntegrityTests.test_missing_duplicate_or_unsafe_checksums) ... ok
+test_nonregular_archive_entries (test_release_integrity.IntegrityTests.test_nonregular_archive_entries) ... ok
+test_runtime_inventory_counterprobes (test_release_integrity.IntegrityTests.test_runtime_inventory_counterprobes) ... ok
+test_symlink_replacing_asset (test_release_integrity.IntegrityTests.test_symlink_replacing_asset) ... ok
+test_tampered_payload (test_release_integrity.IntegrityTests.test_tampered_payload) ... ok
+test_valid_archive_and_metadata (test_release_integrity.IntegrityTests.test_valid_archive_and_metadata) ... ok
+test_valid_candidate (test_release_integrity.IntegrityTests.test_valid_candidate) ... ok
+test_input_bytes_determine_identity (test_runtime_inventory.RuntimeInventoryTests.test_input_bytes_determine_identity) ... ok
+test_missing_malformed_and_unknown_inputs (test_runtime_inventory.RuntimeInventoryTests.test_missing_malformed_and_unknown_inputs) ... ok
+test_selected_archive_members_and_startup (test_runtime_inventory.RuntimeInventoryTests.test_selected_archive_members_and_startup) ... ok
+
+======================================================================
+ERROR: test_compare_rejects_durable_schema (test_bench_verifier.BenchVerifierTests.test_compare_rejects_durable_schema)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 693, in test_compare_rejects_durable_schema
+    self.load_durable_evidence("compare-bfs-first", marker="BFS-PFS3-COMPLETE",
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                               suffix="tsv")
+                               ^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 666, in load_durable_evidence
+    shutil.copyfile(source / "info-after-format.txt",
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    self.results / "info-after-format.txt")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/info-after-format.txt'
+
+======================================================================
+ERROR: test_compare_rejects_unknown_schema_version (test_bench_verifier.BenchVerifierTests.test_compare_rejects_unknown_schema_version)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 874, in test_compare_rejects_unknown_schema_version
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v2_accepts_listing_phases (test_bench_verifier.BenchVerifierTests.test_compare_v2_accepts_listing_phases)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 710, in test_compare_v2_accepts_listing_phases
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v2_rejects_mixed_versions_and_missing_listing (test_bench_verifier.BenchVerifierTests.test_compare_v2_rejects_mixed_versions_and_missing_listing)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 722, in test_compare_v2_rejects_mixed_versions_and_missing_listing
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v3_accepts_append_phases (test_bench_verifier.BenchVerifierTests.test_compare_v3_accepts_append_phases)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 757, in test_compare_v3_accepts_append_phases
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v3_rejects_mixed_versions_and_missing_or_reordered_append (test_bench_verifier.BenchVerifierTests.test_compare_v3_rejects_mixed_versions_and_missing_or_reordered_append)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 769, in test_compare_v3_rejects_mixed_versions_and_missing_or_reordered_append
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v4_accepts_listing_scaling_phases (test_bench_verifier.BenchVerifierTests.test_compare_v4_accepts_listing_scaling_phases)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 822, in test_compare_v4_accepts_listing_scaling_phases
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v4_rejects_mislabeled_listing_metric (test_bench_verifier.BenchVerifierTests.test_compare_v4_rejects_mislabeled_listing_metric)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 862, in test_compare_v4_rejects_mislabeled_listing_metric
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v4_rejects_missing_listing_metric (test_bench_verifier.BenchVerifierTests.test_compare_v4_rejects_missing_listing_metric)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 835, in test_compare_v4_rejects_missing_listing_metric
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v4_rejects_mixed_schema_versions (test_bench_verifier.BenchVerifierTests.test_compare_v4_rejects_mixed_schema_versions)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 856, in test_compare_v4_rejects_mixed_schema_versions
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_compare_v4_rejects_reordered_listing_metrics (test_bench_verifier.BenchVerifierTests.test_compare_v4_rejects_reordered_listing_metrics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 845, in test_compare_v4_rejects_reordered_listing_metrics
+    self.load_evidence("compare-bfs-first", "tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_counterprobes (test_bench_verifier.BenchVerifierTests.test_deep_compare_counterprobes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 931, in test_deep_compare_counterprobes
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v10_accepts_cpu_probe_metrics (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_accepts_cpu_probe_metrics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1162, in test_deep_compare_v10_accepts_cpu_probe_metrics
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v10_accepts_v9_upgrade_with_compatible_zero_counters (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_accepts_v9_upgrade_with_compatible_zero_counters)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1191, in test_deep_compare_v10_accepts_v9_upgrade_with_compatible_zero_counters
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v10_does_not_apply_schema11_integer_bounds (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_does_not_apply_schema11_integer_bounds)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1572, in test_deep_compare_v10_does_not_apply_schema11_integer_bounds
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v10_rejects_cpu_sample_mismatches (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_rejects_cpu_sample_mismatches)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1236, in test_deep_compare_v10_rejects_cpu_sample_mismatches
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v10_rejects_missing_malformed_and_duplicate_cpu_rows (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_rejects_missing_malformed_and_duplicate_cpu_rows)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1215, in test_deep_compare_v10_rejects_missing_malformed_and_duplicate_cpu_rows
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v10_rejects_reserve_batch_and_sealed_accounting_errors (test_bench_verifier.BenchVerifierTests.test_deep_compare_v10_rejects_reserve_batch_and_sealed_accounting_errors)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1584, in test_deep_compare_v10_rejects_reserve_batch_and_sealed_accounting_errors
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v11_accepts_inclusive_cpu_scopes_and_packet_partition (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_accepts_inclusive_cpu_scopes_and_packet_partition)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1288, in test_deep_compare_v11_accepts_inclusive_cpu_scopes_and_packet_partition
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v11_accepts_maximum_unsigned_scope_values (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_accepts_maximum_unsigned_scope_values)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1480, in test_deep_compare_v11_accepts_maximum_unsigned_scope_values
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v11_rejects_missing_malformed_and_duplicate_scopes (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_missing_malformed_and_duplicate_scopes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1394, in test_deep_compare_v11_rejects_missing_malformed_and_duplicate_scopes
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v11_rejects_mixed_version_headers (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_mixed_version_headers)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1439, in test_deep_compare_v11_rejects_mixed_version_headers
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v11_rejects_packet_partition_call_and_tick_errors (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_packet_partition_call_and_tick_errors)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1450, in test_deep_compare_v11_rejects_packet_partition_call_and_tick_errors
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v11_rejects_sample_and_zero_call_tick_errors (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_sample_and_zero_call_tick_errors)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1420, in test_deep_compare_v11_rejects_sample_and_zero_call_tick_errors
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v11_rejects_unsigned_overflow_and_lossy_counts (test_bench_verifier.BenchVerifierTests.test_deep_compare_v11_rejects_unsigned_overflow_and_lossy_counts)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1519, in test_deep_compare_v11_rejects_unsigned_overflow_and_lossy_counts
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v12_accepts_append_and_listing_probe_profile (test_bench_verifier.BenchVerifierTests.test_deep_compare_v12_accepts_append_and_listing_probe_profile)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1319, in test_deep_compare_v12_accepts_append_and_listing_probe_profile
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v12_rejects_lookup_accounting_invariant_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v12_rejects_lookup_accounting_invariant_violations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1356, in test_deep_compare_v12_rejects_lookup_accounting_invariant_violations
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v12_rejects_missing_reordered_and_mixed_rows (test_bench_verifier.BenchVerifierTests.test_deep_compare_v12_rejects_missing_reordered_and_mixed_rows)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1331, in test_deep_compare_v12_rejects_missing_reordered_and_mixed_rows
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v5_bucket_sums_pass_for_all_phases (test_bench_verifier.BenchVerifierTests.test_deep_compare_v5_bucket_sums_pass_for_all_phases)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 904, in test_deep_compare_v5_bucket_sums_pass_for_all_phases
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v5_rejects_bucket_sum_mismatch_in_every_phase (test_bench_verifier.BenchVerifierTests.test_deep_compare_v5_rejects_bucket_sum_mismatch_in_every_phase)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 910, in test_deep_compare_v5_rejects_bucket_sum_mismatch_in_every_phase
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v5_rejects_missing_or_malformed_bucket (test_bench_verifier.BenchVerifierTests.test_deep_compare_v5_rejects_missing_or_malformed_bucket)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 950, in test_deep_compare_v5_rejects_missing_or_malformed_bucket
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v6_accepts_consistent_reserve_and_commit_metrics (test_bench_verifier.BenchVerifierTests.test_deep_compare_v6_accepts_consistent_reserve_and_commit_metrics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 972, in test_deep_compare_v6_accepts_consistent_reserve_and_commit_metrics
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v6_rejects_reserve_and_commit_invariant_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v6_rejects_reserve_and_commit_invariant_violations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 978, in test_deep_compare_v6_rejects_reserve_and_commit_invariant_violations
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v7_accepts_reserve_batch_metrics (test_bench_verifier.BenchVerifierTests.test_deep_compare_v7_accepts_reserve_batch_metrics)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1013, in test_deep_compare_v7_accepts_reserve_batch_metrics
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v7_rejects_batch_write_and_count_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v7_rejects_batch_write_and_count_violations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1019, in test_deep_compare_v7_rejects_batch_write_and_count_violations
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v8_accepts_reserve_return_classification (test_bench_verifier.BenchVerifierTests.test_deep_compare_v8_accepts_reserve_return_classification)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1045, in test_deep_compare_v8_accepts_reserve_return_classification
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v8_rejects_classification_and_write_sum_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v8_rejects_classification_and_write_sum_violations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1067, in test_deep_compare_v8_rejects_classification_and_write_sum_violations
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v8_still_rejects_low_return_calls (test_bench_verifier.BenchVerifierTests.test_deep_compare_v8_still_rejects_low_return_calls)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1090, in test_deep_compare_v8_still_rejects_low_return_calls
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v9_accepts_all_sealed_commits_without_returns (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_accepts_all_sealed_commits_without_returns)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1109, in test_deep_compare_v9_accepts_all_sealed_commits_without_returns
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v9_accepts_mixed_sealed_and_legacy_commits (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_accepts_mixed_sealed_and_legacy_commits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1645, in test_deep_compare_v9_accepts_mixed_sealed_and_legacy_commits
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v9_accepts_raw_baseline_with_only_seal_rows_added (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_accepts_raw_baseline_with_only_seal_rows_added)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1137, in test_deep_compare_v9_accepts_raw_baseline_with_only_seal_rows_added
+    original_bfs = (source / "bfs.deep-compare.tsv").read_text(
+                   ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~^
+        encoding="ascii",
+        ^^^^^^^^^^^^^^^^^
+    ).splitlines()
+    ^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 787, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-sealed-settlement-2026-10-01/baseline-deep/bfs.deep-compare.tsv'
+
+======================================================================
+ERROR: test_deep_compare_v9_bounds_reclaim_passes_by_unsealed_commits (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_bounds_reclaim_passes_by_unsealed_commits)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1839, in test_deep_compare_v9_bounds_reclaim_passes_by_unsealed_commits
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v9_rejects_inconsistent_return_batch_accounting (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_rejects_inconsistent_return_batch_accounting)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1781, in test_deep_compare_v9_rejects_inconsistent_return_batch_accounting
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v9_rejects_missing_malformed_and_duplicate_counters (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_rejects_missing_malformed_and_duplicate_counters)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1669, in test_deep_compare_v9_rejects_missing_malformed_and_duplicate_counters
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_deep_compare_v9_rejects_seal_and_accounting_invariant_violations (test_bench_verifier.BenchVerifierTests.test_deep_compare_v9_rejects_seal_and_accounting_invariant_violations)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1695, in test_deep_compare_v9_rejects_seal_and_accounting_invariant_violations
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_durable_compare_evidence_passes (test_bench_verifier.BenchVerifierTests.test_durable_compare_evidence_passes) (directory='compare-bfs-first')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 680, in test_durable_compare_evidence_passes
+    self.load_durable_evidence(directory)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 666, in load_durable_evidence
+    shutil.copyfile(source / "info-after-format.txt",
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    self.results / "info-after-format.txt")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/info-after-format.txt'
+
+======================================================================
+ERROR: test_durable_compare_evidence_passes (test_bench_verifier.BenchVerifierTests.test_durable_compare_evidence_passes) (directory='compare-pfs3-first')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 680, in test_durable_compare_evidence_passes
+    self.load_durable_evidence(directory)
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 666, in load_durable_evidence
+    shutil.copyfile(source / "info-after-format.txt",
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    self.results / "info-after-format.txt")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-pfs3-first/info-after-format.txt'
+
+======================================================================
+ERROR: test_durable_compare_rejects_plain_compare_marker (test_bench_verifier.BenchVerifierTests.test_durable_compare_rejects_plain_compare_marker)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 689, in test_durable_compare_rejects_plain_compare_marker
+    self.load_durable_evidence("compare-bfs-first", marker="BFS-PFS3-COMPLETE")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 666, in load_durable_evidence
+    shutil.copyfile(source / "info-after-format.txt",
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    self.results / "info-after-format.txt")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/info-after-format.txt'
+
+======================================================================
+ERROR: test_durable_compare_rejects_plain_compare_schema (test_bench_verifier.BenchVerifierTests.test_durable_compare_rejects_plain_compare_schema)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 685, in test_durable_compare_rejects_plain_compare_schema
+    self.load_durable_evidence("compare-bfs-first", header="FS_COMPARE_BENCH\t1")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 666, in load_durable_evidence
+    shutil.copyfile(source / "info-after-format.txt",
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    self.results / "info-after-format.txt")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/info-after-format.txt'
+
+======================================================================
+ERROR: test_durable_compare_v2_accepts_listing_phases (test_bench_verifier.BenchVerifierTests.test_durable_compare_v2_accepts_listing_phases)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 716, in test_durable_compare_v2_accepts_listing_phases
+    self.load_durable_evidence("compare-bfs-first")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 666, in load_durable_evidence
+    shutil.copyfile(source / "info-after-format.txt",
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    self.results / "info-after-format.txt")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/info-after-format.txt'
+
+======================================================================
+ERROR: test_durable_compare_v3_accepts_append_phases (test_bench_verifier.BenchVerifierTests.test_durable_compare_v3_accepts_append_phases)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 763, in test_durable_compare_v3_accepts_append_phases
+    self.load_durable_evidence("compare-bfs-first")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 666, in load_durable_evidence
+    shutil.copyfile(source / "info-after-format.txt",
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    self.results / "info-after-format.txt")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/info-after-format.txt'
+
+======================================================================
+ERROR: test_durable_compare_v4_accepts_listing_scaling_phases (test_bench_verifier.BenchVerifierTests.test_durable_compare_v4_accepts_listing_scaling_phases)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 828, in test_durable_compare_v4_accepts_listing_scaling_phases
+    self.load_durable_evidence("compare-bfs-first")
+    ~~~~~~~~~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 666, in load_durable_evidence
+    shutil.copyfile(source / "info-after-format.txt",
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+                    self.results / "info-after-format.txt")
+                    ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/compare-bfs-first/info-after-format.txt'
+
+======================================================================
+ERROR: test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-control-bfs-first')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 899, in test_real_cpu_attribution_and_control_evidence_passes
+    shutil.copyfile(evidence / run / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-cpu-attribution-2026-10-01/cpu-control-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-control-pfs3-first')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 899, in test_real_cpu_attribution_and_control_evidence_passes
+    shutil.copyfile(evidence / run / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-cpu-attribution-2026-10-01/cpu-control-pfs3-first/complete.txt'
+
+======================================================================
+ERROR: test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-attribution-pfs3-first')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 899, in test_real_cpu_attribution_and_control_evidence_passes
+    shutil.copyfile(evidence / run / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-cpu-attribution-2026-10-01/cpu-attribution-pfs3-first/complete.txt'
+
+======================================================================
+ERROR: test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-attribution-bfs-first')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 899, in test_real_cpu_attribution_and_control_evidence_passes
+    shutil.copyfile(evidence / run / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-cpu-attribution-2026-10-01/cpu-attribution-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-attribution-repeat-bfs-first')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 899, in test_real_cpu_attribution_and_control_evidence_passes
+    shutil.copyfile(evidence / run / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-cpu-attribution-2026-10-01/cpu-attribution-repeat-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_real_cpu_attribution_and_control_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_cpu_attribution_and_control_evidence_passes) (run='cpu-attribution-repeat-pfs3-first')
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 899, in test_real_cpu_attribution_and_control_evidence_passes
+    shutil.copyfile(evidence / run / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-cpu-attribution-2026-10-01/cpu-attribution-repeat-pfs3-first/complete.txt'
+
+======================================================================
+ERROR: test_real_deep_compare_evidence_passes (test_bench_verifier.BenchVerifierTests.test_real_deep_compare_evidence_passes)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 883, in test_real_deep_compare_evidence_passes
+    self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-compare-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_real_deep_profile_evidence_and_missing_peer (test_bench_verifier.BenchVerifierTests.test_real_deep_profile_evidence_and_missing_peer)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 1873, in test_real_deep_profile_evidence_and_missing_peer
+    self.load_evidence("deep-bfs-first", "deep.tsv")
+    ~~~~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_bench_verifier.py", line 86, in load_evidence
+    shutil.copyfile(source / name, self.results / name)
+    ~~~~~~~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/shutil.py", line 313, in copyfile
+    with open(src, 'rb') as fsrc:
+         ~~~~^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/qualification/evidence/bfs-pfs3-deep-profile-2026-09-29/deep-bfs-first/complete.txt'
+
+======================================================================
+ERROR: test_manifest_capabilities_exist_in_the_ledger (test_capability_manifest.CapabilityManifestTests.test_manifest_capabilities_exist_in_the_ledger)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_capability_manifest.py", line 27, in test_manifest_capabilities_exist_in_the_ledger
+    ledger_ids = set(re.findall(r"`(BFS-CAP-[A-Z0-9-]+)`", LEDGER.read_text()))
+                                                           ~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 787, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/platform-contract/capabilities.md'
+
+======================================================================
+ERROR: test_manifest_declares_each_implemented_source_surface (test_capability_manifest.CapabilityManifestTests.test_manifest_declares_each_implemented_source_surface)
+----------------------------------------------------------------------
+Traceback (most recent call last):
+  File "/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/tests/quality/test_capability_manifest.py", line 16, in test_manifest_declares_each_implemented_source_surface
+    manifest = json.loads(MANIFEST.read_text())
+                          ~~~~~~~~~~~~~~~~~~^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 787, in read_text
+    with self.open(mode='r', encoding=encoding, errors=errors, newline=newline) as f:
+         ~~~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/pathlib/__init__.py", line 771, in open
+    return io.open(self, mode, buffering, encoding, errors, newline)
+           ~~~~~~~^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+FileNotFoundError: [Errno 2] No such file or directory: '/Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile-src.jcfbEc/docs/platform-contract/capabilities.json'
+
+----------------------------------------------------------------------
+Ran 98 tests in 1.163s
+
+FAILED (errors=62)
+make: *** [quality-gates] Error 1

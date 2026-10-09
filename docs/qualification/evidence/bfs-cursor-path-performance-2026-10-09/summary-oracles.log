@@ -1,0 +1,10 @@
+test_actual_bfs_buffer_capacity_mismatch_rejected (__main__.SummaryRejectionOracles.test_actual_bfs_buffer_capacity_mismatch_rejected) ... ok
+test_exact_inventory_counts_and_missing_duplicate_unexpected_rejection (__main__.SummaryRejectionOracles.test_exact_inventory_counts_and_missing_duplicate_unexpected_rejection) ... ok
+test_missing_pass_duplicate_rows_and_wrong_schema_rejected (__main__.SummaryRejectionOracles.test_missing_pass_duplicate_rows_and_wrong_schema_rejected) ... ok
+test_pilot_production_and_deep_probe_digest_mapping (__main__.SummaryRejectionOracles.test_pilot_production_and_deep_probe_digest_mapping) ... ok
+test_runtime_identity_mismatch_rejected (__main__.SummaryRejectionOracles.test_runtime_identity_mismatch_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.005s
+
+OK

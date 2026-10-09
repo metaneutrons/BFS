@@ -1,0 +1,11 @@
+Compatibility evidence: /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/emulator/run.compat-ohjh24ak
+Formatted /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/emulator/run.compat-ohjh24ak/clean.hdf: 8192 blocks of 4096 bytes
+PASS format
+PASS snapshot-commands
+PASS v3
+PASS v2
+PASS new-primary
+PASS new-backup
+PASS options-primary
+PASS options-backup
+PASS damaged-version

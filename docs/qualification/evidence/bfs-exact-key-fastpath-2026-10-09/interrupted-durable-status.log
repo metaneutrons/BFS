@@ -1,0 +1,5 @@
+Fixed three-started-run inventory: NOT paired durable qualification.
+VERIFIED completed baseline exact-key-durable-20261009-m3-1-bfs-first
+VERIFIED completed baseline exact-key-durable-20261009-range-1-bfs-first
+INTERRUPTED exact-key-durable-20261009-fast-1-bfs-first
+completion-marker-present False

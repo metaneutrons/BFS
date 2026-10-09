@@ -1,0 +1,28 @@
+snapdog-runner
+START 1 split-normal-m5-1-bfs-first 2026-10-09T17:32:42Z
+PASS 1 split-normal-m5-1-bfs-first 2026-10-09T17:33:23Z
+START 2 split-normal-sparse-1-bfs-first 2026-10-09T17:33:23Z
+PASS 2 split-normal-sparse-1-bfs-first 2026-10-09T17:34:04Z
+START 3 split-durable-m5-1-bfs-first 2026-10-09T17:34:04Z
+PASS 3 split-durable-m5-1-bfs-first 2026-10-09T17:34:45Z
+START 4 split-durable-sparse-1-bfs-first 2026-10-09T17:34:45Z
+PASS 4 split-durable-sparse-1-bfs-first 2026-10-09T17:35:25Z
+START 5 split-durable-sparse-2-pfs3-first 2026-10-09T17:35:25Z
+PASS 5 split-durable-sparse-2-pfs3-first 2026-10-09T17:36:06Z
+START 6 split-durable-m5-2-pfs3-first 2026-10-09T17:36:06Z
+PASS 6 split-durable-m5-2-pfs3-first 2026-10-09T17:36:47Z
+START 7 split-normal-sparse-2-pfs3-first 2026-10-09T17:36:47Z
+PASS 7 split-normal-sparse-2-pfs3-first 2026-10-09T17:37:27Z
+START 8 split-normal-m5-2-pfs3-first 2026-10-09T17:37:27Z
+PASS 8 split-normal-m5-2-pfs3-first 2026-10-09T17:38:08Z
+START 9 split-aa-normal-m5a-1-bfs-first 2026-10-09T17:38:08Z
+PASS 9 split-aa-normal-m5a-1-bfs-first 2026-10-09T17:38:49Z
+START 10 split-aa-normal-m5b-1-bfs-first 2026-10-09T17:38:49Z
+PASS 10 split-aa-normal-m5b-1-bfs-first 2026-10-09T17:39:29Z
+START 11 split-aa-durable-m5a-1-pfs3-first 2026-10-09T17:39:30Z
+PASS 11 split-aa-durable-m5a-1-pfs3-first 2026-10-09T17:40:10Z
+START 12 split-aa-durable-m5b-1-pfs3-first 2026-10-09T17:40:10Z
+PASS 12 split-aa-durable-m5b-1-pfs3-first 2026-10-09T17:40:51Z
+SPLIT_COMPLETE 12 2026-10-09T17:40:51Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-09T17:40:54Z

@@ -1,0 +1,40 @@
+test_assets (unittest.loader._FailedTest.test_assets) ... ERROR
+test_aa_variants_map_to_m5_for_identity_check_but_keep_schedule_labels (test_confirmation.EvidenceValidationTests.test_aa_variants_map_to_m5_for_identity_check_but_keep_schedule_labels) ... ok
+test_durable_startup_sequence_requires_durable_outputs (test_confirmation.EvidenceValidationTests.test_durable_startup_sequence_requires_durable_outputs) ... ok
+test_failure_marker_in_run_log_is_rejected (test_confirmation.EvidenceValidationTests.test_failure_marker_in_run_log_is_rejected) ... ok
+test_mocked_inventory_uses_all_40_runs_and_checks_top_level_inputs (test_confirmation.EvidenceValidationTests.test_mocked_inventory_uses_all_40_runs_and_checks_top_level_inputs) ... ok
+test_old_runtime_identity_check_rejects_wrong_digest (test_confirmation.EvidenceValidationTests.test_old_runtime_identity_check_rejects_wrong_digest) ... ok
+test_phase_inventory_requires_all_23_and_positive_timings (test_confirmation.EvidenceValidationTests.test_phase_inventory_requires_all_23_and_positive_timings) ... ok
+test_startup_sequence_must_match_declared_filesystem_order (test_confirmation.EvidenceValidationTests.test_startup_sequence_must_match_declared_filesystem_order) ... ok
+test_duplicate_schedule_run_is_rejected (test_confirmation.FixedScheduleTests.test_duplicate_schedule_run_is_rejected) ... ok
+test_extra_schedule_row_is_rejected (test_confirmation.FixedScheduleTests.test_extra_schedule_row_is_rejected) ... ok
+test_missing_and_unexpected_run_directories_are_rejected (test_confirmation.FixedScheduleTests.test_missing_and_unexpected_run_directories_are_rejected) ... ok
+test_missing_schedule_row_is_rejected (test_confirmation.FixedScheduleTests.test_missing_schedule_row_is_rejected) ... ok
+test_reordered_rows_are_rejected (test_confirmation.FixedScheduleTests.test_reordered_rows_are_rejected) ... ok
+test_schedule_is_exact_balanced_40_run_order (test_confirmation.FixedScheduleTests.test_schedule_is_exact_balanced_40_run_order) ... ok
+test_wrong_order_field_is_rejected (test_confirmation.FixedScheduleTests.test_wrong_order_field_is_rejected) ... ok
+test_aa_mode_aggregates_do_not_pool_different_normal_and_durable_ratios (test_confirmation.RatioSemanticsTests.test_aa_mode_aggregates_do_not_pool_different_normal_and_durable_ratios) ... ok
+test_bfs_pfs3_individual_ratios_and_over_5_counts_include_all_runs (test_confirmation.RatioSemanticsTests.test_bfs_pfs3_individual_ratios_and_over_5_counts_include_all_runs) ... ok
+test_m5b_over_m5a_direction_and_all_four_control_pairs (test_confirmation.RatioSemanticsTests.test_m5b_over_m5a_direction_and_all_four_control_pairs) ... ok
+test_sparse_candidate_ratios_preserve_bfs_and_pfs3_calibrator (test_confirmation.RatioSemanticsTests.test_sparse_candidate_ratios_preserve_bfs_and_pfs3_calibrator) ... ok
+test_sparse_pair_summary_keeps_all_runs_and_two_pairs_per_stratum (test_confirmation.RatioSemanticsTests.test_sparse_pair_summary_keeps_all_runs_and_two_pairs_per_stratum) ... ok
+
+======================================================================
+ERROR: test_assets (unittest.loader._FailedTest.test_assets)
+----------------------------------------------------------------------
+ImportError: Failed to import test module: test_assets
+Traceback (most recent call last):
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/loader.py", line 433, in _find_test_path
+    module = self._get_module_from_name(name)
+  File "/opt/homebrew/Cellar/python@3.14/3.14.8/Frameworks/Python.framework/Versions/3.14/lib/python3.14/unittest/loader.py", line 374, in _get_module_from_name
+    __import__(name)
+    ~~~~~~~~~~^^^^^^
+  File "/Volumes/Dev/Source/Amiga/BFS/docs/qualification/evidence/bfs-sparse-crc-append-confirmation-2026-10-09/test_assets.py", line 11, in <module>
+    import verify_assets as assets
+ModuleNotFoundError: No module named 'verify_assets'
+
+
+----------------------------------------------------------------------
+Ran 20 tests in 0.049s
+
+FAILED (errors=1)

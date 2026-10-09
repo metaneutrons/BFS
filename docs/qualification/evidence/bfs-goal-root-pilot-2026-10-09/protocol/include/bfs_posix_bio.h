@@ -1,0 +1,46 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/* Production POSIX block transport for host tools and the FUSE adapter. */
+
+#ifndef BFS_POSIX_BIO_H
+#define BFS_POSIX_BIO_H
+
+#include "bfs_bio.h"
+
+typedef struct {
+    // cppcheck-suppress unusedStructMember
+    uint64_t byte_offset; /* Beginning of the selected image or partition range. */
+    // cppcheck-suppress unusedStructMember
+    uint64_t byte_length; /* Zero selects the complete remaining backing store. */
+    // cppcheck-suppress unusedStructMember
+    uint32_t block_size;  /* Valid BFS block size used for the initial probe. */
+    // cppcheck-suppress unusedStructMember
+    bool writable;
+    // cppcheck-suppress unusedStructMember
+    bool lock;            /* Must request a non-blocking advisory range lock. */
+} bfs_posix_bio_options_t;
+
+typedef struct {
+    // cppcheck-suppress unusedStructMember
+    uint64_t read_calls;
+    // cppcheck-suppress unusedStructMember
+    uint64_t write_calls;
+    // cppcheck-suppress unusedStructMember
+    uint64_t sync_calls;
+} bfs_posix_bio_stats_t;
+
+/* Open an existing regular image or supported block device range. The function
+ * never creates, truncates, formats, or discovers partitions by pathname.
+ * A non-blocking advisory lock is mandatory. Writable mode is restricted to
+ * regular images until raw-device ownership checks are available. */
+bfs_bio_t *bfs_posix_bio_open(const char *path, const bfs_posix_bio_options_t *options);
+
+/* Read transport counters. They are primarily evidence for the read-only
+ * lifecycle tests and remain valid until bfs_bio_close(). */
+bfs_err_t bfs_posix_bio_get_stats(const bfs_bio_t *bio, bfs_posix_bio_stats_t *stats);
+
+/* Return the selected backing-store range after opening. This lets a caller
+ * probe the BFS geometry without exposing the transport implementation. */
+bfs_err_t bfs_posix_bio_get_range(const bfs_bio_t *bio, uint64_t *byte_offset,
+                                  uint64_t *byte_length);
+
+#endif /* BFS_POSIX_BIO_H */

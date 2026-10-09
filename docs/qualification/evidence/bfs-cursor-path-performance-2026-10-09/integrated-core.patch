@@ -1,0 +1,1011 @@
+diff --git a/include/bfs_btree.h b/include/bfs_btree.h
+index 75895c9..c5b359b 100644
+--- a/include/bfs_btree.h
++++ b/include/bfs_btree.h
+@@ -77,6 +77,49 @@ int bfs_btree_key_compare_be32(const void *a, const void *b);
+  * treated as corrupt (the descent loops abort with BFS_ERR_CORRUPT). */
+ #define BFS_BTREE_MAX_DEPTH 32
+ 
++/* Optional fixed-size cache of key locations in validated resident leaves.
++ * Entries contain no value bytes; callers always read the current value from
++ * the BIO-resident leaf after checking the key, tree identity, generation, and
++ * BIO mutation epoch. */
++#define BFS_BTREE_KEY_HINT_SLOTS 64u
++#define BFS_BTREE_LEAF_HINT_SLOTS 64u
++
++typedef struct {
++    uint32_t key;       /* host-order u32 key */
++    bfs_blk_t leaf;     /* BFS_BLK_NULL marks an unused entry */
++    uint32_t index;     /* entry index in the leaf */
++    uint32_t generation;
++    bfs_blk_t root;
++    uint64_t mutation_epoch;
++} bfs_btree_key_hint_t;
++
++/* A validated u32 key range routes a lookup to one resident leaf without
++ * retaining any value bytes. The range is only a positive candidate; a
++ * missing key falls back to the normal root traversal. */
++typedef struct {
++    uint32_t first_key; /* host-order inclusive lower endpoint */
++    uint32_t last_key;  /* host-order inclusive upper endpoint */
++    bfs_blk_t leaf;     /* BFS_BLK_NULL marks an unused entry */
++} bfs_btree_leaf_hint_t;
++
++typedef struct {
++    bfs_btree_key_hint_t slots[BFS_BTREE_KEY_HINT_SLOTS];
++    bfs_btree_leaf_hint_t leaf_slots[BFS_BTREE_LEAF_HINT_SLOTS];
++    const struct bfs_btree *leaf_owner;
++    const bfs_bio_t *leaf_bio;
++    const bfs_btree_ops_t *leaf_ops;
++    bfs_blk_t leaf_root;
++    uint32_t leaf_generation;
++    uint64_t leaf_mutation_epoch;
++    uint16_t leaf_count;
++    uint16_t leaf_next_victim;
++} bfs_btree_key_hint_cache_t;
++
++/* Clear all location hints. Reset before attaching to another/reinitialized
++ * tree or after the BIO lifetime ends: pointer identity is not an incarnation
++ * token. The owning tree must be reattached separately. */
++void bfs_btree_key_hint_cache_reset(bfs_btree_key_hint_cache_t *cache);
++
+ /* Worst-case number of OLD-transaction node blocks a single insert or delete
+  * hands to the deferred-free sink. Delete dominates: along the root-to-leaf
+  * path it COWs and at most merges/borrows one extra node per level (≤ 2·depth),
+@@ -164,11 +207,18 @@ typedef struct bfs_btree {
+     // cppcheck-suppress unusedStructMember
+     uint32_t          generation;
+ 
+-    /* The leaf the last search ended in, valid at hint_generation. */
++    /* The leaf the last search ended in, valid at these tree/BIO versions. */
+     // cppcheck-suppress unusedStructMember
+     bfs_blk_t         hint_leaf;
+     // cppcheck-suppress unusedStructMember
++    bfs_blk_t         hint_root;
++    // cppcheck-suppress unusedStructMember
+     uint32_t          hint_generation;
++    uint64_t          hint_mutation_epoch;
++
++    /* Optional owner-provided u32-key location cache. It is never owned by
++     * the tree and is cleared on every bfs_btree_init(). */
++    bfs_btree_key_hint_cache_t *key_hint_cache;
+ } bfs_btree_t;
+ 
+ static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
+@@ -255,7 +305,14 @@ bfs_err_t bfs_btree_update_key(bfs_btree_t *tree, const void *old_key,
+ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
+                            bfs_scan_cb cb, void *ctx);
+ 
+-/* A copy of the leaf a scan last copied, for resuming without a descent. */
++/* Parent locations, not node images or borrowed BIO pointers. */
++typedef struct {
++    bfs_blk_t blk[BFS_BTREE_MAX_DEPTH];
++    uint32_t idx[BFS_BTREE_MAX_DEPTH];
++    uint32_t depth;
++} bfs_btree_scan_path_t;
++
++/* A copy of the leaf a scan last copied, with a guarded parent path. */
+ typedef struct {
+     // cppcheck-suppress unusedStructMember
+     const bfs_btree_t *tree;
+@@ -268,9 +325,20 @@ typedef struct {
+     // cppcheck-suppress unusedStructMember
+     uint32_t stop_index;    /* entry whose callback stopped the scan, if any */
+     // cppcheck-suppress unusedStructMember
++    uint64_t mutation_epoch; /* BIO epoch when this leaf copy was captured */
++    // cppcheck-suppress unusedStructMember
++    bool mutation_epoch_valid;
++    // cppcheck-suppress unusedStructMember
+     bool stopped;
+     // cppcheck-suppress unusedStructMember
+     bool valid;
++    bfs_btree_scan_path_t path;
++    const bfs_bio_t *path_bio;
++    const bfs_btree_ops_t *path_ops;
++    uint32_t path_block_size;
++    uint32_t path_block_count;
++    uint32_t path_height;
++    bool path_valid;
+ } bfs_btree_cursor_t;
+ 
+ void bfs_btree_cursor_init(bfs_btree_cursor_t *cursor);
+@@ -282,11 +350,28 @@ void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor);
+  * and last keys: in a B+tree every key of that range is in that leaf. If
+  * start_key equals the entry at which a callback stopped the previous scan,
+  * that entry is the start without a search. The scan leaves its last copied
+- * leaf in the cursor. NULL behaves as bfs_btree_scan; failing to allocate
+- * the copy only costs the shortcut. */
++ * leaf in the cursor. With a current, available BIO mutation epoch, the
++ * saved parent path also avoids re-descending at a leaf boundary. Each parent
++ * and next leaf still go through ordinary validated node access. Missing or
++ * stale path guards retain the root-descent fallback. NULL behaves as
++ * bfs_btree_scan; failing to allocate the copy only costs the shortcut. */
+ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+                                 const void *start_key, bfs_scan_cb cb, void *ctx);
+ 
++/* Return the stopped key when cursor still names a current, in-bounds stop
++ * entry; otherwise return NULL. The returned pointer belongs to cursor->leaf
++ * and remains valid until that cursor is released or reused. */
++const void *bfs_btree_cursor_stop_key(const bfs_btree_t *tree,
++                                     const bfs_btree_cursor_t *cursor);
++
++/* Resume exclusively after the entry where the previous callback stopped.
++ * This requires a current cursor and a BIO mutation epoch captured with its
++ * leaf; if either is unavailable or stale, return BFS_ERR_AGAIN without
++ * calling cb. */
++bfs_err_t bfs_btree_scan_cursor_resume(bfs_btree_t *tree,
++                                      bfs_btree_cursor_t *cursor,
++                                      bfs_scan_cb cb, void *ctx);
++
+ /* Search for the largest key <= search_key.
+  * Returns BFS_OK if found, BFS_ERR_NOTFOUND if tree is empty or all keys > search_key.
+  * On success, copies the found key to key_out and value to val_out. */
+diff --git a/src/core/btree.c b/src/core/btree.c
+index 0178453..3ab7769 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -38,12 +38,27 @@
+ 
+ static uint8_t *alloc_buf(const bfs_btree_t *tree)
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_BUFFER_ALLOC);
++    uint8_t *buf = bfs_bio_alloc_buffer(tree->bio, tree->bio->block_size);
++    bfs_perf_probe_detail_end(&sample);
++    return buf;
++#else
+     return bfs_bio_alloc_buffer(tree->bio, tree->bio->block_size);
++#endif
+ }
+ 
+ static void free_buf(const bfs_btree_t *tree, void *buffer)
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_BUFFER_FREE);
++#endif
+     bfs_bio_free_buffer(tree->bio, buffer);
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_detail_end(&sample);
++#endif
+ }
+ 
+ static void copy_bytes(uint8_t *destination, const uint8_t *source, uint32_t length)
+@@ -93,7 +108,20 @@ static bfs_node_validation_t node_validation_context(const bfs_btree_t *tree)
+ /* Node-local structure: header fields, strictly ascending keys, in-range
+  * children and leaf entries the tree accepts. Parent bounds and the expected
+  * level are checked by traversals. */
++#ifdef BFS_PERF_PROBE
++static bool node_structure_ok_body(const bfs_btree_t *tree, uint8_t *buf);
+ static bool node_structure_ok(const bfs_btree_t *tree, uint8_t *buf)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_NODE_STRUCTURE);
++    bool result = node_structure_ok_body(tree, buf);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bool node_structure_ok_body(const bfs_btree_t *tree, uint8_t *buf)
++#else
++static bool node_structure_ok(const bfs_btree_t *tree, uint8_t *buf)
++#endif
+ {
+     const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
+     uint16_t level = bfs_be16(hdr->level);
+@@ -282,6 +310,29 @@ static bfs_err_t node_compute_write_crc(const bfs_btree_t *tree, uint8_t *buf,
+     return BFS_OK;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++/* Both direct and deferred finalization compute a CRC. Sampling just direct
++ * writes undercounts the deferred branch and breaks the calls/stride oracle. */
++static bfs_err_t node_compute_profiled_write_crc(const bfs_btree_t *tree,
++                                                 uint8_t *buf,
++                                                 uint32_t *crc_out)
++{
++    struct EClockVal started = {0};
++    ULONG call = ++bfs_perf_probe_counters.node_crc_write_calls;
++    BOOL sample = (call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
++    if (sample) bfs_perf_probe_begin(&started);
++    bfs_err_t err = node_compute_write_crc(tree, buf, crc_out);
++    if (sample) {
++        bfs_perf_probe_counters.node_crc_write_samples++;
++        bfs_perf_probe_counters.node_crc_write_sample_ticks +=
++            bfs_perf_probe_elapsed(&started);
++    }
++    return err;
++}
++#define node_compute_write_crc(tree, buf, out) \
++    node_compute_profiled_write_crc(tree, buf, out)
++#endif
++
+ static bool owned_contains(const bfs_btree_t *tree, bfs_blk_t blk);
+ 
+ /* Completes a deferred node image: canonical padding and the full-block CRC,
+@@ -298,8 +349,7 @@ static bfs_err_t node_finalize_deferred(const void *layout, uint32_t block_size,
+     if (err != BFS_OK) return err;
+     hdr->crc32 = bfs_be32(crc);
+ #ifdef BFS_PERF_PROBE
+-    bfs_perf_probe_counters.node_crc_write_calls++;
+-    bfs_perf_probe_counters.btree_node_writes++;
++    bfs_perf_probe_node_write(layout, TRUE);
+ #endif
+     return BFS_OK;
+ }
+@@ -337,51 +387,12 @@ static bfs_err_t node_write_image(bfs_btree_t *tree, bfs_blk_t blk, uint8_t **im
+         }
+         if (err != BFS_ERR_UNSUPPORTED) return err;
+     }
+-#ifdef BFS_PERF_PROBE
+-    struct EClockVal crc_started = {0};
+-    ULONG crc_call = ++bfs_perf_probe_counters.node_crc_write_calls;
+-    BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
+-    if (sample_crc) bfs_perf_probe_begin(&crc_started);
+-#endif
+     uint32_t crc;
+     bfs_err_t crc_err = node_compute_write_crc(tree, buf, &crc);
+     if (crc_err != BFS_OK) return crc_err;
+     hdr->crc32 = bfs_be32(crc);
+ #ifdef BFS_PERF_PROBE
+-    if (sample_crc) {
+-        bfs_perf_probe_counters.node_crc_write_samples++;
+-        bfs_perf_probe_counters.node_crc_write_sample_ticks +=
+-            bfs_perf_probe_elapsed(&crc_started);
+-    }
+-    bfs_perf_probe_counters.btree_node_writes++;
+-    if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->freespace.tree) {
+-        bfs_perf_probe_counters.free_tree_node_writes++;
+-        switch (bfs_perf_probe_free_tree_phase) {
+-        case BFS_PERF_FREE_TREE_PHASE_ALLOCATION_BODY:
+-            bfs_perf_probe_counters.free_tree_allocation_body_node_writes++;
+-            break;
+-        case BFS_PERF_FREE_TREE_PHASE_RESERVE_REFILL:
+-            bfs_perf_probe_counters.free_tree_reserve_refill_node_writes++;
+-            break;
+-        case BFS_PERF_FREE_TREE_PHASE_RESERVE_RETURN:
+-            bfs_perf_probe_counters.free_tree_reserve_return_node_writes++;
+-            break;
+-        case BFS_PERF_FREE_TREE_PHASE_POST_PUBLISH_PENDING_RECLAIM:
+-            bfs_perf_probe_counters.free_tree_post_publish_pending_reclaim_node_writes++;
+-            break;
+-        case BFS_PERF_FREE_TREE_PHASE_OTHER:
+-        default:
+-            bfs_perf_probe_counters.free_tree_other_node_writes++;
+-            break;
+-        }
+-    } else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->dir_tree.tree)
+-        bfs_perf_probe_counters.dir_tree_node_writes++;
+-    else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->inode_tree)
+-        bfs_perf_probe_counters.inode_tree_node_writes++;
+-    else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->refcount.tree)
+-        bfs_perf_probe_counters.refcount_tree_node_writes++;
+-    else
+-        bfs_perf_probe_counters.other_tree_node_writes++;
++    bfs_perf_probe_node_write(tree->ops, FALSE);
+ #endif
+     return bfs_bio_write_node(tree->bio, blk, buf);
+ }
+@@ -438,18 +449,43 @@ static bfs_err_t node_read_bounded(const bfs_btree_t *tree, bfs_blk_t blk,
+  * already validated is used in place, anything else is read into buf. The
+  * level and parent bounds are checked on every visit either way. A resident
+  * view is valid only until the next BIO call and must not be modified. */
++#ifdef BFS_PERF_PROBE
++static bfs_err_t node_view_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++                                uint16_t level, const node_bounds_t *bounds,
++                                uint8_t **node);
++static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++                           uint16_t level, const node_bounds_t *bounds,
++                           uint8_t **node)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
++        tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_NODE_VIEW,
++        BFS_PERF_DETAIL_SCOPE_DETAIL_DIR_NODE_VIEW);
++    bfs_err_t result = node_view_body(tree, blk, buf, level, bounds, node);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bfs_err_t node_view_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++#else
+ static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++#endif
+                            uint16_t level, const node_bounds_t *bounds,
+                            uint8_t **node)
+ {
+     *node = buf;
+-    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
++    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count) {
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_node_view(tree, FALSE);
++#endif
+         return BFS_ERR_CORRUPT;
++    }
+     const void *resident = NULL;
+     if (tree->ops->cache_key_order) {
+         bfs_node_validation_t validation = node_validation_context(tree);
+         resident = bfs_bio_peek_valid_node(tree->bio, blk, &validation);
+     }
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_node_view(tree, resident != NULL);
++#endif
+     if (!resident)
+         return bounds ? node_read_bounded(tree, blk, buf, level, bounds)
+                       : node_read_at_level(tree, blk, buf, level);
+@@ -483,8 +519,24 @@ int bfs_btree_key_compare_be32(const void *a, const void *b)
+     return bfs_cmp_be32(a, b);
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static uint32_t node_search_body(const bfs_btree_t *tree, uint8_t *buf,
++                                 const void *search_key, bool *found);
+ static uint32_t node_search(const bfs_btree_t *tree, uint8_t *buf,
+                             const void *search_key, bool *found)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
++        tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_BINARY_SEARCH,
++        BFS_PERF_DETAIL_SCOPE_DETAIL_DIR_BINARY_SEARCH);
++    uint32_t result = node_search_body(tree, buf, search_key, found);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static uint32_t node_search_body(const bfs_btree_t *tree, uint8_t *buf,
++#else
++static uint32_t node_search(const bfs_btree_t *tree, uint8_t *buf,
++#endif
++                            const void *search_key, bool *found)
+ {
+     uint32_t lo = 0, hi = num_keys(buf);
+     *found = false;
+@@ -520,6 +572,17 @@ static uint32_t node_search(const bfs_btree_t *tree, uint8_t *buf,
+     return lo;
+ }
+ 
++void bfs_btree_key_hint_cache_reset(bfs_btree_key_hint_cache_t *cache)
++{
++    if (!cache) return;
++    memset(cache, 0, sizeof(*cache));
++    for (uint32_t i = 0; i < BFS_BTREE_KEY_HINT_SLOTS; i++)
++        cache->slots[i].leaf = BFS_BLK_NULL;
++    for (uint32_t i = 0; i < BFS_BTREE_LEAF_HINT_SLOTS; i++)
++        cache->leaf_slots[i].leaf = BFS_BLK_NULL;
++    cache->leaf_root = BFS_BLK_NULL;
++}
++
+ /* ── Public: init and search ───────────────────────────────── */
+ 
+ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
+@@ -544,7 +607,10 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
+     tree->free_sink_err = BFS_OK;
+     tree->generation = 0;
+     tree->hint_leaf = BFS_BLK_NULL;
++    tree->hint_root = BFS_BLK_NULL;
+     tree->hint_generation = 0;
++    tree->hint_mutation_epoch = 0;
++    tree->key_hint_cache = NULL;
+ 
+     if (leaf_max_keys(tree) < 3 || internal_max_keys(tree) < 3)
+         return BFS_ERR_INVAL;
+@@ -671,9 +737,12 @@ static uint8_t *owned_leaf_in_place(bfs_btree_t *tree, const void *key,
+ /* The leaf of the last search, if the tree has not changed since, it is
+  * still resident and validated, and key lies between its first and last
+  * keys: in a B+tree every key of that range is in that leaf. */
+-static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key)
++static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key,
++                            uint64_t mutation_epoch)
+ {
+     if (tree->hint_leaf == BFS_BLK_NULL || tree->hint_generation != tree->generation ||
++        tree->hint_root != tree->root ||
++        tree->hint_mutation_epoch != mutation_epoch ||
+         !tree->ops->cache_key_order)
+         return NULL;
+     bfs_node_validation_t validation = node_validation_context(tree);
+@@ -687,21 +756,304 @@ static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key)
+     return leaf;
+ }
+ 
++/* This location cache is deliberately narrower than the general B-tree
++ * validation cache. It is enabled only for canonical big-endian u32 keys and
++ * only when the BIO can return a freshly validated resident node. */
++static bool key_hint_cache_eligible(const bfs_btree_t *tree)
++{
++    return tree->key_hint_cache && tree->ops->cache_key_order &&
++           tree->ops->key_compare == bfs_btree_key_compare_be32 &&
++           tree->ops->key_size == sizeof(uint32_t) &&
++           tree->bio->ops->peek_valid_node;
++}
++
++static uint32_t key_hint_slot(uint32_t key)
++{
++    return (key * 2654435761u) >> 26;
++}
++
++static bool key_hint_read(const bfs_btree_t *tree, const void *key,
++                          void *val_out, uint64_t mutation_epoch)
++{
++    if (!key_hint_cache_eligible(tree)) return false;
++
++    uint32_t key_value = bfs_load_be32(key);
++    const bfs_btree_key_hint_t *hint =
++        &tree->key_hint_cache->slots[key_hint_slot(key_value)];
++    if (hint->leaf == BFS_BLK_NULL || hint->key != key_value ||
++        hint->root != tree->root || hint->generation != tree->generation ||
++        hint->mutation_epoch != mutation_epoch ||
++        hint->leaf >= tree->bio->block_count)
++        return false;
++
++    bfs_node_validation_t validation = node_validation_context(tree);
++    const uint8_t *leaf = bfs_bio_peek_valid_node(tree->bio, hint->leaf,
++                                                   &validation);
++    if (!leaf || node_level((uint8_t *)leaf) != BFS_BTNODE_LEAF ||
++        hint->index >= num_keys((uint8_t *)leaf) ||
++        tree->ops->key_compare(node_key(tree, (uint8_t *)leaf, hint->index),
++                               key) != 0)
++        return false;
++
++    /* peek_valid_node's pointer is valid only until the next BIO call. Copy
++     * the current value immediately; the cache stores no inode/value bytes. */
++    memcpy(val_out, leaf_val(tree, (uint8_t *)leaf, hint->index),
++           tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    return true;
++}
++
++static void key_hint_remember(bfs_btree_t *tree, const void *key,
++                             bfs_blk_t leaf, uint32_t index,
++                             uint64_t mutation_epoch)
++{
++    if (!key_hint_cache_eligible(tree)) return;
++
++    uint32_t key_value = bfs_load_be32(key);
++    bfs_btree_key_hint_t *hint =
++        &tree->key_hint_cache->slots[key_hint_slot(key_value)];
++    hint->key = key_value;
++    hint->leaf = leaf;
++    hint->index = index;
++    hint->generation = tree->generation;
++    hint->root = tree->root;
++    hint->mutation_epoch = mutation_epoch;
++}
++
++/* Keep leaf ranges sorted by first_key so a lookup checks at most seven entries
++ * with the current 64-slot bound. The shared version guard makes all ranges
++ * expire together when this tree or the BIO changes. */
++static void leaf_hint_prepare(bfs_btree_t *tree, bool mutation_epoch_valid,
++                              uint64_t mutation_epoch)
++{
++    bfs_btree_key_hint_cache_t *cache = tree->key_hint_cache;
++    if (!cache) return;
++    if (!mutation_epoch_valid || !key_hint_cache_eligible(tree)) {
++        /* Clear a previously active cache once, not 64 slots on every read
++         * through a backend that never offers validated resident nodes. */
++        if (cache->leaf_owner || cache->leaf_bio || cache->leaf_ops)
++            memset(cache->slots, 0, sizeof(cache->slots));
++        cache->leaf_count = 0;
++        cache->leaf_next_victim = 0;
++        cache->leaf_owner = NULL;
++        cache->leaf_bio = NULL;
++        cache->leaf_ops = NULL;
++        cache->leaf_root = BFS_BLK_NULL;
++        cache->leaf_generation = 0;
++        cache->leaf_mutation_epoch = 0;
++        return;
++    }
++    /* Exact-key slots carry their own version guards, but must not outlive
++     * this cache's owner/backend/layout identity. Equal epoch numbers in a
++     * different BIO do not prove that an old leaf is reachable there. */
++    if (cache->leaf_owner != tree || cache->leaf_bio != tree->bio ||
++        cache->leaf_ops != tree->ops)
++        memset(cache->slots, 0, sizeof(cache->slots));
++    if (cache->leaf_owner == tree && cache->leaf_root == tree->root &&
++        cache->leaf_bio == tree->bio && cache->leaf_ops == tree->ops &&
++        cache->leaf_generation == tree->generation &&
++        cache->leaf_mutation_epoch == mutation_epoch &&
++        cache->leaf_count <= BFS_BTREE_LEAF_HINT_SLOTS)
++        return;
++
++    cache->leaf_count = 0;
++    cache->leaf_next_victim = 0;
++    cache->leaf_owner = tree;
++    cache->leaf_bio = tree->bio;
++    cache->leaf_ops = tree->ops;
++    cache->leaf_root = tree->root;
++    cache->leaf_generation = tree->generation;
++    cache->leaf_mutation_epoch = mutation_epoch;
++}
++
++static uint32_t leaf_hint_lower_bound(const bfs_btree_key_hint_cache_t *cache,
++                                      uint32_t first_key)
++{
++    uint32_t lo = 0;
++    uint32_t hi = cache->leaf_count;
++    while (lo < hi) {
++        uint32_t mid = lo + (hi - lo) / 2;
++        if (cache->leaf_slots[mid].first_key < first_key)
++            lo = mid + 1;
++        else
++            hi = mid;
++    }
++    return lo;
++}
++
++static bool leaf_hint_read(bfs_btree_t *tree, const void *key, void *val_out,
++                           uint64_t mutation_epoch)
++{
++    if (!key_hint_cache_eligible(tree)) return false;
++    bfs_btree_key_hint_cache_t *cache = tree->key_hint_cache;
++    if (cache->leaf_owner != tree || cache->leaf_root != tree->root ||
++        cache->leaf_bio != tree->bio || cache->leaf_ops != tree->ops ||
++        cache->leaf_generation != tree->generation ||
++        cache->leaf_mutation_epoch != mutation_epoch || cache->leaf_count == 0 ||
++        cache->leaf_count > BFS_BTREE_LEAF_HINT_SLOTS)
++        return false;
++
++    uint32_t wanted = bfs_load_be32(key);
++    uint32_t lo = 0;
++    uint32_t hi = cache->leaf_count;
++    /* upper_bound(first_key, wanted), then test the preceding range. */
++    while (lo < hi) {
++        uint32_t mid = lo + (hi - lo) / 2;
++        if (cache->leaf_slots[mid].first_key <= wanted)
++            lo = mid + 1;
++        else
++            hi = mid;
++    }
++    if (lo == 0) return false;
++    const bfs_btree_leaf_hint_t *hint = &cache->leaf_slots[lo - 1];
++    if (hint->leaf == BFS_BLK_NULL || wanted > hint->last_key ||
++        hint->leaf >= tree->bio->block_count)
++        return false;
++
++    bfs_node_validation_t validation = node_validation_context(tree);
++    uint8_t *leaf = (uint8_t *)bfs_bio_peek_valid_node(tree->bio, hint->leaf,
++                                                       &validation);
++    if (!leaf || node_level(leaf) != BFS_BTNODE_LEAF) return false;
++
++    uint32_t n = num_keys(leaf);
++    if (n == 0) return false;
++    uint32_t first = bfs_load_be32(node_key(tree, leaf, 0));
++    uint32_t last = bfs_load_be32(node_key(tree, leaf, n - 1));
++    if (first != hint->first_key || last != hint->last_key ||
++        wanted < first || wanted > last)
++        return false;
++
++    /* Dense IDs are only an index candidate. Sparse keys fall through to the
++     * ordinary in-leaf search after the stored key is checked. */
++    uint32_t index = wanted - first;
++    bool found = index < n &&
++                 tree->ops->key_compare(node_key(tree, leaf, index), key) == 0;
++    if (!found) index = node_search(tree, leaf, key, &found);
++    if (!found) return false;
++
++    /* The resident view expires at the next BIO call. Copy the value now;
++     * the range table stores only block/key metadata. */
++    memcpy(val_out, leaf_val(tree, leaf, index), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    key_hint_remember(tree, key, hint->leaf, index, mutation_epoch);
++    return true;
++}
++
++static void leaf_hint_remember(bfs_btree_t *tree, bfs_blk_t blk,
++                               uint8_t *leaf, uint64_t mutation_epoch)
++{
++    if (!key_hint_cache_eligible(tree)) return;
++    bfs_btree_key_hint_cache_t *cache = tree->key_hint_cache;
++    if (cache->leaf_owner != tree || cache->leaf_root != tree->root ||
++        cache->leaf_bio != tree->bio || cache->leaf_ops != tree->ops ||
++        cache->leaf_generation != tree->generation ||
++        cache->leaf_mutation_epoch != mutation_epoch ||
++        cache->leaf_count > BFS_BTREE_LEAF_HINT_SLOTS ||
++        blk >= tree->bio->block_count || node_level(leaf) != BFS_BTNODE_LEAF)
++        return;
++
++    uint32_t n = num_keys(leaf);
++    if (n == 0) return;
++    bfs_btree_leaf_hint_t entry = {
++        .first_key = bfs_load_be32(node_key(tree, leaf, 0)),
++        .last_key = bfs_load_be32(node_key(tree, leaf, n - 1)),
++        .leaf = blk,
++    };
++    if (entry.first_key > entry.last_key) return;
++
++    uint32_t pos = leaf_hint_lower_bound(cache, entry.first_key);
++    if (pos < cache->leaf_count &&
++        cache->leaf_slots[pos].first_key == entry.first_key) {
++        /* A stable tree cannot give two leaves the same first key. Refresh
++         * the existing route if the same range was reached again. */
++        cache->leaf_slots[pos] = entry;
++        return;
++    }
++
++    if (cache->leaf_count == BFS_BTREE_LEAF_HINT_SLOTS) {
++        uint32_t victim = cache->leaf_next_victim % cache->leaf_count;
++        for (uint32_t i = victim; i + 1 < cache->leaf_count; i++)
++            cache->leaf_slots[i] = cache->leaf_slots[i + 1];
++        cache->leaf_count--;
++        pos = leaf_hint_lower_bound(cache, entry.first_key);
++        cache->leaf_next_victim = (uint16_t)((cache->leaf_next_victim + 1u) %
++                                              BFS_BTREE_LEAF_HINT_SLOTS);
++    }
++
++    for (uint32_t i = cache->leaf_count; i > pos; i--)
++        cache->leaf_slots[i] = cache->leaf_slots[i - 1];
++    cache->leaf_slots[pos] = entry;
++    cache->leaf_count++;
++}
++
++#ifdef BFS_PERF_PROBE
++static bfs_err_t btree_search_body(bfs_btree_t *tree, const void *key, void *val_out);
+ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
+ {
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
++        tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_SEARCH,
++        BFS_PERF_DETAIL_SCOPE_DISABLED);
++    bfs_err_t result = btree_search_body(tree, key, val_out);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bfs_err_t btree_search_body(bfs_btree_t *tree, const void *key, void *val_out)
++#else
++bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
++#endif
++{
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.btree_search_calls++;
++#endif
+     if (!tree || !tree->bio || !tree->ops || !key || !val_out)
+         return BFS_ERR_INVAL;
+     if (tree->root == BFS_BLK_NULL)
+         return BFS_ERR_NOTFOUND;
+     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+ 
+-    uint8_t *hinted = hinted_leaf(tree, key);
++    uint64_t mutation_epoch = 0;
++    bool mutation_epoch_valid =
++        bfs_bio_get_mutation_epoch(tree->bio, &mutation_epoch);
++    if (!mutation_epoch_valid) {
++        /* A backend without an epoch cannot prove that the remembered leaf is
++         * still on the current path, so neither shortcut may be used. */
++        tree->hint_leaf = BFS_BLK_NULL;
++        tree->hint_root = BFS_BLK_NULL;
++        tree->hint_generation = 0;
++        tree->hint_mutation_epoch = 0;
++    }
++    leaf_hint_prepare(tree, mutation_epoch_valid, mutation_epoch);
++
++    if (mutation_epoch_valid &&
++        key_hint_read(tree, key, val_out, mutation_epoch)) {
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_counters.btree_index_hint_hits++;
++#endif
++        return BFS_OK;
++    }
++
++    if (mutation_epoch_valid &&
++        leaf_hint_read(tree, key, val_out, mutation_epoch)) {
++#ifdef BFS_PERF_PROBE
++        /* This counter intentionally combines the legacy and range hints. */
++        bfs_perf_probe_counters.btree_leaf_hint_hits++;
++#endif
++        return BFS_OK;
++    }
++
++    uint8_t *hinted = mutation_epoch_valid
++        ? hinted_leaf(tree, key, mutation_epoch) : NULL;
+     if (hinted) {
+         bool found;
+         uint32_t idx = node_search(tree, hinted, key, &found);
+-        if (!found) return BFS_ERR_NOTFOUND;
+-        memcpy(val_out, leaf_val(tree, hinted, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+-        return BFS_OK;
++        if (found) {
++            memcpy(val_out, leaf_val(tree, hinted, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++            key_hint_remember(tree, key, tree->hint_leaf, idx, mutation_epoch);
++            leaf_hint_remember(tree, tree->hint_leaf, hinted, mutation_epoch);
++#ifdef BFS_PERF_PROBE
++            /* Keep the existing category for both leaf-hint shortcuts. */
++            bfs_perf_probe_counters.btree_leaf_hint_hits++;
++#endif
++            return BFS_OK;
++        }
+     }
+ 
+     uint8_t *buf = alloc_buf(tree);
+@@ -721,10 +1073,18 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
+         uint32_t idx = node_search(tree, node, key, &found);
+ 
+         if (is_leaf(node)) {
+-            tree->hint_leaf = blk;
+-            tree->hint_generation = tree->generation;
++            if (mutation_epoch_valid) {
++                tree->hint_leaf = blk;
++                tree->hint_root = tree->root;
++                tree->hint_generation = tree->generation;
++                tree->hint_mutation_epoch = mutation_epoch;
++            }
+             if (!found) { free_buf(tree, buf); return BFS_ERR_NOTFOUND; }
+             memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++            if (mutation_epoch_valid) {
++                key_hint_remember(tree, key, blk, idx, mutation_epoch);
++                leaf_hint_remember(tree, blk, node, mutation_epoch);
++            }
+             free_buf(tree, buf);
+             return BFS_OK;
+         }
+@@ -1880,11 +2240,7 @@ update_key_cleanup:
+ /* ── Scan ──────────────────────────────────────────────────── */
+ 
+ /* Inner nodes from the root to the current leaf and the child taken in each. */
+-typedef struct {
+-    bfs_blk_t blk[MAX_TREE_DEPTH];
+-    uint32_t idx[MAX_TREE_DEPTH];
+-    uint32_t depth;
+-} scan_path_t;
++typedef bfs_btree_scan_path_t scan_path_t;
+ 
+ /* Descend to the leaf where key belongs, or to the leftmost leaf for NULL,
+  * and record the path. Inner nodes are only viewed. *leaf is a view that the
+@@ -1990,8 +2346,50 @@ void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor)
+ 
+ static bool cursor_current(const bfs_btree_t *tree, const bfs_btree_cursor_t *cursor)
+ {
+-    return cursor->valid && cursor->tree == tree && cursor->root == tree->root &&
+-           cursor->generation == tree->generation;
++    if (!tree->bio || !tree->bio->ops || !cursor->leaf || !cursor->valid ||
++        cursor->tree != tree || cursor->root != tree->root ||
++        cursor->generation != tree->generation)
++        return false;
++
++    /* Keep legacy keyed cursors working on BIOs without an epoch hook. When
++     * a backend does provide one, however, a cache invalidation or raw write
++     * makes the saved leaf copy unsafe even if the tree generation is equal. */
++    if (tree->bio->ops->mutation_epoch) {
++        uint64_t mutation_epoch;
++        if (!cursor->mutation_epoch_valid ||
++            !bfs_bio_get_mutation_epoch(tree->bio, &mutation_epoch) ||
++            cursor->mutation_epoch != mutation_epoch)
++            return false;
++    }
++    return true;
++}
++
++/* Only reuse reachability recorded under an available unchanged epoch. A
++ * legacy keyed cursor without an epoch may reuse its leaf, but must obtain a
++ * new root path before crossing the boundary. Geometry and backend/layout
++ * identity are part of the path token, not inferred from the tree address. */
++static bool cursor_path_current(const bfs_btree_t *tree,
++                                 const bfs_btree_cursor_t *cursor)
++{
++    uint64_t epoch;
++    if (!cursor->path_valid || !cursor->mutation_epoch_valid ||
++        cursor->path_bio != tree->bio || cursor->path_ops != tree->ops ||
++        cursor->path_height != tree->height ||
++        cursor->path_block_size != tree->bio->block_size ||
++        cursor->path_block_count != tree->bio->block_count ||
++        !bfs_bio_get_mutation_epoch(tree->bio, &epoch) ||
++        epoch != cursor->mutation_epoch ||
++        cursor->path.depth != tree->height - 1)
++        return false;
++    if (cursor->path.depth > 0 && cursor->path.blk[0] != tree->root)
++        return false;
++    for (uint32_t d = 0; d < cursor->path.depth; d++) {
++        if (cursor->path.blk[d] == BFS_BLK_NULL ||
++            cursor->path.blk[d] >= tree->bio->block_count ||
++            cursor->path.idx[d] > internal_max_keys(tree))
++            return false;
++    }
++    return true;
+ }
+ 
+ /* True if the cursor's copy is the current leaf that holds key. */
+@@ -2014,16 +2412,63 @@ static bool cursor_stopped_at(const bfs_btree_t *tree, const bfs_btree_cursor_t
+            tree->ops->key_compare(node_key(tree, cursor->leaf, cursor->stop_index), key) == 0;
+ }
+ 
++static bool cursor_tree_geometry_valid(const bfs_btree_t *tree)
++{
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops ||
++        !tree->ops->key_compare ||
++        !bfs_block_size_valid(tree->bio->block_size) ||
++        tree->ops->key_size == 0 || tree->ops->key_size > BFS_MAX_KEY_SIZE ||
++        tree->ops->val_size == 0 ||
++        tree->ops->key_size > UINT32_MAX - tree->ops->val_size)
++        return false;
++
++    uint32_t data_size = tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
++    uint32_t leaf_stride = tree->ops->key_size + tree->ops->val_size;
++    uint32_t internal_stride = tree->ops->key_size + sizeof(uint32_t);
++    return leaf_stride != 0 && internal_stride != 0 &&
++           data_size / leaf_stride >= 3 &&
++           data_size >= sizeof(uint32_t) &&
++           (data_size - sizeof(uint32_t)) / internal_stride >= 3;
++}
++
++const void *bfs_btree_cursor_stop_key(const bfs_btree_t *tree,
++                                     const bfs_btree_cursor_t *cursor)
++{
++    if (!cursor_tree_geometry_valid(tree) || !cursor || !cursor->leaf ||
++        !cursor->stopped || !cursor_current(tree, cursor) ||
++        node_level(cursor->leaf) != BFS_BTNODE_LEAF)
++        return NULL;
++
++    uint32_t n = num_keys(cursor->leaf);
++    if (n == 0 || n > leaf_max_keys(tree) || cursor->stop_index >= n)
++        return NULL;
++    return node_key(tree, cursor->leaf, cursor->stop_index);
++}
++
+ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
+                            bfs_scan_cb cb, void *ctx)
+ {
+     return bfs_btree_scan_cursor(tree, NULL, start_key, cb, ctx);
+ }
+ 
+-bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+-                                const void *start_key, bfs_scan_cb cb, void *ctx)
++static bool scan_epoch_changed(const bfs_btree_t *tree, bool epoch_valid,
++                               uint64_t scan_epoch)
++{
++    if (!tree->bio->ops || !tree->bio->ops->mutation_epoch || !epoch_valid)
++        return false;
++    uint64_t current_epoch;
++    return !bfs_bio_get_mutation_epoch(tree->bio, &current_epoch) ||
++           current_epoch != scan_epoch;
++}
++
++static bfs_err_t btree_scan_cursor_impl(bfs_btree_t *tree,
++                                        bfs_btree_cursor_t *cursor,
++                                        const void *start_key,
++                                        bool resume_exclusive,
++                                        bfs_scan_cb cb, void *ctx)
+ {
+-    if (!tree || !tree->bio || !tree->ops || !cb) return BFS_ERR_INVAL;
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops || !cb)
++        return BFS_ERR_INVAL;
+     if (tree->root == BFS_BLK_NULL)
+         return BFS_OK;
+     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+@@ -2036,23 +2481,36 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+     uint8_t *buf = alloc_buf(tree);
+     if (!buf) return BFS_ERR_NOMEM;
+     uint8_t *last = NULL;
+-    scan_path_t path;
++    scan_path_t local_path;
++    scan_path_t *path = cursor ? &cursor->path : &local_path;
+     uint8_t *leaf = NULL;
+     uint32_t idx = 0;
+-    /* A leaf taken from the cursor has no recorded path from the root. */
+     bool have_path = true;
++    bool saved_path = false;
+     bfs_err_t err = BFS_OK;
+     bool positioned = false;
+-    if (cursor && start_key && cursor_stopped_at(tree, cursor, start_key)) {
++    if (resume_exclusive) {
++        /* The caller verified this is a current stopped cursor. Keep the
++         * existing traversal loop so leaf-boundary and mutation recovery
++         * continue to use the same path as ordinary scans. */
++        leaf = cursor->leaf;
++        have_path = cursor->path_valid;
++        saved_path = true;
++        idx = cursor->stop_index + 1;
++        positioned = true;
++    } else if (cursor && start_key && cursor_stopped_at(tree, cursor, start_key)) {
+         leaf = cursor->leaf;
+-        have_path = false;
++        have_path = cursor->path_valid;
++        saved_path = true;
+         idx = cursor->stop_index;
+         positioned = true;
+     } else if (cursor && start_key && cursor_covers(tree, cursor, start_key)) {
+         leaf = cursor->leaf;
+-        have_path = false;
++        have_path = cursor->path_valid;
++        saved_path = true;
+     } else {
+-        err = scan_descend(tree, start_key, buf, &path, &leaf);
++        if (cursor) cursor->path_valid = false;
++        err = scan_descend(tree, start_key, buf, path, &leaf);
+     }
+     if (cursor) cursor->stopped = false;
+     if (err == BFS_OK && start_key && !positioned) {
+@@ -2071,13 +2529,31 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+         if (idx < n) {
+             /* Callbacks may do I/O, which can invalidate a view. */
+             uint8_t *copy = cursor ? cursor->leaf : buf;
++            uint64_t scan_epoch = 0;
++            bool scan_epoch_valid =
++                bfs_bio_get_mutation_epoch(tree->bio, &scan_epoch);
+             if (leaf != copy) copy_leaf_entries(tree, copy, leaf);
+             leaf = copy;
+             if (cursor) {
+                 cursor->tree = tree;
+                 cursor->root = tree->root;
+                 cursor->generation = tree->generation;
++                /* Capture before callbacks: a callback can mutate the BIO,
++                 * so stamping the copy afterward could bless stale bytes. */
++                cursor->mutation_epoch = scan_epoch;
++                cursor->mutation_epoch_valid = scan_epoch_valid;
+                 cursor->valid = true;
++                /* An inherited path keeps its original identity until it is
++                 * checked at the boundary; do not bless it after a backend
++                 * or geometry change merely by copying the same old leaf. */
++                if (!saved_path) {
++                    cursor->path_bio = tree->bio;
++                    cursor->path_ops = tree->ops;
++                    cursor->path_height = tree->height;
++                    cursor->path_block_size = tree->bio->block_size;
++                    cursor->path_block_count = tree->bio->block_count;
++                    cursor->path_valid = have_path && scan_epoch_valid;
++                }
+             }
+             uint32_t generation = tree->generation;
+             bool stopped = false;
+@@ -2091,7 +2567,8 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+                     break;
+                 }
+                 /* The rest of this copy may be stale once the tree changed. */
+-                if (tree->generation != generation) {
++                if (tree->generation != generation ||
++                    scan_epoch_changed(tree, scan_epoch_valid, scan_epoch)) {
+                     changed = true;
+                     reached = i + 1;
+                     break;
+@@ -2108,26 +2585,58 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+             }
+             memcpy(last, node_key(tree, leaf, reached - 1), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+         }
+-        if (changed && cursor) cursor->valid = false;
++        if (changed && cursor) {
++            cursor->valid = false;
++            cursor->path_valid = false;
++        }
++        if (!changed && saved_path && have_path)
++            have_path = cursor_path_current(tree, cursor);
+         if (changed || !have_path) {
+             /* A callback changed the tree, or the leaf came from the cursor:
+              * find the place after last from the root. */
+-            err = scan_descend(tree, last, buf, &path, &leaf);
++            err = scan_descend(tree, last, buf, path, &leaf);
+             if (err != BFS_OK) break;
+             have_path = true;
++            saved_path = false;
+             bool found;
+             idx = node_search(tree, leaf, last, &found);
+             if (found) idx++;
+             continue;
+         }
+-        err = scan_next_leaf(tree, buf, &path, &leaf);
++        err = scan_next_leaf(tree, buf, path, &leaf);
++        saved_path = false;
+         idx = 0;
+     }
+     free(last);
+     free_buf(tree, buf);
++    if (cursor && (err != BFS_OK || !leaf)) cursor->path_valid = false;
+     return err;
+ }
+ 
++bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
++                                const void *start_key, bfs_scan_cb cb, void *ctx)
++{
++    return btree_scan_cursor_impl(tree, cursor, start_key, false, cb, ctx);
++}
++
++bfs_err_t bfs_btree_scan_cursor_resume(bfs_btree_t *tree,
++                                       bfs_btree_cursor_t *cursor,
++                                       bfs_scan_cb cb, void *ctx)
++{
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops || !cb)
++        return BFS_ERR_INVAL;
++    uint64_t current_epoch;
++    if (!tree->bio->ops || !tree->bio->ops->mutation_epoch || !cursor ||
++        !cursor->mutation_epoch_valid ||
++        !bfs_bio_get_mutation_epoch(tree->bio, &current_epoch) ||
++        current_epoch != cursor->mutation_epoch)
++        return BFS_ERR_AGAIN;
++    if (tree->root == BFS_BLK_NULL) return BFS_ERR_AGAIN;
++    if (!bfs_btree_cursor_stop_key(tree, cursor)) return BFS_ERR_AGAIN;
++    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
++    return btree_scan_cursor_impl(tree, cursor, NULL, true, cb, ctx);
++}
++
+ 
+ /* ── Floor search ──────────────────────────────────────────── */
+ 

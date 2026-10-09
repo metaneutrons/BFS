@@ -1,0 +1,1179 @@
+diff --git a/include/bfs_btree.h b/include/bfs_btree.h
+index 4e75829..c6c61b0 100644
+--- a/include/bfs_btree.h
++++ b/include/bfs_btree.h
+@@ -65,6 +65,10 @@ typedef struct bfs_btree_ops {
+      * repeat it. It must depend on the entry alone. */
+     // cppcheck-suppress unusedStructMember
+     bool (*entry_ok)(const void *key, const void *val);
++
++    /* Opt in for zero-heavy fixed-size leaf keys. This only selects an exact
++     * CRC implementation; validation and full-block coverage are unchanged. */
++    bool sparse_key_crc;
+ } bfs_btree_ops_t;
+ 
+ /* Comparator for big-endian u32 keys. Trees that use it get node searches
+diff --git a/include/bfs_crc32.h b/include/bfs_crc32.h
+index 128343c..2d657dd 100644
+--- a/include/bfs_crc32.h
++++ b/include/bfs_crc32.h
+@@ -15,4 +15,9 @@ uint32_t bfs_crc32(uint32_t initial, const void *data, size_t len);
+ /* Append length zero bytes to a CRC without materializing the zero buffer. */
+ uint32_t bfs_crc32_zeros(uint32_t initial, uint32_t length);
+ 
++/* Bit-identical to bfs_crc32, with inspected long zero runs advanced through
++ * the zero transform. Intended for sparse metadata, not ordinary file data.
++ * No bytes are omitted: every nonzero byte is hashed normally. */
++uint32_t bfs_crc32_sparse(uint32_t initial, const void *data, uint32_t length);
++
+ #endif /* BFS_CRC32_H */
+diff --git a/src/core/btree.c b/src/core/btree.c
+index d7438d5..76e0fab 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -282,7 +282,9 @@ static uint32_t node_compute_read_crc(const bfs_btree_t *tree, uint8_t *buf)
+     uint32_t saved_crc = hdr->crc32;
+     hdr->crc32 = 0;
+     uint32_t values_end = r.values_start + r.values_length;
+-    uint32_t crc = bfs_crc32(0, buf, r.prefix_end);
++    uint32_t crc = tree->ops->sparse_key_crc && is_leaf(buf)
++        ? bfs_crc32_sparse(0, buf, r.prefix_end)
++        : bfs_crc32(0, buf, r.prefix_end);
+     crc = crc_range(crc, buf + r.prefix_end, r.values_start - r.prefix_end);
+     crc = bfs_crc32(crc, buf + r.values_start, r.values_length);
+     crc = crc_range(crc, buf + values_end, tree->bio->block_size - values_end);
+diff --git a/src/core/crc32_zero.c b/src/core/crc32_zero.c
+index f1b3cf9..5350227 100644
+--- a/src/core/crc32_zero.c
++++ b/src/core/crc32_zero.c
+@@ -361,3 +361,49 @@ uint32_t bfs_crc32_zeros(uint32_t initial, uint32_t length)
+     }
+     return ~crc;
+ }
++
++#if defined(__GNUC__)
++typedef uint32_t __attribute__((__may_alias__, __aligned__(1))) sparse_word_t;
++#endif
++
++/* The caller checks that a complete 16-byte unit remains. */
++static bool sparse_unit_zero(const uint8_t *bytes)
++{
++#if defined(__GNUC__)
++    const sparse_word_t *words = (const sparse_word_t *)(const void *)bytes;
++    return (words[0] | words[1] | words[2] | words[3]) == 0;
++#else
++    for (unsigned i = 0; i < 16; i++)
++        if (bytes[i] != 0) return false;
++    return true;
++#endif
++}
++
++uint32_t bfs_crc32_sparse(uint32_t initial, const void *data, uint32_t length)
++{
++    if (length < 64u) return bfs_crc32(initial, data, length);
++    const uint8_t *bytes = data;
++    uint32_t position = 0;
++    uint32_t pending = 0;
++    uint32_t crc = initial;
++
++    while (length - position >= 16u) {
++        if (!sparse_unit_zero(bytes + position)) {
++            position += 16u;
++            continue;
++        }
++        uint32_t zero_start = position;
++        do {
++            position += 16u;
++        } while (length - position >= 16u && sparse_unit_zero(bytes + position));
++        uint32_t zero_length = position - zero_start;
++        if (zero_length < 64u) continue;
++        if (zero_start > pending)
++            crc = bfs_crc32(crc, bytes + pending, zero_start - pending);
++        crc = bfs_crc32_zeros(crc, zero_length);
++        pending = position;
++    }
++    if (pending < length)
++        crc = bfs_crc32(crc, bytes + pending, length - pending);
++    return crc;
++}
+diff --git a/src/core/dir.c b/src/core/dir.c
+index 4c1bcff..1885d73 100644
+--- a/src/core/dir.c
++++ b/src/core/dir.c
+@@ -104,6 +104,7 @@ static const bfs_btree_ops_t dir_ops = {
+     .val_size = sizeof(bfs_dir_val_t),
+     .cache_key_order = true,
+     .entry_ok = dir_entry_ok,
++    .sparse_key_crc = true,
+ };
+ 
+ /* ── Init ──────────────────────────────────────────────────── */
+diff --git a/tests/amiga/crc32_sparse_probe.c b/tests/amiga/crc32_sparse_probe.c
+new file mode 100644
+index 0000000..4ab6af6
+--- /dev/null
++++ b/tests/amiga/crc32_sparse_probe.c
+@@ -0,0 +1,477 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++/* Isolated AmigaOS oracle and timing probe for bfs_crc32_sparse. */
++
++#include <exec/io.h>
++#include <exec/types.h>
++#include <devices/timer.h>
++#include <dos/dosextens.h>
++#include <dos/dos.h>
++#include <proto/dos.h>
++#include <proto/exec.h>
++#include <proto/timer.h>
++
++#include <stddef.h>
++#include <stdint.h>
++
++typedef uint32_t (*CrcFunction)(uint32_t, const void *, size_t);
++
++uint32_t bfs_crc32(uint32_t, const void *, size_t);
++uint32_t bfs_crc32_sparse(uint32_t, const void *, uint32_t);
++uint32_t bfs_crc32_abi_clobber_d2(uint32_t, const void *, size_t);
++uint32_t bfs_crc32_abi_clobber_a2(uint32_t, const void *, size_t);
++extern ULONG bfs_crc32_abi_probe(CrcFunction, uint32_t, const void *, size_t,
++                                 uint32_t *);
++
++struct Device *TimerBase;
++/* Both slots have the witness's exact type. The sparse API has a uint32_t
++ * length, so convert explicitly through symmetric typed adapters. */
++typedef char sparse_length_fits_size_t[
++    sizeof(size_t) == sizeof(uint32_t) && sizeof(uint32_t) == 4 ? 1 : -1];
++static uint32_t baseline_adapter(uint32_t seed, const void *data, size_t length)
++{
++    return bfs_crc32(seed, data, length);
++}
++static uint32_t sparse_adapter(uint32_t seed, const void *data, size_t length)
++{
++    return bfs_crc32_sparse(seed, data, (uint32_t)length);
++}
++static CrcFunction volatile call_baseline = baseline_adapter;
++static CrcFunction volatile call_sparse = sparse_adapter;
++static volatile uint32_t timing_sink;
++
++#define PREFIX 8UL
++#define DATA_MAX 4096UL
++#define STORAGE (PREFIX + 8UL + DATA_MAX)
++#define SAMPLE_COUNT 6UL
++#define TIMING_COUNT 5UL
++#define REPORT_CAPACITY 8192UL
++
++enum { ZERO, DENSE, BLOCK256, DIRKEY264, MIX128_384 };
++static const char *pattern_names[] = {
++    "zero", "dense", "block32_224", "dirkey_like_264", "mixed128_384"
++};
++static const uint32_t seeds[] = {0x00000000u, 0xFFFFFFFFu, 0x12345678u};
++static const ULONG short_lengths[] = {
++    0, 1, 15, 16, 17, 31, 32, 63, 64, 65, 66, 127, 128, 129
++};
++static const ULONG perturb_positions[] = {0, 63, 64, 65, 255, 256, 2047, 4095};
++
++typedef struct {
++    ULONG cases, baseline_calls, sparse_calls, abi_checks;
++    ULONG oracle_errors, abi_errors, control_cases, control_passes;
++    ULONG control_errors, timing_cases, timing_samples;
++    ULONG timing_calls[2], timing_errors, order_baseline_first;
++    ULONG order_sparse_first, errors, clock_hz;
++    uint32_t digest;
++    const char *first_kind, *first_fixture;
++    ULONG first_length, first_offset, first_mask;
++    uint32_t first_seed, first_expected, first_actual;
++} Counts;
++
++typedef struct {
++    const char *name;
++    ULONG length, repeats;
++    int pattern;
++} TimingCase;
++
++static Counts counts = {.digest = 2166136261u};
++static UBYTE storage[STORAGE];
++static uint64_t baseline_ticks[TIMING_COUNT][SAMPLE_COUNT];
++static uint64_t sparse_ticks[TIMING_COUNT][SAMPLE_COUNT];
++static const TimingCase timing_cases[TIMING_COUNT] = {
++    {"dense4096", 4096, 64, DENSE},
++    {"zero4096", 4096, 64, ZERO},
++    {"sparse4096-dirkey264", 4096, 64, DIRKEY264},
++    {"short64-dense", 64, 512, DENSE},
++    {"mixed128-384", 512, 64, MIX128_384}
++};
++
++static uint32_t reference_crc32(uint32_t initial, const UBYTE *data,
++                                size_t length)
++{
++    uint32_t crc = ~initial;
++    size_t i;
++    for (i = 0; i < length; i++) {
++        unsigned bit;
++        crc ^= data[i];
++        for (bit = 0; bit < 8; bit++)
++            crc = (crc >> 1) ^ ((crc & 1u) ? 0xEDB88320u : 0u);
++    }
++    return ~crc;
++}
++
++static void digest_byte(UBYTE value)
++{
++    counts.digest = (counts.digest ^ value) * 16777619u;
++}
++
++static void digest_u32(uint32_t value)
++{
++    unsigned i;
++    for (i = 0; i < 4; i++) digest_byte((UBYTE)(value >> (i * 8)));
++}
++
++static UBYTE dense_byte(ULONG index)
++{
++    return (UBYTE)(((index * 73UL + (index >> 4) * 19UL + 0x5BUL) & 0xFFUL) | 1UL);
++}
++
++static void fill_pattern(UBYTE *data, ULONG length, int pattern)
++{
++    ULONG i;
++    for (i = 0; i < length; i++) {
++        switch (pattern) {
++        case ZERO: data[i] = 0; break;
++        case DENSE: data[i] = dense_byte(i); break;
++        case BLOCK256: data[i] = (i % 256UL < 32UL) ? dense_byte(i) : 0; break;
++        case DIRKEY264: data[i] = (i % 264UL < 13UL) ? dense_byte(i) : 0; break;
++        default: data[i] = (i % 512UL < 128UL) ? dense_byte(i) : 0; break;
++        }
++    }
++}
++
++static void note_error(const char *kind, const char *fixture, ULONG length,
++                       ULONG offset, uint32_t seed, uint32_t expected,
++                       uint32_t actual, ULONG mask)
++{
++    counts.errors++;
++    if (counts.first_kind) return;
++    counts.first_kind = kind; counts.first_fixture = fixture;
++    counts.first_length = length; counts.first_offset = offset;
++    counts.first_seed = seed; counts.first_expected = expected;
++    counts.first_actual = actual; counts.first_mask = mask;
++}
++
++static void check_one(CrcFunction function, ULONG which, const char *fixture,
++                      uint32_t seed, const UBYTE *data, ULONG length,
++                      ULONG offset, uint32_t expected)
++{
++    uint32_t actual = 0;
++    ULONG mask = bfs_crc32_abi_probe(function, seed, data, (size_t)length,
++                                     &actual);
++    counts.abi_checks++;
++    if (which) counts.baseline_calls++; else counts.sparse_calls++;
++    if (mask) {
++        counts.abi_errors++;
++        note_error("abi", fixture, length, offset, seed, 0, 0, mask);
++    }
++    if (actual != expected) {
++        counts.oracle_errors++;
++        note_error("oracle", fixture, length, offset, seed, expected, actual, 0);
++    }
++}
++
++static void check(const char *fixture, const UBYTE *data, ULONG length,
++                  ULONG offset, uint32_t seed)
++{
++    uint32_t expected = reference_crc32(seed, data, (size_t)length);
++    CrcFunction baseline = call_baseline, sparse = call_sparse;
++    ULONG i;
++    counts.cases++;
++    digest_u32(length); digest_u32(offset); digest_u32(seed);
++    for (i = 0; i < length; i++) digest_byte(data[i]);
++    digest_u32(expected);
++    check_one(baseline, 1, fixture, seed, data, length, offset, expected);
++    check_one(sparse, 0, fixture, seed, data, length, offset, expected);
++}
++
++static void check_vectors(void)
++{
++    static const int small_patterns[] = {ZERO, DENSE, BLOCK256};
++    static const int large_patterns[] = {ZERO, DENSE, BLOCK256, DIRKEY264};
++    ULONG p, li, offset, si;
++    for (p = 0; p < sizeof(small_patterns) / sizeof(small_patterns[0]); p++)
++        for (li = 0; li < sizeof(short_lengths) / sizeof(short_lengths[0]); li++)
++            for (offset = 0; offset < 8; offset++) {
++                UBYTE *data = storage + PREFIX + offset;
++                fill_pattern(data, short_lengths[li], small_patterns[p]);
++                for (si = 0; si < 3; si++)
++                    check(pattern_names[small_patterns[p]], data,
++                          short_lengths[li], offset, seeds[si]);
++            }
++
++    /* Runs of 63, 64, and 65 zero bytes are clipped by actual input length. */
++    for (offset = 0; offset < 8; offset++) {
++        ULONG run;
++        UBYTE *data = storage + PREFIX + offset;
++        for (run = 63; run <= 65; run++) {
++            fill_pattern(data, 67, ZERO);
++            data[0] = 0xA5; data[run + 1] = 0x5A;
++            for (si = 0; si < 3; si++) {
++                check("zero_run_boundary", data, run + 1, offset, seeds[si]);
++                check("zero_run_boundary", data, run + 2, offset, seeds[si]);
++            }
++        }
++    }
++
++    for (p = 0; p < sizeof(large_patterns) / sizeof(large_patterns[0]); p++)
++        for (offset = 0; offset < 8; offset++) {
++            UBYTE *data = storage + PREFIX + offset;
++            fill_pattern(data, DATA_MAX, large_patterns[p]);
++            for (si = 0; si < 3; si++)
++                check(pattern_names[large_patterns[p]], data, DATA_MAX,
++                      offset, seeds[si]);
++        }
++
++    for (offset = 0; offset < 8; offset++) {
++        UBYTE *data = storage + PREFIX + offset;
++        fill_pattern(data, 512, MIX128_384);
++        for (si = 0; si < 3; si++)
++            check("mixed128_384_control", data, 512, offset, seeds[si]);
++    }
++
++    for (p = 0; p < sizeof(perturb_positions) / sizeof(perturb_positions[0]); p++) {
++        UBYTE *data = storage + PREFIX;
++        fill_pattern(data, DATA_MAX, ZERO);
++        data[perturb_positions[p]] = 0xA5;
++        for (si = 0; si < 3; si++)
++            check("single_byte_perturbation", data, DATA_MAX, 0, seeds[si]);
++    }
++
++    {
++        static const UBYTE known[] = {'1','2','3','4','5','6','7','8','9'};
++        uint32_t oracle = reference_crc32(0, known, sizeof(known));
++        if (oracle != 0xCBF43926u)
++            note_error("oracle_selfcheck", "123456789", 9, 0, 0,
++                       0xCBF43926u, oracle, 0);
++        check("known_vector", known, sizeof(known), 0, 0);
++    }
++}
++
++static void check_abi_controls(void)
++{
++    static CrcFunction controls[] = {
++        bfs_crc32_abi_clobber_d2, bfs_crc32_abi_clobber_a2
++    };
++    static const ULONG expected_masks[] = {0x00000004UL, 0x00000100UL};
++    uint32_t seed = 0x12345678u, actual;
++    ULONG i, mask;
++    for (i = 0; i < 2; i++) {
++        actual = 0;
++        mask = bfs_crc32_abi_probe(controls[i], seed, NULL, 0, &actual);
++        counts.control_cases++;
++        if (mask == expected_masks[i] && actual == seed) counts.control_passes++;
++        else {
++            counts.control_errors++;
++            note_error("abi_negative_control", i ? "clobber_a2" : "clobber_d2",
++                       0, 0, seed, mask != expected_masks[i] ? expected_masks[i] : seed,
++                       mask != expected_masks[i] ? mask : actual, mask);
++        }
++    }
++}
++
++static BOOL open_eclock(struct MsgPort **port_out,
++                        struct timerequest **request_out)
++{
++    struct MsgPort *port = CreateMsgPort();
++    struct timerequest *request;
++    struct EClockVal initial = {0};
++    *port_out = NULL; *request_out = NULL;
++    if (!port) return FALSE;
++    request = (struct timerequest *)CreateIORequest(port, (ULONG)sizeof(*request));
++    if (!request) { DeleteMsgPort(port); return FALSE; }
++    if (OpenDevice(TIMERNAME, UNIT_ECLOCK, (struct IORequest *)request, 0)) {
++        DeleteIORequest((struct IORequest *)request); DeleteMsgPort(port);
++        return FALSE;
++    }
++    TimerBase = (struct Device *)request->tr_node.io_Device;
++    counts.clock_hz = ReadEClock(&initial);
++    if (!counts.clock_hz) {
++        CloseDevice((struct IORequest *)request);
++        DeleteIORequest((struct IORequest *)request); DeleteMsgPort(port);
++        TimerBase = NULL; return FALSE;
++    }
++    *port_out = port; *request_out = request; return TRUE;
++}
++
++static void close_eclock(struct MsgPort *port, struct timerequest *request)
++{
++    CloseDevice((struct IORequest *)request);
++    DeleteIORequest((struct IORequest *)request); DeleteMsgPort(port);
++    TimerBase = NULL;
++}
++
++static uint64_t eclock_value(const struct EClockVal *value)
++{
++    return ((uint64_t)value->ev_hi << 32) | value->ev_lo;
++}
++
++static uint32_t time_batch(CrcFunction volatile *slot, uint32_t seed,
++                           const UBYTE *data, ULONG length, ULONG repeats,
++                           ULONG which, uint64_t *ticks_out)
++{
++    struct EClockVal start = {0}, end = {0};
++    uint32_t sum = 0x6D2B79F5u;
++    ULONG i;
++    ReadEClock(&start);
++    for (i = 0; i < repeats; i++) {
++        CrcFunction function = *slot;
++        uint32_t value = function(seed, data, (size_t)length);
++        sum = (sum << 5) ^ (sum >> 27) ^ value ^ (i * 0x9E3779B9u);
++    }
++    ReadEClock(&end);
++    *ticks_out = eclock_value(&end) - eclock_value(&start);
++    timing_sink = sum;
++    counts.timing_calls[which] += repeats;
++    return sum;
++}
++
++static void run_timing(void)
++{
++    ULONG c, sample;
++    const uint32_t seed = 0x12345678u;
++    for (c = 0; c < TIMING_COUNT; c++) {
++        const TimingCase *test = &timing_cases[c];
++        const UBYTE *data = storage + PREFIX + 3;
++        fill_pattern((UBYTE *)data, test->length, test->pattern);
++        counts.timing_cases++;
++        for (sample = 0; sample < SAMPLE_COUNT; sample++) {
++            BOOL baseline_first = (sample & 1UL) == 0;
++            uint32_t baseline_sum, sparse_sum;
++            if (baseline_first) {
++                baseline_sum = time_batch(&call_baseline, seed,
++                    data, test->length, test->repeats, 1,
++                    &baseline_ticks[c][sample]);
++                sparse_sum = time_batch(&call_sparse, seed,
++                    data, test->length, test->repeats, 0,
++                    &sparse_ticks[c][sample]);
++                counts.order_baseline_first++;
++            } else {
++                sparse_sum = time_batch(&call_sparse, seed,
++                    data, test->length, test->repeats, 0,
++                    &sparse_ticks[c][sample]);
++                baseline_sum = time_batch(&call_baseline, seed,
++                    data, test->length, test->repeats, 1,
++                    &baseline_ticks[c][sample]);
++                counts.order_sparse_first++;
++            }
++            if (baseline_sum != sparse_sum) {
++                counts.timing_errors++;
++                note_error("timing_checksum", test->name, test->length, 3,
++                           seed, baseline_sum, sparse_sum, 0);
++            }
++            counts.timing_samples++;
++        }
++    }
++}
++
++static ULONG append_text(char *b, ULONG n, const char *s)
++{
++    while (*s) b[n++] = *s++;
++    return n;
++}
++
++static ULONG append_u64(char *b, ULONG n, uint64_t v)
++{
++    char digits[21]; ULONG used = 0;
++    do { digits[used++] = (char)('0' + v % 10u); v /= 10u; } while (v);
++    while (used) b[n++] = digits[--used];
++    return n;
++}
++
++static ULONG append_hex32(char *b, ULONG n, uint32_t v)
++{
++    static const char hex[] = "0123456789ABCDEF"; int shift;
++    for (shift = 28; shift >= 0; shift -= 4) b[n++] = hex[(v >> shift) & 15u];
++    return n;
++}
++
++static ULONG append_timing_row(char *b, ULONG n, ULONG c, ULONG sample)
++{
++    const TimingCase *test = &timing_cases[c];
++    n = append_text(b, n, "TIMING\t"); n = append_text(b, n, test->name);
++    n = append_text(b, n, "\t"); n = append_u64(b, n, test->length);
++    n = append_text(b, n, "\t"); n = append_u64(b, n, test->repeats);
++    n = append_text(b, n, "\t"); n = append_u64(b, n, sample);
++    n = append_text(b, n, (sample & 1UL) ? "\tsparse-first\t" : "\tbaseline-first\t");
++    n = append_u64(b, n, baseline_ticks[c][sample]); n = append_text(b, n, "\t");
++    n = append_u64(b, n, sparse_ticks[c][sample]);
++    return append_text(b, n, "\n");
++}
++
++static ULONG build_report(char *b, BOOL timer_available)
++{
++    ULONG n = 0, c, sample;
++#define PUT(s) do { n = append_text(b, n, (s)); } while (0)
++#define NUM(v) do { n = append_u64(b, n, (uint64_t)(v)); } while (0)
++#define COUNT(name, value) do { PUT("COUNT\t"); PUT(name); PUT("\t"); NUM(value); PUT("\n"); } while (0)
++    PUT("SPARSE_CRC_PROBE\t2\n");
++    PUT("META\toracle\tindependent-bitwise-reflected-IEEE\n");
++    PUT("META\tapi\ttyped size_t adapters; explicit uint32_t conversion; 32-bit lengths\n");
++    PUT("FIXTURE\tname\tdescription\n");
++    PUT("FIXTURE\tsmall\tzero,dense,32-nonzero+224-zero per 256; lengths 0,1,15,16,17,31,32,63,64,65,66,127,128,129; offsets 0..7\n");
++    PUT("FIXTURE\tzero_run_boundary\tprefix byte; 63,64,65 supplied zero bytes; following byte included separately\n");
++    PUT("FIXTURE\tlarge\t4096-byte zero,dense,block256,dirkey264; seeds 00000000,FFFFFFFF,12345678; offsets 0..7\n");
++    PUT("FIXTURE\tdirkey_like_264\tsynthetic packed 264-byte key: parent4,hash4,nameLen1,four-char name; 251 zero tail bytes\n");
++    PUT("FIXTURE\tsingle_byte_perturbation\t4096 zero bytes with one A5 at offsets 0,63,64,65,255,256,2047,4095\n");
++    PUT("FIXTURE\tmixed128_384\tdensity control; 128 nonzero and 384 zero bytes per 512-byte group; not an inode fixture\n");
++    COUNT("vector_cases", counts.cases); COUNT("baseline_calls", counts.baseline_calls);
++    COUNT("sparse_calls", counts.sparse_calls); COUNT("abi_positive_checks", counts.abi_checks);
++    COUNT("abi_negative_control_cases", counts.control_cases);
++    COUNT("abi_negative_control_passes", counts.control_passes);
++    COUNT("abi_negative_control_errors", counts.control_errors);
++    COUNT("oracle_errors", counts.oracle_errors); COUNT("abi_errors", counts.abi_errors);
++    COUNT("timing_errors", counts.timing_errors); COUNT("errors", counts.errors);
++    COUNT("timer_available", timer_available ? 1 : 0);
++    PUT("CLOCK_HZ\t"); NUM(counts.clock_hz); PUT("\n");
++    COUNT("oracle_digest_fnv1a32", counts.digest); COUNT("timing_cases", counts.timing_cases);
++    COUNT("timing_samples", counts.timing_samples);
++    COUNT("baseline_timing_calls", counts.timing_calls[1]);
++    COUNT("sparse_timing_calls", counts.timing_calls[0]);
++    COUNT("timing_order_baseline_first", counts.order_baseline_first);
++    COUNT("timing_order_sparse_first", counts.order_sparse_first);
++    PUT("TIMING\tcase\tlength\trepeats\tsample\torder\tbaseline_ticks\tsparse_ticks\n");
++    if (timer_available)
++        for (c = 0; c < TIMING_COUNT; c++)
++            for (sample = 0; sample < SAMPLE_COUNT; sample++)
++                n = append_timing_row(b, n, c, sample);
++    if (counts.first_kind) {
++        PUT("FIRST_ERROR\t"); PUT(counts.first_kind); PUT("\t");
++        PUT(counts.first_fixture); PUT("\t"); NUM(counts.first_length);
++        PUT("\t"); NUM(counts.first_offset); PUT("\t");
++        n = append_hex32(b, n, counts.first_seed); PUT("\t");
++        n = append_hex32(b, n, counts.first_expected); PUT("\t");
++        n = append_hex32(b, n, counts.first_actual); PUT("\t");
++        n = append_hex32(b, n, counts.first_mask); PUT("\n");
++    }
++    PUT(counts.errors == 0 && timer_available ? "STATUS\tPASS\n" : "STATUS\tFAIL\n");
++#undef COUNT
++#undef NUM
++#undef PUT
++    return n;
++}
++
++int main(void)
++{
++    struct Process *process = (struct Process *)FindTask(NULL);
++    APTR old_window = process->pr_WindowPtr;
++    struct MsgPort *port = NULL;
++    struct timerequest *request = NULL;
++    char report[REPORT_CAPACITY];
++    ULONG report_length;
++    BPTR result, marker;
++    BOOL timer_available, recorded, success;
++    static const char complete[] = "SPARSE_CRC_PROBE_COMPLETE\n";
++    process->pr_WindowPtr = (APTR)-1;
++    check_abi_controls(); check_vectors();
++    timer_available = open_eclock(&port, &request);
++    if (timer_available) { run_timing(); close_eclock(port, request); }
++    else note_error("timer", "EClock", 0, 0, 0, 0, 0, 0);
++    report_length = build_report(report, timer_available);
++    result = Open((STRPTR)"SYS:Results/crc32-sparse-probe.tsv", MODE_NEWFILE);
++    if (!result) { process->pr_WindowPtr = old_window; return 20; }
++    recorded = Write(result, (APTR)report, (LONG)report_length) == (LONG)report_length;
++    if (!Close(result)) recorded = FALSE;
++    success = counts.errors == 0 && timer_available;
++    if (recorded) {
++        marker = Open((STRPTR)"SYS:Results/crc32-sparse-probe.done", MODE_NEWFILE);
++        if (!marker) recorded = FALSE;
++        else {
++            recorded = Write(marker, (APTR)complete, (LONG)(sizeof(complete) - 1)) ==
++                       (LONG)(sizeof(complete) - 1);
++            if (!Close(marker)) recorded = FALSE;
++        }
++    }
++    process->pr_WindowPtr = old_window;
++    return recorded && success ? 0 : 20;
++}
+diff --git a/tests/test_btree_sparse_crc.c b/tests/test_btree_sparse_crc.c
+new file mode 100644
+index 0000000..4edff8b
+--- /dev/null
++++ b/tests/test_btree_sparse_crc.c
+@@ -0,0 +1,327 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++/* B-tree read-path tests for sparse CRCs over used leaf key bytes. */
++
++#include "test_harness.h"
++#include "bfs_btree.h"
++#include "bfs_btree_internal.h"
++#include "bfs_cache.h"
++
++#define TEST_KEY_SIZE 264u
++#define TEST_VALUE_SIZE 8u
++#define TEST_BLOCK_COUNT 2u
++
++typedef struct {
++    bfs_bio_t bio;
++    uint8_t blocks[TEST_BLOCK_COUNT][BFS_MAX_BLOCK_SIZE];
++} memory_bio_t;
++
++static memory_bio_t test_memory;
++
++static bfs_err_t memory_read(bfs_bio_t *bio, bfs_blk_t block, void *buffer)
++{
++    memory_bio_t *memory = (memory_bio_t *)bio;
++    if (block >= bio->block_count) return BFS_ERR_INVAL;
++    memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    return BFS_OK;
++}
++
++static bfs_err_t memory_write(bfs_bio_t *bio, bfs_blk_t block,
++                              const void *buffer)
++{
++    memory_bio_t *memory = (memory_bio_t *)bio;
++    if (block >= bio->block_count) return BFS_ERR_INVAL;
++    memcpy(memory->blocks[block], buffer, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    return BFS_OK;
++}
++
++static bfs_err_t memory_sync(bfs_bio_t *bio)
++{
++    (void)bio;
++    return BFS_OK;
++}
++
++static void memory_close(bfs_bio_t *bio) { (void)bio; }
++
++static const bfs_bio_ops_t memory_ops = {
++    .read_block = memory_read,
++    .write_block = memory_write,
++    .sync = memory_sync,
++    .close = memory_close,
++};
++
++static int compare_directory_keys(const void *left, const void *right)
++{
++    const uint8_t *a = (const uint8_t *)left;
++    const uint8_t *b = (const uint8_t *)right;
++    uint32_t a_parent = bfs_load_be32(a), b_parent = bfs_load_be32(b);
++    if (a_parent != b_parent) return a_parent < b_parent ? -1 : 1;
++    uint32_t a_hash = bfs_load_be32(a + 4), b_hash = bfs_load_be32(b + 4);
++    if (a_hash != b_hash) return a_hash < b_hash ? -1 : 1;
++
++    uint8_t a_length = a[8], b_length = b[8];
++    uint8_t common_length = a_length < b_length ? a_length : b_length;
++    for (uint8_t i = 0; i < common_length; i++) {
++        uint8_t a_char = a[9 + i], b_char = b[9 + i];
++        if (a_char >= 'a' && a_char <= 'z') a_char -= 'a' - 'A';
++        if (b_char >= 'a' && b_char <= 'z') b_char -= 'a' - 'A';
++        if (a_char != b_char) return a_char < b_char ? -1 : 1;
++    }
++    return a_length < b_length ? -1 : a_length > b_length ? 1 : 0;
++}
++
++static const bfs_btree_ops_t sparse_key_ops = {
++    .key_compare = compare_directory_keys,
++    .key_size = TEST_KEY_SIZE,
++    .val_size = TEST_VALUE_SIZE,
++    .cache_key_order = true,
++    .sparse_key_crc = true,
++};
++
++static const bfs_btree_ops_t ordinary_key_ops = {
++    .key_compare = compare_directory_keys,
++    .key_size = TEST_KEY_SIZE,
++    .val_size = TEST_VALUE_SIZE,
++    .cache_key_order = true,
++    .sparse_key_crc = false,
++};
++
++static bfs_blk_t unused_alloc(bfs_allocator_t *allocator)
++{
++    (void)allocator;
++    return BFS_BLK_NULL;
++}
++
++static bfs_err_t unused_dealloc(bfs_allocator_t *allocator, bfs_blk_t block)
++{
++    (void)allocator;
++    (void)block;
++    return BFS_OK;
++}
++
++static void make_key(uint8_t key[TEST_KEY_SIZE], uint32_t hash, char name)
++{
++    memset(key, 0, TEST_KEY_SIZE);
++    bfs_store_be32(key, 1u);       /* Parent identifier. */
++    bfs_store_be32(key + 4, hash); /* Name hash. */
++    key[8] = 1u;                   /* Name length. */
++    key[9] = (uint8_t)name;
++}
++
++static void init_raw_leaf(memory_bio_t *memory, uint32_t block_size,
++                          const bfs_btree_ops_t *ops,
++                          bool nonzero_key_trailing_bytes)
++{
++    memset(memory->blocks, 0, sizeof(memory->blocks));
++    memory->bio.ops = &memory_ops;
++    memory->bio.block_size = block_size;
++    memory->bio.block_count = TEST_BLOCK_COUNT;
++
++    uint8_t *buffer = memory->blocks[1];
++    bfs_btnode_hdr_t *header = (bfs_btnode_hdr_t *)buffer;
++    header->magic = bfs_be32(BFS_NODE_MAGIC);
++    header->crc32 = 0;
++    header->txn_id = bfs_be64(7u);
++    header->num_keys = bfs_be32(2u);
++    header->level = bfs_be16(BFS_BTNODE_LEAF);
++    header->flags = 0;
++    header->right_sibling = bfs_be32(BFS_BLK_NULL);
++
++    bfs_btree_t layout = {.bio = &memory->bio, .ops = ops};
++    uint8_t key[TEST_KEY_SIZE];
++    make_key(key, 1u, 'a');
++    if (nonzero_key_trailing_bytes) {
++        key[200] = 0x61u;
++        key[250] = 0x7Du;
++    }
++    memcpy(node_key(&layout, buffer, 0), key, sizeof(key)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    make_key(key, 2u, 'b');
++    if (nonzero_key_trailing_bytes) {
++        key[200] = 0x61u;
++        key[250] = 0x7Du;
++    }
++    memcpy(node_key(&layout, buffer, 1), key, sizeof(key)); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++
++    for (uint32_t i = 0; i < 2u; i++) {
++        uint8_t *value = (uint8_t *)leaf_val(&layout, buffer, i);
++        bfs_store_be32(value, 0x12340000u + i);
++        bfs_store_be32(value + 4, 0xABCD0000u + i);
++    }
++
++    uint32_t prefix_end = sizeof(bfs_btnode_hdr_t) +
++                          2u * TEST_KEY_SIZE;
++    uint32_t values_start = sizeof(bfs_btnode_hdr_t) +
++                            leaf_max_keys(&layout) * TEST_KEY_SIZE;
++    uint32_t values_end = values_start + 2u * TEST_VALUE_SIZE;
++    /* Legacy unused key and value slots may contain nonzero bytes. Their
++     * exact contents remain covered by the on-disk full-block checksum. */
++    buffer[prefix_end + 1u] = 0xA6u;
++    buffer[prefix_end + 200u] = 0x5Bu;
++    buffer[values_end + 17u] = 0xC3u;
++    buffer[block_size - 1u] = 0xD7u;
++
++    header->crc32 = bfs_be32(bfs_crc32(0, buffer, block_size));
++}
++
++enum leaf_mutation {
++    LEAF_UNCHANGED,
++    LEAF_MUTATE_USED_KEY_ZERO,
++    LEAF_MUTATE_UNUSED_PADDING,
++};
++
++static bool count_scan_entry(const void *key, const void *value, void *context)
++{
++    (void)key;
++    (void)value;
++    (*(uint32_t *)context)++;
++    return true;
++}
++
++/* Construct and initially validate a full-CRC leaf, then force the scan to
++ * read it again after an optional on-disk mutation without updating its CRC. */
++static bool run_scan_case(uint32_t block_size, const bfs_btree_ops_t *ops,
++                          enum leaf_mutation mutation)
++{
++    bfs_cache_t cache;
++    bfs_allocator_t allocator = {
++        .alloc = unused_alloc,
++        .dealloc = unused_dealloc,
++        .error = NULL,
++        .ctx = NULL,
++    };
++    bfs_btree_t tree;
++    bool cache_ready = false;
++    bool success = false;
++    uint32_t callback_count = 0;
++
++    init_raw_leaf(&test_memory, block_size, ops, false);
++    if (bfs_cache_init(&cache, &test_memory.bio, 4u) != BFS_OK) goto done;
++    cache_ready = true;
++    if (bfs_btree_init(&tree, &cache.bio, &allocator, ops, 1u, 7u) != BFS_OK)
++        goto done;
++
++    if (mutation == LEAF_MUTATE_USED_KEY_ZERO) {
++        /* Key bytes 200 is a used, zero-valued byte after the directory name. */
++        test_memory.blocks[1][sizeof(bfs_btnode_hdr_t) + 200u] = 0x42u;
++    } else if (mutation == LEAF_MUTATE_UNUSED_PADDING) {
++        test_memory.blocks[1][block_size - 1u] ^= 0x01u;
++    }
++
++    bfs_cache_invalidate(&cache);
++    bfs_err_t result = bfs_btree_scan(&tree, NULL, count_scan_entry,
++                                      &callback_count);
++    bfs_err_t expected_result = mutation == LEAF_UNCHANGED
++                                    ? BFS_OK : BFS_ERR_CORRUPT;
++    uint32_t expected_callbacks = mutation == LEAF_UNCHANGED ? 2u : 0u;
++    success = result == expected_result &&
++              callback_count == expected_callbacks;
++
++done:
++    if (cache_ready) bfs_cache_destroy(&cache);
++    return success;
++}
++
++static void test_sparse_key_crc_valid_full_block_padding(void)
++{
++    static const uint32_t block_sizes[] = {1024u, 4096u, 65536u};
++    const bfs_btree_ops_t *ops[] = {&sparse_key_ops, &ordinary_key_ops};
++
++    for (size_t block = 0;
++         block < sizeof(block_sizes) / sizeof(block_sizes[0]); block++) {
++        for (size_t variant = 0; variant < sizeof(ops) / sizeof(ops[0]);
++             variant++) {
++            TEST_ASSERT(run_scan_case(block_sizes[block], ops[variant],
++                                      LEAF_UNCHANGED));
++        }
++    }
++}
++
++static void test_sparse_key_crc_rejects_mutated_used_zero_byte(void)
++{
++    static const uint32_t block_sizes[] = {1024u, 4096u, 65536u};
++    const bfs_btree_ops_t *ops[] = {&sparse_key_ops, &ordinary_key_ops};
++
++    for (size_t block = 0;
++         block < sizeof(block_sizes) / sizeof(block_sizes[0]); block++) {
++        for (size_t variant = 0; variant < sizeof(ops) / sizeof(ops[0]);
++             variant++) {
++            TEST_ASSERT(run_scan_case(block_sizes[block], ops[variant],
++                                      LEAF_MUTATE_USED_KEY_ZERO));
++        }
++    }
++}
++
++static void test_sparse_key_crc_rejects_mutated_padding(void)
++{
++    static const uint32_t block_sizes[] = {1024u, 4096u, 65536u};
++    const bfs_btree_ops_t *ops[] = {&sparse_key_ops, &ordinary_key_ops};
++
++    for (size_t block = 0;
++         block < sizeof(block_sizes) / sizeof(block_sizes[0]); block++) {
++        for (size_t variant = 0; variant < sizeof(ops) / sizeof(ops[0]);
++             variant++) {
++            TEST_ASSERT(run_scan_case(block_sizes[block], ops[variant],
++                                      LEAF_MUTATE_UNUSED_PADDING));
++        }
++    }
++}
++
++static bool run_nonzero_key_tail_scan_case(uint32_t block_size,
++                                           const bfs_btree_ops_t *ops)
++{
++    bfs_cache_t cache;
++    bfs_allocator_t allocator = {
++        .alloc = unused_alloc,
++        .dealloc = unused_dealloc,
++        .error = NULL,
++        .ctx = NULL,
++    };
++    bfs_btree_t tree;
++    bool cache_ready = false;
++    bool success = false;
++    uint32_t callback_count = 0;
++
++    init_raw_leaf(&test_memory, block_size, ops, true);
++    if (bfs_cache_init(&cache, &test_memory.bio, 4u) != BFS_OK) goto done;
++    cache_ready = true;
++    if (bfs_btree_init(&tree, &cache.bio, &allocator, ops, 1u, 7u) != BFS_OK)
++        goto done;
++
++    /* The initial tree read validates the full-block CRC. Scan once from the
++     * validated cache entry, then invalidate and verify the same legacy key
++     * bytes on a fresh read. */
++    if (bfs_btree_scan(&tree, NULL, count_scan_entry, &callback_count) != BFS_OK ||
++        callback_count != 2u)
++        goto done;
++
++    bfs_cache_invalidate(&cache);
++    callback_count = 0;
++    if (bfs_btree_scan(&tree, NULL, count_scan_entry, &callback_count) == BFS_OK &&
++        callback_count == 2u)
++        success = true;
++
++done:
++    if (cache_ready) bfs_cache_destroy(&cache);
++    return success;
++}
++
++static void test_sparse_key_crc_accepts_nonzero_bytes_after_name(void)
++{
++    static const uint32_t block_sizes[] = {1024u, 4096u, 65536u};
++    const bfs_btree_ops_t *ops[] = {&sparse_key_ops, &ordinary_key_ops};
++
++    for (size_t block = 0;
++         block < sizeof(block_sizes) / sizeof(block_sizes[0]); block++) {
++        for (size_t variant = 0; variant < sizeof(ops) / sizeof(ops[0]);
++             variant++) {
++            TEST_ASSERT(run_nonzero_key_tail_scan_case(block_sizes[block],
++                                                       ops[variant]));
++        }
++    }
++}
++
++TEST_SUITE_BEGIN("B-tree sparse key CRC")
++    TEST_RUN(test_sparse_key_crc_valid_full_block_padding);
++    TEST_RUN(test_sparse_key_crc_rejects_mutated_used_zero_byte);
++    TEST_RUN(test_sparse_key_crc_rejects_mutated_padding);
++    TEST_RUN(test_sparse_key_crc_accepts_nonzero_bytes_after_name);
++TEST_SUITE_END()
+diff --git a/tests/test_crc32_sparse.c b/tests/test_crc32_sparse.c
+new file mode 100644
+index 0000000..db7f3f9
+--- /dev/null
++++ b/tests/test_crc32_sparse.c
+@@ -0,0 +1,247 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++/* Differential tests for exact CRC32 calculation over sparse byte ranges. */
++
++#include "test_harness.h"
++#include "bfs_crc32.h"
++
++/* Bitwise CRC oracle kept independent of the table and sparse implementations. */
++static uint32_t reference_crc32(uint32_t initial, const uint8_t *data,
++                                uint32_t length)
++{
++    uint32_t crc = ~initial;
++    for (uint32_t i = 0; i < length; i++) {
++        crc ^= data[i];
++        for (unsigned bit = 0; bit < 8; bit++)
++            crc = (crc >> 1) ^ ((crc & 1u) ? 0xEDB88320u : 0u);
++    }
++    return ~crc;
++}
++
++static bool assert_sparse_matches_reference(uint32_t initial,
++                                            const uint8_t *data,
++                                            uint32_t length)
++{
++    uint32_t expected = reference_crc32(initial, data, length);
++    uint32_t actual = bfs_crc32_sparse(initial, data, length);
++    if (actual == expected) return true;
++    fprintf(stderr,
++            "  sparse CRC mismatch: seed=%08x length=%u got=%08x expected=%08x\n",
++            initial, length, actual, expected);
++    return false;
++}
++
++static uint32_t next_random(uint32_t *state)
++{
++    uint32_t value = *state;
++    value ^= value << 13;
++    value ^= value >> 17;
++    value ^= value << 5;
++    *state = value;
++    return value;
++}
++
++static void test_sparse_crc_empty_null_and_short_inputs(void)
++{
++    static const uint32_t seeds[] = {0u, 1u, 0xFFFFFFFFu, 0xA5C39E12u};
++    uint8_t bytes[96];
++    for (uint32_t i = 0; i < sizeof(bytes); i++)
++        bytes[i] = (uint8_t)(i * 37u + 11u);
++
++    for (size_t i = 0; i < sizeof(seeds) / sizeof(seeds[0]); i++) {
++        TEST_ASSERT_EQ(bfs_crc32_sparse(seeds[i], NULL, 0), seeds[i]);
++        TEST_ASSERT(assert_sparse_matches_reference(seeds[i], NULL, 0));
++        for (uint32_t offset = 0; offset < 16; offset++) {
++            for (uint32_t length = 0; length < 64; length++) {
++                TEST_ASSERT(assert_sparse_matches_reference(
++                    seeds[i], bytes + offset, length));
++            }
++        }
++    }
++}
++
++static void test_sparse_crc_chunk_and_run_boundaries(void)
++{
++    static const uint32_t seeds[] = {
++        0u, 0x12345678u, 0xFFFFFFFFu, 0xA5C39E12u,
++    };
++    static const uint32_t lengths[] = {
++        0u, 1u, 15u, 16u, 17u, 31u, 32u, 47u, 48u, 63u, 64u, 65u,
++        79u, 80u, 81u, 95u, 96u, 127u, 128u, 129u, 191u, 192u, 193u,
++        255u, 256u, 257u, 511u, 512u, 513u, 1023u, 1024u, 1025u,
++    };
++    uint8_t bytes[1060];
++
++    for (uint32_t i = 0; i < sizeof(bytes); i++)
++        bytes[i] = (uint8_t)(1u + ((i * 73u + (i >> 3)) % 255u));
++
++    for (uint32_t offset = 0; offset < 16; offset++) {
++        for (size_t length_index = 0;
++             length_index < sizeof(lengths) / sizeof(lengths[0]);
++             length_index++) {
++            uint32_t length = lengths[length_index];
++            for (size_t seed_index = 0;
++                 seed_index < sizeof(seeds) / sizeof(seeds[0]); seed_index++) {
++                TEST_ASSERT(assert_sparse_matches_reference(
++                    seeds[seed_index], bytes + offset, length));
++            }
++        }
++    }
++}
++
++static void test_sparse_crc_all_zero_ranges(void)
++{
++    static const uint32_t seeds[] = {
++        0u, 1u, 0xFFFFFFFFu, 0x12345678u, 0xA5C39E12u,
++    };
++    static const uint32_t lengths[] = {
++        0u, 1u, 15u, 16u, 17u, 63u, 64u, 65u, 127u, 128u, 129u,
++        255u, 256u, 257u, 1023u, 1024u, 4095u, 4096u, 8191u, 8192u,
++    };
++    static const uint8_t zeros[8192] = {0};
++
++    for (size_t seed_index = 0;
++         seed_index < sizeof(seeds) / sizeof(seeds[0]); seed_index++) {
++        for (size_t length_index = 0;
++             length_index < sizeof(lengths) / sizeof(lengths[0]);
++             length_index++) {
++            TEST_ASSERT(assert_sparse_matches_reference(
++                seeds[seed_index], zeros, lengths[length_index]));
++        }
++        for (uint32_t offset = 0; offset < 16; offset++) {
++            TEST_ASSERT(assert_sparse_matches_reference(
++                seeds[seed_index], zeros + offset, 8192u - offset));
++        }
++    }
++}
++
++static void test_sparse_crc_nonzero_at_every_lane_and_boundary(void)
++{
++    static const uint32_t seeds[] = {0u, 0x13579BDFu, 0xFFFFFFFFu};
++    static const uint32_t lengths[] = {
++        63u, 64u, 65u, 79u, 80u, 81u, 127u, 128u, 129u,
++        255u, 256u, 257u, 511u, 512u,
++    };
++    uint8_t bytes[512];
++
++    for (size_t length_index = 0;
++         length_index < sizeof(lengths) / sizeof(lengths[0]); length_index++) {
++        uint32_t length = lengths[length_index];
++        for (uint32_t position = 0; position < length; position++) {
++            memset(bytes, 0, sizeof(bytes));
++            bytes[position] = (uint8_t)(1u + (position % 255u));
++            for (size_t seed_index = 0;
++                 seed_index < sizeof(seeds) / sizeof(seeds[0]); seed_index++) {
++                TEST_ASSERT(assert_sparse_matches_reference(
++                    seeds[seed_index], bytes, length));
++            }
++        }
++    }
++}
++
++static void test_sparse_crc_mixed_runs_including_short_fragments(void)
++{
++    static const uint32_t seeds[] = {0u, 0x2468ACE0u, 0xFFFFFFFFu};
++    static const uint32_t zero_lengths[] = {
++        1u, 2u, 15u, 16u, 17u, 31u, 32u, 63u, 64u, 65u, 127u, 128u, 129u,
++    };
++    uint8_t bytes[2048];
++
++    for (uint32_t lane = 0; lane < 16; lane++) {
++        for (uint32_t i = 0; i < sizeof(bytes); i++)
++            bytes[i] = (uint8_t)(1u + ((i * 29u + lane * 11u) % 255u));
++
++        uint32_t cursor = 19u + lane;
++        for (size_t run = 0;
++             run < sizeof(zero_lengths) / sizeof(zero_lengths[0]); run++) {
++            uint32_t run_length = zero_lengths[run];
++            if (cursor + run_length >= sizeof(bytes)) break;
++            memset(bytes + cursor, 0, run_length);
++            cursor += run_length + 3u + (uint32_t)(run % 13u);
++        }
++
++        for (size_t seed_index = 0;
++             seed_index < sizeof(seeds) / sizeof(seeds[0]); seed_index++) {
++            TEST_ASSERT(assert_sparse_matches_reference(seeds[seed_index],
++                                                        bytes, sizeof(bytes)));
++        }
++    }
++}
++
++static void test_sparse_crc_chaining_across_zero_runs(void)
++{
++    static const uint32_t seeds[] = {0u, 1u, 0xA5C39E12u};
++    uint8_t bytes[768];
++    for (uint32_t i = 0; i < sizeof(bytes); i++)
++        bytes[i] = (uint8_t)(1u + ((i * 47u + 9u) % 255u));
++    memset(bytes + 91, 0, 257);
++    memset(bytes + 493, 0, 127);
++
++    static const uint32_t split_sizes[] = {
++        1u, 15u, 16u, 17u, 63u, 64u, 65u, 128u, 257u,
++    };
++    for (size_t seed_index = 0;
++         seed_index < sizeof(seeds) / sizeof(seeds[0]); seed_index++) {
++        uint32_t whole = bfs_crc32_sparse(seeds[seed_index], bytes,
++                                          sizeof(bytes));
++        TEST_ASSERT_EQ(whole, reference_crc32(seeds[seed_index], bytes,
++                                               sizeof(bytes)));
++        for (size_t split_index = 0;
++             split_index < sizeof(split_sizes) / sizeof(split_sizes[0]);
++             split_index++) {
++            uint32_t split = split_sizes[split_index];
++            uint32_t chained = seeds[seed_index];
++            for (uint32_t offset = 0; offset < sizeof(bytes);) {
++                uint32_t remaining = (uint32_t)sizeof(bytes) - offset;
++                uint32_t part = remaining < split ? remaining : split;
++                chained = bfs_crc32_sparse(chained, bytes + offset, part);
++                if (split_index == 0 && offset == 0)
++                    chained = bfs_crc32_sparse(chained, NULL, 0);
++                offset += part;
++            }
++            TEST_ASSERT_EQ(chained, whole);
++        }
++    }
++}
++
++static void test_sparse_crc_deterministic_random_inputs(void)
++{
++    static const uint32_t seeds[] = {
++        0u, 0xFFFFFFFFu, 0x12345678u, 0x87654321u,
++    };
++    uint8_t storage[4112];
++    uint32_t random = 0xC13FA9A9u;
++
++    for (unsigned sample = 0; sample < 160; sample++) {
++        uint32_t offset = next_random(&random) % 16u;
++        uint32_t length = next_random(&random) % 4097u;
++        for (uint32_t i = 0; i < sizeof(storage); i++) {
++            uint32_t value = next_random(&random);
++            storage[i] = (value & 7u) == 0 ? 0 : (uint8_t)(value >> 24);
++        }
++
++        /* Include deterministic long runs and runs ending at awkward tails. */
++        if (length >= 64u) {
++            uint32_t run_start = offset + next_random(&random) % (length - 63u);
++            uint32_t run_length = 64u + next_random(&random) % 193u;
++            uint32_t end = offset + length;
++            if (run_length > end - run_start) run_length = end - run_start;
++            memset(storage + run_start, 0, run_length);
++        }
++
++        for (size_t seed_index = 0;
++             seed_index < sizeof(seeds) / sizeof(seeds[0]); seed_index++) {
++            TEST_ASSERT(assert_sparse_matches_reference(
++                seeds[seed_index], storage + offset, length));
++        }
++    }
++}
++
++TEST_SUITE_BEGIN("Sparse CRC32")
++    TEST_RUN(test_sparse_crc_empty_null_and_short_inputs);
++    TEST_RUN(test_sparse_crc_chunk_and_run_boundaries);
++    TEST_RUN(test_sparse_crc_all_zero_ranges);
++    TEST_RUN(test_sparse_crc_nonzero_at_every_lane_and_boundary);
++    TEST_RUN(test_sparse_crc_mixed_runs_including_short_fragments);
++    TEST_RUN(test_sparse_crc_chaining_across_zero_runs);
++    TEST_RUN(test_sparse_crc_deterministic_random_inputs);
++TEST_SUITE_END()

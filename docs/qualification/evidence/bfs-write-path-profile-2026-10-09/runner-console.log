@@ -1,0 +1,12 @@
+snapdog-runner
+START 1 write-split-write-compare-bfs-first 2026-10-09T18:24:29Z
+PASS 1 write-split-write-compare-bfs-first 2026-10-09T18:25:10Z
+START 2 write-split-write-durable-compare-bfs-first 2026-10-09T18:25:10Z
+PASS 2 write-split-write-durable-compare-bfs-first 2026-10-09T18:25:51Z
+START 3 write-split-write-durable-compare-pfs3-first 2026-10-09T18:25:52Z
+PASS 3 write-split-write-durable-compare-pfs3-first 2026-10-09T18:26:32Z
+START 4 write-split-write-compare-pfs3-first 2026-10-09T18:26:32Z
+PASS 4 write-split-write-compare-pfs3-first 2026-10-09T18:27:14Z
+WRITE_PROFILE_COMPLETE 4 2026-10-09T18:27:14Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-09T18:27:17Z

@@ -1,0 +1,15 @@
+Id=actions.runner.metaneutrons-snapdog-os.cachy.service
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+MainPID=0
+
+Id=gitlab-runner.service
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+MainPID=0
+snapdog-runner snapdog-os-runner Up 41 minutes
+    PID COMMAND
+    993 /opt/runner/bin/Runner.Listener run
+   1006 /usr/local/bin/fs-uae-tap /home/fabian/Amiga/Coffin/coffin.fs-uae

@@ -1,0 +1,5 @@
+sequence	mode	order	run_name
+1	split-write-compare	bfs-first	write-split-write-compare-bfs-first
+2	split-write-durable-compare	bfs-first	write-split-write-durable-compare-bfs-first
+3	split-write-durable-compare	pfs3-first	write-split-write-durable-compare-pfs3-first
+4	split-write-compare	pfs3-first	write-split-write-compare-pfs3-first

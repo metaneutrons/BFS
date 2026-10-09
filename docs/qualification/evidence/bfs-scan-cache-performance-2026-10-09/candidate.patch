@@ -1,0 +1,881 @@
+diff --git a/include/bfs_bio.h b/include/bfs_bio.h
+index 4454d15..a9d0a39 100644
+--- a/include/bfs_bio.h
++++ b/include/bfs_bio.h
+@@ -131,6 +131,12 @@ typedef struct bfs_bio_ops {
+      * UINT64_MAX disables hints on saturation. Guarded hints must not outlive
+      * this backend's initialization; reinitialization requires fresh trees. */
+     uint64_t (*mutation_epoch)(bfs_bio_t *bio);
++
++    /* Optional advisory replacement priority: a scan has copied this block
++     * into private memory. Only clean resident bytes may be demoted; no read,
++     * write, flush, discard, validation or mutation-epoch change is allowed.
++     * This neither pins other blocks nor makes dirty images evictable. */
++    void (*advise_scan_block)(bfs_bio_t *bio, bfs_blk_t blk);
+ } bfs_bio_ops_t;
+ 
+ /* Base block device — all implementations embed this as first member */
+@@ -148,6 +154,14 @@ struct bfs_bio {
+ void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size);
+ void bfs_bio_free_buffer(bfs_bio_t *bio, void *buffer);
+ 
++/* Unsupported, missing and out-of-range advice is a no-op. The caller must
++ * finish using any resident pointer before this call, as for other BIO ops. */
++static inline void bfs_bio_advise_scan_block(bfs_bio_t *bio, bfs_blk_t blk)
++{
++    if (bio && bio->ops && bio->ops->advise_scan_block && blk < bio->block_count)
++        bio->ops->advise_scan_block(bio, blk);
++}
++
+ /* Read the optional BIO mutation epoch. UINT64_MAX is reserved to mean the
+  * backend can no longer advance the epoch, so guarded hints must be disabled. */
+ static inline bool bfs_bio_get_mutation_epoch(bfs_bio_t *bio,
+diff --git a/include/bfs_btree.h b/include/bfs_btree.h
+index 4e75829..4091e04 100644
+--- a/include/bfs_btree.h
++++ b/include/bfs_btree.h
+@@ -65,6 +65,11 @@ typedef struct bfs_btree_ops {
+      * repeat it. It must depend on the entry alone. */
+     // cppcheck-suppress unusedStructMember
+     bool (*entry_ok)(const void *key, const void *val);
++
++    /* Opt in to demoting clean scan leaves after copying their entries to
++     * private memory, before callbacks. Ordinary lookups promote them again.
++     * This is replacement advice only, not a validation or visibility hint. */
++    bool scan_cache_cold;
+ } bfs_btree_ops_t;
+ 
+ /* Comparator for big-endian u32 keys. Trees that use it get node searches
+diff --git a/include/bfs_cache.h b/include/bfs_cache.h
+index a60ebd9..12d8361 100644
+--- a/include/bfs_cache.h
++++ b/include/bfs_cache.h
+@@ -46,6 +46,7 @@ typedef struct bfs_cache_slot {
+     bool      node_structure_valid;
+     // cppcheck-suppress unusedStructMember
+     bool      dirty;          /* deferred node image not yet written */
++    bool      scan_cold;      /* clean scan copy: preferred eviction victim */
+     bfs_node_validation_t node_validation;
+     // cppcheck-suppress unusedStructMember
+     bfs_node_finalize_fn finalize; /* completes a dirty image before writing */
+diff --git a/src/core/btree.c b/src/core/btree.c
+index d7438d5..babbbba 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -2244,6 +2244,7 @@ typedef struct {
+     bfs_blk_t blk[MAX_TREE_DEPTH];
+     uint32_t idx[MAX_TREE_DEPTH];
+     uint32_t depth;
++    bfs_blk_t leaf_blk;
+ } scan_path_t;
+ 
+ /* Descend to the leaf where key belongs, or to the leftmost leaf for NULL,
+@@ -2261,6 +2262,7 @@ static bfs_err_t scan_descend(const bfs_btree_t *tree, const void *key,
+         bfs_err_t err = node_view(tree, blk, buf, level, &bounds, &node);
+         if (err != BFS_OK) return err;
+         if (level == 0) {
++            path->leaf_blk = blk;
+             *leaf = node;
+             return BFS_OK;
+         }
+@@ -2305,6 +2307,7 @@ static bfs_err_t scan_next_leaf(const bfs_btree_t *tree, uint8_t *buf,
+             err = node_view(tree, blk, buf, level, &bounds, &node);
+             if (err != BFS_OK) return err;
+             if (level == 0) {
++                path->leaf_blk = blk;
+                 *leaf = node;
+                 return BFS_OK;
+             }
+@@ -2505,6 +2508,10 @@ static bfs_err_t btree_scan_cursor_impl(bfs_btree_t *tree,
+                 bfs_bio_get_mutation_epoch(tree->bio, &scan_epoch);
+             if (leaf != copy) copy_leaf_entries(tree, copy, leaf);
+             leaf = copy;
++            /* Advice precedes callbacks: they may mutate or reuse the block.
++             * Cursor copies have no recorded resident block to advise. */
++            if (have_path && tree->ops->scan_cache_cold)
++                bfs_bio_advise_scan_block(tree->bio, path.leaf_blk);
+             if (cursor) {
+                 cursor->tree = tree;
+                 cursor->root = tree->root;
+@@ -2545,6 +2552,11 @@ static bfs_err_t btree_scan_cursor_impl(bfs_btree_t *tree,
+             }
+             memcpy(last, node_key(tree, leaf, reached - 1), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+         }
++        /* A fresh boundary descent can find an already-consumed leaf. Save
++         * its last key before advice and before the next BIO invalidates it.
++         * Never advise here after callbacks, even if their epoch is equal. */
++        if (idx >= n && have_path && tree->ops->scan_cache_cold)
++            bfs_bio_advise_scan_block(tree->bio, path.leaf_blk);
+         if (changed && cursor) cursor->valid = false;
+         if (changed || !have_path) {
+             /* A callback changed the tree, or the leaf came from the cursor:
+diff --git a/src/core/cache.c b/src/core/cache.c
+index 063326f..90b31ea 100644
+--- a/src/core/cache.c
++++ b/src/core/cache.c
+@@ -38,6 +38,7 @@ static void cache_assign(bfs_cache_t *c, uint32_t index, bfs_blk_t blk)
+         *link = slot->next;
+     }
+     slot->blk = blk;
++    slot->scan_cold = false;
+     slot->next = NO_SLOT;
+     if (blk != UINT32_MAX) {
+         uint16_t *head = &c->buckets[cache_bucket(c, blk)];
+@@ -48,7 +49,8 @@ static void cache_assign(bfs_cache_t *c, uint32_t index, bfs_blk_t blk)
+ 
+ /* ── Cache bio ops ─────────────────────────────────────────── */
+ 
+-/* The least recently used clean slot, or UINT32_MAX if every slot is dirty.
++/* Prefer clean scan copies, then LRU within each priority class; UINT32_MAX
++ * if every slot is dirty.
+  * Dirty slots are never reused without being written. */
+ static uint32_t cache_victim(const bfs_cache_t *cache)
+ {
+@@ -56,8 +58,13 @@ static uint32_t cache_victim(const bfs_cache_t *cache)
+     uint32_t min_age = UINT32_MAX;
+     for (uint32_t i = 0; i < cache->num_slots; i++) {
+         if (cache->slots[i].blk == UINT32_MAX) return i;
+-        if (!cache->slots[i].dirty && cache->slots[i].age <= min_age) {
+-            min_age = cache->slots[i].age;
++        const bfs_cache_slot_t *slot = &cache->slots[i];
++        if (slot->dirty) continue;
++        if (victim == UINT32_MAX ||
++            (slot->scan_cold && !cache->slots[victim].scan_cold) ||
++            (slot->scan_cold == cache->slots[victim].scan_cold &&
++             slot->age <= min_age)) {
++            min_age = slot->age;
+             victim = i;
+         }
+     }
+@@ -85,6 +92,7 @@ static void cache_note_mutation(bfs_cache_t *cache)
+  * it is the only copy of the transaction's node. */
+ static bfs_err_t cache_write_back(bfs_cache_t *c, bfs_cache_slot_t *slot)
+ {
++    slot->scan_cold = false;
+     cache_note_mutation(c);
+     bfs_err_t err = slot->finalize(slot->layout, c->bio.block_size, slot->data);
+     if (err == BFS_OK) err = bfs_bio_write(c->dev, slot->blk, slot->data);
+@@ -110,6 +118,7 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+         /* Slot buffers and BIO transfer buffers hold block_size bytes. */
+         memcpy(buf, slot->data, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+         slot->age = ++c->clock;
++        slot->scan_cold = false;
+         return BFS_OK;
+     }
+ 
+@@ -153,6 +162,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
+         /* Slot buffers and BIO transfer buffers hold block_size bytes. */
+         memcpy(slot->data, buf, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+         slot->age = ++c->clock;
++        slot->scan_cold = false;
+         if (slot->dirty) {
+             slot->dirty = false;
+             c->dirty_count--;
+@@ -239,6 +249,7 @@ static bfs_err_t cache_write_blocks(bfs_bio_t *bio, bfs_blk_t blk, uint32_t coun
+         memcpy(slot->data, (const uint8_t *)buf + (size_t)(slot->blk - blk) * bio->block_size, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+                bio->block_size);
+         slot->age = ++c->clock;
++        slot->scan_cold = false;
+         if (slot->dirty) {
+             slot->dirty = false;
+             c->dirty_count--;
+@@ -294,6 +305,7 @@ static bfs_err_t cache_hold_node(bfs_cache_t *c, bfs_blk_t blk, const void *buf,
+         memcpy(slot->data, buf, c->bio.block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+     }
+     slot->age = ++c->clock;
++    slot->scan_cold = false;
+     if (!slot->dirty) {
+         slot->dirty = true;
+         c->dirty_count++;
+@@ -415,6 +427,7 @@ static const void *cache_peek_valid_node(bfs_bio_t *bio, bfs_blk_t blk,
+     bfs_cache_slot_t *slot = cache_find(c, blk);
+     if (!slot || !slot_structure_valid(slot, context)) return NULL;
+     slot->age = ++c->clock;
++    slot->scan_cold = false;
+     return slot->data;
+ }
+ 
+@@ -426,6 +439,7 @@ static void *cache_modify_dirty_node(bfs_bio_t *bio, bfs_blk_t blk,
+     if (!slot || !slot->dirty || !slot_structure_valid(slot, context)) return NULL;
+     cache_note_mutation(c);
+     slot->age = ++c->clock;
++    slot->scan_cold = false;
+     return slot->data;
+ }
+ 
+@@ -434,6 +448,12 @@ static uint64_t cache_read_mutation_epoch(bfs_bio_t *bio)
+     return ((bfs_cache_t *)bio)->mutation_epoch;
+ }
+ 
++static void cache_advise_scan_block(bfs_bio_t *bio, bfs_blk_t blk)
++{
++    bfs_cache_slot_t *slot = cache_find((bfs_cache_t *)bio, blk);
++    if (slot && !slot->dirty) slot->scan_cold = true;
++}
++
+ static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
+                                              const bfs_node_validation_t *context)
+ {
+@@ -501,6 +521,7 @@ static const bfs_bio_ops_t cache_ops = {
+     .peek_valid_node = cache_peek_valid_node,
+     .modify_dirty_node = cache_modify_dirty_node,
+     .mutation_epoch = cache_read_mutation_epoch,
++    .advise_scan_block = cache_advise_scan_block,
+ };
+ 
+ void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)
+@@ -566,6 +587,7 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
+         cache->slots[i].node_crc_valid = false;
+         cache->slots[i].node_structure_valid = false;
+         cache->slots[i].dirty = false;
++        cache->slots[i].scan_cold = false;
+         cache->slots[i].data = malloc(dev->block_size);
+         if (!cache->slots[i].data) {
+             for (uint32_t j = 0; j < i; j++) free(cache->slots[j].data);
+@@ -627,6 +649,7 @@ void bfs_cache_invalidate(bfs_cache_t *cache)
+         cache->slots[i].node_crc_valid = false;
+         cache->slots[i].node_structure_valid = false;
+         cache->slots[i].dirty = false;
++        cache->slots[i].scan_cold = false;
+     }
+     cache->dirty_count = 0;
+     cache->clock = 0;
+diff --git a/src/core/dir.c b/src/core/dir.c
+index 4c1bcff..435955f 100644
+--- a/src/core/dir.c
++++ b/src/core/dir.c
+@@ -104,6 +104,7 @@ static const bfs_btree_ops_t dir_ops = {
+     .val_size = sizeof(bfs_dir_val_t),
+     .cache_key_order = true,
+     .entry_ok = dir_entry_ok,
++    .scan_cache_cold = true,
+ };
+ 
+ /* ── Init ──────────────────────────────────────────────────── */
+diff --git a/tests/test_cache.c b/tests/test_cache.c
+index f3944c9..408664e 100644
+--- a/tests/test_cache.c
++++ b/tests/test_cache.c
+@@ -133,6 +133,9 @@ static int memory_key_compare(const void *left, const void *right)
+     return 0;
+ }
+ 
++static bfs_err_t keep_node_image(const void *layout, uint32_t block_size,
++                                 uint8_t *buf);
++
+ static bool is_scratch_buffer(const bfs_cache_t *cache, const void *buffer)
+ {
+     for (uint32_t i = 0; i < BFS_CACHE_SCRATCH_SLOTS; i++) {
+@@ -459,6 +462,219 @@ static void test_lru_eviction(void)
+     bfs_cache_destroy(&cache);
+ }
+ 
++static bool cache_has_block(const bfs_cache_t *cache, bfs_blk_t blk)
++{
++    for (uint32_t i = 0; i < cache->num_slots; i++)
++        if (cache->slots[i].blk == blk) return true;
++    return false;
++}
++
++static bool cache_block_is_scan_cold(const bfs_cache_t *cache, bfs_blk_t blk)
++{
++    for (uint32_t i = 0; i < cache->num_slots; i++)
++        if (cache->slots[i].blk == blk) return cache->slots[i].scan_cold;
++    return false;
++}
++
++static bfs_cache_slot_t *cache_slot_for_block(bfs_cache_t *cache, bfs_blk_t blk)
++{
++    for (uint32_t i = 0; i < cache->num_slots; i++)
++        if (cache->slots[i].blk == blk) return &cache->slots[i];
++    return NULL;
++}
++
++static void test_scan_advice_demotes_clean_victim(void)
++{
++    memory_bio_t ordinary_memory, scan_memory;
++    bfs_cache_t ordinary_cache, scan_cache;
++    uint8_t buffer[BLOCK_SIZE];
++    memory_init(&ordinary_memory);
++    memory_init(&scan_memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&ordinary_cache, &ordinary_memory.bio, 2), BFS_OK);
++    TEST_ASSERT_EQ(bfs_cache_init(&scan_cache, &scan_memory.bio, 2), BFS_OK);
++
++    /* The same access sequence makes block 1 least-recently-used and block 2
++     * most-recently-used in both caches. Ordinary LRU evicts block 1. */
++    TEST_ASSERT_EQ(bfs_bio_read(&ordinary_cache.bio, 1, buffer), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&ordinary_cache.bio, 2, buffer), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&ordinary_cache.bio, 2, buffer), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&ordinary_cache.bio, 3, buffer), BFS_OK);
++    TEST_ASSERT(!cache_has_block(&ordinary_cache, 1));
++    TEST_ASSERT(cache_has_block(&ordinary_cache, 2));
++
++    TEST_ASSERT_EQ(bfs_bio_read(&scan_cache.bio, 1, buffer), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&scan_cache.bio, 2, buffer), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&scan_cache.bio, 2, buffer), BFS_OK);
++    bfs_bio_advise_scan_block(&scan_cache.bio, 2);
++    bfs_cache_slot_t *scan_slot = cache_slot_for_block(&scan_cache, 2);
++    TEST_ASSERT(scan_slot != NULL);
++    TEST_ASSERT(scan_slot->scan_cold);
++    TEST_ASSERT_EQ(bfs_bio_read(&scan_cache.bio, 3, buffer), BFS_OK);
++    TEST_ASSERT(cache_has_block(&scan_cache, 1));
++    TEST_ASSERT(!cache_has_block(&scan_cache, 2));
++
++    bfs_cache_destroy(&ordinary_cache);
++    bfs_cache_destroy(&scan_cache);
++}
++
++static void test_scan_advice_preserves_resident_validation_state(void)
++{
++    memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t buffer[BLOCK_SIZE];
++    uint8_t before[BLOCK_SIZE];
++    uint64_t epoch_before, epoch_after;
++    bfs_node_validation_t validation = {
++        .key_compare = memory_key_compare,
++        .key_size = 4,
++        .val_size = 4,
++        .block_size = BLOCK_SIZE,
++        .block_count = BLOCK_COUNT,
++    };
++    memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 7, buffer), BFS_OK);
++    bfs_bio_mark_node_crc_valid(&cache.bio, 7);
++    bfs_bio_mark_node_structure_valid(&cache.bio, 7, &validation);
++    TEST_ASSERT(bfs_bio_node_crc_valid(&cache.bio, 7));
++    TEST_ASSERT(bfs_bio_node_structure_valid(&cache.bio, 7, &validation));
++    bfs_cache_slot_t *slot = cache_slot_for_block(&cache, 7);
++    TEST_ASSERT(slot != NULL);
++    memcpy(before, slot->data, BLOCK_SIZE);
++    TEST_ASSERT(bfs_bio_get_mutation_epoch(&cache.bio, &epoch_before));
++
++    bfs_bio_advise_scan_block(&cache.bio, 7);
++
++    TEST_ASSERT(slot->scan_cold);
++    TEST_ASSERT(!slot->dirty);
++    TEST_ASSERT_MEM_EQ(slot->data, before, BLOCK_SIZE);
++    TEST_ASSERT(bfs_bio_node_crc_valid(&cache.bio, 7));
++    TEST_ASSERT(bfs_bio_node_structure_valid(&cache.bio, 7, &validation));
++    TEST_ASSERT(slot->node_validation.key_compare == validation.key_compare);
++    TEST_ASSERT_EQ(slot->node_validation.key_size, validation.key_size);
++    TEST_ASSERT_EQ(slot->node_validation.val_size, validation.val_size);
++    TEST_ASSERT_EQ(slot->node_validation.block_size, validation.block_size);
++    TEST_ASSERT_EQ(slot->node_validation.block_count, validation.block_count);
++    TEST_ASSERT(bfs_bio_get_mutation_epoch(&cache.bio, &epoch_after));
++    TEST_ASSERT_EQ(epoch_after, epoch_before);
++
++    bfs_cache_destroy(&cache);
++}
++
++static void test_scan_advice_never_evicts_dirty_and_reports_writeback_failure(void)
++{
++    memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t buffer[BLOCK_SIZE];
++    uint8_t dirty_image[BLOCK_SIZE];
++    uint8_t readback[BLOCK_SIZE];
++    memset(dirty_image, 0xD6, sizeof(dirty_image));
++    memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 3), BFS_OK);
++    bfs_cache_set_deferred_node_limit(&cache, 1);
++
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 1, buffer), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 2, buffer), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_defer_node(&cache.bio, 0, dirty_image,
++                                      keep_node_image, NULL), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 3, buffer), BFS_OK);
++    bfs_bio_advise_scan_block(&cache.bio, 0);
++    bfs_cache_slot_t *dirty_slot = cache_slot_for_block(&cache, 0);
++    TEST_ASSERT(dirty_slot != NULL);
++    TEST_ASSERT(dirty_slot->dirty);
++    TEST_ASSERT(!dirty_slot->scan_cold);
++    bfs_bio_advise_scan_block(&cache.bio, 3);
++    bfs_cache_slot_t *scan_slot = cache_slot_for_block(&cache, 3);
++    TEST_ASSERT(scan_slot != NULL);
++    TEST_ASSERT(scan_slot->scan_cold);
++
++    /* Pressure must reclaim the advised clean block while preserving the
++     * only in-cache copy of the deferred image. */
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 4, buffer), BFS_OK);
++    TEST_ASSERT(!cache_has_block(&cache, 3));
++    dirty_slot = cache_slot_for_block(&cache, 0);
++    TEST_ASSERT(dirty_slot != NULL);
++    TEST_ASSERT(dirty_slot->dirty);
++    TEST_ASSERT_EQ(cache.dirty_count, 1);
++    TEST_ASSERT_MEM_EQ(dirty_slot->data, dirty_image, BLOCK_SIZE);
++
++    memory.fail_write = 1;
++    TEST_ASSERT_EQ(bfs_bio_flush_deferred(&cache.bio), BFS_ERR_IO);
++    TEST_ASSERT_EQ(memory.writes, 1);
++    dirty_slot = cache_slot_for_block(&cache, 0);
++    TEST_ASSERT(dirty_slot != NULL);
++    TEST_ASSERT(dirty_slot->dirty);
++    TEST_ASSERT_EQ(cache.dirty_count, 1);
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 0, readback), BFS_OK);
++    TEST_ASSERT_MEM_EQ(readback, dirty_image, BLOCK_SIZE);
++
++    bfs_cache_destroy(&cache);
++}
++
++static void test_scan_advice_cleared_by_demand_io_and_slot_lifecycle(void)
++{
++    memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t buffer[BLOCK_SIZE];
++    uint8_t replacement[BLOCK_SIZE];
++    memory_init(&memory);
++    memset(replacement, 0x79, sizeof(replacement));
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 5, buffer), BFS_OK);
++    bfs_bio_advise_scan_block(&cache.bio, 5);
++    TEST_ASSERT(cache_block_is_scan_cold(&cache, 5));
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 5, buffer), BFS_OK);
++    TEST_ASSERT(!cache_block_is_scan_cold(&cache, 5));
++
++    bfs_bio_advise_scan_block(&cache.bio, 5);
++    TEST_ASSERT(cache_block_is_scan_cold(&cache, 5));
++    TEST_ASSERT_EQ(bfs_bio_write(&cache.bio, 5, replacement), BFS_OK);
++    TEST_ASSERT(!cache_block_is_scan_cold(&cache, 5));
++
++    bfs_bio_advise_scan_block(&cache.bio, 5);
++    TEST_ASSERT(cache_block_is_scan_cold(&cache, 5));
++    bfs_cache_invalidate(&cache);
++    TEST_ASSERT(!cache_has_block(&cache, 5));
++    for (uint32_t i = 0; i < cache.num_slots; i++)
++        TEST_ASSERT(!cache.slots[i].scan_cold);
++
++    /* An evicted block number can be reused without inheriting its old hint. */
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 5, buffer), BFS_OK);
++    bfs_bio_advise_scan_block(&cache.bio, 5);
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 6, buffer), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 7, buffer), BFS_OK);
++    TEST_ASSERT(!cache_has_block(&cache, 5));
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 5, buffer), BFS_OK);
++    bfs_cache_slot_t *reused_slot = cache_slot_for_block(&cache, 5);
++    TEST_ASSERT(reused_slot != NULL);
++    TEST_ASSERT(!reused_slot->scan_cold);
++
++    bfs_cache_destroy(&cache);
++}
++
++static void test_scan_advice_wrapper_is_optional_and_bounds_checked(void)
++{
++    memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t buffer[BLOCK_SIZE];
++    memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 1), BFS_OK);
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 1, buffer), BFS_OK);
++
++    /* Raw BIOs have no advisory operation; null and out-of-range calls are
++     * also guarded by the public wrapper. */
++    bfs_bio_advise_scan_block(&memory.bio, 1);
++    bfs_bio_advise_scan_block(NULL, 1);
++    bfs_bio_advise_scan_block(&cache.bio, BLOCK_COUNT);
++    TEST_ASSERT(!cache.slots[0].scan_cold);
++
++    bfs_bio_advise_scan_block(&cache.bio, 1);
++    TEST_ASSERT(cache.slots[0].scan_cold);
++    bfs_cache_destroy(&cache);
++}
++
+ static void test_write_through(void)
+ {
+     memory_bio_t memory;
+@@ -709,6 +925,11 @@ TEST_SUITE_BEGIN("Block Cache")
+     TEST_RUN(test_invalid_initialization);
+     TEST_RUN(test_hit_and_invalidate);
+     TEST_RUN(test_lru_eviction);
++    TEST_RUN(test_scan_advice_demotes_clean_victim);
++    TEST_RUN(test_scan_advice_preserves_resident_validation_state);
++    TEST_RUN(test_scan_advice_never_evicts_dirty_and_reports_writeback_failure);
++    TEST_RUN(test_scan_advice_cleared_by_demand_io_and_slot_lifecycle);
++    TEST_RUN(test_scan_advice_wrapper_is_optional_and_bounds_checked);
+     TEST_RUN(test_write_through);
+     TEST_RUN(test_io_errors);
+     TEST_RUN(test_verified_node_lifecycle);
+diff --git a/tests/test_scan_cache_priority.c b/tests/test_scan_cache_priority.c
+new file mode 100644
+index 0000000..efc3861
+--- /dev/null
++++ b/tests/test_scan_cache_priority.c
+@@ -0,0 +1,375 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++/* End-to-end coverage for scan-leaf cache replacement advice. */
++
++#include "test_harness.h"
++#include "bfs_alloc.h"
++#include "bfs_btree_internal.h"
++#include "bfs_cache.h"
++#include "bfs_dir.h"
++#include "block_device_emu.h"
++
++#include <stdio.h>
++#include <stdint.h>
++#include <unistd.h>
++
++#define SCAN_PRIORITY_IMAGE "test_scan_cache_priority.img"
++#define SCAN_PRIORITY_BLOCK_SIZE 4096u
++#define SCAN_PRIORITY_BLOCK_COUNT 8192u
++#define SCAN_PRIORITY_CACHE_SLOTS 64u
++#define SCAN_PRIORITY_PARENT 42u
++#define SCAN_PRIORITY_ENTRY_COUNT 72u
++#define SCAN_PRIORITY_INODE_BASE 1000u
++#define SCAN_PRIORITY_NAME_SIZE 20u
++
++typedef struct {
++    bfs_bio_t *device;
++    bfs_cache_t cache;
++    bfs_freespace_t space;
++    bfs_dir_tree_t dirs;
++    bool cache_ready;
++} scan_priority_fixture_t;
++
++typedef struct {
++    bfs_cache_t *cache;
++    bool seen[SCAN_PRIORITY_ENTRY_COUNT];
++    uint32_t count;
++    bool duplicate;
++    bool overflow;
++    bool invalid_entry;
++    bool callback_copy_private;
++    bool callback_saw_cold_leaf;
++} directory_scan_log_t;
++
++typedef struct {
++    bfs_cache_t *cache;
++    bfs_blk_t advised_block;
++    uint32_t calls;
++    bool callback_copy_private;
++    bool callback_saw_cold_leaf;
++    bfs_err_t write_error;
++} mutating_stop_log_t;
++
++typedef struct {
++    bfs_cache_t *cache;
++    bfs_blk_t advised_block;
++    uint32_t calls;
++    bool callback_saw_cold_leaf;
++} cursor_copy_log_t;
++
++typedef struct {
++    const bfs_bio_ops_t *cache_ops;
++    uint32_t calls;
++} advice_order_probe_t;
++
++static advice_order_probe_t *active_advice_probe;
++
++static bool fixture_open(scan_priority_fixture_t *fixture)
++{
++    memset(fixture, 0, sizeof(*fixture));
++    (void)unlink(SCAN_PRIORITY_IMAGE);
++    fixture->device = bio_emu_create(SCAN_PRIORITY_IMAGE,
++                                     SCAN_PRIORITY_BLOCK_SIZE,
++                                     SCAN_PRIORITY_BLOCK_COUNT);
++    if (!fixture->device) return false;
++    if (bfs_cache_init(&fixture->cache, fixture->device,
++                       SCAN_PRIORITY_CACHE_SLOTS) != BFS_OK)
++        goto fail;
++    fixture->cache_ready = true;
++    if (bfs_freespace_init(&fixture->space, &fixture->cache.bio,
++                           BFS_BLK_NULL, 1) != BFS_OK)
++        goto fail;
++    if (bfs_freespace_add(&fixture->space, 2,
++                          SCAN_PRIORITY_BLOCK_COUNT - 2) != BFS_OK)
++        goto fail;
++    if (bfs_freespace_refill_reserve(&fixture->space) != BFS_OK)
++        goto fail;
++    if (bfs_dir_init(&fixture->dirs, &fixture->cache.bio,
++                     bfs_freespace_allocator(&fixture->space),
++                     BFS_BLK_NULL, 1) != BFS_OK)
++        goto fail;
++    return true;
++
++fail:
++    if (fixture->cache_ready) bfs_cache_destroy(&fixture->cache);
++    if (fixture->device) bfs_bio_close(fixture->device);
++    fixture->device = NULL;
++    (void)unlink(SCAN_PRIORITY_IMAGE);
++    return false;
++}
++
++static void fixture_close(scan_priority_fixture_t *fixture)
++{
++    if (fixture->cache_ready) {
++        bfs_cache_destroy(&fixture->cache);
++        fixture->cache_ready = false;
++    }
++    if (fixture->device) {
++        bfs_bio_close(fixture->device);
++        fixture->device = NULL;
++    }
++    (void)unlink(SCAN_PRIORITY_IMAGE);
++}
++
++static bool fixture_insert_entries(scan_priority_fixture_t *fixture)
++{
++    for (uint32_t i = 0; i < SCAN_PRIORITY_ENTRY_COUNT; i++) {
++        char name[SCAN_PRIORITY_NAME_SIZE];
++        int length = snprintf(name, sizeof(name), "item%04u", i);
++        if (length <= 0 || (size_t)length >= sizeof(name)) return false;
++        if (bfs_dir_insert(&fixture->dirs, SCAN_PRIORITY_PARENT, name,
++                           (uint8_t)length, SCAN_PRIORITY_INODE_BASE + i,
++                           BFS_INODE_FILE) != BFS_OK)
++            return false;
++    }
++    return fixture->dirs.tree.height > 1;
++}
++
++static uint32_t cold_slot_count(const bfs_cache_t *cache)
++{
++    uint32_t count = 0;
++    for (uint32_t i = 0; i < cache->num_slots; i++)
++        if (cache->slots[i].blk != UINT32_MAX && cache->slots[i].scan_cold)
++            count++;
++    return count;
++}
++
++static bfs_cache_slot_t *cold_slot(bfs_cache_t *cache)
++{
++    for (uint32_t i = 0; i < cache->num_slots; i++)
++        if (cache->slots[i].blk != UINT32_MAX && cache->slots[i].scan_cold)
++            return &cache->slots[i];
++    return NULL;
++}
++
++/* Simulate the resident block buffer being reused as soon as advice returns.
++ * The scan must already have copied all entries to private memory. */
++static void poison_resident_after_advice(bfs_bio_t *bio, bfs_blk_t blk)
++{
++    advice_order_probe_t *probe = active_advice_probe;
++    probe->cache_ops->advise_scan_block(bio, blk);
++    bfs_cache_t *cache = (bfs_cache_t *)bio;
++    for (uint32_t i = 0; i < cache->num_slots; i++) {
++        bfs_cache_slot_t *slot = &cache->slots[i];
++        if (slot->blk != blk) continue;
++        memset(slot->data, 0xE3, bio->block_size);
++        probe->calls++;
++        return;
++    }
++}
++
++static bool pointer_in_cache_slot(const bfs_cache_t *cache, const void *pointer)
++{
++    uintptr_t address = (uintptr_t)pointer;
++    for (uint32_t i = 0; i < cache->num_slots; i++) {
++        if (!cache->slots[i].data) continue;
++        uintptr_t start = (uintptr_t)cache->slots[i].data;
++        if (address >= start && address - start < cache->bio.block_size)
++            return true;
++    }
++    return false;
++}
++
++static bool collect_directory_entry(const char *name, uint8_t name_len,
++                                    uint32_t inode_nr, uint32_t entry_type,
++                                    void *ctx)
++{
++    directory_scan_log_t *log = (directory_scan_log_t *)ctx;
++    if (log->count == 0) {
++        log->callback_copy_private =
++            !pointer_in_cache_slot(log->cache, name);
++        log->callback_saw_cold_leaf = cold_slot_count(log->cache) != 0;
++    }
++    if (log->count >= SCAN_PRIORITY_ENTRY_COUNT) log->overflow = true;
++    if (entry_type != BFS_INODE_FILE ||
++        inode_nr < SCAN_PRIORITY_INODE_BASE ||
++        inode_nr - SCAN_PRIORITY_INODE_BASE >= SCAN_PRIORITY_ENTRY_COUNT) {
++        log->invalid_entry = true;
++    } else {
++        uint32_t index = inode_nr - SCAN_PRIORITY_INODE_BASE;
++        char expected[SCAN_PRIORITY_NAME_SIZE];
++        int expected_len = snprintf(expected, sizeof(expected), "item%04u", index);
++        if (expected_len <= 0 || name_len != (uint8_t)expected_len ||
++            memcmp(name, expected, name_len) != 0)
++            log->invalid_entry = true;
++        if (log->seen[index]) log->duplicate = true;
++        log->seen[index] = true;
++    }
++    log->count++;
++    return true;
++}
++
++static bool mutate_advised_leaf_and_stop(const char *name, uint8_t name_len,
++                                         uint32_t inode_nr,
++                                         uint32_t entry_type, void *ctx)
++{
++    (void)name;
++    (void)name_len;
++    (void)inode_nr;
++    (void)entry_type;
++    mutating_stop_log_t *log = (mutating_stop_log_t *)ctx;
++    log->calls++;
++    log->callback_copy_private =
++        !pointer_in_cache_slot(log->cache, name);
++    bfs_cache_slot_t *slot = cold_slot(log->cache);
++    if (!slot) {
++        log->write_error = BFS_ERR_CORRUPT;
++        return false;
++    }
++    log->callback_saw_cold_leaf = true;
++    log->advised_block = slot->blk;
++    uint8_t replacement[SCAN_PRIORITY_BLOCK_SIZE];
++    memset(replacement, 0xA5, sizeof(replacement));
++    log->write_error = bfs_bio_write(&log->cache->bio, slot->blk, replacement);
++    return false;
++}
++
++static bool stop_and_observe_cursor_leaf(const char *name, uint8_t name_len,
++                                         uint32_t inode_nr,
++                                         uint32_t entry_type, void *ctx)
++{
++    (void)name;
++    (void)name_len;
++    (void)inode_nr;
++    (void)entry_type;
++    cursor_copy_log_t *log = (cursor_copy_log_t *)ctx;
++    log->calls++;
++    bfs_cache_slot_t *slot = cold_slot(log->cache);
++    if (slot) {
++        log->advised_block = slot->blk;
++        log->callback_saw_cold_leaf = true;
++    }
++    return false;
++}
++
++static bool stop_btree_scan(const void *key, const void *value, void *ctx)
++{
++    (void)key;
++    (void)value;
++    cursor_copy_log_t *log = (cursor_copy_log_t *)ctx;
++    log->calls++;
++    log->callback_saw_cold_leaf = cold_slot_count(log->cache) != 0;
++    return false;
++}
++
++static void test_directory_scan_advice_is_opt_in_and_copy_safe(void)
++{
++    scan_priority_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    TEST_ASSERT(fixture_insert_entries(&fixture));
++    TEST_ASSERT(fixture.dirs.tree.ops->scan_cache_cold);
++
++    const bfs_bio_ops_t *cache_ops = fixture.cache.bio.ops;
++    bfs_bio_ops_t advice_probe_ops = *cache_ops;
++    advice_order_probe_t advice_probe = {.cache_ops = cache_ops};
++    advice_probe_ops.advise_scan_block = poison_resident_after_advice;
++    active_advice_probe = &advice_probe;
++    fixture.cache.bio.ops = &advice_probe_ops;
++    directory_scan_log_t scan = {.cache = &fixture.cache};
++    bfs_cache_invalidate(&fixture.cache);
++    TEST_ASSERT_EQ(bfs_dir_scan(&fixture.dirs, SCAN_PRIORITY_PARENT,
++                                collect_directory_entry, &scan), BFS_OK);
++    fixture.cache.bio.ops = cache_ops;
++    active_advice_probe = NULL;
++    TEST_ASSERT(advice_probe.calls > 1);
++    TEST_ASSERT_EQ(scan.count, SCAN_PRIORITY_ENTRY_COUNT);
++    TEST_ASSERT(!scan.duplicate);
++    TEST_ASSERT(!scan.overflow);
++    TEST_ASSERT(!scan.invalid_entry);
++    TEST_ASSERT(scan.callback_copy_private);
++    TEST_ASSERT(scan.callback_saw_cold_leaf);
++    TEST_ASSERT(cold_slot_count(&fixture.cache) > 1);
++
++    /* The same real directory scan does not advise leaves when its operation
++     * table has not opted in. */
++    const bfs_btree_ops_t *directory_ops = fixture.dirs.tree.ops;
++    bfs_btree_ops_t no_advice_ops = *directory_ops;
++    no_advice_ops.scan_cache_cold = false;
++    fixture.dirs.tree.ops = &no_advice_ops;
++    memset(&scan, 0, sizeof(scan));
++    scan.cache = &fixture.cache;
++    bfs_cache_invalidate(&fixture.cache);
++    TEST_ASSERT_EQ(bfs_dir_scan(&fixture.dirs, SCAN_PRIORITY_PARENT,
++                                collect_directory_entry, &scan), BFS_OK);
++    TEST_ASSERT_EQ(scan.count, SCAN_PRIORITY_ENTRY_COUNT);
++    TEST_ASSERT(!scan.duplicate);
++    TEST_ASSERT(!scan.overflow);
++    TEST_ASSERT(!scan.invalid_entry);
++    TEST_ASSERT(!scan.callback_saw_cold_leaf);
++    TEST_ASSERT_EQ(cold_slot_count(&fixture.cache), 0);
++    fixture.dirs.tree.ops = directory_ops;
++
++    /* A callback may mutate the advised block and stop. The cache write
++     * clears the cold flag; the scan must not re-advise its stale path after
++     * that callback. */
++    bfs_cache_invalidate(&fixture.cache);
++    mutating_stop_log_t mutation = {
++        .cache = &fixture.cache,
++        .advised_block = UINT32_MAX,
++        .write_error = BFS_ERR_CORRUPT,
++    };
++    TEST_ASSERT_EQ(bfs_dir_scan(&fixture.dirs, SCAN_PRIORITY_PARENT,
++                                mutate_advised_leaf_and_stop, &mutation), BFS_OK);
++    TEST_ASSERT_EQ(mutation.calls, 1);
++    TEST_ASSERT(mutation.callback_copy_private);
++    TEST_ASSERT(mutation.callback_saw_cold_leaf);
++    TEST_ASSERT_EQ(mutation.write_error, BFS_OK);
++    bfs_cache_slot_t *mutated_slot = NULL;
++    for (uint32_t i = 0; i < fixture.cache.num_slots; i++)
++        if (fixture.cache.slots[i].blk == mutation.advised_block)
++            mutated_slot = &fixture.cache.slots[i];
++    TEST_ASSERT(mutated_slot != NULL);
++    TEST_ASSERT(!mutated_slot->scan_cold);
++    TEST_ASSERT_EQ(cold_slot_count(&fixture.cache), 0);
++
++    fixture_close(&fixture);
++}
++
++static void test_cursor_copy_without_path_identity_is_not_advised(void)
++{
++    scan_priority_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    TEST_ASSERT(fixture_insert_entries(&fixture));
++
++    bfs_cache_invalidate(&fixture.cache);
++    bfs_btree_cursor_t cursor;
++    bfs_btree_cursor_init(&cursor);
++    cursor_copy_log_t first_scan = {
++        .cache = &fixture.cache,
++        .advised_block = UINT32_MAX,
++    };
++    TEST_ASSERT_EQ(bfs_dir_scan_cursor(&fixture.dirs, &cursor,
++                                      SCAN_PRIORITY_PARENT, NULL, 0,
++                                      stop_and_observe_cursor_leaf,
++                                      &first_scan), BFS_OK);
++    TEST_ASSERT_EQ(first_scan.calls, 1);
++    TEST_ASSERT(first_scan.callback_saw_cold_leaf);
++    TEST_ASSERT(cursor.stopped);
++    TEST_ASSERT(first_scan.advised_block != UINT32_MAX);
++    TEST_ASSERT(cold_slot_count(&fixture.cache) > 0);
++
++    /* A normal demand read re-promotes the resident block without invalidating
++     * the cursor's copied leaf or its BIO epoch. */
++    uint8_t buffer[SCAN_PRIORITY_BLOCK_SIZE];
++    TEST_ASSERT_EQ(bfs_bio_read(&fixture.cache.bio, first_scan.advised_block,
++                                buffer), BFS_OK);
++    TEST_ASSERT_EQ(cold_slot_count(&fixture.cache), 0);
++    const void *stop_key = bfs_btree_cursor_stop_key(&fixture.dirs.tree,
++                                                    &cursor);
++    TEST_ASSERT(stop_key != NULL);
++
++    cursor_copy_log_t cursor_scan = {.cache = &fixture.cache};
++    TEST_ASSERT_EQ(bfs_btree_scan_cursor(&fixture.dirs.tree, &cursor,
++                                         stop_key, stop_btree_scan,
++                                         &cursor_scan), BFS_OK);
++    TEST_ASSERT_EQ(cursor_scan.calls, 1);
++    TEST_ASSERT(!cursor_scan.callback_saw_cold_leaf);
++    TEST_ASSERT_EQ(cold_slot_count(&fixture.cache), 0);
++
++    bfs_btree_cursor_release(&cursor);
++    fixture_close(&fixture);
++}
++
++TEST_SUITE_BEGIN("Scan Cache Priority")
++    TEST_RUN(test_directory_scan_advice_is_opt_in_and_copy_safe);
++    TEST_RUN(test_cursor_copy_without_path_identity_is_not_advised);
++TEST_SUITE_END()

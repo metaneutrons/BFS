@@ -1,0 +1,11 @@
+Compatibility evidence: /home/fabian/.cache/bfs-performance/exact-fastpath-2026-10-09.hdq3J0/build/emulator/run.compat-4ul2172b
+Formatted /home/fabian/.cache/bfs-performance/exact-fastpath-2026-10-09.hdq3J0/build/emulator/run.compat-4ul2172b/clean.hdf: 8192 blocks of 4096 bytes
+PASS format
+PASS snapshot-commands
+PASS v3
+PASS v2
+PASS new-primary
+PASS new-backup
+PASS options-primary
+PASS options-backup
+PASS damaged-version

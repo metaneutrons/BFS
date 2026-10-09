@@ -1,0 +1,11 @@
+Compatibility evidence: /home/fabian/.cache/bfs-performance/sparse-crc-2026-10-09.xN615F/candidate/build/emulator/run.compat-grwk4ibf
+Formatted /home/fabian/.cache/bfs-performance/sparse-crc-2026-10-09.xN615F/candidate/build/emulator/run.compat-grwk4ibf/clean.hdf: 8192 blocks of 4096 bytes
+PASS format
+PASS snapshot-commands
+PASS v3
+PASS v2
+PASS new-primary
+PASS new-backup
+PASS options-primary
+PASS options-backup
+PASS damaged-version

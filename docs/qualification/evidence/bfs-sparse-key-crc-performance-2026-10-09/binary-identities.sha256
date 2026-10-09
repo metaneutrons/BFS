@@ -1,0 +1,8 @@
+79d6dc6c228b7567337e6b4d547fcbee6d14be049d4aa2bc07d3014414222ea4  build/perf-2026-10-09/admission-restored/bfshandler
+18f5415afa658dd570fbefe9baa2e9e72ba12c3a36d15eeca3570756998dbf43  build/perf-2026-10-09/admission-restored/bfshandler-probe
+eb641e3210b4a158594a9c235013b5ea32ef48fe028e7d54a916a3e83835b56d  build/perf-2026-10-09/admission-restored/fs-compare-bench
+486e3bbbf5c09a2b7d5cae0e3afd02a3a0a57d76a892d0aca6dfec31dbdb21f4  build/perf-2026-10-09/sparse-candidate/bfshandler
+9b5e249bcbdbaf732bb5e264abfbdb6115d1a918cb186c3a50cf706312b3e603  build/perf-2026-10-09/sparse-candidate/bfshandler-probe
+0b9a67a9554a1a4ef594f0bde18efbe6d2be5a63db662578eff61b58d41266a4  build/perf-2026-10-09/sparse-candidate/crc32-sparse-probe-typed
+5611527d918ac1196160dcec955e60045e25d41ef479340586d36470777dd090  src/amiga/crc32_68k.s
+de6988ba2350d5fa6735083df7591c4dce37f14f15933040ab4be23ef6852b8e  tests/amiga/crc32_abi_probe.s

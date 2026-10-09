@@ -1,0 +1,32 @@
+snapdog-runner
+START 1 floor-diag-base-1-bfs-first 2026-10-09T18:49:51Z
+PASS 1 floor-diag-base-1-bfs-first 2026-10-09T18:50:32Z
+START 2 floor-diag-candidate-1-bfs-first 2026-10-09T18:50:32Z
+PASS 2 floor-diag-candidate-1-bfs-first 2026-10-09T18:51:14Z
+START 3 floor-normal-base-1-bfs-first 2026-10-09T18:51:14Z
+PASS 3 floor-normal-base-1-bfs-first 2026-10-09T18:51:51Z
+START 4 floor-normal-candidate-1-bfs-first 2026-10-09T18:51:52Z
+PASS 4 floor-normal-candidate-1-bfs-first 2026-10-09T18:52:30Z
+START 5 floor-durable-base-1-bfs-first 2026-10-09T18:52:30Z
+PASS 5 floor-durable-base-1-bfs-first 2026-10-09T18:53:08Z
+START 6 floor-durable-candidate-1-bfs-first 2026-10-09T18:53:08Z
+PASS 6 floor-durable-candidate-1-bfs-first 2026-10-09T18:53:47Z
+START 7 floor-durable-candidate-2-pfs3-first 2026-10-09T18:53:47Z
+PASS 7 floor-durable-candidate-2-pfs3-first 2026-10-09T18:54:25Z
+START 8 floor-durable-base-2-pfs3-first 2026-10-09T18:54:25Z
+PASS 8 floor-durable-base-2-pfs3-first 2026-10-09T18:55:03Z
+START 9 floor-normal-candidate-2-pfs3-first 2026-10-09T18:55:03Z
+PASS 9 floor-normal-candidate-2-pfs3-first 2026-10-09T18:55:40Z
+START 10 floor-normal-base-2-pfs3-first 2026-10-09T18:55:41Z
+PASS 10 floor-normal-base-2-pfs3-first 2026-10-09T18:56:18Z
+START 11 floor-aa-normal-basea-1-bfs-first 2026-10-09T18:56:18Z
+PASS 11 floor-aa-normal-basea-1-bfs-first 2026-10-09T18:56:56Z
+START 12 floor-aa-normal-baseb-1-bfs-first 2026-10-09T18:56:56Z
+PASS 12 floor-aa-normal-baseb-1-bfs-first 2026-10-09T18:57:35Z
+START 13 floor-aa-durable-basea-1-pfs3-first 2026-10-09T18:57:35Z
+PASS 13 floor-aa-durable-basea-1-pfs3-first 2026-10-09T18:58:13Z
+START 14 floor-aa-durable-baseb-1-pfs3-first 2026-10-09T18:58:13Z
+PASS 14 floor-aa-durable-baseb-1-pfs3-first 2026-10-09T18:58:51Z
+FLOOR_PILOT_COMPLETE 14 2026-10-09T18:58:51Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-09T18:58:53Z

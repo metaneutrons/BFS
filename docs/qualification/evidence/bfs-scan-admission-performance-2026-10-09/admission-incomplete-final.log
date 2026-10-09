@@ -1,0 +1,34 @@
+ERROR: missing expected run directories:
+  admission-durable-20261009-admission-1-bfs-first
+  admission-durable-20261009-admission-2-pfs3-first
+  admission-durable-20261009-admission-3-bfs-first
+  admission-durable-20261009-admission-4-pfs3-first
+  admission-durable-20261009-admission-5-bfs-first
+  admission-durable-20261009-admission-6-pfs3-first
+  admission-durable-20261009-admission-7-bfs-first
+  admission-durable-20261009-admission-8-pfs3-first
+  admission-durable-20261009-m5-1-bfs-first
+  admission-durable-20261009-m5-2-pfs3-first
+  admission-durable-20261009-m5-3-bfs-first
+  admission-durable-20261009-m5-4-pfs3-first
+  admission-durable-20261009-m5-5-bfs-first
+  admission-durable-20261009-m5-6-pfs3-first
+  admission-durable-20261009-m5-7-bfs-first
+  admission-durable-20261009-m5-8-pfs3-first
+  admission-normal-20261009-admission-1-bfs-first
+  admission-normal-20261009-admission-2-pfs3-first
+  admission-normal-20261009-admission-3-bfs-first
+  admission-normal-20261009-admission-4-pfs3-first
+  admission-normal-20261009-admission-5-bfs-first
+  admission-normal-20261009-admission-6-pfs3-first
+  admission-normal-20261009-admission-7-bfs-first
+  admission-normal-20261009-admission-8-pfs3-first
+  admission-normal-20261009-m5-1-bfs-first
+  admission-normal-20261009-m5-2-pfs3-first
+  admission-normal-20261009-m5-3-bfs-first
+  admission-normal-20261009-m5-4-pfs3-first
+  admission-normal-20261009-m5-5-bfs-first
+  admission-normal-20261009-m5-6-pfs3-first
+  admission-normal-20261009-m5-7-bfs-first
+  admission-normal-20261009-m5-8-pfs3-first
+Inventory mode: full strict inventory; required=40. No run filtering or outlier selection is applied.

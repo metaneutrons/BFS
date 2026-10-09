@@ -1,0 +1,29 @@
+--- docs/qualification/evidence/bfs-write-path-profile-2026-10-09/protocol/emulator-test/build-bench-image.sh	2026-10-09 20:22:21.000000000 +0200
++++ emulator-test/build-bench-image.sh	2026-10-09 20:33:01.690715987 +0200
+@@ -93,7 +93,9 @@
+ [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
+ command -v rdbtool >/dev/null || { echo "ERROR: rdbtool not found"; exit 1; }
+ [ -f "$HANDLER" ] || {
+-    if [ "$BENCH_MODE" = deep ] || [ "$BENCH_MODE" = deep-compare ] ||
++    if [[ "$BENCH_MODE" == split-write-* ]]; then
++        echo "ERROR: BFS write probe handler not found: $HANDLER (run 'make amiga-write-perf-probe-handler' or set BFS_BENCH_HANDLER_FILE)" >&2
++    elif [ "$BENCH_MODE" = deep ] || [ "$BENCH_MODE" = deep-compare ] ||
+        [[ "$BENCH_MODE" == split-* ]]; then
+         echo "ERROR: BFS probe handler not found: $HANDLER (run 'make amiga-perf-probe-handler' or set BFS_BENCH_HANDLER_FILE)" >&2
+     else
+@@ -105,7 +107,14 @@
+ if [[ "$BENCH_MODE" == split-write-* ]]; then
+     GUEST_FILE="${BFS_BENCH_GUEST_FILE:-$PROJECT_DIR/build/amiga/fs-compare-write-bench}"
+ fi
+-[ -f "$GUEST_FILE" ] || { echo "ERROR: run 'make amiga-$GUEST_TOOL' first or set BFS_BENCH_GUEST_FILE"; exit 1; }
++[ -f "$GUEST_FILE" ] || {
++    if [[ "$BENCH_MODE" == split-write-* ]]; then
++        echo "ERROR: run 'make amiga-write-fs-compare-bench' first or set BFS_BENCH_GUEST_FILE" >&2
++    else
++        echo "ERROR: run 'make amiga-$GUEST_TOOL' first or set BFS_BENCH_GUEST_FILE" >&2
++    fi
++    exit 1
++}
+ [ -f "$FORMATTER" ] || { echo "ERROR: build the host bfs formatter or set BFS_BENCH_FORMATTER_FILE"; exit 1; }
+ 
+ echo "=== Building BFS vs PFS3 Benchmark ==="

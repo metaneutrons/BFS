@@ -1,0 +1,38 @@
+; BFS vs PFS3 checked AmigaDOS benchmark
+FailAt 21
+Wait 3
+
+Echo ""
+Echo "============================================"
+Echo "  BFS vs PFS3 Filesystem Benchmark"
+Echo "============================================"
+Echo ""
+
+; Machine info
+Echo "# Machine Info" >SYS:Results/info.txt
+Version >>SYS:Results/info.txt
+CPU >>SYS:Results/info.txt
+Avail >>SYS:Results/info.txt
+Echo "" >>SYS:Results/info.txt
+Info >>SYS:Results/info.txt
+
+; Format PFS3 partition
+Echo "Formatting DH2: (PFS3)..."
+C:Format DRIVE DH2: NAME PFSTest NOICONS QUICK <NIL: >SYS:Results/format-pfs3.txt
+Wait 2
+Info >SYS:Results/info-after-format.txt
+
+Echo ""
+Echo "--- bfs Benchmark (DH1:) ---"
+C:fs-compare-bench DH1: split >SYS:Results/bfs.split.tsv
+Echo "AFTER_bfs" >SYS:Results/phase-bfs.txt
+Echo "--- pfs3 Benchmark (DH2:) ---"
+C:fs-compare-bench DH2: split >SYS:Results/pfs3.split.tsv
+Echo "AFTER_pfs3" >SYS:Results/phase-pfs3.txt
+Echo "BFS-PFS3-SPLIT-COMPLETE" >SYS:Results/complete.txt
+
+Echo ""
+Echo "============================================"
+Echo "  Benchmark complete!"
+Echo "  Results saved to SYS:Results/"
+Echo "============================================"

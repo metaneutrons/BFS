@@ -1,0 +1,11 @@
+=== Performance probe host oracles ===
+  test_detail_sampling_disabled_tree_and_reset       OK
+  test_inode_read_wrappers_count_errors              OK
+  test_direct_and_deferred_tree_attribution          OK
+  test_expected_level_node_view_accounting           OK
+  test_filesystem_cache_finalizes_deferred_nodes     OK
+  test_uncached_crc_sampling_stride                  OK
+  test_write_sidecar_samples_errors_and_reset        OK
+  test_write_sidecar_real_growth_counts_and_data     OK
+
+8 passed, 0 failed

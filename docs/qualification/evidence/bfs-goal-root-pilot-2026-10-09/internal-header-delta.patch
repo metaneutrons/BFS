@@ -1,0 +1,15 @@
+--- build/goal-root-2026-10-09/baseline/bfs_btree_internal.h	2026-10-09 21:47:58.974228596 +0200
++++ include/bfs_btree_internal.h	2026-10-09 21:47:59.016137660 +0200
+@@ -81,4 +81,12 @@
+ static inline uint16_t node_level(uint8_t *buf) { return bfs_be16(hdr_of(buf)->level); }
+ static inline bool is_leaf(uint8_t *buf) { return node_level(buf) == BFS_BTNODE_LEAF; }
+ 
++/* Optional read-only floor lookup for allocation goals. Uses only the current,
++ * freshly validated resident root leaf, without leasing scratch or retaining
++ * a view across calls. UNSUPPORTED leaves outputs unchanged: use the ordinary
++ * floor search for nonresident/taller/non-cacheable trees. */
++bfs_err_t bfs_btree_search_floor_resident_root(bfs_btree_t *tree,
++                                               const void *key,
++                                               void *key_out, void *val_out);
++
+ #endif /* BFS_BTREE_INTERNAL_H */

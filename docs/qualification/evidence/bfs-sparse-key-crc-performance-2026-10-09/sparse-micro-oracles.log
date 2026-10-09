@@ -1,0 +1,15 @@
+test_duplicate_timing_case_sample_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_duplicate_timing_case_sample_is_rejected) ... ok
+test_error_status_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_error_status_is_rejected) ... ok
+test_missing_run_directory_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_missing_run_directory_is_rejected) ... ok
+test_missing_timing_row_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_missing_timing_row_is_rejected) ... ok
+test_same_or_nested_run_directories_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_same_or_nested_run_directories_are_rejected) ... ok
+test_valid_fixture_and_independent_oracle (test_summarize_micro.SparseMicroSummaryTests.test_valid_fixture_and_independent_oracle) ... ok
+test_wrong_counts_and_wrong_digest_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_wrong_counts_and_wrong_digest_are_rejected) ... ok
+test_wrong_probe_config_or_rom_identity_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_wrong_probe_config_or_rom_identity_is_rejected) ... ok
+test_wrong_timing_order_length_and_repeats_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_wrong_timing_order_length_and_repeats_are_rejected) ... ok
+test_zero_clock_and_zero_ticks_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_zero_clock_and_zero_ticks_are_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 10 tests in 0.973s
+
+OK

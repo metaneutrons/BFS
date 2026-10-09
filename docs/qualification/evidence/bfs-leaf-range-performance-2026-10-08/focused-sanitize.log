@@ -1,0 +1,220 @@
+clang -std=c99 -Wall -Wextra -Werror -g -O1 -pthread -fno-omit-frame-pointer -fsanitize=address,undefined -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/upgrade-sanitize/test_inode_lookup_hints tests/test_inode_lookup_hints.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+  FAIL: tests/test_inode_lookup_hints.c:562: fixture.fs->inode_key_hints.leaf_count == 1, expected 0
+  FAIL: tests/test_inode_lookup_hints.c:822: original_fs->inode_key_hints.leaf_count == 1, expected 0
+
+=================================================================
+==2228399==ERROR: LeakSanitizer: detected memory leaks
+
+Direct leak of 70240 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b7a9 in calloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b77a9) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a1a978a in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:101:31
+    #2 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #3 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #4 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 70240 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b7a9 in calloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b77a9) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a1a978a in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:101:31
+    #2 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #3 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #4 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4608 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a208c5f in bfs_cache_init /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:551:20
+    #2 0x55bf4a1a9551 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:97:9
+    #3 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #4 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4608 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a208c5f in bfs_cache_init /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:551:20
+    #2 0x55bf4a1a9551 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:97:9
+    #3 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #4 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a19e768 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:543:36
+    #2 0x55bf4a19e768 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #3 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a20d90c in cache_alloc_buffer /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:457:30
+    #2 0x55bf4a1e8bbf in cow_node /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1362:27
+    #3 0x55bf4a1eb191 in bfs_btree_update /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:2031:22
+    #4 0x55bf4a1b944f in alloc_tail_from_highest /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:480:15
+    #5 0x55bf4a1b25ce in freespace_alloc_core /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:648:29
+    #6 0x55bf4a1dfe9d in mutation_alloc /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1232:21
+    #7 0x55bf4a1e3ded in bfs_btree_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1758:25
+    #8 0x55bf4a2183b8 in bfs_dir_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/dir.c:159:12
+    #9 0x55bf4a234da9 in bfs_fs_format /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/fs.c:151:11
+    #10 0x55bf4a1a9819 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:103:9
+    #11 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #12 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #13 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a19e775 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:544:35
+    #2 0x55bf4a19e775 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #3 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a20d90c in cache_alloc_buffer /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:457:30
+    #2 0x55bf4a1e8bbf in cow_node /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1362:27
+    #3 0x55bf4a1e518c in bfs_btree_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1872:10
+    #4 0x55bf4a1b0d13 in bfs_freespace_add /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:413:11
+    #5 0x55bf4a234b52 in bfs_fs_format /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/fs.c
+    #6 0x55bf4a1a9819 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:103:9
+    #7 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #8 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #9 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a20d90c in cache_alloc_buffer /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:457:30
+    #2 0x55bf4a1e3c56 in bfs_btree_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1753:24
+    #3 0x55bf4a1b0d13 in bfs_freespace_add /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:413:11
+    #4 0x55bf4a234b2a in bfs_fs_format /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/fs.c:135:15
+    #5 0x55bf4a1a9819 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:103:9
+    #6 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #7 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #8 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a20d90c in cache_alloc_buffer /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:457:30
+    #2 0x55bf4a1e8bbf in cow_node /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1362:27
+    #3 0x55bf4a1eb191 in bfs_btree_update /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:2031:22
+    #4 0x55bf4a1b944f in alloc_tail_from_highest /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:480:15
+    #5 0x55bf4a1b25ce in freespace_alloc_core /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:648:29
+    #6 0x55bf4a1dfe9d in mutation_alloc /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1232:21
+    #7 0x55bf4a1e3ded in bfs_btree_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1758:25
+    #8 0x55bf4a2183b8 in bfs_dir_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/dir.c:159:12
+    #9 0x55bf4a234da9 in bfs_fs_format /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/fs.c:151:11
+    #10 0x55bf4a1a9819 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:103:9
+    #11 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #12 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #13 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a20d90c in cache_alloc_buffer /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:457:30
+    #2 0x55bf4a1e3c56 in bfs_btree_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1753:24
+    #3 0x55bf4a1b0d13 in bfs_freespace_add /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:413:11
+    #4 0x55bf4a234b2a in bfs_fs_format /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/fs.c:135:15
+    #5 0x55bf4a1a9819 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:103:9
+    #6 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #7 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #8 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a209318 in bfs_cache_init /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:569:32
+    #2 0x55bf4a1a9551 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:97:9
+    #3 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #4 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 256 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a208c15 in bfs_cache_init /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:550:22
+    #2 0x55bf4a1a9551 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:97:9
+    #3 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #4 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 256 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a208c15 in bfs_cache_init /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:550:22
+    #2 0x55bf4a1a9551 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:97:9
+    #3 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #4 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 24 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b7a9 in calloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b77a9) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a26ee41 in bio_emu_create /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/block_device_emu.c:96:22
+    #2 0x55bf4a1a94d8 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:94:23
+    #3 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #4 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Direct leak of 24 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b7a9 in calloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b77a9) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a26ee41 in bio_emu_create /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/block_device_emu.c:96:22
+    #2 0x55bf4a1a94d8 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:94:23
+    #3 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #4 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Indirect leak of 262144 byte(s) in 64 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a209318 in bfs_cache_init /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:569:32
+    #2 0x55bf4a1a9551 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:97:9
+    #3 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #4 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Indirect leak of 258048 byte(s) in 63 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a209318 in bfs_cache_init /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:569:32
+    #2 0x55bf4a1a9551 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:97:9
+    #3 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #4 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Indirect leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a236c12 in fs_mount /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/fs.c:293:19
+    #2 0x55bf4a1a9886 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:108:9
+    #3 0x55bf4a19e5e3 in test_invalidation_rechecks_crc_and_inode_identity_after_raw_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:531:17
+    #4 0x55bf4a19e5e3 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:862:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Indirect leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a236c12 in fs_mount /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/fs.c:293:19
+    #2 0x55bf4a1a9886 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:108:9
+    #3 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #4 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #5 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Indirect leak of 4096 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b3c1 in malloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b73c1) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a20d90c in cache_alloc_buffer /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/cache.c:457:30
+    #2 0x55bf4a1e8bbf in cow_node /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1362:27
+    #3 0x55bf4a1e518c in bfs_btree_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1872:10
+    #4 0x55bf4a1b0d13 in bfs_freespace_add /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:413:11
+    #5 0x55bf4a234b52 in bfs_fs_format /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/fs.c
+    #6 0x55bf4a1a9819 in fixture_open /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:103:9
+    #7 0x55bf4a1a2a12 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:779:17
+    #8 0x55bf4a1a2a12 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #9 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+Indirect leak of 256 byte(s) in 1 object(s) allocated from:
+    #0 0x55bf4a13b7a9 in calloc (/home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/upgrade-sanitize/test_inode_lookup_hints+0x1b77a9) (BuildId: 375ac9c00b4ea2ddbc9bbd2a41eef3566bdce17a)
+    #1 0x55bf4a1e0245 in owned_add /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1158:28
+    #2 0x55bf4a1e0245 in mutation_alloc /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1240:5
+    #3 0x55bf4a1e8d89 in cow_node /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1376:25
+    #4 0x55bf4a1f6df8 in bfs_btree_delete /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:2800:14
+    #5 0x55bf4a1b9473 in alloc_tail_from_highest /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:477:15
+    #6 0x55bf4a1b6ca6 in bfs_freespace_refill_reserve /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:1266:25
+    #7 0x55bf4a1b2185 in freespace_alloc_core /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/alloc.c:595:28
+    #8 0x55bf4a1dfe9d in mutation_alloc /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1232:21
+    #9 0x55bf4a1e8d89 in cow_node /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1376:25
+    #10 0x55bf4a1e518c in bfs_btree_insert /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/btree.c:1872:10
+    #11 0x55bf4a2475ab in bfs_inode_write /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/inode.c:150:16
+    #12 0x55bf4a2496b9 in fs_create_file_unlocked /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/namespace.c:234:11
+    #13 0x55bf4a2496b9 in bfs_fs_create_file_with_stamp /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/namespace.c:958:15
+    #14 0x55bf4a24932e in bfs_fs_create_file /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/src/core/namespace.c:938:12
+    #15 0x55bf4a1a2a56 in test_reload_remount_pointer_lifetime_and_snapshot_view /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:782:20
+    #16 0x55bf4a1a2a56 in main /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/tests/test_inode_lookup_hints.c:865:14
+    #17 0x7f2b61427d0d  (/usr/lib/libc.so.6+0x27d0d) (BuildId: 5e3b85a3eaa72d02eaae3882b22410ebda6b5555)
+
+SUMMARY: AddressSanitizer: 715760 byte(s) leaked in 147 allocation(s).

@@ -1,0 +1,30 @@
+test_deep_schema_override_does_not_mutate_imported_parser (test_summarize.SummarizerRejectionTests.test_deep_schema_override_does_not_mutate_imported_parser) ... ok
+test_default_inventory_rejects_missing_runs (test_summarize.SummarizerRejectionTests.test_default_inventory_rejects_missing_runs) ... ok
+test_fake_pass_row_cannot_override_repository_verifier_rejection (test_summarize.SummarizerRejectionTests.test_fake_pass_row_cannot_override_repository_verifier_rejection) ... ok
+test_inventory_names_counts_and_selected_families_are_exact (test_summarize.SummarizerRejectionTests.test_inventory_names_counts_and_selected_families_are_exact) ... ok
+test_malformed_tsv_row_is_rejected (test_summarize.SummarizerRejectionTests.test_malformed_tsv_row_is_rejected) ... ok
+test_non_one_pass_value_is_rejected (test_summarize.SummarizerRejectionTests.test_non_one_pass_value_is_rejected) ... ok
+test_paired_output_includes_orders_median_range_and_slower_counts (test_summarize.SummarizerRejectionTests.test_paired_output_includes_orders_median_range_and_slower_counts) ... ok
+test_rdb_capacity_other_than_thirty_is_rejected (test_summarize.SummarizerRejectionTests.test_rdb_capacity_other_than_thirty_is_rejected) ... ok
+test_runtime_identities_pin_both_variants_and_all_three_inputs (test_summarize.SummarizerRejectionTests.test_runtime_identities_pin_both_variants_and_all_three_inputs) ... ok
+test_unexpected_and_duplicate_inventory_entries_are_rejected (test_summarize.SummarizerRejectionTests.test_unexpected_and_duplicate_inventory_entries_are_rejected) ... ok
+test_wrong_guest_digest_is_rejected (test_summarize.SummarizerRejectionTests.test_wrong_guest_digest_is_rejected) ... ok
+test_wrong_or_duplicate_handler_digest_is_rejected (test_summarize.SummarizerRejectionTests.test_wrong_or_duplicate_handler_digest_is_rejected) ... ok
+test_crlf_report_and_identity_records_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_crlf_report_and_identity_records_are_rejected) ... ok
+test_duplicate_timing_case_sample_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_duplicate_timing_case_sample_is_rejected) ... ok
+test_error_status_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_error_status_is_rejected) ... ok
+test_initial_direct_cast_protocol_is_not_qualified (test_summarize_micro.SparseMicroSummaryTests.test_initial_direct_cast_protocol_is_not_qualified) ... ok
+test_missing_or_tampered_retained_config_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_missing_or_tampered_retained_config_is_rejected) ... ok
+test_missing_run_directory_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_missing_run_directory_is_rejected) ... ok
+test_missing_timing_row_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_missing_timing_row_is_rejected) ... ok
+test_same_or_nested_run_directories_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_same_or_nested_run_directories_are_rejected) ... ok
+test_valid_fixture_and_independent_oracle (test_summarize_micro.SparseMicroSummaryTests.test_valid_fixture_and_independent_oracle) ... ok
+test_wrong_counts_and_wrong_digest_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_wrong_counts_and_wrong_digest_are_rejected) ... ok
+test_wrong_probe_config_or_rom_identity_is_rejected (test_summarize_micro.SparseMicroSummaryTests.test_wrong_probe_config_or_rom_identity_is_rejected) ... ok
+test_wrong_timing_order_length_and_repeats_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_wrong_timing_order_length_and_repeats_are_rejected) ... ok
+test_zero_clock_and_zero_ticks_are_rejected (test_summarize_micro.SparseMicroSummaryTests.test_zero_clock_and_zero_ticks_are_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 25 tests in 0.981s
+
+OK

@@ -1,0 +1,3 @@
+Directory "smoke:" on Compat:
+  cli-file                
+1 entry

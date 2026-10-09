@@ -1,0 +1,117 @@
+Installed checksum-verified AROS m68k ROMs in /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/emulator-identity/aros.
+Integration evidence directory: /home/fabian/.cache/bfs-performance/exact-fastpath-2026-10-09.hdq3J0/build/emulator-exact/run.mpClFL
+Formatted /home/fabian/.cache/bfs-performance/exact-fastpath-2026-10-09.hdq3J0/build/emulator-exact/run.mpClFL/test.hdf: 8192 blocks of 4096 bytes
+27447f991379ccc0eda02254bf5073dc0a11426f0321781cc1eea922f3f04f40  /home/fabian/.cache/bfs-performance/exact-fastpath-2026-10-09.hdq3J0/build/emulator-exact/run.mpClFL/system/L/bfshandler
+42b39509c18bd65c8011fcf5ff0d489054c571c9180a1f5c2878808d9e2c8749  /home/fabian/.cache/bfs-performance/exact-fastpath-2026-10-09.hdq3J0/build/emulator-exact/run.mpClFL/system/C/bfs-test
+eef8edc2bdede6d9e7d3ab57cc6a02d4c65c190666a496e930e3d9c447bdac59  /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/emulator-identity/aros/aros-amiga-m68k-rom.bin
+a3520cb8482b5475611386cf3e68f84f66534752a3c78e5e88d39c5dee89db54  /home/fabian/.cache/bfs-performance/listing-upgrade-2026-10-08.29qKRc/build/emulator-identity/aros/aros-amiga-m68k-ext.bin
+Starting FS-UAE integration test with a 1800s timeout.
+# BFS Test Log
+# PROFILE	full
+# STATUS	NAME	[DETAIL]
+# RUN	basic_01
+PASS	basic_01
+# RUN	large_02
+PASS	large_02
+# RUN	many_03
+PASS	many_03
+# RUN	deep_04
+PASS	deep_04
+# RUN	path_45
+PASS	path_45
+# RUN	longname_05
+PASS	longname_05
+# RUN	overwrite_06
+PASS	overwrite_06
+# RUN	rename_07
+PASS	rename_07
+# RUN	cycles_09
+PASS	cycles_09
+# RUN	seek_10
+PASS	seek_10
+# RUN	truncate_11
+PASS	truncate_11
+# RUN	protect_12
+PASS	protect_12
+# RUN	comment_13
+PASS	comment_13
+# RUN	multiext_14
+PASS	multiext_14
+# RUN	append_15
+PASS	append_15
+# RUN	partial_16
+PASS	partial_16
+# RUN	manydir_17
+PASS	manydir_17
+# RUN	special_18
+PASS	special_18
+# RUN	nestrn_19
+PASS	nestrn_19
+# RUN	rmdir_20
+PASS	rmdir_20
+# RUN	extend_21
+PASS	extend_21
+# RUN	reopen_22
+PASS	reopen_22
+# RUN	sharing_39
+PASS	sharing_39
+# RUN	protectio_40
+PASS	protectio_40
+# RUN	resizepos_41
+PASS	resizepos_41
+# RUN	os4pkt_42
+PASS	os4pkt_42
+# RUN	mospkt_43
+PASS	mospkt_43
+# RUN	exall_44
+PASS	exall_44
+# RUN	snap_34
+PASS	snap_34
+# RUN	snapcow_35
+PASS	snapcow_35
+# RUN	rapid_38
+PASS	rapid_38
+# RUN	persist_24
+PASS	persist_24
+# RUN	block_25
+PASS	block_25
+# RUN	empty_26
+PASS	empty_26
+# RUN	maxname_27
+PASS	maxname_27
+# RUN	singledir_28
+PASS	singledir_28
+# RUN	seekend_29
+PASS	seekend_29
+# RUN	sparse_30
+PASS	sparse_30
+# RUN	randops_31
+PASS	randops_31
+# RUN	tiny_32
+PASS	tiny_32
+# RUN	mixed_33
+PASS	mixed_33
+# RUN	time_35
+PASS	time_35
+# RUN	owner_36
+PASS	owner_36
+# RUN	exnext_37
+PASS	exnext_37
+# RUN	exnextdel_48
+PASS	exnextdel_48
+# RUN	exalldel_49
+PASS	exalldel_49
+# RUN	exallpack_50
+PASS	exallpack_50
+# RUN	softlink_51
+PASS	softlink_51
+# RUN	softresolve_52
+PASS	softresolve_52
+# RUN	commit_47
+PASS	commit_47
+# RUN	fill_08
+PASS	fill_08
+# RUN	diskfull_23
+PASS	diskfull_23
+# SUMMARY	52	52	0
+Amiga integration test passed (52 checks).

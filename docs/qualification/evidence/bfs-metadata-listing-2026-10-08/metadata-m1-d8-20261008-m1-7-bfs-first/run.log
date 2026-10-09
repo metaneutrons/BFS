@@ -1,0 +1,59 @@
+=== BFS vs PFS3 Benchmark (FS-UAE 68040) ===
+Evidence directory: /home/fabian/.cache/bfs-performance/metadata-2026-10-08.QvzB5w/build/benchmark/metadata-m1-d8-20261008-m1-7-bfs-first
+Mode: durable-compare
+Timeout: 600s
+
+
+=== Machine Info ===
+# Machine Info
+Kickstart 47.102, Workbench 47.2
+System: 68040 68040/060-FPU   (INST: Cache Burst) (DATA: NoCache NoBurst)
+Type  Available    In-Use   Maximum   Largest
+chip    2028040     52728   2080768   2027968
+fast    7693872    694736   8388608   7688800
+total   9721912    747464  10469376   7688800
+
+
+Mounted disks:
+Unit      Size       Used       Free Full Errs   Status   Name
+DF0       No disk present
+DH0      4095M    4194304    4194303  50%   0  Read/Write System
+DH1       255M         36      65372   0%   0  Read/Write BFSTest
+DH2       Not a DOS disk
+
+Volumes available:
+BFSTest [Mounted]
+System [Mounted]
+
+=== BFS Results ===
+FS_DURABLE_COMPARE	3
+DRIVE	DH1:
+SMALL_CREATE_40_US	34433
+LOOKUP_400_US	112448
+SMALL_READ_40_US	19838
+LIST_EXNEXT_400_US	33279
+LIST_EXALL_400_US	8897
+SEQ_WRITE_8M_US	40320
+SEQ_READ_8M_US	326526
+SMALL_DELETE_40_US	25726
+APPEND_4K_1M_US	79680
+APPEND_1K_256K_US	108057
+APPEND_READ_1280K_US	47360
+PASS	1
+
+=== PFS3 Results ===
+FS_DURABLE_COMPARE	3
+DRIVE	DH2:
+SMALL_CREATE_40_US	18879
+LOOKUP_400_US	78528
+SMALL_READ_40_US	14272
+LIST_EXNEXT_400_US	12096
+LIST_EXALL_400_US	2880
+SEQ_WRITE_8M_US	41217
+SEQ_READ_8M_US	295935
+SMALL_DELETE_40_US	19200
+APPEND_4K_1M_US	61056
+APPEND_1K_256K_US	25600
+APPEND_READ_1280K_US	43265
+PASS	1
+PASS: requested mounted-volume workload outputs are complete and data-checked

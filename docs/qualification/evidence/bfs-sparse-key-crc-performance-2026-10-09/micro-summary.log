@@ -1,0 +1,6 @@
+case	median sparse/baseline	min	max	slower
+dense4096	1.1313	1.0313	1.5781	12/12
+zero4096	0.1040	0.0783	0.1209	0/12
+sparse4096-dirkey264	0.4081	0.3782	0.4248	0/12
+short64-dense	1.2056	1.0220	1.3331	12/12
+mixed128-384	0.4449	0.3890	0.5000	0/12

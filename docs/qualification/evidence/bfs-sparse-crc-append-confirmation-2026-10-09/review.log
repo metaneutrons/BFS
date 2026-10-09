@@ -1,0 +1,51 @@
+Independent Luna review and primary-agent integration record
+
+Measurement methodology
+The independent reviewer checked the fixed 32 production plus eight A/A
+schedule, balanced handler/filesystem orders, pinned inputs, fail-fast run
+behavior, same-handler controls and scoped disposable-image cleanup. The
+review identified the obsolete fail-open snapdog-runner.service guard and
+missing complete Workbench receipts. Root retained actual loaded/inactive
+GitHub/GitLab unit states, checked for active GitHub runner processes, and
+later compared all 67 non-handler installed asset receipts across 40 runs.
+The exact originally executed script is unchanged and its SHA256 is retained.
+
+Scope and parser
+The reviewer checked that sparse directory-read CRC can be reached in create
+and the initial open of grow-new-file phases, but ordinary writes/file data
+are unchanged and timings do not attribute CRC work. The initial A/A summary
+pooled normal/durable controls; the author added within-mode aggregates and
+a divergent-mode oracle. The mixed statistics are separately labeled.
+Root clarified that default local summary invocation follows raw collection
+from Cachy's separate result root. The independent reviewer found the final
+strict schedule, exact 23 phases, binary/RDB checks and pair semantics sound.
+
+Numerical cross-check
+The independent reviewer recomputed focused BFS/PFS3 ratios from the raw TSVs:
+CREATE40 normal1.004279 durable0.971438; APPEND4K normal1.000419 durable1.024819;
+APPEND1K normal0.936630 durable0.987413. Slower counts are4/8,2/8;4/8,6/8;1/8,3/8.
+Durable APPEND_READ median1.250345 is slower in7/8 and all four stratum medians;
+PFS3 median1.002306, normalizedmedian1.125525, A/A durable range0.965714–1.505814.
+Normal SEQ_READ8M median1.052997 is slower in5/8, A/A range0.992390–1.124015.
+Large repeated ExAll gains reproduce: normal13.926%/16.473%, durable11.401%/12.893%.
+The regression concern is not resolved; provisional-only acceptance is supported.
+An early review relay mistakenly called the52/184 and41/184 counts a5%
+improvement threshold. Root corrected this immediately: these are ratios
+exceeding5 TIMES PFS3. The final independent document review confirms5x wording.
+
+Tests and setup correction
+An early reviewer counted17 tests while root's file and actual log showed18;
+the within-mode oracle made19 summary tests. Root's final combined execution
+has24 tests (19 summary plus five asset receipts), all PASS; the separately
+reused parser has25 PASS. Actual execution logs are authoritative, not a
+manual method count. Root's first asset-test import failed because the helper
+was named verify-assets.py; the module was renamed verify_assets.py without
+changing tests, input receipts or timings. The failed log is retained.
+
+Final consistency review
+The independent reviewer read the complete report, new HANDOFF section, plan
+decision, evidence README, asset verifier and tests. It found no actionable
+inconsistencies in the checked claims: numerical medians/read-control cautions,
+provisional status, separate open performance goal, corrected5x threshold,
+disclosed import failure and no new core qualification. No reviewer launched
+benchmarks, changed measured source, dispatched CI or modified GitHub state.

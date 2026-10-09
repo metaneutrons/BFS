@@ -1,0 +1,1120 @@
+diff --git a/include/bfs_bio.h b/include/bfs_bio.h
+index 4454d15..124e5b8 100644
+--- a/include/bfs_bio.h
++++ b/include/bfs_bio.h
+@@ -131,6 +131,15 @@ typedef struct bfs_bio_ops {
+      * UINT64_MAX disables hints on saturation. Guarded hints must not outlive
+      * this backend's initialization; reinitialization requires fresh trees. */
+     uint64_t (*mutation_epoch)(bfs_bio_t *bio);
++
++    /* Optional scan-leaf admission policy. Resident (including dirty) bytes
++     * must remain visible exactly as through read_block. A miss may return
++     * fresh bytes without admission; the caller still validates them fully.
++     * record_reuse is false for a consumed cursor leaf visited solely to find
++     * its successor: this visit must not count as evidence of reuse. Policy
++     * metadata is not a byte/validation authority and does not change epochs. */
++    bfs_err_t (*read_scan_leaf)(bfs_bio_t *bio, bfs_blk_t blk, void *buf,
++                                bool record_reuse);
+ } bfs_bio_ops_t;
+ 
+ /* Base block device — all implementations embed this as first member */
+@@ -184,6 +193,15 @@ static inline bfs_err_t bfs_bio_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf) {
+     return bio->ops->read_block(bio, blk, buf);
+ }
+ 
++static inline bfs_err_t bfs_bio_read_scan_leaf(bfs_bio_t *bio, bfs_blk_t blk,
++                                              void *buf, bool record_reuse) {
++    if (!bio || !bio->ops || !buf || blk >= bio->block_count)
++        return BFS_ERR_INVAL;
++    if (bio->ops->read_scan_leaf)
++        return bio->ops->read_scan_leaf(bio, blk, buf, record_reuse);
++    return bfs_bio_read(bio, blk, buf);
++}
++
+ static inline bfs_err_t bfs_bio_write(bfs_bio_t *bio, bfs_blk_t blk, const void *buf) {
+     if (!bio || !bio->ops || !bio->ops->write_block || !buf ||
+         blk >= bio->block_count)
+diff --git a/include/bfs_btree.h b/include/bfs_btree.h
+index 4e75829..a2365f7 100644
+--- a/include/bfs_btree.h
++++ b/include/bfs_btree.h
+@@ -65,6 +65,10 @@ typedef struct bfs_btree_ops {
+      * repeat it. It must depend on the entry alone. */
+     // cppcheck-suppress unusedStructMember
+     bool (*entry_ok)(const void *key, const void *val);
++
++    /* Opt in to the BIO's scan-leaf admission hint. Ordinary lookups and
++     * internal nodes retain normal reads; all validation remains mandatory. */
++    bool scan_admission;
+ } bfs_btree_ops_t;
+ 
+ /* Comparator for big-endian u32 keys. Trees that use it get node searches
+diff --git a/include/bfs_cache.h b/include/bfs_cache.h
+index a60ebd9..663e2b5 100644
+--- a/include/bfs_cache.h
++++ b/include/bfs_cache.h
+@@ -74,6 +74,12 @@ typedef struct bfs_cache {
+     uint32_t           dirty_count;  /* slots holding deferred node images */
+     // cppcheck-suppress unusedStructMember
+     uint32_t           dirty_limit;  /* 0: no deferred node writes */
++    /* At most num_slots scan-miss identities, no bytes or validation state.
++     * Optional allocation: NULL retains ordinary admission. Active entries
++     * are the first scan_ghost_count elements; UINT32_MAX marks a hole. */
++    bfs_blk_t         *scan_ghost;
++    uint32_t           scan_ghost_count;
++    uint32_t           scan_ghost_next;
+     bfs_cache_scratch_slot_t scratch[BFS_CACHE_SCRATCH_SLOTS];
+ } bfs_cache_t;
+ 
+diff --git a/src/core/btree.c b/src/core/btree.c
+index d7438d5..23228d4 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -155,11 +155,14 @@ static bool node_structure_ok(const bfs_btree_t *tree, uint8_t *buf)
+     return true;
+ }
+ 
+-static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
++static bfs_err_t node_read_access(const bfs_btree_t *tree, bfs_blk_t blk,
++                                  uint8_t *buf, bool scan_leaf, bool record_reuse)
+ {
+     if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
+         return BFS_ERR_CORRUPT;
+-    bfs_err_t err = bfs_bio_read(tree->bio, blk, buf);
++    bfs_err_t err = scan_leaf
++        ? bfs_bio_read_scan_leaf(tree->bio, blk, buf, record_reuse)
++        : bfs_bio_read(tree->bio, blk, buf);
+     if (err != BFS_OK) return err;
+ 
+     bfs_node_validation_t validation = node_validation_context(tree);
+@@ -200,6 +203,11 @@ static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
+     return BFS_OK;
+ }
+ 
++static bfs_err_t node_read(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
++{
++    return node_read_access(tree, blk, buf, false, false);
++}
++
+ /* Byte ranges of a node: used keys [0, prefix_end), unused key slots up to
+  * values_start, used values or children of values_length bytes, and unused
+  * value slots up to the end of the block. False if the header's level or key
+@@ -402,14 +410,21 @@ static bfs_err_t node_write(bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf)
+     return node_write_image(tree, blk, &buf, false);
+ }
+ 
+-static bfs_err_t node_read_at_level(const bfs_btree_t *tree, bfs_blk_t blk,
+-                                    uint8_t *buf, uint16_t expected_level)
++static bfs_err_t node_read_at_level_access(const bfs_btree_t *tree, bfs_blk_t blk,
++                                    uint8_t *buf, uint16_t expected_level,
++                                    bool scan_leaf, bool record_reuse)
+ {
+-    bfs_err_t err = node_read(tree, blk, buf);
++    bfs_err_t err = node_read_access(tree, blk, buf, scan_leaf, record_reuse);
+     if (err != BFS_OK) return err;
+     return node_level(buf) == expected_level ? BFS_OK : BFS_ERR_CORRUPT;
+ }
+ 
++static bfs_err_t node_read_at_level(const bfs_btree_t *tree, bfs_blk_t blk,
++                                    uint8_t *buf, uint16_t expected_level)
++{
++    return node_read_at_level_access(tree, blk, buf, expected_level, false, false);
++}
++
+ typedef struct {
+     uint8_t lower[BFS_MAX_KEY_SIZE];
+     uint8_t upper[BFS_MAX_KEY_SIZE];
+@@ -433,9 +448,11 @@ static void child_bounds(const bfs_btree_t *tree, uint8_t *parent,
+ 
+ static bfs_err_t node_read_bounded(const bfs_btree_t *tree, bfs_blk_t blk,
+                                    uint8_t *buf, uint16_t level,
+-                                   const node_bounds_t *bounds)
++                                   const node_bounds_t *bounds,
++                                   bool scan_leaf, bool record_reuse)
+ {
+-    bfs_err_t err = node_read_at_level(tree, blk, buf, level);
++    bfs_err_t err = node_read_at_level_access(tree, blk, buf, level,
++                                              scan_leaf, record_reuse);
+     if (err != BFS_OK) return err;
+     if ((bounds->have_lower && tree->ops->key_compare(
+              node_key(tree, buf, 0), bounds->lower) < 0) ||
+@@ -450,26 +467,27 @@ static bfs_err_t node_read_bounded(const bfs_btree_t *tree, bfs_blk_t blk,
+  * level and parent bounds are checked on every visit either way. A resident
+  * view is valid only until the next BIO call and must not be modified. */
+ #ifdef BFS_PERF_PROBE
+-static bfs_err_t node_view_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++static bfs_err_t node_view_access_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
+                                 uint16_t level, const node_bounds_t *bounds,
+-                                uint8_t **node);
+-static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++                                uint8_t **node, bool scan_leaf, bool record_reuse);
++static bfs_err_t node_view_access(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
+                            uint16_t level, const node_bounds_t *bounds,
+-                           uint8_t **node)
++                           uint8_t **node, bool scan_leaf, bool record_reuse)
+ {
+     bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
+         tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_NODE_VIEW,
+         BFS_PERF_DETAIL_SCOPE_DETAIL_DIR_NODE_VIEW);
+-    bfs_err_t result = node_view_body(tree, blk, buf, level, bounds, node);
++    bfs_err_t result = node_view_access_body(tree, blk, buf, level, bounds, node,
++                                             scan_leaf, record_reuse);
+     bfs_perf_probe_detail_end(&sample);
+     return result;
+ }
+-static bfs_err_t node_view_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++static bfs_err_t node_view_access_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
+ #else
+-static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++static bfs_err_t node_view_access(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
+ #endif
+                            uint16_t level, const node_bounds_t *bounds,
+-                           uint8_t **node)
++                           uint8_t **node, bool scan_leaf, bool record_reuse)
+ {
+     *node = buf;
+     if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count) {
+@@ -487,8 +505,10 @@ static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
+     bfs_perf_probe_node_view_at_level(tree, resident != NULL, level);
+ #endif
+     if (!resident)
+-        return bounds ? node_read_bounded(tree, blk, buf, level, bounds)
+-                      : node_read_at_level(tree, blk, buf, level);
++        return bounds ? node_read_bounded(tree, blk, buf, level, bounds,
++                                           scan_leaf, record_reuse)
++                      : node_read_at_level_access(tree, blk, buf, level,
++                                                   scan_leaf, record_reuse);
+     *node = (uint8_t *)resident;
+     if (node_level(*node) != level) return BFS_ERR_CORRUPT;
+     if (bounds &&
+@@ -500,6 +520,22 @@ static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
+     return BFS_OK;
+ }
+ 
++static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++                            uint16_t level, const node_bounds_t *bounds,
++                            uint8_t **node)
++{
++    return node_view_access(tree, blk, buf, level, bounds, node, false, false);
++}
++
++static bfs_err_t scan_node_view(const bfs_btree_t *tree, bfs_blk_t blk,
++                                 uint8_t *buf, uint16_t level,
++                                 const node_bounds_t *bounds, uint8_t **node,
++                                 bool record_reuse)
++{
++    return node_view_access(tree, blk, buf, level, bounds, node,
++                             level == 0 && tree->ops->scan_admission, record_reuse);
++}
++
+ static void node_init(const bfs_btree_t *tree, uint8_t *buf, uint16_t level)
+ {
+     memset(buf, 0, tree->bio->block_size);
+@@ -2250,7 +2286,8 @@ typedef struct {
+  * and record the path. Inner nodes are only viewed. *leaf is a view that the
+  * next BIO call may invalidate. */
+ static bfs_err_t scan_descend(const bfs_btree_t *tree, const void *key,
+-                              uint8_t *buf, scan_path_t *path, uint8_t **leaf)
++                              uint8_t *buf, scan_path_t *path, uint8_t **leaf,
++                              bool record_reuse)
+ {
+     bfs_blk_t blk = tree->root;
+     uint16_t level = (uint16_t)(tree->height - 1);
+@@ -2258,7 +2295,8 @@ static bfs_err_t scan_descend(const bfs_btree_t *tree, const void *key,
+     path->depth = 0;
+     for (;;) {
+         uint8_t *node;
+-        bfs_err_t err = node_view(tree, blk, buf, level, &bounds, &node);
++        bfs_err_t err = scan_node_view(tree, blk, buf, level, &bounds, &node,
++                                        record_reuse);
+         if (err != BFS_OK) return err;
+         if (level == 0) {
+             *leaf = node;
+@@ -2289,7 +2327,7 @@ static bfs_err_t scan_next_leaf(const bfs_btree_t *tree, uint8_t *buf,
+         uint32_t d = path->depth - 1;
+         uint16_t level = (uint16_t)(tree->height - 1 - d);
+         uint8_t *node;
+-        bfs_err_t err = node_view(tree, path->blk[d], buf, level, NULL, &node);
++        bfs_err_t err = scan_node_view(tree, path->blk[d], buf, level, NULL, &node, true);
+         if (err != BFS_OK) return err;
+         uint32_t next = path->idx[d] + 1;
+         if (next > num_keys(node)) {
+@@ -2302,7 +2340,7 @@ static bfs_err_t scan_next_leaf(const bfs_btree_t *tree, uint8_t *buf,
+         bfs_blk_t blk = get_child(tree, node, next);
+         level--;
+         for (;;) {
+-            err = node_view(tree, blk, buf, level, &bounds, &node);
++            err = scan_node_view(tree, blk, buf, level, &bounds, &node, true);
+             if (err != BFS_OK) return err;
+             if (level == 0) {
+                 *leaf = node;
+@@ -2481,7 +2519,7 @@ static bfs_err_t btree_scan_cursor_impl(bfs_btree_t *tree,
+         leaf = cursor->leaf;
+         have_path = false;
+     } else {
+-        err = scan_descend(tree, start_key, buf, &path, &leaf);
++        err = scan_descend(tree, start_key, buf, &path, &leaf, true);
+     }
+     if (cursor) cursor->stopped = false;
+     if (err == BFS_OK && start_key && !positioned) {
+@@ -2549,7 +2587,10 @@ static bfs_err_t btree_scan_cursor_impl(bfs_btree_t *tree,
+         if (changed || !have_path) {
+             /* A callback changed the tree, or the leaf came from the cursor:
+              * find the place after last from the root. */
+-            err = scan_descend(tree, last, buf, &path, &leaf);
++            /* A consumed cursor leaf is only visited to reconstruct its
++             * successor path, not as evidence of reuse. Mutation recovery
++             * is a fresh visit and follows the normal scan admission hint. */
++            err = scan_descend(tree, last, buf, &path, &leaf, changed || have_path);
+             if (err != BFS_OK) break;
+             have_path = true;
+             bool found;
+diff --git a/src/core/cache.c b/src/core/cache.c
+index 063326f..c5efbab 100644
+--- a/src/core/cache.c
++++ b/src/core/cache.c
+@@ -16,6 +16,26 @@
+  * block costs a short chain walk instead of a pass over all slots. */
+ #define NO_SLOT 0xFFFFu
+ 
++static bool cache_ghost_contains(const bfs_cache_t *c, bfs_blk_t blk)
++{
++    for (uint32_t i = 0; i < c->scan_ghost_count; i++)
++        if (c->scan_ghost[i] == blk) return true;
++    return false;
++}
++
++static void cache_ghost_forget(bfs_cache_t *c, bfs_blk_t blk)
++{
++    for (uint32_t i = 0; i < c->scan_ghost_count; i++)
++        if (c->scan_ghost[i] == blk) c->scan_ghost[i] = UINT32_MAX;
++}
++
++static void cache_ghost_record(bfs_cache_t *c, bfs_blk_t blk)
++{
++    c->scan_ghost[c->scan_ghost_next] = blk;
++    c->scan_ghost_next = (c->scan_ghost_next + 1u) % c->num_slots;
++    if (c->scan_ghost_count < c->num_slots) c->scan_ghost_count++;
++}
++
+ static uint32_t cache_bucket(const bfs_cache_t *c, bfs_blk_t blk)
+ {
+     return (uint32_t)(blk * 2654435761u) >> c->bucket_shift;
+@@ -40,6 +60,7 @@ static void cache_assign(bfs_cache_t *c, uint32_t index, bfs_blk_t blk)
+     slot->blk = blk;
+     slot->next = NO_SLOT;
+     if (blk != UINT32_MAX) {
++        cache_ghost_forget(c, blk);
+         uint16_t *head = &c->buckets[cache_bucket(c, blk)];
+         slot->next = *head;
+         *head = (uint16_t)index;
+@@ -77,6 +98,8 @@ static void cache_drop_slot(bfs_cache_t *c, bfs_cache_slot_t *slot)
+  * token. Saturation disables guarded hints instead of permitting an ABA. */
+ static void cache_note_mutation(bfs_cache_t *cache)
+ {
++    cache->scan_ghost_count = 0;
++    cache->scan_ghost_next = 0;
+     if (cache->mutation_epoch != UINT64_MAX)
+         cache->mutation_epoch++;
+ }
+@@ -96,7 +119,8 @@ static bfs_err_t cache_write_back(bfs_cache_t *c, bfs_cache_slot_t *slot)
+     return BFS_OK;
+ }
+ 
+-static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
++static bfs_err_t cache_read_access(bfs_bio_t *bio, bfs_blk_t blk, void *buf,
++                                   bool scan_leaf, bool record_reuse)
+ {
+     bfs_cache_t *c = (bfs_cache_t *)bio;
+ 
+@@ -117,6 +141,17 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+     bfs_err_t err = bfs_bio_read(c->dev, blk, buf);
+     if (err != BFS_OK) return err;
+ 
++    /* First scan misses do not displace the current working set. A consumed
++     * leaf visited only to reconstruct a path does not qualify or alter the
++     * history. Missing optional history falls back to ordinary admission. */
++    if (scan_leaf && c->scan_ghost) {
++        if (!record_reuse) return BFS_OK;
++        if (!cache_ghost_contains(c, blk)) {
++            cache_ghost_record(c, blk);
++            return BFS_OK;
++        }
++    }
++
+     /* Insert into LRU slot */
+     uint32_t victim = cache_victim(c);
+     if (victim == UINT32_MAX) return BFS_OK;
+@@ -129,6 +164,17 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+     return BFS_OK;
+ }
+ 
++static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
++{
++    return cache_read_access(bio, blk, buf, false, false);
++}
++
++static bfs_err_t cache_read_scan_leaf(bfs_bio_t *bio, bfs_blk_t blk, void *buf,
++                                      bool record_reuse)
++{
++    return cache_read_access(bio, blk, buf, true, record_reuse);
++}
++
+ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
+                                      const void *buf, bool retain_node)
+ {
+@@ -501,6 +547,7 @@ static const bfs_bio_ops_t cache_ops = {
+     .peek_valid_node = cache_peek_valid_node,
+     .modify_dirty_node = cache_modify_dirty_node,
+     .mutation_epoch = cache_read_mutation_epoch,
++    .read_scan_leaf = cache_read_scan_leaf,
+ };
+ 
+ void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)
+@@ -577,6 +624,9 @@ bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
+             return BFS_ERR_NOMEM;
+         }
+     }
++    /* Advisory only: failure must not make an otherwise usable cache fail.
++     * The zero count prevents reading any uninitialized history elements. */
++    cache->scan_ghost = malloc(num_slots * sizeof(*cache->scan_ghost));
+     return BFS_OK;
+ }
+ 
+@@ -602,6 +652,10 @@ void bfs_cache_destroy(bfs_cache_t *cache)
+         free(cache->slots);
+     }
+     free(cache->buckets);
++    free(cache->scan_ghost);
++    cache->scan_ghost = NULL;
++    cache->scan_ghost_count = 0;
++    cache->scan_ghost_next = 0;
+     cache->slots = NULL;
+     cache->buckets = NULL;
+     cache->num_slots = 0;
+diff --git a/src/core/dir.c b/src/core/dir.c
+index 4c1bcff..8b39930 100644
+--- a/src/core/dir.c
++++ b/src/core/dir.c
+@@ -104,6 +104,7 @@ static const bfs_btree_ops_t dir_ops = {
+     .val_size = sizeof(bfs_dir_val_t),
+     .cache_key_order = true,
+     .entry_ok = dir_entry_ok,
++    .scan_admission = true,
+ };
+ 
+ /* ── Init ──────────────────────────────────────────────────── */
+diff --git a/tests/test_cache_buffer_faults.c b/tests/test_cache_buffer_faults.c
+index 7c0fa7f..ccd1f31 100644
+--- a/tests/test_cache_buffer_faults.c
++++ b/tests/test_cache_buffer_faults.c
+@@ -66,12 +66,14 @@ typedef struct {
+     bfs_bio_t bio;
+     uint8_t bytes[BLOCKS][BS];
+     bfs_blk_t next;
++    unsigned reads;
+ } memory_device_t;
+ 
+ static bfs_err_t read_block(bfs_bio_t *bio, bfs_blk_t blk, void *buffer)
+ {
+     memory_device_t *memory = (memory_device_t *)bio;
+     if (blk >= BLOCKS) return BFS_ERR_INVAL;
++    memory->reads++;
+     memcpy(buffer, memory->bytes[blk], BS);
+     return BFS_OK;
+ }
+@@ -165,7 +167,8 @@ static void test_overflow_and_multiblock_failures(void)
+ 
+ static void test_cache_initialization_failures(void)
+ {
+-    for (unsigned failure = 1; failure <= 3; failure++) {
++    /* Two slots need four allocations before the optional ghost history. */
++    for (unsigned failure = 1; failure <= 4; failure++) {
+         memory_device_t memory;
+         bfs_cache_t cache;
+         reset(&memory);
+@@ -178,6 +181,38 @@ static void test_cache_initialization_failures(void)
+     }
+ }
+ 
++static void test_optional_ghost_allocation_failure_keeps_cache_usable(void)
++{
++    memory_device_t memory;
++    bfs_cache_t cache;
++    uint8_t result[BS];
++    reset(&memory);
++    TEST_ASSERT_EQ(live_allocations, 0);
++
++    /* buckets, slot array and two resident buffers are required; ghost is
++     * the optional fifth allocation. */
++    fail_call = 5;
++    TEST_ASSERT_EQ(isolated_cache_init(&cache, &memory.bio, 2), BFS_OK);
++    TEST_ASSERT_EQ(allocation_calls, 5);
++    TEST_ASSERT(cache.scan_ghost == NULL);
++    TEST_ASSERT_EQ(live_allocations, 4);
++
++    /* With no history, scan misses intentionally use ordinary admission. */
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 7, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 1);
++    TEST_ASSERT_MEM_EQ(result, memory.bytes[7], BS);
++    uint32_t resident = cache.num_slots;
++    for (uint32_t slot = 0; slot < cache.num_slots; slot++)
++        if (cache.slots[slot].blk == 7) resident = slot;
++    TEST_ASSERT(resident < cache.num_slots);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 7, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 1);
++
++    isolated_cache_destroy(&cache);
++    TEST_ASSERT_EQ(live_allocations, 0);
++    TEST_ASSERT(!tracking_error);
++}
++
+ static bfs_blk_t alloc_node(bfs_allocator_t *allocator)
+ {
+     memory_device_t *memory = allocator->ctx;
+@@ -333,6 +368,7 @@ TEST_SUITE_BEGIN("Temporary buffer allocation faults")
+     TEST_RUN(test_each_lazy_slot_failure);
+     TEST_RUN(test_overflow_and_multiblock_failures);
+     TEST_RUN(test_cache_initialization_failures);
++    TEST_RUN(test_optional_ghost_allocation_failure_keeps_cache_usable);
+     TEST_RUN(test_replacement_second_buffer_failure_releases_first);
+     TEST_RUN(test_height_one_mutations_reuse_warm_scratch);
+ TEST_SUITE_END()
+diff --git a/tests/test_scan_admission.c b/tests/test_scan_admission.c
+new file mode 100644
+index 0000000..2842d43
+--- /dev/null
++++ b/tests/test_scan_admission.c
+@@ -0,0 +1,632 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++/* Focused tests for scan-only cache admission. */
++
++#include "test_harness.h"
++#include "bfs_cache.h"
++#include "bfs_dir.h"
++#include "bfs_btree_internal.h"
++
++#define BLOCK_SIZE BFS_MIN_BLOCK_SIZE
++#define BLOCK_COUNT 64
++
++typedef struct {
++    bfs_bio_t bio;
++    uint8_t blocks[BLOCK_COUNT][BLOCK_SIZE];
++    uint32_t reads;
++    uint32_t writes;
++    bool fail_read;
++    bool fail_write;
++} scan_memory_bio_t;
++
++static bfs_err_t scan_memory_read(bfs_bio_t *bio, bfs_blk_t block, void *buffer)
++{
++    scan_memory_bio_t *memory = (scan_memory_bio_t *)bio;
++    if (block >= bio->block_count) return BFS_ERR_INVAL;
++    memory->reads++;
++    if (memory->fail_read) return BFS_ERR_IO;
++    memcpy(buffer, memory->blocks[block], bio->block_size);
++    return BFS_OK;
++}
++
++static bfs_err_t scan_memory_write(bfs_bio_t *bio, bfs_blk_t block,
++                                   const void *buffer)
++{
++    scan_memory_bio_t *memory = (scan_memory_bio_t *)bio;
++    if (block >= bio->block_count) return BFS_ERR_INVAL;
++    memory->writes++;
++    if (memory->fail_write) return BFS_ERR_IO;
++    memcpy(memory->blocks[block], buffer, bio->block_size);
++    return BFS_OK;
++}
++
++static bfs_err_t scan_memory_sync(bfs_bio_t *bio)
++{
++    (void)bio;
++    return BFS_OK;
++}
++
++static const bfs_bio_ops_t scan_memory_ops = {
++    .read_block = scan_memory_read,
++    .write_block = scan_memory_write,
++    .sync = scan_memory_sync,
++};
++
++static const bfs_bio_ops_t empty_ops = {0};
++
++static void scan_memory_init(scan_memory_bio_t *memory)
++{
++    memset(memory, 0, sizeof(*memory));
++    memory->bio.ops = &scan_memory_ops;
++    memory->bio.block_size = BLOCK_SIZE;
++    memory->bio.block_count = BLOCK_COUNT;
++    for (uint32_t block = 0; block < BLOCK_COUNT; block++)
++        memset(memory->blocks[block], (int)(block + 1), BLOCK_SIZE);
++}
++
++static uint32_t find_resident(const bfs_cache_t *cache, bfs_blk_t block)
++{
++    for (uint32_t slot = 0; slot < cache->num_slots; slot++)
++        if (cache->slots[slot].blk == block) return slot;
++    return cache->num_slots;
++}
++
++static bfs_err_t finish_node(const void *layout, uint32_t block_size,
++                             uint8_t *buffer)
++{
++    (void)layout;
++    (void)block_size;
++    (void)buffer;
++    return BFS_OK;
++}
++
++static void test_bio_scan_wrapper_fallback_and_invalid_arguments(void)
++{
++    scan_memory_bio_t memory;
++    uint8_t result[BLOCK_SIZE];
++    scan_memory_init(&memory);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&memory.bio, 4, result, true), BFS_OK);
++    TEST_ASSERT_MEM_EQ(result, memory.blocks[4], BLOCK_SIZE);
++    TEST_ASSERT_EQ(memory.reads, 1);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&memory.bio, 5, result, false), BFS_OK);
++    TEST_ASSERT_MEM_EQ(result, memory.blocks[5], BLOCK_SIZE);
++    TEST_ASSERT_EQ(memory.reads, 2);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(NULL, 0, result, true), BFS_ERR_INVAL);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&memory.bio, 0, NULL, true), BFS_ERR_INVAL);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&memory.bio, BLOCK_COUNT, result, true),
++                   BFS_ERR_INVAL);
++    bfs_bio_t no_ops = {.ops = NULL, .block_size = BLOCK_SIZE,
++                        .block_count = BLOCK_COUNT};
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&no_ops, 0, result, true), BFS_ERR_INVAL);
++    bfs_bio_t no_read = {.ops = &empty_ops, .block_size = BLOCK_SIZE,
++                         .block_count = BLOCK_COUNT};
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&no_read, 0, result, true), BFS_ERR_INVAL);
++    TEST_ASSERT_EQ(memory.reads, 2);
++}
++
++static void test_scan_misses_require_two_reuses_then_hit(void)
++{
++    scan_memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t result[BLOCK_SIZE];
++    scan_memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++
++    uint64_t epoch = cache.mutation_epoch;
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 8, result, true), BFS_OK);
++    TEST_ASSERT_MEM_EQ(result, memory.blocks[8], BLOCK_SIZE);
++    TEST_ASSERT_EQ(memory.reads, 1);
++    TEST_ASSERT_EQ(find_resident(&cache, 8), cache.num_slots);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 1);
++    TEST_ASSERT_EQ(cache.mutation_epoch, epoch);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 8, result, true), BFS_OK);
++    TEST_ASSERT_MEM_EQ(result, memory.blocks[8], BLOCK_SIZE);
++    TEST_ASSERT_EQ(memory.reads, 2);
++    uint32_t resident = find_resident(&cache, 8);
++    TEST_ASSERT(resident < cache.num_slots);
++    TEST_ASSERT(!cache.slots[resident].dirty);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 8, result, true), BFS_OK);
++    TEST_ASSERT_MEM_EQ(result, memory.blocks[8], BLOCK_SIZE);
++    TEST_ASSERT_EQ(memory.reads, 2);
++    TEST_ASSERT_EQ(cache.mutation_epoch, epoch);
++    bfs_cache_destroy(&cache);
++}
++
++static void test_cursor_boundary_misses_do_not_count_or_qualify(void)
++{
++    scan_memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t result[BLOCK_SIZE];
++    scan_memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 7, result, false), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 1);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 0);
++    TEST_ASSERT_EQ(find_resident(&cache, 7), cache.num_slots);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 7, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 2);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 1);
++    TEST_ASSERT_EQ(find_resident(&cache, 7), cache.num_slots);
++
++    /* A boundary-only revisit does not use the existing ghost as evidence. */
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 7, result, false), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 3);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 1);
++    TEST_ASSERT_EQ(find_resident(&cache, 7), cache.num_slots);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 7, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 4);
++    TEST_ASSERT(find_resident(&cache, 7) < cache.num_slots);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 7, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 4);
++    bfs_cache_destroy(&cache);
++}
++
++static void test_demand_read_admits_and_forgets_scan_ghost(void)
++{
++    scan_memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t result[BLOCK_SIZE];
++    scan_memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++    uint64_t epoch = cache.mutation_epoch;
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 9, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 1);
++    TEST_ASSERT_EQ(find_resident(&cache, 9), cache.num_slots);
++    TEST_ASSERT_EQ(cache.scan_ghost[0], 9);
++
++    TEST_ASSERT_EQ(bfs_bio_read(&cache.bio, 9, result), BFS_OK);
++    TEST_ASSERT_MEM_EQ(result, memory.blocks[9], BLOCK_SIZE);
++    TEST_ASSERT_EQ(memory.reads, 2);
++    TEST_ASSERT(find_resident(&cache, 9) < cache.num_slots);
++    TEST_ASSERT_EQ(cache.scan_ghost[0], UINT32_MAX);
++    TEST_ASSERT_EQ(cache.mutation_epoch, epoch);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 9, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 2);
++    bfs_cache_destroy(&cache);
++}
++
++static void test_read_errors_do_not_record_reuse(void)
++{
++    scan_memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t result[BLOCK_SIZE];
++    scan_memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++
++    memory.fail_read = true;
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 11, result, true), BFS_ERR_IO);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 0);
++    TEST_ASSERT_EQ(find_resident(&cache, 11), cache.num_slots);
++
++    memory.fail_read = false;
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 11, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 2);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 1);
++    TEST_ASSERT_EQ(find_resident(&cache, 11), cache.num_slots);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 11, result, true), BFS_OK);
++    TEST_ASSERT_EQ(memory.reads, 3);
++    TEST_ASSERT(find_resident(&cache, 11) < cache.num_slots);
++    bfs_cache_destroy(&cache);
++}
++
++static void test_dirty_hits_are_visible_and_all_dirty_misses_stay_uncached(void)
++{
++    scan_memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t image[BLOCK_SIZE];
++    uint8_t result[BLOCK_SIZE];
++    scan_memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++    bfs_cache_set_deferred_node_limit(&cache, 1);
++
++    memset(image, 0xA1, sizeof(image));
++    TEST_ASSERT_EQ(bfs_bio_defer_node(&cache.bio, 1, image, finish_node, NULL), BFS_OK);
++    uint32_t dirty_slot = find_resident(&cache, 1);
++    TEST_ASSERT(dirty_slot < cache.num_slots);
++    TEST_ASSERT(cache.slots[dirty_slot].dirty);
++    uint32_t previous_age = cache.slots[dirty_slot].age;
++    uint32_t reads_before_hit = memory.reads;
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 1, result, true), BFS_OK);
++    TEST_ASSERT_MEM_EQ(result, image, BLOCK_SIZE);
++    TEST_ASSERT_EQ(memory.reads, reads_before_hit);
++    TEST_ASSERT(cache.slots[dirty_slot].age > previous_age);
++
++    /* The second dirty image attempts an early write; failing that write must
++     * not make either dirty slot available to a scan miss. */
++    memory.fail_write = true;
++    memset(image, 0xB2, sizeof(image));
++    TEST_ASSERT_EQ(bfs_bio_defer_node(&cache.bio, 2, image, finish_node, NULL), BFS_OK);
++    TEST_ASSERT_EQ(cache.dirty_count, 2);
++    TEST_ASSERT(cache.slots[find_resident(&cache, 1)].dirty);
++    TEST_ASSERT(cache.slots[find_resident(&cache, 2)].dirty);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 3, result, true), BFS_OK);
++    TEST_ASSERT_MEM_EQ(result, memory.blocks[3], BLOCK_SIZE);
++    TEST_ASSERT_EQ(find_resident(&cache, 3), cache.num_slots);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 3, result, true), BFS_OK);
++    TEST_ASSERT_EQ(find_resident(&cache, 3), cache.num_slots);
++    TEST_ASSERT_EQ(cache.dirty_count, 2);
++    TEST_ASSERT(cache.slots[find_resident(&cache, 1)].dirty);
++    TEST_ASSERT(cache.slots[find_resident(&cache, 2)].dirty);
++    bfs_cache_destroy(&cache);
++}
++
++static void test_mutations_and_invalidation_clear_history_and_advance_epoch(void)
++{
++    scan_memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t result[BLOCK_SIZE];
++    uint8_t replacement[BLOCK_SIZE];
++    scan_memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++    uint64_t epoch;
++    TEST_ASSERT(bfs_bio_get_mutation_epoch(&cache.bio, &epoch));
++    TEST_ASSERT_EQ(epoch, 0);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 4, result, true), BFS_OK);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 1);
++    uint64_t after_scan;
++    TEST_ASSERT(bfs_bio_get_mutation_epoch(&cache.bio, &after_scan));
++    TEST_ASSERT_EQ(after_scan, epoch);
++
++    memset(replacement, 0xC3, sizeof(replacement));
++    TEST_ASSERT_EQ(bfs_bio_write(&cache.bio, 20, replacement), BFS_OK);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 0);
++    TEST_ASSERT(bfs_bio_get_mutation_epoch(&cache.bio, &epoch));
++    TEST_ASSERT_EQ(epoch, after_scan + 1);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 4, result, true), BFS_OK);
++    TEST_ASSERT_EQ(find_resident(&cache, 4), cache.num_slots);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 1);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 4, result, true), BFS_OK);
++    TEST_ASSERT(find_resident(&cache, 4) < cache.num_slots);
++
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 5, result, true), BFS_OK);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 2);
++    TEST_ASSERT_EQ(cache.scan_ghost[0], UINT32_MAX);
++    TEST_ASSERT_EQ(cache.scan_ghost[1], 5);
++    bfs_cache_invalidate(&cache);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 0);
++    TEST_ASSERT(bfs_bio_get_mutation_epoch(&cache.bio, &epoch));
++    TEST_ASSERT_EQ(epoch, after_scan + 2);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 5, result, true), BFS_OK);
++    TEST_ASSERT_EQ(find_resident(&cache, 5), cache.num_slots);
++
++    memory.fail_write = true;
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 6, result, true), BFS_OK);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 2);
++    TEST_ASSERT_EQ(bfs_bio_write(&cache.bio, 21, replacement), BFS_ERR_IO);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 0);
++    TEST_ASSERT(bfs_bio_get_mutation_epoch(&cache.bio, &after_scan));
++    TEST_ASSERT_EQ(after_scan, epoch + 1);
++    bfs_cache_destroy(&cache);
++}
++
++static void test_stream_longer_than_ghost_history(void)
++{
++    scan_memory_bio_t memory;
++    bfs_cache_t cache;
++    uint8_t result[BLOCK_SIZE];
++    scan_memory_init(&memory);
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory.bio, 2), BFS_OK);
++
++    for (bfs_blk_t block = 0; block < 4; block++) {
++        TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, block, result, true), BFS_OK);
++        TEST_ASSERT_EQ(find_resident(&cache, block), cache.num_slots);
++    }
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 2);
++
++    /* Block 0 aged out of the two-entry history; block 3 remains eligible. */
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 0, result, true), BFS_OK);
++    TEST_ASSERT_EQ(find_resident(&cache, 0), cache.num_slots);
++    TEST_ASSERT_EQ(bfs_bio_read_scan_leaf(&cache.bio, 3, result, true), BFS_OK);
++    TEST_ASSERT(find_resident(&cache, 3) < cache.num_slots);
++    bfs_cache_destroy(&cache);
++}
++
++typedef struct {
++    bfs_allocator_t iface;
++    bfs_blk_t next;
++} scan_allocator_t;
++
++static bfs_blk_t scan_alloc(bfs_allocator_t *allocator)
++{
++    scan_allocator_t *scan_allocator = allocator->ctx;
++    if (scan_allocator->next >= BLOCK_COUNT) return BFS_BLK_NULL;
++    return scan_allocator->next++;
++}
++
++static bfs_err_t scan_dealloc(bfs_allocator_t *allocator, bfs_blk_t block)
++{
++    (void)allocator;
++    (void)block;
++    return BFS_OK;
++}
++
++static bool count_directory_entry(const char *name, uint8_t name_len,
++                                  uint32_t inode, uint32_t type, void *context)
++{
++    (void)name;
++    (void)name_len;
++    (void)inode;
++    (void)type;
++    (*(uint32_t *)context)++;
++    return true;
++}
++
++typedef struct {
++    const bfs_bio_ops_t *base_ops;
++    uint32_t record_reuse_true;
++    uint32_t record_reuse_false;
++} scan_dispatch_trace_t;
++
++static scan_dispatch_trace_t *active_scan_trace;
++
++static bfs_err_t trace_read_scan_leaf(bfs_bio_t *bio, bfs_blk_t block,
++                                      void *buffer, bool record_reuse)
++{
++    if (record_reuse)
++        active_scan_trace->record_reuse_true++;
++    else
++        active_scan_trace->record_reuse_false++;
++    return active_scan_trace->base_ops->read_scan_leaf(bio, block, buffer,
++                                                        record_reuse);
++}
++
++static void install_scan_dispatch_trace(bfs_cache_t *cache,
++                                        scan_dispatch_trace_t *trace,
++                                        bfs_bio_ops_t *traced_ops)
++{
++    trace->base_ops = cache->bio.ops;
++    trace->record_reuse_true = 0;
++    trace->record_reuse_false = 0;
++    *traced_ops = *trace->base_ops;
++    traced_ops->read_scan_leaf = trace_read_scan_leaf;
++    active_scan_trace = trace;
++    cache->bio.ops = traced_ops;
++}
++
++static void remove_scan_dispatch_trace(bfs_cache_t *cache,
++                                       const scan_dispatch_trace_t *trace)
++{
++    cache->bio.ops = trace->base_ops;
++    active_scan_trace = NULL;
++}
++
++static bool make_two_entry_directory(scan_memory_bio_t *memory,
++                                     bfs_cache_t *cache,
++                                     scan_allocator_t *allocator,
++                                     bfs_dir_tree_t *directory,
++                                     uint32_t cache_slots)
++{
++    scan_memory_init(memory);
++    if (bfs_cache_init(cache, &memory->bio, cache_slots) != BFS_OK)
++        return false;
++    memset(allocator, 0, sizeof(*allocator));
++    allocator->iface.alloc = scan_alloc;
++    allocator->iface.dealloc = scan_dealloc;
++    allocator->iface.ctx = allocator;
++    allocator->next = 2;
++    if (bfs_dir_init(directory, &cache->bio, &allocator->iface,
++                     BFS_BLK_NULL, 1) != BFS_OK)
++        return false;
++    if (bfs_dir_insert(directory, 5, "alpha", 5, 100, BFS_INODE_FILE) != BFS_OK)
++        return false;
++    if (bfs_dir_insert(directory, 5, "beta", 4, 101, BFS_INODE_FILE) != BFS_OK)
++        return false;
++    return directory->tree.height == 1;
++}
++
++typedef struct {
++    uint32_t calls;
++    uint32_t stop_after;
++} stop_directory_scan_t;
++
++static bool stop_directory_scan_on_nth(const char *name, uint8_t name_len,
++                                        uint32_t inode, uint32_t type,
++                                        void *context)
++{
++    stop_directory_scan_t *scan = context;
++    (void)name;
++    (void)name_len;
++    (void)inode;
++    (void)type;
++    scan->calls++;
++    return scan->calls < scan->stop_after;
++}
++
++static void test_directory_cursor_resume_marks_consumed_leaf_non_reusable(void)
++{
++    scan_memory_bio_t *memory = calloc(1, sizeof(*memory));
++    TEST_ASSERT(memory != NULL);
++    bfs_cache_t cache;
++    scan_allocator_t allocator;
++    bfs_dir_tree_t directory;
++    TEST_ASSERT(make_two_entry_directory(memory, &cache, &allocator,
++                                         &directory, 1));
++    bfs_cache_invalidate(&cache);
++    memory->reads = 0;
++
++    scan_dispatch_trace_t trace;
++    bfs_bio_ops_t traced_ops;
++    install_scan_dispatch_trace(&cache, &trace, &traced_ops);
++    bfs_btree_cursor_t cursor = {0};
++    stop_directory_scan_t stop = {.stop_after = 2};
++    TEST_ASSERT_EQ(bfs_dir_scan_cursor(&directory, &cursor, 5, NULL, 0,
++                                       stop_directory_scan_on_nth, &stop), BFS_OK);
++    TEST_ASSERT_EQ(stop.calls, 2);
++    TEST_ASSERT(cursor.stopped);
++    TEST_ASSERT_EQ(trace.record_reuse_true, 1);
++    TEST_ASSERT_EQ(trace.record_reuse_false, 0);
++    TEST_ASSERT_EQ(memory->reads, 1);
++    TEST_ASSERT_EQ(find_resident(&cache, directory.tree.root), cache.num_slots);
++    TEST_ASSERT_EQ(cache.scan_ghost[0], directory.tree.root);
++
++    uint32_t resumed_calls = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan_resume(&directory, &cursor, 5,
++                                       count_directory_entry, &resumed_calls), BFS_OK);
++    TEST_ASSERT_EQ(resumed_calls, 0);
++    TEST_ASSERT(!cursor.stopped);
++    TEST_ASSERT_EQ(trace.record_reuse_true, 1);
++    TEST_ASSERT_EQ(trace.record_reuse_false, 1);
++    TEST_ASSERT_EQ(memory->reads, 2);
++    TEST_ASSERT_EQ(find_resident(&cache, directory.tree.root), cache.num_slots);
++    TEST_ASSERT_EQ(cache.scan_ghost[0], directory.tree.root);
++
++    uint32_t count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count), BFS_OK);
++    TEST_ASSERT_EQ(count, 2);
++    TEST_ASSERT_EQ(trace.record_reuse_true, 2);
++    TEST_ASSERT_EQ(trace.record_reuse_false, 1);
++    TEST_ASSERT_EQ(memory->reads, 3);
++    TEST_ASSERT(find_resident(&cache, directory.tree.root) < cache.num_slots);
++
++    count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count), BFS_OK);
++    TEST_ASSERT_EQ(count, 2);
++    TEST_ASSERT_EQ(memory->reads, 3);
++    TEST_ASSERT_EQ(trace.record_reuse_true, 2);
++    TEST_ASSERT_EQ(trace.record_reuse_false, 1);
++
++    remove_scan_dispatch_trace(&cache, &trace);
++    bfs_cache_destroy(&cache);
++    free(cursor.leaf);
++    free(memory);
++}
++
++static void test_directory_scan_opt_out_uses_demand_admission(void)
++{
++    scan_memory_bio_t *memory = calloc(1, sizeof(*memory));
++    TEST_ASSERT(memory != NULL);
++    bfs_cache_t cache;
++    scan_allocator_t allocator;
++    bfs_dir_tree_t directory;
++    TEST_ASSERT(make_two_entry_directory(memory, &cache, &allocator,
++                                         &directory, 1));
++    bfs_cache_invalidate(&cache);
++    memory->reads = 0;
++
++    bfs_btree_ops_t no_scan_admission = *directory.tree.ops;
++    no_scan_admission.scan_admission = false;
++    directory.tree.ops = &no_scan_admission;
++    scan_dispatch_trace_t trace;
++    bfs_bio_ops_t traced_ops;
++    install_scan_dispatch_trace(&cache, &trace, &traced_ops);
++
++    uint32_t count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count), BFS_OK);
++    TEST_ASSERT_EQ(count, 2);
++    TEST_ASSERT_EQ(trace.record_reuse_true, 0);
++    TEST_ASSERT_EQ(trace.record_reuse_false, 0);
++    TEST_ASSERT_EQ(memory->reads, 1);
++    TEST_ASSERT(find_resident(&cache, directory.tree.root) < cache.num_slots);
++    TEST_ASSERT_EQ(cache.scan_ghost_count, 0);
++
++    count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count), BFS_OK);
++    TEST_ASSERT_EQ(count, 2);
++    TEST_ASSERT_EQ(memory->reads, 1);
++    TEST_ASSERT_EQ(trace.record_reuse_true, 0);
++    TEST_ASSERT_EQ(trace.record_reuse_false, 0);
++
++    remove_scan_dispatch_trace(&cache, &trace);
++    bfs_cache_destroy(&cache);
++    free(memory);
++}
++
++static void test_directory_scan_admission_and_miss_validation(void)
++{
++    scan_memory_bio_t *memory = calloc(1, sizeof(*memory));
++    TEST_ASSERT(memory != NULL);
++    scan_memory_init(memory);
++    bfs_cache_t cache;
++    TEST_ASSERT_EQ(bfs_cache_init(&cache, &memory->bio, 1), BFS_OK);
++
++    scan_allocator_t allocator = {0};
++    allocator.iface.alloc = scan_alloc;
++    allocator.iface.dealloc = scan_dealloc;
++    allocator.iface.ctx = &allocator;
++    allocator.next = 2;
++    bfs_dir_tree_t directory;
++    TEST_ASSERT_EQ(bfs_dir_init(&directory, &cache.bio, &allocator.iface,
++                                BFS_BLK_NULL, 1), BFS_OK);
++    TEST_ASSERT_EQ(bfs_dir_insert(&directory, 5, "alpha", 5, 100,
++                                  BFS_INODE_FILE), BFS_OK);
++    TEST_ASSERT_EQ(bfs_dir_insert(&directory, 5, "beta", 4, 101,
++                                  BFS_INODE_FILE), BFS_OK);
++    TEST_ASSERT_EQ(directory.tree.height, 1);
++
++    bfs_cache_invalidate(&cache);
++    memory->reads = 0;
++    uint32_t count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count), BFS_OK);
++    TEST_ASSERT_EQ(count, 2);
++    TEST_ASSERT_EQ(memory->reads, 1);
++    TEST_ASSERT_EQ(find_resident(&cache, directory.tree.root), cache.num_slots);
++
++    count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count), BFS_OK);
++    TEST_ASSERT_EQ(count, 2);
++    TEST_ASSERT_EQ(memory->reads, 2);
++    uint32_t resident = find_resident(&cache, directory.tree.root);
++    TEST_ASSERT(resident < cache.num_slots);
++    TEST_ASSERT(cache.slots[resident].node_structure_valid);
++
++    count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count), BFS_OK);
++    TEST_ASSERT_EQ(count, 2);
++    TEST_ASSERT_EQ(memory->reads, 2);
++
++    /* Make a semantically invalid directory leaf with a valid CRC, then force
++     * a cache miss. The scan must validate the whole leaf before its callback. */
++    bfs_cache_invalidate(&cache);
++    uint8_t *image = memory->blocks[directory.tree.root];
++    TEST_ASSERT(num_keys(image) >= 1);
++    bfs_dir_val_t *value = (bfs_dir_val_t *)leaf_val(&directory.tree, image, 0);
++    value->entry_type = bfs_be32(UINT32_MAX);
++    hdr_of(image)->crc32 = bfs_be32(node_compute_crc(&directory.tree, image));
++    uint32_t reads_before_corrupt_scan = memory->reads;
++
++    count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count),
++                   BFS_ERR_CORRUPT);
++    TEST_ASSERT_EQ(count, 0);
++    TEST_ASSERT_EQ(memory->reads, reads_before_corrupt_scan + 1);
++    TEST_ASSERT_EQ(find_resident(&cache, directory.tree.root), cache.num_slots);
++
++    /* The miss that qualifies for admission still performs the same checks. */
++    count = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan(&directory, 5, count_directory_entry, &count),
++                   BFS_ERR_CORRUPT);
++    TEST_ASSERT_EQ(count, 0);
++    TEST_ASSERT_EQ(memory->reads, reads_before_corrupt_scan + 2);
++    resident = find_resident(&cache, directory.tree.root);
++    TEST_ASSERT(resident < cache.num_slots);
++    TEST_ASSERT(!cache.slots[resident].node_crc_valid);
++    TEST_ASSERT(!cache.slots[resident].node_structure_valid);
++
++    bfs_cache_destroy(&cache);
++    free(memory);
++}
++
++TEST_SUITE_BEGIN("Scan Cache Admission")
++    TEST_RUN(test_bio_scan_wrapper_fallback_and_invalid_arguments);
++    TEST_RUN(test_scan_misses_require_two_reuses_then_hit);
++    TEST_RUN(test_cursor_boundary_misses_do_not_count_or_qualify);
++    TEST_RUN(test_demand_read_admits_and_forgets_scan_ghost);
++    TEST_RUN(test_read_errors_do_not_record_reuse);
++    TEST_RUN(test_dirty_hits_are_visible_and_all_dirty_misses_stay_uncached);
++    TEST_RUN(test_mutations_and_invalidation_clear_history_and_advance_epoch);
++    TEST_RUN(test_stream_longer_than_ghost_history);
++    TEST_RUN(test_directory_cursor_resume_marks_consumed_leaf_non_reusable);
++    TEST_RUN(test_directory_scan_opt_out_uses_demand_admission);
++    TEST_RUN(test_directory_scan_admission_and_miss_validation);
++TEST_SUITE_END()

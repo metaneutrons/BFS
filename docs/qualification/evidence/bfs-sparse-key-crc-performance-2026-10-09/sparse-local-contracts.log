@@ -1,0 +1,89 @@
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/alloc.o src/core/alloc.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/bootstrap_alloc.o src/core/bootstrap_alloc.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/btree.o src/core/btree.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/cache.o src/core/cache.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/crc32.o src/core/crc32.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/crc32_zero.o src/core/crc32_zero.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/dir.o src/core/dir.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/extent.o src/core/extent.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/file.o src/core/file.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/fs.o src/core/fs.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/fsck.o src/core/fsck.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/inode.o src/core/inode.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/namespace.o src/core/namespace.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/refcount.o src/core/refcount.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/snapshot.o src/core/snapshot.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/superblock.o src/core/superblock.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/txn.o src/core/txn.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/host/posix_bio.o src/host/posix_bio.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_crash_inject tests/test_crash_inject.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/bfs-conformance-posix tools/bfs-conformance-posix.c
+ar rcs build/host/libbfs.a build/host/obj/core/alloc.o build/host/obj/core/bootstrap_alloc.o build/host/obj/core/btree.o build/host/obj/core/cache.o build/host/obj/core/crc32.o build/host/obj/core/crc32_zero.o build/host/obj/core/dir.o build/host/obj/core/extent.o build/host/obj/core/file.o build/host/obj/core/fs.o build/host/obj/core/fsck.o build/host/obj/core/inode.o build/host/obj/core/namespace.o build/host/obj/core/refcount.o build/host/obj/core/snapshot.o build/host/obj/core/superblock.o build/host/obj/core/txn.o
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L  -o build/host/bfs \
+		tools/bfs_host.c tools/bfs_host_common.c  \
+		build/host/obj/host/posix_bio.o build/host/libbfs.a 
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/conformance-fixture-writer tests/conformance/fixture_writer.c build/host/obj/host/posix_bio.o build/host/libbfs.a
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -DBFS_POSIX_BIO_FAULT_TEST -o build/host/test_posix_faults \
+		tests/test_posix_faults.c tests/posix_bio_faults.c src/host/posix_bio.c build/host/libbfs.a
+/usr/bin/clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/bfs-conformance-core tools/bfs-conformance-core.c build/host/obj/host/posix_bio.o build/host/libbfs.a
+test_catalog_and_direct_replay (test_conformance.ConformanceTests.test_catalog_and_direct_replay) ... ok
+test_catalog_preserves_matching_amiga_test_ids (test_conformance.ConformanceTests.test_catalog_preserves_matching_amiga_test_ids) ... ok
+test_conformance_is_a_required_host_and_debian_check (test_conformance.ConformanceTests.test_conformance_is_a_required_host_and_debian_check) ... ok
+test_full_direct_replay (test_conformance.ConformanceTests.test_full_direct_replay) ... ok
+test_oracle_and_conformance_programs_are_independent (test_conformance.ConformanceTests.test_oracle_and_conformance_programs_are_independent) ... ok
+test_oracle_exports_namespace_content_and_snapshot_manifest (test_conformance.ConformanceTests.test_oracle_exports_namespace_content_and_snapshot_manifest) ... ok
+test_oracle_fails_closed_on_non_bfs_input (test_conformance.ConformanceTests.test_oracle_fails_closed_on_non_bfs_input) ... ok
+test_oracle_rejects_a_comment_flag_without_entry (test_conformance.ConformanceTests.test_oracle_rejects_a_comment_flag_without_entry) ... ok
+test_oracle_rejects_a_cycle_with_a_valid_node_crc (test_conformance.ConformanceTests.test_oracle_rejects_a_cycle_with_a_valid_node_crc) ... test_backup_recovery_accepts_clean_or_repairable_state (test_fault_campaign.FaultCampaignTests.test_backup_recovery_accepts_clean_or_repairable_state) ... ok
+test_campaign_evidence_is_independently_verifiable (test_fault_campaign.FaultCampaignTests.test_campaign_evidence_is_independently_verifiable) ... ok
+test_oracle_rejects_corrupted_checksummed_data (test_conformance.ConformanceTests.test_oracle_rejects_corrupted_checksummed_data) ... ok
+test_oracle_rejects_crc_and_unsupported_version (test_conformance.ConformanceTests.test_oracle_rejects_crc_and_unsupported_version) ... ok
+test_oracle_reports_hard_links_as_distinct_namespace_entries (test_conformance.ConformanceTests.test_oracle_reports_hard_links_as_distinct_namespace_entries) ... ok
+test_oracle_uses_documented_directory_key_order_for_hash_collisions (test_conformance.ConformanceTests.test_oracle_uses_documented_directory_key_order_for_hash_collisions) ... ok
+test_oracle_walks_a_committed_image (test_conformance.ConformanceTests.test_oracle_walks_a_committed_image) ... ok
+test_orchestrator_rejects_a_semantically_wrong_backend_result (test_conformance.ConformanceTests.test_orchestrator_rejects_a_semantically_wrong_backend_result) ... ok
+test_orchestrator_rejects_an_inconsistent_backend_exit (test_conformance.ConformanceTests.test_orchestrator_rejects_an_inconsistent_backend_exit) ... ok
+test_persistence_model_separates_acknowledgement_from_media_state (test_conformance.ConformanceTests.test_persistence_model_separates_acknowledgement_from_media_state) ... ok
+test_posix_backend_is_not_linked_to_bfs (test_conformance.ConformanceTests.test_posix_backend_is_not_linked_to_bfs) ... ok
+test_posix_backend_requires_an_owned_nonsymlink_root (test_conformance.ConformanceTests.test_posix_backend_requires_an_owned_nonsymlink_root) ... ok
+test_replay_requires_completion_and_nonempty_selection (test_conformance.ConformanceTests.test_replay_requires_completion_and_nonempty_selection) ... ok
+test_runner_bounds_child_runtime_and_output (test_conformance.ConformanceTests.test_runner_bounds_child_runtime_and_output) ... ok
+
+----------------------------------------------------------------------
+Ran 21 tests in 1.744s
+
+OK
+ok
+test_creates_a_missing_evidence_parent (test_fault_campaign.FaultCampaignTests.test_creates_a_missing_evidence_parent) ... ok
+test_deliberate_leak_still_requires_repair (test_fault_campaign.FaultCampaignTests.test_deliberate_leak_still_requires_repair) ... ok
+test_manifest_declares_each_initial_family (test_fault_campaign.FaultCampaignTests.test_manifest_declares_each_initial_family) ... ok
+test_refuses_to_overwrite_evidence (test_fault_campaign.FaultCampaignTests.test_refuses_to_overwrite_evidence) ... ok
+test_rejects_duplicate_case_identifier (test_fault_campaign.FaultCampaignTests.test_rejects_duplicate_case_identifier) ... ok
+test_rejects_unknown_outcome_and_incomplete_observers (test_fault_campaign.FaultCampaignTests.test_rejects_unknown_outcome_and_incomplete_observers) ... ok
+test_verifier_rejects_tampered_case_evidence (test_fault_campaign.FaultCampaignTests.test_verifier_rejects_tampered_case_evidence) ... ok
+test_client_handle_pressure_is_bounded_and_cleaned_up (test_linux_qualification.LinuxQualificationTests.test_client_handle_pressure_is_bounded_and_cleaned_up) ... ok
+test_current_matrix_is_valid (test_linux_qualification.LinuxQualificationTests.test_current_matrix_is_valid) ... ok
+test_cycle_wait_does_not_exceed_requested_duration (test_linux_qualification.LinuxQualificationTests.test_cycle_wait_does_not_exceed_requested_duration) ... ok
+test_evidence_output_is_bounded (test_linux_qualification.LinuxQualificationTests.test_evidence_output_is_bounded) ... ok
+test_fault_workload_digest_is_stable (test_linux_qualification.LinuxQualificationTests.test_fault_workload_digest_is_stable) ... ok
+test_marks_short_soak_as_preflight (test_linux_qualification.LinuxQualificationTests.test_marks_short_soak_as_preflight) ... ok
+test_persists_external_soak_image_durably (test_linux_qualification.LinuxQualificationTests.test_persists_external_soak_image_durably) ... ok
+test_rejects_changed_fault_workload_matrix (test_linux_qualification.LinuxQualificationTests.test_rejects_changed_fault_workload_matrix) ... ok
+test_rejects_event_log_tampering (test_linux_qualification.LinuxQualificationTests.test_rejects_event_log_tampering) ... ok
+test_rejects_incomplete_cycle_checks (test_linux_qualification.LinuxQualificationTests.test_rejects_incomplete_cycle_checks) ... ok
+test_rejects_missing_block_size (test_linux_qualification.LinuxQualificationTests.test_rejects_missing_block_size) ... ok
+test_rejects_missing_deterministic_seed (test_linux_qualification.LinuxQualificationTests.test_rejects_missing_deterministic_seed) ... ok
+test_rejects_missing_format_option (test_linux_qualification.LinuxQualificationTests.test_rejects_missing_format_option) ... ok
+test_rejects_short_soak (test_linux_qualification.LinuxQualificationTests.test_rejects_short_soak) ... ok
+test_rejects_tampered_preserved_image (test_linux_qualification.LinuxQualificationTests.test_rejects_tampered_preserved_image) ... ok
+test_rejects_target_duration_preflight (test_linux_qualification.LinuxQualificationTests.test_rejects_target_duration_preflight) ... ok
+test_rejects_target_evidence_with_missing_cycles (test_linux_qualification.LinuxQualificationTests.test_rejects_target_evidence_with_missing_cycles) ... ok
+test_rejects_unapproved_short_soak (test_linux_qualification.LinuxQualificationTests.test_rejects_unapproved_short_soak) ... ok
+test_requires_issue_29_approval_reference (test_linux_qualification.LinuxQualificationTests.test_requires_issue_29_approval_reference) ... ok
+test_soak_profile_has_capacity_and_handle_pressure (test_linux_qualification.LinuxQualificationTests.test_soak_profile_has_capacity_and_handle_pressure) ... ok
+test_verifies_complete_preflight_evidence (test_linux_qualification.LinuxQualificationTests.test_verifies_complete_preflight_evidence) ... ok
+
+----------------------------------------------------------------------
+Ran 30 tests in 1.927s
+
+OK

@@ -1,0 +1,12 @@
+test_fixed_inventories_and_alternating_order (__main__.SummaryOracles.test_fixed_inventories_and_alternating_order) ... ok
+test_installed_sha_identities_match_variant_and_deep_probe (__main__.SummaryOracles.test_installed_sha_identities_match_variant_and_deep_probe) ... ok
+test_inventory_rejects_missing_unexpected_and_duplicate_names (__main__.SummaryOracles.test_inventory_rejects_missing_unexpected_and_duplicate_names) ... ok
+test_normal_only_cannot_report_full_qualification (__main__.SummaryOracles.test_normal_only_cannot_report_full_qualification) ... ok
+test_pilot_inventory_excludes_deep_diagnostic_family (__main__.SummaryOracles.test_pilot_inventory_excludes_deep_diagnostic_family) ... ok
+test_rdb_requires_unique_dh1_bfs0_with_30_buffers (__main__.SummaryOracles.test_rdb_requires_unique_dh1_bfs0_with_30_buffers) ... ok
+test_tsv_rejects_duplicate_pass_and_wrong_schema (__main__.SummaryOracles.test_tsv_rejects_duplicate_pass_and_wrong_schema) ... ok
+
+----------------------------------------------------------------------
+Ran 7 tests in 0.003s
+
+OK

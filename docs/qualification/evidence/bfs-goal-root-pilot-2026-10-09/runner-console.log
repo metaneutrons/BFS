@@ -1,0 +1,32 @@
+snapdog-runner
+START 1 goal-root-diag-base-1-bfs-first 2026-10-09T19:55:27Z
+PASS 1 goal-root-diag-base-1-bfs-first 2026-10-09T19:56:08Z
+START 2 goal-root-diag-candidate-1-bfs-first 2026-10-09T19:56:08Z
+PASS 2 goal-root-diag-candidate-1-bfs-first 2026-10-09T19:56:50Z
+START 3 goal-root-normal-base-1-bfs-first 2026-10-09T19:56:50Z
+PASS 3 goal-root-normal-base-1-bfs-first 2026-10-09T19:57:27Z
+START 4 goal-root-normal-candidate-1-bfs-first 2026-10-09T19:57:28Z
+PASS 4 goal-root-normal-candidate-1-bfs-first 2026-10-09T19:58:05Z
+START 5 goal-root-durable-base-1-bfs-first 2026-10-09T19:58:05Z
+PASS 5 goal-root-durable-base-1-bfs-first 2026-10-09T19:58:43Z
+START 6 goal-root-durable-candidate-1-bfs-first 2026-10-09T19:58:43Z
+PASS 6 goal-root-durable-candidate-1-bfs-first 2026-10-09T19:59:21Z
+START 7 goal-root-durable-candidate-2-pfs3-first 2026-10-09T19:59:21Z
+PASS 7 goal-root-durable-candidate-2-pfs3-first 2026-10-09T19:59:59Z
+START 8 goal-root-durable-base-2-pfs3-first 2026-10-09T19:59:59Z
+PASS 8 goal-root-durable-base-2-pfs3-first 2026-10-09T20:00:37Z
+START 9 goal-root-normal-candidate-2-pfs3-first 2026-10-09T20:00:37Z
+PASS 9 goal-root-normal-candidate-2-pfs3-first 2026-10-09T20:01:15Z
+START 10 goal-root-normal-base-2-pfs3-first 2026-10-09T20:01:15Z
+PASS 10 goal-root-normal-base-2-pfs3-first 2026-10-09T20:01:52Z
+START 11 goal-root-aa-normal-basea-1-bfs-first 2026-10-09T20:01:52Z
+PASS 11 goal-root-aa-normal-basea-1-bfs-first 2026-10-09T20:02:31Z
+START 12 goal-root-aa-normal-baseb-1-bfs-first 2026-10-09T20:02:31Z
+PASS 12 goal-root-aa-normal-baseb-1-bfs-first 2026-10-09T20:03:10Z
+START 13 goal-root-aa-durable-basea-1-pfs3-first 2026-10-09T20:03:10Z
+PASS 13 goal-root-aa-durable-basea-1-pfs3-first 2026-10-09T20:03:48Z
+START 14 goal-root-aa-durable-baseb-1-pfs3-first 2026-10-09T20:03:48Z
+PASS 14 goal-root-aa-durable-baseb-1-pfs3-first 2026-10-09T20:04:26Z
+GOAL_ROOT_PILOT_COMPLETE 14 2026-10-09T20:04:26Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-09T20:04:28Z

@@ -1,0 +1,132 @@
+#!/bin/bash
+# BFS Benchmark — runs DiskSpeed on emulated 68040 with BFS volume
+# Usage: ./emulator-test/ci-benchmark.sh [timeout_seconds]
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+PROJECT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+TIMEOUT="${1:-300}"
+
+[[ "$TIMEOUT" =~ ^[1-9][0-9]*$ ]] || {
+    echo "ERROR: timeout must be a positive integer" >&2
+    exit 2
+}
+
+ASSETS="${BFS_AMIGA_ASSETS_DIR:-$SCRIPT_DIR/.assets}"
+ROM="${BFS_ROM_FILE:-$ASSETS/A1200.47.102.rom}"
+DISKSPEED="${BFS_DISKSPEED:-$SCRIPT_DIR/.cache/DiskSpeed}"
+
+# ── Verify prerequisites ──────────────────────────────────────
+[ -f "$ROM" ] || { echo "ERROR: ROM not found: $ROM (set BFS_ROM_FILE)"; exit 1; }
+command -v fs-uae >/dev/null || { echo "ERROR: fs-uae not found"; exit 1; }
+[ -f "$PROJECT_DIR/build/amiga/bfshandler" ] || { echo "ERROR: run 'make amiga' first"; exit 1; }
+[ -f "$DISKSPEED" ] || { echo "ERROR: DiskSpeed not found: $DISKSPEED (set BFS_DISKSPEED)"; exit 1; }
+
+# ── Setup WB directory ────────────────────────────────────────
+WB="$SCRIPT_DIR/.wb32"
+if [ ! -d "$WB/C" ]; then
+    [ -d "$ASSETS/C" ] || { echo "ERROR: Workbench commands not found: $ASSETS/C (set BFS_AMIGA_ASSETS_DIR)"; exit 1; }
+    mkdir -p "$WB/C" "$WB/L" "$WB/Libs" "$WB/S" "$WB/Devs"
+    cp -R "$ASSETS/C/." "$WB/C/"
+    if [ -d "$ASSETS/L" ]; then cp -R "$ASSETS/L/." "$WB/L/"; fi
+    if [ -d "$ASSETS/Libs" ]; then cp -R "$ASSETS/Libs/." "$WB/Libs/"; fi
+fi
+
+# Deploy handler + DiskSpeed
+cp "$PROJECT_DIR/build/amiga/bfshandler" "$WB/L/"
+cp "$DISKSPEED" "$WB/C/DiskSpeed"
+
+# ── Create test HDF (128MB, pre-formatted BFS) ────────────────
+HDF="$SCRIPT_DIR/bench.hdf"
+rm -f "$HDF"
+PART_FILE=$(mktemp)
+PID=
+TIMER_PID=
+cleanup() {
+    if [ -n "$PID" ] && kill -0 "$PID" 2>/dev/null; then
+        if kill "$PID" 2>/dev/null; then :; fi
+    fi
+    if [ -n "$TIMER_PID" ] && kill "$TIMER_PID" 2>/dev/null; then
+        if wait "$TIMER_PID" 2>/dev/null; then :; fi
+    fi
+    rm -f "$PART_FILE" "$HDF"
+}
+trap cleanup EXIT
+rdbtool -f "$HDF" create size=128Mi cyls=256 heads=16 secs=32 \
+    + init \
+    + add name=BFS start=2 end=255 dostype=0x42465300 bootable=False \
+    + fsadd "$PROJECT_DIR/build/amiga/bfshandler" version=1.0 dostype=0x42465300 >/dev/null 2>&1
+
+PART_BLOCKS=$(( (254 * 16 * 32 * 512) / 4096 ))
+dd if=/dev/zero of="$PART_FILE" bs=4096 count="$PART_BLOCKS" status=none
+"$PROJECT_DIR/build/host/bfs" format "$PART_FILE" --label BFSTest >/dev/null
+dd if="$PART_FILE" of="$HDF" bs=512 seek=1024 conv=notrunc status=none
+rm -f "$PART_FILE"
+
+# ── Write Startup-Sequence ────────────────────────────────────
+cat > "$WB/S/Startup-Sequence" << 'EOF'
+Echo ""
+Echo "=== BFS DiskSpeed Benchmark ==="
+Echo ""
+C:DiskSpeed DRIVE=BFS: ALL >SYS:bench.txt
+Type SYS:bench.txt
+EOF
+
+rm -f "$WB/bench.txt"
+
+# ── Generate FS-UAE config ────────────────────────────────────
+CFG="$SCRIPT_DIR/config/ci-bench.fs-uae"
+mkdir -p "$(dirname "$CFG")"
+cat > "$CFG" << EOF
+[fs-uae]
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 8192
+cpu = 68040
+uae_cpu_speed = max
+uae_cpu_24bit_addressing = false
+kickstart_file = $ROM
+hard_drive_0 = $WB
+hard_drive_0_label = System
+hard_drive_0_priority = 0
+hard_drive_1 = $HDF
+floppy_speed = 0
+audio_driver = null
+end_config = shutdown
+window_width = 800
+window_height = 600
+EOF
+
+# ── Run FS-UAE ────────────────────────────────────────────────
+echo "=== BFS DiskSpeed Benchmark ==="
+echo "Timeout: ${TIMEOUT}s"
+echo "Starting FS-UAE..."
+
+FSEMU_AUDIO_DRIVER=null fs-uae "$CFG" &
+PID=$!
+(
+    sleep "$TIMEOUT"
+    if kill -0 "$PID" 2>/dev/null; then
+        kill "$PID" 2>/dev/null
+    fi
+) &
+TIMER_PID=$!
+if wait "$PID" 2>/dev/null; then :; fi
+PID=
+if kill "$TIMER_PID" 2>/dev/null; then
+    if wait "$TIMER_PID" 2>/dev/null; then :; fi
+fi
+TIMER_PID=
+
+# ── Show results ──────────────────────────────────────────────
+RESULT="$WB/bench.txt"
+if [ ! -f "$RESULT" ]; then
+    echo "ERROR: No benchmark result (timeout or crash)"
+    exit 1
+fi
+
+echo ""
+echo "=== Results ==="
+cat "$RESULT"
+
+# The EXIT trap removes the temporary partition and HDF.

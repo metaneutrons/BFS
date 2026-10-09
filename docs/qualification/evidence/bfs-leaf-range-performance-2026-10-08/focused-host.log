@@ -1,0 +1,21 @@
+clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/upgrade-focused/test_inode_lookup_hints tests/test_inode_lookup_hints.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/upgrade-focused/test_btree tests/test_btree.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+clang -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -DBFS_PERF_PROBE=1 \
+	-Itests/perf_probe_stubs -iquote src/amiga -o build/upgrade-focused/test_perf_probe \
+	tests/test_perf_probe.c src/amiga/perf_probe.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+  FAIL: tests/test_inode_lookup_hints.c:562: fixture.fs->inode_key_hints.leaf_count == 1, expected 0
+  FAIL: tests/test_inode_lookup_hints.c:822: original_fs->inode_key_hints.leaf_count == 1, expected 0
+=== Inode B-tree lookup hints ===
+  test_warm_hint_skips_traversal_buffer_and_checks_index OK
+  test_distinct_key_range_hit_skips_root_traversal   OK
+  test_sparse_range_uses_checked_search_and_misses_fall_back OK
+  test_missing_and_saturated_epoch_disable_both_shortcuts OK
+  test_owned_leaf_update_and_later_cow_return_current_inode OK
+  test_direct_mapped_collisions_preserve_key_identity OK
+  test_unlinked_and_deleted_inodes_do_not_leak_through_hints OK
+  test_invalidation_rechecks_crc_and_inode_identity_after_raw_write FAILED
+  test_internal_path_raw_write_invalidates_both_leaf_shortcuts OK
+  test_range_table_is_sorted_bounded_and_replaces_old_leaves OK
+  test_reload_remount_pointer_lifetime_and_snapshot_view FAILED
+
+9 passed, 2 failed

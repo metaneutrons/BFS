@@ -1,0 +1,13 @@
+sequence	family	repeat	order	variant	run_name
+1	normal	1	bfs-first	m5	split-normal-m5-1-bfs-first
+2	normal	1	bfs-first	sparse	split-normal-sparse-1-bfs-first
+3	durable	1	bfs-first	m5	split-durable-m5-1-bfs-first
+4	durable	1	bfs-first	sparse	split-durable-sparse-1-bfs-first
+5	durable	2	pfs3-first	sparse	split-durable-sparse-2-pfs3-first
+6	durable	2	pfs3-first	m5	split-durable-m5-2-pfs3-first
+7	normal	2	pfs3-first	sparse	split-normal-sparse-2-pfs3-first
+8	normal	2	pfs3-first	m5	split-normal-m5-2-pfs3-first
+9	aa-normal	1	bfs-first	m5a	split-aa-normal-m5a-1-bfs-first
+10	aa-normal	1	bfs-first	m5b	split-aa-normal-m5b-1-bfs-first
+11	aa-durable	1	pfs3-first	m5a	split-aa-durable-m5a-1-pfs3-first
+12	aa-durable	1	pfs3-first	m5b	split-aa-durable-m5b-1-pfs3-first

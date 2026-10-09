@@ -1,0 +1,18 @@
+Read-only final Luna evidence review, independent of the report/summary authors.
+No source edits or tests/builds by the reviewer.
+
+No raw mismatch found. The six paired pilot ratios/ranges, deep counter totals,
+per-order repetitions, 30-buffer capacity, schemas (four pilot schema4 and
+four deep schema15 comparisons), input digests and report arithmetic agree.
+All eight runs and all two-order pairs are retained without filtering.
+Pilot/deep scope and non-causal timing qualifications are explicit.
+
+Corrected SAN: 61 suite headers, 574 inline test OK rows and four split-status
+OK tests, totaling 578. Restored host and SAN each have 60 suites, 562 inline
+OK rows and four split-status tests, totaling 566. Summary oracles pass 12/12.
+The final text asset audit passes.
+
+Minor clarity correction requested and applied to the report: legacy
+LIST_EXALL_400/LIST_EXNEXT_400 scan the 40-entry perf directory ten times;
+new *_400_ENTRIES_* phases use an actual 400-entry fixture. Their timings
+must not be conflated. No other actionable evidence or correctness issue.

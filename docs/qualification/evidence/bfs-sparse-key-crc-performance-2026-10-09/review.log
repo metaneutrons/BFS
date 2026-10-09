@@ -1,0 +1,121 @@
+Independent read-only Luna review, 2026-10-09
+
+Core and focused host tests:
+- No correctness defect found in the five-file implementation.
+- Only complete, inspected 16-byte zero units in runs >=64 bytes use the
+  existing exact zero transform. Pending bytes, nonzero units and tails use
+  the ordinary CRC. position<=length prevents uint32 overflow.
+- The read-CRC selector only opts directory leaves into this implementation;
+  CRC comparison, structure/expected-level/parent-bound validation, cache
+  validity and mutation/dirty/flush behavior remain unchanged.
+- Independent bitwise-oracle properties cover empty NULL, offsets, boundaries,
+  mixed and random inputs, single-byte perturbations, and chained seeds.
+- Requested valid nonzero used-key-tail integration coverage was subsequently
+  added: bytes200/250 after name_len, both modes, 1K/4K/64K, before and after
+  cache invalidation. Existing stale-CRC mutation rejection remains.
+
+Standalone m68k probe:
+- 1297 oracle vectors, 2594 positive ABI witnesses, two negative controls,
+  thirty timing samples, and 4608 timing calls per implementation are correct.
+- Timing fixture inputs also occur in the independently checked vectors.
+- Six samples/case alternate baseline-first and sparse-first; no warm-up or
+  randomized starting order. These are exploratory emulator CPU timings.
+- A type-compatibility concern was resolved with a compile-time compatible-
+  type assertion and an uncast function pointer initializer. The guarded
+  rebuild succeeds and has the exact same binary SHA256 as the timed probe.
+- The fixed current report fits8192 bytes; its append routines do not enforce
+  capacity for future schema expansion.
+- The completion marker means a fully saved report, not PASS. The runner
+  refuses existing run directories, avoiding stale markers, and the strict
+  parser also requires exact marker/report/status/counts/input identities.
+
+Primary-agent checks:
+- Root read both host test files and the complete probe source.
+- Root independently confirmed count arithmetic and the compile-time m68k
+  type assertion; source guard does not change the timed binary.
+- The DIR fixture is synthetic density/alignment evidence, not an actual saved
+  B-tree node or a measurement of whole-filesystem speed.
+- No additional hardware/cache/flush claims follow from this experiment.
+
+Independent handler-summary review:
+- No defects found against the immutable scan-admission parser.
+- Exactly40 runs:4 pilot,4 deep,32 normal/durable; both variants, paired
+  repeats/orders, production/probe/guest/PFS3 identities, schemas4/15 and
+  actual30-buffer RDB geometry remain strict.
+- Missing/unexpected/duplicate runs and any failed repository verification
+  reject the selected inventory; no PASS-only or outlier filtering occurs.
+- Every phase, individual BFS/PFS3 ratio, >5 count and paired calibrator is
+  emitted. Deep schema override does not mutate the historical parser.
+- Root reran all12 handler-summary unit oracles and the four actual pilots.
+
+Micro-consumer hardening:
+- Root requested SHA256 of actual retained config bytes, in addition to pinned
+  inputs.sha256 declarations. Missing/tampered-config rejection was added.
+- Root reran all23 summary oracles and both actual micro reports after this
+  change; vector digest2555652288 and both config/probe/ROM identities pass.
+- ShellCheck passes with SC2016 excluded only for deliberate child-bash/trap
+  expansion in the standalone runner; the production-series script passes
+  without that exclusion.
+
+Actual diagnostic inventory:
+- Four schema15/ABI16 runs pass strict verification. All24 listing rows have
+  identical non-timing diagnostic counters, including read and CRC counts.
+- CRC sampled-tick ratios are recorded raw in deep-counter-comparison.log;
+  sampled scopes overlap and are not exclusive CPU times or elapsed forecasts.
+
+Final targeted read-only review:
+- Legal used-key-tail coverage, m68k type guard and actual config-byte hashes
+  close all previously requested gaps; no targeted defect remains.
+- The reviewer noticed Python read_text normalizes CRLF before the parser's
+  explicit LF check. Root changed only the new micro consumer to byte-preserving
+  ASCII decoding and added a CRLF negative oracle for reports and identities.
+  All24 summary tests and both actual micro runs pass afterwards.
+
+SUPERSEDING PRIMARY-AUDIT CORRECTION:
+The first fail-fast reproduction disproved the earlier guarded-build claim.
+The compile-time type guard failed on the actual m68k shims: size_t and
+uint32_t have different C types. A root command had chained a later hash
+print/SSH task after that compiler failure, so a stale7fa executable was
+mistakenly presented as a successful guarded rebuild. The failed compiler log
+is retained. Reviewer conclusions conditional on that claimed build do not
+establish compatible types. This is a microprobe qualification error, not a
+core/production-handler change.
+
+Root replaced direct/cast sparse function pointers with symmetric exact-size_t
+adapters and explicit uint32 conversion, retained a32-bit-width assertion,
+and advanced the micro protocol to2. The corrected actual build succeeds and
+the fail-fast build-probe.sh reproduces SHA256
+0b9a67a9554a1a4ef594f0bde18efbe6d2be5a63db662578eff61b58d41266a4.
+Initial protocol1 runs and their consumers remain in micro/ and
+micro-initial-parser/ as explicitly nonqualifying exploratory evidence.
+Only freshly recorded protocol2 runs in micro-typed/ may support the final
+micro timing/ABI conclusion. Production/probe handlers are unchanged; their
+pilot, deep and normal inventories remain valid.
+
+Corrected protocol2 outcome:
+- Two fresh typed-adapter boots pass1297 oracle vectors,2594 positive ABI
+  checks, two negative controls and all30 timing samples each.
+- The current strict parser rejects archived protocol1; root reran all25
+  consumer oracles, including malformed line endings and actual config bytes.
+- Short-key CRC median is0.4081 of baseline (range0.3782-0.4248,0/12 slower).
+  Dense4096 median1.1313 (12/12 slower) remains explicitly recorded.
+
+Corrective independent review:
+- Actual typed binaries, both config-byte hashes, protocol2 consumer/report,
+  explicit protocol1 rejection and archived initial-error explanation agree.
+- The quiet direct compile log is empty; probe-reproduction.log, the fail-fast
+  transcript and matching output hashes, is the successful build evidence.
+- Positive ABI witnesses call typed adapters. Root additionally retained
+  typed-probe-codegen.s from the same optimization/ABI flags: both adapters
+  are only direct tail jumps to their respective CRC functions, with no
+  register saves/restores that could mask a callee clobber.
+
+Final report consistency review:
+- Independent read-only review found no actionable inconsistency between the
+  final report, complete raw summary, decision metrics, typed micro evidence
+  and rebuilt handler identities. Possible append/create regressions and the
+  unachieved global goal remain explicit; there is no universal-speed claim.
+- Protocol1 qualification/build errors and missing-Git setup failure remain
+  preserved separately. The final protocol2 and corrected runtime inventories
+  pass without changing the core code, tests or error oracles.
+- No CI dispatch/restart, source-worktree commit, push or merge occurred.

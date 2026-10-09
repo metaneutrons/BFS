@@ -1,0 +1,53 @@
+ M .gitignore
+ M HANDOFF.md
+ M Makefile
+ M emulator-test/bench-series.sh
+ M emulator-test/build-bench-image.sh
+ M emulator-test/verify-bench-results.sh
+ M include/bfs_bio.h
+ M include/bfs_btree.h
+ M include/bfs_cache.h
+ M include/bfs_crc32.h
+ M include/bfs_dir.h
+ M include/bfs_file.h
+ M include/bfs_fs.h
+ M src/amiga/handler.c
+ M src/amiga/perf_probe.c
+ M src/amiga/perf_probe.h
+ M src/core/btree.c
+ M src/core/cache.c
+ M src/core/crc32_zero.c
+ M src/core/dir.c
+ M src/core/file.c
+ M src/core/fs.c
+ M src/core/inode.c
+ M tests/quality/test_bench_verifier.py
+ M tools/bench-summary.py
+ M tools/bfs-test.c
+ M tools/fs-compare-bench.c
+?? docs/plans/bfs-metadata-listing-performance-v1.md
+?? docs/qualification/bfs-cursor-path-performance-2026-10-09.md
+?? docs/qualification/bfs-exact-key-fastpath-2026-10-09.md
+?? docs/qualification/bfs-leaf-range-performance-2026-10-08.md
+?? docs/qualification/bfs-listing-detail-profile-2026-10-08.md
+?? docs/qualification/bfs-metadata-listing-performance-2026-10-08.md
+?? docs/qualification/bfs-scan-admission-performance-2026-10-09.md
+?? docs/qualification/bfs-scan-cache-performance-2026-10-09.md
+?? docs/qualification/evidence/bfs-cursor-path-performance-2026-10-09/
+?? docs/qualification/evidence/bfs-exact-key-fastpath-2026-10-09/
+?? docs/qualification/evidence/bfs-leaf-range-performance-2026-10-08/
+?? docs/qualification/evidence/bfs-listing-detail-2026-10-08/
+?? docs/qualification/evidence/bfs-metadata-listing-2026-10-08/
+?? docs/qualification/evidence/bfs-scan-admission-performance-2026-10-09/
+?? docs/qualification/evidence/bfs-scan-cache-performance-2026-10-09/
+?? docs/qualification/evidence/bfs-sparse-key-crc-performance-2026-10-09/
+?? emulator-test/bench-config.sh
+?? tests/amiga/crc32_sparse_probe.c
+?? tests/perf_probe_stubs/
+?? tests/quality/test_bench_cache_capacity.py
+?? tests/test_btree_sparse_crc.c
+?? tests/test_crc32_sparse.c
+?? tests/test_dir_exclusive_cursor.c
+?? tests/test_file_inode_reuse.c
+?? tests/test_inode_lookup_hints.c
+?? tests/test_perf_probe.c

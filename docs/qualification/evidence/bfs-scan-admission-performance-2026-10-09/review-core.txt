@@ -1,0 +1,25 @@
+Independent Luna review of the six core files against the frozen M5 baseline.
+No reviewer source edits, tests or builds. No correctness blocker found.
+
+Scan-leaf routing is restricted to opted-in expected level zero. Resident
+validated views, including deferred dirty images, retain normal MRU access.
+Miss bytes are caller-owned and receive CRC, structural, expected-level and
+parent-bound checks. Inserted slots start without validation proofs. Bounds
+remain traversal-local even if node-local validation succeeds first.
+
+record_reuse=false applies to unchanged consumed cursor-copy re-descent;
+initial descent, successor leaves and mutation recovery use true. Mutation,
+invalidation and dirty lifecycle paths clear history via cache_note_mutation.
+Admission does not advance epochs. All-dirty protection and failed-read
+behavior remain unchanged. Optional history allocation failure degrades to
+ordinary admission without failing cache initialization.
+
+Corrupt reads can leave a ghost ID or an unvalidated admitted slot: neither
+is a validation authority, and later reads still validate before use.
+Both appended operations-table fields are source-compatible with designated
+in-tree initializers after rebuilding, not binary-compatible with separately
+compiled historical tables. No binary plugin compatibility is claimed here.
+
+Performance risks: a forward scan with more absent leaves than history slots
+can churn every previous identity before reuse; history lookup also costs CPU.
+These require measured total reads/CRCs and matched production comparisons.
