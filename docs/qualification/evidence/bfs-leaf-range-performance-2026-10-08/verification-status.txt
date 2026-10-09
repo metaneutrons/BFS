@@ -1,0 +1,35 @@
+Date: 2026-10-08
+Branch: fix/metadata-listing-performance
+Base: 07216b7f17912c9f28b9b4a920caaa6828b00ccb
+Production source and binary identities remained fixed during qualification.
+
+Host Clang 22.1.8: 565 tests / 60 suites, PASS
+ASan/UBSan with leak detection: 565 tests / 60 suites, PASS
+Quality Python suite: 113 tests, PASS
+Quality-gate counter-probes: PASS
+Core/host Clang static analysis: PASS
+ShellCheck including new harness helper and reproduction script: PASS
+Conformance: 21 tests, PASS after restoring missing workflow fixture
+m68k production/probe/test/public CLI/compatibility fixture builds: PASS
+Amiga integration: 52 checks, PASS
+Kickstart compatibility: 9 scenarios, PASS
+Summary counter-probes: 5 tests, PASS
+
+Exact benchmark inventory: 44 / 44, PASS, no filtering
+Capacity pilots: 6 / 6, exploratory, not retention qualification
+Superseded range pilots: 4 / 4, exploratory, not retention qualification
+Final normal production: 16 / 16 (8 per handler), PASS
+Final durable production: 16 / 16 (8 per handler), PASS
+Final diagnostic: 2 / 2, schema14 / ABI15, PASS
+Actual DH1/BFS0 RDB num_buffer and installed-copy identities: PASS for all44
+Installed-copy digests were collected after measurements, not from RDB images.
+Lossless Format-log encoding: 44 original-byte digests verified
+Prior immutable production manifest: 873 files, PASS
+Prior immutable detailed-profile manifest: 103 files, PASS
+
+Retention: provisional; large listings improve, hot small listing and append
+regression signals remain. No universal speedup or <=5x closure.
+No handler-cache-cold, native AROS, Linux FUSE or physical hardware claim.
+No commit, push, merge or remote CI; snapdog-runner remains stopped.
+Initial incorrect-oracle, early-cleanup sanitizer and incomplete-export logs
+are retained. Later successful suites do not remove or relabel these failures.

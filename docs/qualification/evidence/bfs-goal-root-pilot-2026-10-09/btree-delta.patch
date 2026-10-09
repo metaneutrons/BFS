@@ -1,0 +1,43 @@
+--- build/goal-root-2026-10-09/baseline/btree.c	2026-10-09 21:47:58.973207043 +0200
++++ src/core/btree.c	2026-10-09 21:50:27.857638085 +0200
+@@ -2620,6 +2620,40 @@
+     }
+ }
+ 
++bfs_err_t bfs_btree_search_floor_resident_root(bfs_btree_t *tree,
++                                               const void *key,
++                                               void *key_out, void *val_out)
++{
++    if (!tree || !tree->bio || !tree->ops || !key || !key_out || !val_out)
++        return BFS_ERR_INVAL;
++    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
++    if (tree->root == BFS_BLK_NULL) return BFS_ERR_NOTFOUND;
++    if (tree->height != 1 || !tree->ops->cache_key_order)
++        return BFS_ERR_UNSUPPORTED;
++
++    /* This one current-root view has no ancestor bounds and no remembered
++     * incarnation. Validation and key selection use the ordinary engine's
++     * context/search/layout definitions; only the scratch lease is omitted.
++     * In particular, do not refactor node_view or the generic floor path. */
++    bfs_node_validation_t validation = node_validation_context(tree);
++    uint8_t *node = (uint8_t *)bfs_bio_peek_valid_node(tree->bio, tree->root,
++                                                    &validation);
++    if (!node) return BFS_ERR_UNSUPPORTED;
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_node_view_at_level(tree, TRUE, BFS_BTNODE_LEAF);
++#endif
++    if (node_level(node) != BFS_BTNODE_LEAF) return BFS_ERR_CORRUPT;
++    bool found;
++    uint32_t idx = node_search(tree, node, key, &found);
++    if (!found) {
++        if (idx == 0) return BFS_ERR_NOTFOUND;
++        idx--;
++    }
++    memcpy(key_out, node_key(tree, node, idx), tree->ops->key_size);
++    memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size);
++    return BFS_OK;
++}
++
+ bfs_err_t bfs_btree_search_floor(bfs_btree_t *tree, const void *key,
+                                     void *key_out, void *val_out)
+ {

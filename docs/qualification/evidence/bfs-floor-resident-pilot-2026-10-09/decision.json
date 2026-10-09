@@ -1,0 +1,50 @@
+{
+  "checks": {
+    "at_least_three_primary_pairs_not_slower": true,
+    "both_primary_mode_medians_lower": true,
+    "diagnostic_buffer_requests_lower": true,
+    "no_repeated_ten_percent_phase_slowdown": false
+  },
+  "diagnostic_4k_buffer_requests": {
+    "denominator": 517,
+    "numerator": 260,
+    "ratio": 0.5029013539651838
+  },
+  "primary_4k_growth": {
+    "durable": {
+      "median": 0.9501062960443353,
+      "ratios": [
+        0.9101214574898785,
+        0.990091134598792
+      ]
+    },
+    "normal": {
+      "median": 0.9952956923127377,
+      "ratios": [
+        1.033029155188246,
+        0.9575622294372295
+      ]
+    }
+  },
+  "primary_pairs_not_slower": 3,
+  "repeated_slowdowns": [
+    {
+      "mode": "normal",
+      "phase": "SMALL_DELETE_40",
+      "ratios": [
+        1.142791735820981,
+        1.365514924119393
+      ]
+    },
+    {
+      "mode": "durable",
+      "phase": "LIST_EXNEXT_40_ENTRIES_FIRST_PASS",
+      "ratios": [
+        1.3563218390804597,
+        1.2584269662921348
+      ]
+    }
+  ],
+  "retain_locally": false,
+  "scope": "Pre-run local-retention rule, not production performance clearance. Correctness and identity validation must precede this calculation."
+}

@@ -1,0 +1,36 @@
+Independent Luna read-only review, 2026-10-09
+
+Exact-key change: no actionable correctness findings.
+Compared current source with the immutable 2026-10-08 measurement checkout.
+Owner/BIO/layout identity precedes per-slot root/generation/epoch guards.
+Tree shape, currently validated resident leaf, index and key checks remain.
+Unavailable or saturated epochs cannot authorize shortcuts.
+The new bypass oracle distinguishes the old ordering; the miss case repairs
+stale range metadata. Existing identity/corruption/lifecycle oracles remain.
+
+Evidence runner/summary: no actionable findings.
+Fixed pilot8/full50 inventories, installed-copy digest mapping (including deep
+probe/guest), actual30buffers, every phase, candidate/baseline orientation and
+failure rejection were reviewed. Six synthetic summary probes pass.
+No emulator measurement was performed by the reviewer; primary runtime logs
+remain the evidence for correctness and elapsed performance.
+
+Performance is a hypothesis until measured: range preparation is normally
+a small constant-time check. Exact hits can avoid it; misses may pay extra
+identity checks. No speedup estimate is inferred from the source review.
+
+Supporting Luna m68k assembly inspection, independently checked by primary:
+GCC 6.5.0b, identical Makefile Amiga flags, only the two btree.c versions.
+Both key_hint_read and leaf_hint_prepare inline into bfs_btree_search.
+Both search versions reserve 1068 bytes and save the same registers.
+No new helper-call frame is introduced. Eligible exact misses perform an
+extra owner/BIO/layout identity comparison set before preparation repeats
+the checks. This is a source/compiler mechanism, not measured CPU time.
+Generated assembly for baseline and candidate is retained as text.
+
+Final independent Luna factual review after rejection: no actionable findings.
+Reproduced --normal-only output exactly; default full summary rejects the
+incomplete50 inventory; all seven synthetic probes pass. Reported median
+ratios and slower-pair counts match raw normal results. Report/plan/HANDOFF
+make no full or paired durable qualification claim. Restored core/test hashes
+match the prior snapshot. Every normal run and phase remains in the summary.

@@ -1,0 +1,8 @@
+include/bfs_crc32.h: identical to frozen candidate
+include/bfs_btree.h: identical to frozen candidate
+src/core/btree.c: identical to frozen candidate
+src/core/dir.c: identical to frozen candidate
+src/core/crc32_zero.c: identical to frozen candidate
+tests/test_crc32_sparse.c: identical to frozen candidate
+tests/test_btree_sparse_crc.c: identical to frozen candidate
+tests/amiga/crc32_sparse_probe.c: identical to frozen candidate

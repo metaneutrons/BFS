@@ -43,6 +43,9 @@
 #include "snapshot_mount.h"
 #ifdef BFS_PERF_PROBE
 #include "perf_probe.h"
+#ifdef BFS_PERF_WRITE_DETAIL
+#include "write_probe.h"
+#endif
 #endif
 
 /* ── Packet number constants ────────────────────────────────── */
@@ -210,6 +213,7 @@ typedef struct {
     uint32_t position;
     uint8_t name_len;
     char name[BFS_NAME_MAX];
+    bool consumed_stop; /* tree stop is the entry ExNext returned to DOS */
     bfs_btree_cursor_t tree;
 } bfs_scan_cursor_t;
 
@@ -1116,6 +1120,8 @@ static LONG Pfs4ToDosError(bfs_err_t err)
     case BFS_ERR_NOMEM:    return ERROR_NO_FREE_STORE;
     case BFS_ERR_INVAL:    return ERROR_BAD_NUMBER;
     case BFS_ERR_OVERFLOW: return ERROR_BAD_NUMBER;
+    /* Only the FIBF_WRITE check of bfs_file_write_checked returns it. */
+    case BFS_ERR_PROTECTED: return ERROR_WRITE_PROTECTED;
     case BFS_ERR_UNSUPPORTED: return ERROR_NOT_IMPLEMENTED;
     case BFS_ERR_CORRUPT:  return ERROR_NOT_A_DOS_DISK;
     case BFS_ERR_AGAIN:    return ERROR_DISK_FULL;
@@ -1252,24 +1258,42 @@ static bfs_scan_cursor_t *CursorFor(bfs_lock_t *lk)
 }
 
 static void CursorRemember(bfs_lock_t *lk, uint32_t position,
-                           const char *name, uint8_t name_len)
+                           const char *name, uint8_t name_len,
+                           bool consumed_stop)
 {
     if (!CursorFor(lk)) return; /* the next call counts from the start */
     lk->cursor->position = position;
     lk->cursor->name_len = name_len;
     memcpy(lk->cursor->name, name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    lk->cursor->consumed_stop = consumed_stop;
+}
+
+static void CursorClearConsumedStop(bfs_lock_t *lk)
+{
+    if (lk->cursor) lk->cursor->consumed_stop = false;
 }
 
 /* Scan the directory of lk from the entry after position. *skip tells the
  * callback how many entries to pass over first. */
 static bfs_err_t ScanDirectoryFrom(struct bfs_handler *h, bfs_lock_t *lk,
                                    uint32_t position, bfs_dir_scan_cb cb,
-                                   void *ctx, uint32_t *skip)
+                                   void *ctx, uint32_t *skip,
+                                   bool allow_exclusive_resume)
 {
     bfs_scan_cursor_t *cursor = CursorFor(lk);
     bfs_btree_cursor_t *tree_cursor = cursor ? &cursor->tree : NULL;
     if (position > 0 && cursor && cursor->position == position) {
         *skip = 0;
+        if (allow_exclusive_resume && cursor->consumed_stop) {
+            bfs_err_t err = bfs_dir_scan_resume(&h->fs.dir_tree, tree_cursor,
+                                                lk->ino, cb, ctx);
+            if (err != BFS_ERR_AGAIN) return err;
+        }
+        if (cursor->name_len == 0) {
+            *skip = position;
+            return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino,
+                                      NULL, 0, cb, ctx);
+        }
         return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino, cursor->name,
                                    cursor->name_len, cb, ctx);
     }
@@ -1669,7 +1693,22 @@ static LONG ExAllFixedSize(LONG type)
 
 /* Stateful callback for single-pass linear directory scanning.
  * Manages skip_count, pattern matching, and user buffer overflow. */
+#ifdef BFS_PERF_PROBE
+static bool exall_optimized_cb_body(const char *name, uint8_t name_len,
+                                    uint32_t inode_nr, uint32_t entry_type, void *ctx);
 static bool exall_optimized_cb(const char *name, uint8_t name_len,
+                               uint32_t inode_nr, uint32_t entry_type, void *ctx)
+{
+    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
+        BFS_PERF_DETAIL_SCOPE_DETAIL_EXALL_FILL);
+    bool result = exall_optimized_cb_body(name, name_len, inode_nr, entry_type, ctx);
+    bfs_perf_probe_detail_end(&sample);
+    return result;
+}
+static bool exall_optimized_cb_body(const char *name, uint8_t name_len,
+#else
+static bool exall_optimized_cb(const char *name, uint8_t name_len,
+#endif
                                uint32_t inode_nr, uint32_t entry_type, void *ctx)
 {
     exall_optimized_ctx_t *ec = (exall_optimized_ctx_t *)ctx;
@@ -1905,6 +1944,26 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         res2 = 0;
         break;
     }
+#ifdef BFS_PERF_WRITE_DETAIL
+    case BFS_ACTION_PERF_WRITE_READ: {
+        bfs_write_probe_snapshot_t *target =
+            (bfs_write_probe_snapshot_t *)pkt->dp_Arg1;
+        if (!target) {
+            res2 = ERROR_REQUIRED_ARG_MISSING;
+            break;
+        }
+        if (pkt->dp_Arg2 != (LONG)sizeof(*target)) {
+            res2 = ERROR_BAD_NUMBER;
+            break;
+        }
+        *target = bfs_write_probe_counters;
+        target->version = BFS_WRITE_PROBE_VERSION;
+        target->size = (ULONG)sizeof(*target);
+        res1 = DOSTRUE;
+        res2 = 0;
+        break;
+    }
+#endif
 #endif
 
     case BFS_ACTION_SNAPSHOT_CAPABILITY: {
@@ -2215,10 +2274,11 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             break;
         }
 
-        res2 = CheckProtection(h, f->inode_nr, FIBF_WRITE);
-        if (res2) break;
-        int32_t n = bfs_file_write_with_stamp(f, buf, (uint32_t)len,
-                                             SampleInodeStamp, NULL, FIBF_ARCHIVE);
+        /* The core checks FIBF_WRITE on the inode it refreshes for the write,
+         * so the packet needs no separate inode read. */
+        int32_t n = bfs_file_write_checked(f, buf, (uint32_t)len,
+                                          SampleInodeStamp, NULL, FIBF_ARCHIVE,
+                                          FIBF_WRITE);
         if (n < 0) {
             res1 = -1;
             res2 = Pfs4ToDosError((bfs_err_t)n);
@@ -2450,7 +2510,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         ctx.got_entry = false;
 
         bfs_err_t err = ScanDirectoryFrom(h, lk, position, exam_next_cb, &ctx,
-                                          &ctx.skip_count);
+                                          &ctx.skip_count, true);
+        CursorClearConsumedStop(lk);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
         if (!ctx.got_entry) {
@@ -2471,7 +2532,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 #endif
         err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
-        CursorRemember(lk, position + 1, namebuf, ctx.name_len);
+        CursorRemember(lk, position + 1, namebuf, ctx.name_len, true);
         fib->fib_DiskKey = (LONG)(position + 1);
 #ifdef BFS_AROS
         if (wide_fib)
@@ -2775,10 +2836,11 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             .last_ead = NULL, .overflow = false, .err = BFS_OK
         };
 
+        CursorClearConsumedStop(lk);
         bfs_err_t err = ScanDirectoryFrom(h, lk, ectx.position, exall_optimized_cb,
-                                          &ectx, &ectx.skip_count);
+                                          &ectx, &ectx.skip_count, false);
         if (ectx.last_name)
-            CursorRemember(lk, ectx.position, ectx.last_name, ectx.last_len);
+            CursorRemember(lk, ectx.position, ectx.last_name, ectx.last_len, false);
         if (err == BFS_OK) err = ectx.err;
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
@@ -3528,7 +3590,11 @@ static enum bfs_perf_cpu_scope PacketCpuScope(LONG packet_type)
 static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 {
     if (pkt->dp_Type == BFS_ACTION_PERF_RESET ||
-        pkt->dp_Type == BFS_ACTION_PERF_READ) {
+        pkt->dp_Type == BFS_ACTION_PERF_READ
+#ifdef BFS_PERF_WRITE_DETAIL
+        || pkt->dp_Type == BFS_ACTION_PERF_WRITE_READ
+#endif
+        ) {
         HandlePacketWork(pkt, h);
         return;
     }

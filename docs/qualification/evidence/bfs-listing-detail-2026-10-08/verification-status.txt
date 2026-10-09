@@ -1,0 +1,22 @@
+Qualification date: 2026-10-08
+Base commit: 07216b7f17912c9f28b9b4a920caaa6828b00ccb
+Branch: fix/metadata-listing-performance
+
+Corrected deep schema14 runs: exact two-run inventory; both strict PASS.
+Original deep schema13 runs: both guest PASS; first strict FAIL, second strict PASS.
+Linux Clang 22.1.8 full host run: exit 0; 562 passed, 0 failed; 60 suites.
+Linux probe ASan/UBSan with leak detection: exit 0; 4 passed, 0 failed.
+Python quality tests: exit 0; 106 tests, including 62 verifier tests.
+ShellCheck emulator-test/verify-bench-results.sh: exit 0.
+Clang core/host static analysis: exit 0; no diagnostics.
+m68k production/diagnostic handler and compare guest rebuild: exit 0.
+Rebuilt production, probe and compare guest bytes match measured identities.
+Mac full host run: stopped (exit 143) after repeated pre-main launch delays.
+Linux GCC 16.2.1 full host build: exit 2; array-bounds diagnostics in mock cache callbacks.
+Linux Clang build uses the unchanged -Wall -Wextra -Werror flags.
+No warnings were disabled to obtain the Clang result.
+Independent Luna review: no actionable findings; layout-class write attribution
+is distinct from live-instance view attribution. No failed-I/O retry injection.
+No new production performance claim; no new batching or cache capacity change.
+No native AROS, Linux FUSE, cold/durable or physical hardware qualification.
+GitHub runner remains stopped. No push, CI, merge or licensed asset publication.

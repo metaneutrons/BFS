@@ -61,6 +61,8 @@ EMU_SRC  = tests/block_device_emu.c
 # ── Build dirs ──────────────────────────────────────────────
 BUILD_HOST  = build/host
 BUILD_AMIGA = build/amiga
+AMIGA_PROBE_FILE ?= bfshandler-probe
+AMIGA_COMPARE_GUEST_FILE ?= fs-compare-bench
 BUILD_AROS = build/aros/pc-x86_64
 AROS_SRCS = src/amiga/startup_aros.c src/amiga/handler.c src/amiga/amiga_bio.c \
 	src/amiga/heap_aros.c $(CORE_SRC)
@@ -98,7 +100,7 @@ AROS_DOS_NAME_TEST_BIN = $(BUILD_HOST)/test_dos_name_aros_profile
 	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
 	fault-qualification fault-qualification-verify amiga-fs-compare-bench amiga-fs-profile-bench \
 	core-workload-profile \
-	amiga-perf-probe-handler
+	amiga-perf-probe-handler amiga-write-perf-probe-handler amiga-write-fs-compare-bench
 
 .PHONY: fuse
 
@@ -180,8 +182,9 @@ quality-gates:
 	@python3 -m unittest discover -s tests/quality -p 'test_*.py' -v
 	@lefthook validate
 
+# Evidence bundles hold frozen, checksummed copies of scripts as they ran.
 shellcheck:
-	@shellcheck -x $$(git ls-files '*.sh')
+	@shellcheck -x $$(git ls-files '*.sh' ':(exclude)docs/qualification/evidence/**')
 
 actionlint:
 	@actionlint
@@ -210,6 +213,7 @@ coverage:
 	@$(MAKE) host-test BUILD_HOST=build/coverage \
 		HOST_CFLAGS='-std=c99 -Wall -Wextra -Werror -g -O0 -pthread --coverage $(INCLUDES) -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L'
 	@$(GCOVR) --root . --filter src/core --exclude-unreachable-branches \
+		--merge-mode-functions=separate \
 		--gcov-executable $(GCOV) \
 		--gcov-ignore-parse-errors=suspicious_hits.warn_once_per_file \
 		--fail-under-line 85 --print-summary --xml-pretty --output build/coverage.xml \
@@ -245,6 +249,20 @@ $(CONFORMANCE_FIXTURE): tests/conformance/fixture_writer.c $(HOST_LIB) $(HOST_PO
 $(BUILD_HOST)/obj/core/%.o: src/core/%.c $(CORE_HEADERS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
+
+# The disposable Amiga profiler is exercised against the real core on the
+# host. These test-only headers model just the Exec/Timer ABI it uses; the
+# production handler still compiles against the NDK.
+PERF_PROBE_STUB_HEADERS = $(wildcard tests/perf_probe_stubs/exec/*.h) \
+	$(wildcard tests/perf_probe_stubs/devices/*.h) \
+	$(wildcard tests/perf_probe_stubs/proto/*.h)
+$(BUILD_HOST)/test_perf_probe: tests/test_perf_probe.c src/amiga/perf_probe.c \
+		src/amiga/perf_probe.h $(CORE_SRC) $(EMU_SRC) $(CORE_HEADERS) \
+		src/amiga/write_probe.h $(PERF_PROBE_STUB_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -DBFS_PERF_PROBE=1 \
+		-Itests/perf_probe_stubs -iquote src/amiga -o $@ \
+		tests/test_perf_probe.c src/amiga/perf_probe.c $(CORE_SRC) $(EMU_SRC)
 
 $(HOST_POSIX_OBJ): src/host/posix_bio.c $(CORE_HEADERS)
 	@mkdir -p $(dir $@)
@@ -296,9 +314,17 @@ amiga:
 # Instrumented handler for disposable emulator profiling only. Never a release artifact.
 amiga-perf-probe-handler:
 	@mkdir -p $(BUILD_AMIGA)
-	$(AMIGA_CC) $(AMIGA_CFLAGS) -DBFS_PERF_PROBE=1 -o $(BUILD_AMIGA)/bfshandler-probe \
+	$(AMIGA_CC) $(AMIGA_CFLAGS) -DBFS_PERF_PROBE=1 $(AMIGA_WRITE_PROBE_FLAGS) -o $(BUILD_AMIGA)/$(AMIGA_PROBE_FILE) \
 		$(AMIGA_SRCS) src/amiga/perf_probe.c \
 		-nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
+
+amiga-write-perf-probe-handler: AMIGA_WRITE_PROBE_FLAGS = -DBFS_PERF_WRITE_DETAIL=1 -DBFS_PERF_CRC_SAMPLE_STRIDE=1
+amiga-write-perf-probe-handler: AMIGA_PROBE_FILE = bfshandler-write-probe
+amiga-write-perf-probe-handler: amiga-perf-probe-handler
+
+amiga-write-fs-compare-bench: AMIGA_WRITE_GUEST_FLAGS = -DBFS_PERF_CRC_SAMPLE_STRIDE=1
+amiga-write-fs-compare-bench: AMIGA_COMPARE_GUEST_FILE = fs-compare-write-bench
+amiga-write-fs-compare-bench: amiga-fs-compare-bench
 
 aros:
 	@toolchain="$(AROS_TOOLCHAIN)"; build="$(AROS_BUILD)"; \
@@ -468,12 +494,12 @@ emulator-setup:
 
 amiga-fs-compare-bench:
 	@mkdir -p $(BUILD_AMIGA)
-	$(AMIGA_CC) -std=c99 $(AMIGA_WARNINGS) -noixemul -m68020 -O2 \
+	$(AMIGA_CC) $(AMIGA_WRITE_GUEST_FLAGS) -std=c99 $(AMIGA_WARNINGS) -noixemul -m68020 -O2 \
 		-Isrc/amiga \
 		-I$(AMIGA_PREFIX)/ndk-include \
 		-B$(AMIGA_PREFIX)/libnix/lib/ \
 		-L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib \
-		-o $(BUILD_AMIGA)/fs-compare-bench tools/fs-compare-bench.c -lamiga
+		-o $(BUILD_AMIGA)/$(AMIGA_COMPARE_GUEST_FILE) tools/fs-compare-bench.c -lamiga
 
 amiga-fs-profile-bench:
 	@mkdir -p $(BUILD_AMIGA)

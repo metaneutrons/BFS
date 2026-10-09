@@ -1,0 +1,16 @@
+  FAIL: tests/test_inode_lookup_hints.c:315: cache->leaf_count == 0, expected 65
+=== Inode B-tree lookup hints ===
+  test_warm_hint_skips_traversal_buffer_and_checks_index OK
+  test_exact_hit_bypasses_range_preparation_but_miss_prepares FAILED
+  test_distinct_key_range_hit_skips_root_traversal   OK
+  test_sparse_range_uses_checked_search_and_misses_fall_back OK
+  test_missing_and_saturated_epoch_disable_both_shortcuts OK
+  test_owned_leaf_update_and_later_cow_return_current_inode OK
+  test_direct_mapped_collisions_preserve_key_identity OK
+  test_unlinked_and_deleted_inodes_do_not_leak_through_hints OK
+  test_invalidation_rechecks_crc_and_inode_identity_after_raw_write OK
+  test_internal_path_raw_write_invalidates_both_leaf_shortcuts OK
+  test_range_table_is_sorted_bounded_and_replaces_old_leaves OK
+  test_reload_remount_pointer_lifetime_and_snapshot_view OK
+
+11 passed, 1 failed

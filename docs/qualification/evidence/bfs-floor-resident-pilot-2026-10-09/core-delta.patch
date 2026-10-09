@@ -1,0 +1,155 @@
+--- build/floor-resident-2026-10-09/baseline/btree.c	2026-10-09 20:41:53.291204564 +0200
++++ src/core/btree.c	2026-10-09 20:44:55.162424512 +0200
+@@ -450,30 +450,36 @@
+ /* Read-only view of a node for searches: a resident node that the cache has
+  * already validated is used in place, anything else is read into buf. The
+  * level and parent bounds are checked on every visit either way. A resident
+- * view is valid only until the next BIO call and must not be modified. */
++ * view is valid only until the next BIO call and must not be modified. Scratch
++ * may start NULL; lease it only on a miss and return it to the caller for
++ * release. Existing traversal callers supply their already leased buffer. */
+ #ifdef BFS_PERF_PROBE
+-static bfs_err_t node_view_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++static bfs_err_t node_view_storage_body(const bfs_btree_t *tree, bfs_blk_t blk,
++                                uint8_t **scratch,
+                                 uint16_t level, const node_bounds_t *bounds,
+                                 uint8_t **node);
+-static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++static bfs_err_t node_view_storage(const bfs_btree_t *tree, bfs_blk_t blk,
++                           uint8_t **scratch,
+                            uint16_t level, const node_bounds_t *bounds,
+                            uint8_t **node)
+ {
+     bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
+         tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_NODE_VIEW,
+         BFS_PERF_DETAIL_SCOPE_DETAIL_DIR_NODE_VIEW);
+-    bfs_err_t result = node_view_body(tree, blk, buf, level, bounds, node);
++    bfs_err_t result = node_view_storage_body(tree, blk, scratch, level, bounds, node);
+     bfs_perf_probe_detail_end(&sample);
+     return result;
+ }
+-static bfs_err_t node_view_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++static bfs_err_t node_view_storage_body(const bfs_btree_t *tree, bfs_blk_t blk,
++                           uint8_t **scratch,
+ #else
+-static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++static bfs_err_t node_view_storage(const bfs_btree_t *tree, bfs_blk_t blk,
++                           uint8_t **scratch,
+ #endif
+                            uint16_t level, const node_bounds_t *bounds,
+                            uint8_t **node)
+ {
+-    *node = buf;
++    *node = *scratch;
+     if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count) {
+ #ifdef BFS_PERF_PROBE
+         bfs_perf_probe_node_view_at_level(tree, FALSE, level);
+@@ -488,9 +494,15 @@
+ #ifdef BFS_PERF_PROBE
+     bfs_perf_probe_node_view_at_level(tree, resident != NULL, level);
+ #endif
+-    if (!resident)
+-        return bounds ? node_read_bounded(tree, blk, buf, level, bounds)
+-                      : node_read_at_level(tree, blk, buf, level);
++    if (!resident) {
++        if (!*scratch) {
++            *scratch = alloc_buf(tree);
++            if (!*scratch) return BFS_ERR_NOMEM;
++        }
++        *node = *scratch;
++        return bounds ? node_read_bounded(tree, blk, *scratch, level, bounds)
++                      : node_read_at_level(tree, blk, *scratch, level);
++    }
+     *node = (uint8_t *)resident;
+     if (node_level(*node) != level) return BFS_ERR_CORRUPT;
+     if (bounds &&
+@@ -502,6 +514,13 @@
+     return BFS_OK;
+ }
+ 
++static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++                           uint16_t level, const node_bounds_t *bounds,
++                           uint8_t **node)
++{
++    return node_view_storage(tree, blk, &buf, level, bounds, node);
++}
++
+ static void node_init(const bfs_btree_t *tree, uint8_t *buf, uint16_t level)
+ {
+     memset(buf, 0, tree->bio->block_size);
+@@ -2594,6 +2613,23 @@
+ 
+ /* ── Floor search ──────────────────────────────────────────── */
+ 
++/* Copy the predecessor while the read-only leaf view is still valid. This
++ * is shared by the resident-root and ordinary traversal paths; NOTFOUND
++ * leaves both outputs unchanged so traversal can try the left subtree. */
++static bfs_err_t floor_in_leaf(const bfs_btree_t *tree, uint8_t *node,
++                               const void *key, void *key_out, void *val_out)
++{
++    bool found;
++    uint32_t idx = node_search(tree, node, key, &found);
++    if (!found) {
++        if (idx == 0) return BFS_ERR_NOTFOUND;
++        idx--;
++    }
++    memcpy(key_out, node_key(tree, node, idx), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    return BFS_OK;
++}
++
+ /* Find the rightmost key in the subtree rooted at blk. */
+ static bfs_err_t rightmost_in_subtree(const bfs_btree_t *tree, bfs_blk_t blk,
+                                        uint16_t expected_level,
+@@ -2629,6 +2665,20 @@
+         return BFS_ERR_NOTFOUND;
+     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+ 
++    /* A fully validated current root leaf needs neither traversal storage nor
++     * a scratch lease. Retain no pointer or key/value hint across calls. The
++     * shared view keeps validation and instrumentation identical; on a miss
++     * it leases scratch and uses the existing read/CRC-validation path. */
++    if (tree->height == 1 && tree->ops->cache_key_order) {
++        uint8_t *scratch = NULL;
++        uint8_t *node;
++        bfs_err_t err = node_view_storage(tree, tree->root, &scratch,
++                                           BFS_BTNODE_LEAF, NULL, &node);
++        if (err == BFS_OK) err = floor_in_leaf(tree, node, key, key_out, val_out);
++        if (scratch) free_buf(tree, scratch);
++        return err;
++    }
++
+     uint8_t *buf = alloc_buf(tree);
+     if (!buf) return BFS_ERR_NOMEM;
+     bfs_blk_t blk = tree->root;
+@@ -2648,19 +2698,9 @@
+         bfs_err_t err = node_view(tree, blk, buf, expected_level, NULL, &node);
+         if (err != BFS_OK) { free_buf(tree, buf); return err; }
+ 
+-        bool found;
+-        uint32_t idx = node_search(tree, node, key, &found);
+-
+         if (is_leaf(node)) {
+-            if (found) {
+-                memcpy(key_out, node_key(tree, node, idx), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+-                memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+-                free_buf(tree, buf);
+-                return BFS_OK;
+-            }
+-            if (idx > 0) {
+-                memcpy(key_out, node_key(tree, node, idx - 1), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+-                memcpy(val_out, leaf_val(tree, node, idx - 1), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++            err = floor_in_leaf(tree, node, key, key_out, val_out);
++            if (err == BFS_OK) {
+                 free_buf(tree, buf);
+                 return BFS_OK;
+             }
+@@ -2683,6 +2723,8 @@
+ 
+         /* Internal node: descend */
+         if (expected_level == 0) { free_buf(tree, buf); return BFS_ERR_CORRUPT; }
++        bool found;
++        uint32_t idx = node_search(tree, node, key, &found);
+         uint32_t child_idx = found ? idx + 1 : idx;
+         if (child_idx > 0) {
+             turn_blk = blk;

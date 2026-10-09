@@ -1,0 +1,12 @@
+  FAIL: build/perf-2026-10-08/test_inode_lookup_hints_counterprobe.c:210: probe_alloc_calls == 1, expected 0
+=== Inode B-tree lookup hints ===
+  test_warm_hint_skips_traversal_buffer_and_checks_index FAILED
+  test_missing_and_saturated_epoch_disable_both_shortcuts OK
+  test_owned_leaf_update_and_later_cow_return_current_inode OK
+  test_direct_mapped_collisions_preserve_key_identity OK
+  test_unlinked_and_deleted_inodes_do_not_leak_through_hints OK
+  test_invalidation_rechecks_crc_and_inode_identity_after_raw_write OK
+  test_internal_path_raw_write_invalidates_both_leaf_shortcuts OK
+  test_reload_remount_pointer_lifetime_and_snapshot_view OK
+
+7 passed, 1 failed

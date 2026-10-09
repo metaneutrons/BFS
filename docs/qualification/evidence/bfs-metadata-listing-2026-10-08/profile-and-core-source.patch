@@ -1,0 +1,682 @@
+diff --git a/src/amiga/perf_probe.c b/src/amiga/perf_probe.c
+index 4de7b87..70c1909 100644
+--- a/src/amiga/perf_probe.c
++++ b/src/amiga/perf_probe.c
+@@ -8,6 +8,7 @@
+ #include <stdlib.h>
+ 
+ #include "perf_probe.h"
++#include "bfs_fs.h"
+ 
+ struct Device *TimerBase;
+ bfs_perf_probe_snapshot_t bfs_perf_probe_counters;
+@@ -18,6 +19,27 @@ ULONG bfs_perf_probe_free_tree_phase;
+ static struct timerequest *probe_timer;
+ static BOOL timer_open;
+ 
++void bfs_perf_probe_node_view(const struct bfs_btree *tree, BOOL resident)
++{
++    bfs_perf_probe_snapshot_t *c = &bfs_perf_probe_counters;
++    if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->freespace.tree) {
++        c->free_tree_node_views++;
++        if (resident) c->free_tree_resident_views++;
++    } else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->dir_tree.tree) {
++        c->dir_tree_node_views++;
++        if (resident) c->dir_tree_resident_views++;
++    } else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->inode_tree) {
++        c->inode_tree_node_views++;
++        if (resident) c->inode_tree_resident_views++;
++    } else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->refcount.tree) {
++        c->refcount_tree_node_views++;
++        if (resident) c->refcount_tree_resident_views++;
++    } else {
++        c->other_tree_node_views++;
++        if (resident) c->other_tree_resident_views++;
++    }
++}
++
+ void bfs_perf_probe_init(struct MsgPort *port)
+ {
+     if (!port) return;
+diff --git a/src/amiga/perf_probe.h b/src/amiga/perf_probe.h
+index fd97d7d..54dd73e 100644
+--- a/src/amiga/perf_probe.h
++++ b/src/amiga/perf_probe.h
+@@ -9,10 +9,32 @@
+ 
+ #define BFS_ACTION_PERF_RESET 3010
+ #define BFS_ACTION_PERF_READ  3011
+-#define BFS_PERF_PROBE_VERSION 12
++#define BFS_PERF_PROBE_VERSION 13
+ #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
+ #define BFS_PERF_CPU_SAMPLE_STRIDE 1u
+ 
++/* Exact diagnostic calls, not elapsed-time or device-I/O estimates. A node
++ * view counts node_view invocations; resident views count its validated-cache
++ * branch, before the per-visit level/bounds checks. Search hints are separate. */
++#define BFS_PERF_LOOKUP_COUNTERS(X) \
++    X(INODE_READ_CALLS, inode_read_calls) \
++    X(BTREE_SEARCH_CALLS, btree_search_calls) \
++    X(BTREE_INDEX_HINT_HITS, btree_index_hint_hits) \
++    X(BTREE_LEAF_HINT_HITS, btree_leaf_hint_hits) \
++    X(CACHE_READ_CALLS, cache_read_calls) \
++    X(CACHE_READ_HITS, cache_read_hits) \
++    X(CACHE_READ_MISSES, cache_read_misses) \
++    X(FREE_TREE_NODE_VIEWS, free_tree_node_views) \
++    X(FREE_TREE_RESIDENT_VIEWS, free_tree_resident_views) \
++    X(DIR_TREE_NODE_VIEWS, dir_tree_node_views) \
++    X(DIR_TREE_RESIDENT_VIEWS, dir_tree_resident_views) \
++    X(INODE_TREE_NODE_VIEWS, inode_tree_node_views) \
++    X(INODE_TREE_RESIDENT_VIEWS, inode_tree_resident_views) \
++    X(REFCOUNT_TREE_NODE_VIEWS, refcount_tree_node_views) \
++    X(REFCOUNT_TREE_RESIDENT_VIEWS, refcount_tree_resident_views) \
++    X(OTHER_TREE_NODE_VIEWS, other_tree_node_views) \
++    X(OTHER_TREE_RESIDENT_VIEWS, other_tree_resident_views)
++
+ /* One source of truth for the diagnostic CPU-scope ABI and guest schema. */
+ #define BFS_PERF_CPU_SCOPES(X) \
+     X(PACKET, packet) \
+@@ -118,10 +140,14 @@ typedef struct bfs_perf_probe_snapshot {
+     /* cppcheck-suppress unusedStructMember */ uint64_t lower##_sample_ticks;
+     BFS_PERF_CPU_SCOPES(BFS_PERF_CPU_SCOPE_FIELDS)
+ #undef BFS_PERF_CPU_SCOPE_FIELDS
++#define BFS_PERF_LOOKUP_FIELD(upper, lower) ULONG lower;
++    BFS_PERF_LOOKUP_COUNTERS(BFS_PERF_LOOKUP_FIELD)
++#undef BFS_PERF_LOOKUP_FIELD
+ } bfs_perf_probe_snapshot_t;
+ 
+ #ifdef BFS_PERF_PROBE
+ struct bfs_fs;
++struct bfs_btree;
+ extern bfs_perf_probe_snapshot_t bfs_perf_probe_counters;
+ extern ULONG bfs_perf_probe_data_depth;
+ extern struct bfs_fs *bfs_perf_probe_fs;
+@@ -163,6 +189,7 @@ void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,
+                         const struct EClockVal *start);
+ void bfs_perf_probe_cpu_scope_record(enum bfs_perf_cpu_scope scope,
+                                      uint64_t ticks);
++void bfs_perf_probe_node_view(const struct bfs_btree *tree, BOOL resident);
+ #endif
+ 
+ #endif /* BFS_AMIGA_PERF_PROBE_H */
+diff --git a/src/core/btree.c b/src/core/btree.c
+index 0178453..2eb1206 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -282,6 +282,29 @@ static bfs_err_t node_compute_write_crc(const bfs_btree_t *tree, uint8_t *buf,
+     return BFS_OK;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++/* Both direct and deferred finalization compute a CRC. Sampling just direct
++ * writes undercounts the deferred branch and breaks the calls/stride oracle. */
++static bfs_err_t node_compute_profiled_write_crc(const bfs_btree_t *tree,
++                                                 uint8_t *buf,
++                                                 uint32_t *crc_out)
++{
++    struct EClockVal started = {0};
++    ULONG call = ++bfs_perf_probe_counters.node_crc_write_calls;
++    BOOL sample = (call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
++    if (sample) bfs_perf_probe_begin(&started);
++    bfs_err_t err = node_compute_write_crc(tree, buf, crc_out);
++    if (sample) {
++        bfs_perf_probe_counters.node_crc_write_samples++;
++        bfs_perf_probe_counters.node_crc_write_sample_ticks +=
++            bfs_perf_probe_elapsed(&started);
++    }
++    return err;
++}
++#define node_compute_write_crc(tree, buf, out) \
++    node_compute_profiled_write_crc(tree, buf, out)
++#endif
++
+ static bool owned_contains(const bfs_btree_t *tree, bfs_blk_t blk);
+ 
+ /* Completes a deferred node image: canonical padding and the full-block CRC,
+@@ -298,7 +321,6 @@ static bfs_err_t node_finalize_deferred(const void *layout, uint32_t block_size,
+     if (err != BFS_OK) return err;
+     hdr->crc32 = bfs_be32(crc);
+ #ifdef BFS_PERF_PROBE
+-    bfs_perf_probe_counters.node_crc_write_calls++;
+     bfs_perf_probe_counters.btree_node_writes++;
+ #endif
+     return BFS_OK;
+@@ -337,22 +359,11 @@ static bfs_err_t node_write_image(bfs_btree_t *tree, bfs_blk_t blk, uint8_t **im
+         }
+         if (err != BFS_ERR_UNSUPPORTED) return err;
+     }
+-#ifdef BFS_PERF_PROBE
+-    struct EClockVal crc_started = {0};
+-    ULONG crc_call = ++bfs_perf_probe_counters.node_crc_write_calls;
+-    BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
+-    if (sample_crc) bfs_perf_probe_begin(&crc_started);
+-#endif
+     uint32_t crc;
+     bfs_err_t crc_err = node_compute_write_crc(tree, buf, &crc);
+     if (crc_err != BFS_OK) return crc_err;
+     hdr->crc32 = bfs_be32(crc);
+ #ifdef BFS_PERF_PROBE
+-    if (sample_crc) {
+-        bfs_perf_probe_counters.node_crc_write_samples++;
+-        bfs_perf_probe_counters.node_crc_write_sample_ticks +=
+-            bfs_perf_probe_elapsed(&crc_started);
+-    }
+     bfs_perf_probe_counters.btree_node_writes++;
+     if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->freespace.tree) {
+         bfs_perf_probe_counters.free_tree_node_writes++;
+@@ -443,13 +454,20 @@ static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
+                            uint8_t **node)
+ {
+     *node = buf;
+-    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
++    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count) {
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_node_view(tree, FALSE);
++#endif
+         return BFS_ERR_CORRUPT;
++    }
+     const void *resident = NULL;
+     if (tree->ops->cache_key_order) {
+         bfs_node_validation_t validation = node_validation_context(tree);
+         resident = bfs_bio_peek_valid_node(tree->bio, blk, &validation);
+     }
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_node_view(tree, resident != NULL);
++#endif
+     if (!resident)
+         return bounds ? node_read_bounded(tree, blk, buf, level, bounds)
+                       : node_read_at_level(tree, blk, buf, level);
+@@ -520,6 +538,14 @@ static uint32_t node_search(const bfs_btree_t *tree, uint8_t *buf,
+     return lo;
+ }
+ 
++void bfs_btree_key_hint_cache_reset(bfs_btree_key_hint_cache_t *cache)
++{
++    if (!cache) return;
++    memset(cache, 0, sizeof(*cache));
++    for (uint32_t i = 0; i < BFS_BTREE_KEY_HINT_SLOTS; i++)
++        cache->slots[i].leaf = BFS_BLK_NULL;
++}
++
+ /* ── Public: init and search ───────────────────────────────── */
+ 
+ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
+@@ -544,7 +570,10 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
+     tree->free_sink_err = BFS_OK;
+     tree->generation = 0;
+     tree->hint_leaf = BFS_BLK_NULL;
++    tree->hint_root = BFS_BLK_NULL;
+     tree->hint_generation = 0;
++    tree->hint_mutation_epoch = 0;
++    tree->key_hint_cache = NULL;
+ 
+     if (leaf_max_keys(tree) < 3 || internal_max_keys(tree) < 3)
+         return BFS_ERR_INVAL;
+@@ -671,9 +700,12 @@ static uint8_t *owned_leaf_in_place(bfs_btree_t *tree, const void *key,
+ /* The leaf of the last search, if the tree has not changed since, it is
+  * still resident and validated, and key lies between its first and last
+  * keys: in a B+tree every key of that range is in that leaf. */
+-static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key)
++static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key,
++                            uint64_t mutation_epoch)
+ {
+     if (tree->hint_leaf == BFS_BLK_NULL || tree->hint_generation != tree->generation ||
++        tree->hint_root != tree->root ||
++        tree->hint_mutation_epoch != mutation_epoch ||
+         !tree->ops->cache_key_order)
+         return NULL;
+     bfs_node_validation_t validation = node_validation_context(tree);
+@@ -687,20 +719,111 @@ static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key)
+     return leaf;
+ }
+ 
++/* This location cache is deliberately narrower than the general B-tree
++ * validation cache. It is enabled only for canonical big-endian u32 keys and
++ * only when the BIO can return a freshly validated resident node. */
++static bool key_hint_cache_eligible(const bfs_btree_t *tree)
++{
++    return tree->key_hint_cache && tree->ops->cache_key_order &&
++           tree->ops->key_compare == bfs_btree_key_compare_be32 &&
++           tree->ops->key_size == sizeof(uint32_t) &&
++           tree->bio->ops->peek_valid_node;
++}
++
++static uint32_t key_hint_slot(uint32_t key)
++{
++    return (key * 2654435761u) >> 26;
++}
++
++static bool key_hint_read(const bfs_btree_t *tree, const void *key,
++                          void *val_out, uint64_t mutation_epoch)
++{
++    if (!key_hint_cache_eligible(tree)) return false;
++
++    uint32_t key_value = bfs_load_be32(key);
++    const bfs_btree_key_hint_t *hint =
++        &tree->key_hint_cache->slots[key_hint_slot(key_value)];
++    if (hint->leaf == BFS_BLK_NULL || hint->key != key_value ||
++        hint->root != tree->root || hint->generation != tree->generation ||
++        hint->mutation_epoch != mutation_epoch ||
++        hint->leaf >= tree->bio->block_count)
++        return false;
++
++    bfs_node_validation_t validation = node_validation_context(tree);
++    const uint8_t *leaf = bfs_bio_peek_valid_node(tree->bio, hint->leaf,
++                                                   &validation);
++    if (!leaf || node_level((uint8_t *)leaf) != BFS_BTNODE_LEAF ||
++        hint->index >= num_keys((uint8_t *)leaf) ||
++        tree->ops->key_compare(node_key(tree, (uint8_t *)leaf, hint->index),
++                               key) != 0)
++        return false;
++
++    /* peek_valid_node's pointer is valid only until the next BIO call. Copy
++     * the current value immediately; the cache stores no inode/value bytes. */
++    memcpy(val_out, leaf_val(tree, (uint8_t *)leaf, hint->index),
++           tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    return true;
++}
++
++static void key_hint_remember(bfs_btree_t *tree, const void *key,
++                             bfs_blk_t leaf, uint32_t index,
++                             uint64_t mutation_epoch)
++{
++    if (!key_hint_cache_eligible(tree)) return;
++
++    uint32_t key_value = bfs_load_be32(key);
++    bfs_btree_key_hint_t *hint =
++        &tree->key_hint_cache->slots[key_hint_slot(key_value)];
++    hint->key = key_value;
++    hint->leaf = leaf;
++    hint->index = index;
++    hint->generation = tree->generation;
++    hint->root = tree->root;
++    hint->mutation_epoch = mutation_epoch;
++}
++
+ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.btree_search_calls++;
++#endif
+     if (!tree || !tree->bio || !tree->ops || !key || !val_out)
+         return BFS_ERR_INVAL;
+     if (tree->root == BFS_BLK_NULL)
+         return BFS_ERR_NOTFOUND;
+     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+ 
+-    uint8_t *hinted = hinted_leaf(tree, key);
++    uint64_t mutation_epoch = 0;
++    bool mutation_epoch_valid =
++        bfs_bio_get_mutation_epoch(tree->bio, &mutation_epoch);
++    if (!mutation_epoch_valid) {
++        /* A backend without an epoch cannot prove that the remembered leaf is
++         * still on the current path, so neither shortcut may be used. */
++        tree->hint_leaf = BFS_BLK_NULL;
++        tree->hint_root = BFS_BLK_NULL;
++        tree->hint_generation = 0;
++        tree->hint_mutation_epoch = 0;
++    }
++
++    if (mutation_epoch_valid &&
++        key_hint_read(tree, key, val_out, mutation_epoch)) {
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_counters.btree_index_hint_hits++;
++#endif
++        return BFS_OK;
++    }
++
++    uint8_t *hinted = mutation_epoch_valid
++        ? hinted_leaf(tree, key, mutation_epoch) : NULL;
+     if (hinted) {
+         bool found;
+         uint32_t idx = node_search(tree, hinted, key, &found);
+         if (!found) return BFS_ERR_NOTFOUND;
+         memcpy(val_out, leaf_val(tree, hinted, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++        key_hint_remember(tree, key, tree->hint_leaf, idx, mutation_epoch);
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_counters.btree_leaf_hint_hits++;
++#endif
+         return BFS_OK;
+     }
+ 
+@@ -721,10 +844,16 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
+         uint32_t idx = node_search(tree, node, key, &found);
+ 
+         if (is_leaf(node)) {
+-            tree->hint_leaf = blk;
+-            tree->hint_generation = tree->generation;
++            if (mutation_epoch_valid) {
++                tree->hint_leaf = blk;
++                tree->hint_root = tree->root;
++                tree->hint_generation = tree->generation;
++                tree->hint_mutation_epoch = mutation_epoch;
++            }
+             if (!found) { free_buf(tree, buf); return BFS_ERR_NOTFOUND; }
+             memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++            if (mutation_epoch_valid)
++                key_hint_remember(tree, key, blk, idx, mutation_epoch);
+             free_buf(tree, buf);
+             return BFS_OK;
+         }
+@@ -1990,8 +2119,22 @@ void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor)
+ 
+ static bool cursor_current(const bfs_btree_t *tree, const bfs_btree_cursor_t *cursor)
+ {
+-    return cursor->valid && cursor->tree == tree && cursor->root == tree->root &&
+-           cursor->generation == tree->generation;
++    if (!tree->bio || !tree->bio->ops || !cursor->leaf || !cursor->valid ||
++        cursor->tree != tree || cursor->root != tree->root ||
++        cursor->generation != tree->generation)
++        return false;
++
++    /* Keep legacy keyed cursors working on BIOs without an epoch hook. When
++     * a backend does provide one, however, a cache invalidation or raw write
++     * makes the saved leaf copy unsafe even if the tree generation is equal. */
++    if (tree->bio->ops->mutation_epoch) {
++        uint64_t mutation_epoch;
++        if (!cursor->mutation_epoch_valid ||
++            !bfs_bio_get_mutation_epoch(tree->bio, &mutation_epoch) ||
++            cursor->mutation_epoch != mutation_epoch)
++            return false;
++    }
++    return true;
+ }
+ 
+ /* True if the cursor's copy is the current leaf that holds key. */
+@@ -2014,16 +2157,63 @@ static bool cursor_stopped_at(const bfs_btree_t *tree, const bfs_btree_cursor_t
+            tree->ops->key_compare(node_key(tree, cursor->leaf, cursor->stop_index), key) == 0;
+ }
+ 
++static bool cursor_tree_geometry_valid(const bfs_btree_t *tree)
++{
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops ||
++        !tree->ops->key_compare ||
++        !bfs_block_size_valid(tree->bio->block_size) ||
++        tree->ops->key_size == 0 || tree->ops->key_size > BFS_MAX_KEY_SIZE ||
++        tree->ops->val_size == 0 ||
++        tree->ops->key_size > UINT32_MAX - tree->ops->val_size)
++        return false;
++
++    uint32_t data_size = tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
++    uint32_t leaf_stride = tree->ops->key_size + tree->ops->val_size;
++    uint32_t internal_stride = tree->ops->key_size + sizeof(uint32_t);
++    return leaf_stride != 0 && internal_stride != 0 &&
++           data_size / leaf_stride >= 3 &&
++           data_size >= sizeof(uint32_t) &&
++           (data_size - sizeof(uint32_t)) / internal_stride >= 3;
++}
++
++const void *bfs_btree_cursor_stop_key(const bfs_btree_t *tree,
++                                     const bfs_btree_cursor_t *cursor)
++{
++    if (!cursor_tree_geometry_valid(tree) || !cursor || !cursor->leaf ||
++        !cursor->stopped || !cursor_current(tree, cursor) ||
++        node_level(cursor->leaf) != BFS_BTNODE_LEAF)
++        return NULL;
++
++    uint32_t n = num_keys(cursor->leaf);
++    if (n == 0 || n > leaf_max_keys(tree) || cursor->stop_index >= n)
++        return NULL;
++    return node_key(tree, cursor->leaf, cursor->stop_index);
++}
++
+ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
+                            bfs_scan_cb cb, void *ctx)
+ {
+     return bfs_btree_scan_cursor(tree, NULL, start_key, cb, ctx);
+ }
+ 
+-bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+-                                const void *start_key, bfs_scan_cb cb, void *ctx)
++static bool scan_epoch_changed(const bfs_btree_t *tree, bool epoch_valid,
++                               uint64_t scan_epoch)
++{
++    if (!tree->bio->ops || !tree->bio->ops->mutation_epoch || !epoch_valid)
++        return false;
++    uint64_t current_epoch;
++    return !bfs_bio_get_mutation_epoch(tree->bio, &current_epoch) ||
++           current_epoch != scan_epoch;
++}
++
++static bfs_err_t btree_scan_cursor_impl(bfs_btree_t *tree,
++                                        bfs_btree_cursor_t *cursor,
++                                        const void *start_key,
++                                        bool resume_exclusive,
++                                        bfs_scan_cb cb, void *ctx)
+ {
+-    if (!tree || !tree->bio || !tree->ops || !cb) return BFS_ERR_INVAL;
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops || !cb)
++        return BFS_ERR_INVAL;
+     if (tree->root == BFS_BLK_NULL)
+         return BFS_OK;
+     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+@@ -2043,7 +2233,15 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+     bool have_path = true;
+     bfs_err_t err = BFS_OK;
+     bool positioned = false;
+-    if (cursor && start_key && cursor_stopped_at(tree, cursor, start_key)) {
++    if (resume_exclusive) {
++        /* The caller verified this is a current stopped cursor. Keep the
++         * existing traversal loop so leaf-boundary and mutation recovery
++         * continue to use the same path as ordinary scans. */
++        leaf = cursor->leaf;
++        have_path = false;
++        idx = cursor->stop_index + 1;
++        positioned = true;
++    } else if (cursor && start_key && cursor_stopped_at(tree, cursor, start_key)) {
+         leaf = cursor->leaf;
+         have_path = false;
+         idx = cursor->stop_index;
+@@ -2071,12 +2269,19 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+         if (idx < n) {
+             /* Callbacks may do I/O, which can invalidate a view. */
+             uint8_t *copy = cursor ? cursor->leaf : buf;
++            uint64_t scan_epoch = 0;
++            bool scan_epoch_valid =
++                bfs_bio_get_mutation_epoch(tree->bio, &scan_epoch);
+             if (leaf != copy) copy_leaf_entries(tree, copy, leaf);
+             leaf = copy;
+             if (cursor) {
+                 cursor->tree = tree;
+                 cursor->root = tree->root;
+                 cursor->generation = tree->generation;
++                /* Capture before callbacks: a callback can mutate the BIO,
++                 * so stamping the copy afterward could bless stale bytes. */
++                cursor->mutation_epoch = scan_epoch;
++                cursor->mutation_epoch_valid = scan_epoch_valid;
+                 cursor->valid = true;
+             }
+             uint32_t generation = tree->generation;
+@@ -2091,7 +2296,8 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+                     break;
+                 }
+                 /* The rest of this copy may be stale once the tree changed. */
+-                if (tree->generation != generation) {
++                if (tree->generation != generation ||
++                    scan_epoch_changed(tree, scan_epoch_valid, scan_epoch)) {
+                     changed = true;
+                     reached = i + 1;
+                     break;
+@@ -2128,6 +2334,30 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+     return err;
+ }
+ 
++bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
++                                const void *start_key, bfs_scan_cb cb, void *ctx)
++{
++    return btree_scan_cursor_impl(tree, cursor, start_key, false, cb, ctx);
++}
++
++bfs_err_t bfs_btree_scan_cursor_resume(bfs_btree_t *tree,
++                                       bfs_btree_cursor_t *cursor,
++                                       bfs_scan_cb cb, void *ctx)
++{
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops || !cb)
++        return BFS_ERR_INVAL;
++    uint64_t current_epoch;
++    if (!tree->bio->ops || !tree->bio->ops->mutation_epoch || !cursor ||
++        !cursor->mutation_epoch_valid ||
++        !bfs_bio_get_mutation_epoch(tree->bio, &current_epoch) ||
++        current_epoch != cursor->mutation_epoch)
++        return BFS_ERR_AGAIN;
++    if (tree->root == BFS_BLK_NULL) return BFS_ERR_AGAIN;
++    if (!bfs_btree_cursor_stop_key(tree, cursor)) return BFS_ERR_AGAIN;
++    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
++    return btree_scan_cursor_impl(tree, cursor, NULL, true, cb, ctx);
++}
++
+ 
+ /* ── Floor search ──────────────────────────────────────────── */
+ 
+diff --git a/src/core/cache.c b/src/core/cache.c
+index 356ee38..037cea1 100644
+--- a/src/core/cache.c
++++ b/src/core/cache.c
+@@ -6,6 +6,9 @@
+ #include "bfs_cache.h"
+ #include <string.h>
+ #include <stdlib.h>
++#ifdef BFS_PERF_PROBE
++#include "perf_probe.h"
++#endif
+ 
+ /* ── Hash index ────────────────────────────────────────────── */
+ 
+@@ -70,10 +73,19 @@ static void cache_drop_slot(bfs_cache_t *c, bfs_cache_slot_t *slot)
+     slot->node_structure_valid = false;
+ }
+ 
++/* UINT64_MAX is reserved by bfs_bio_get_mutation_epoch as an unavailable
++ * token. Saturation disables guarded hints instead of permitting an ABA. */
++static void cache_note_mutation(bfs_cache_t *cache)
++{
++    if (cache->mutation_epoch != UINT64_MAX)
++        cache->mutation_epoch++;
++}
++
+ /* Complete and write a dirty node image. On failure the image stays dirty:
+  * it is the only copy of the transaction's node. */
+ static bfs_err_t cache_write_back(bfs_cache_t *c, bfs_cache_slot_t *slot)
+ {
++    cache_note_mutation(c);
+     bfs_err_t err = slot->finalize(slot->layout, c->bio.block_size, slot->data);
+     if (err == BFS_OK) err = bfs_bio_write(c->dev, slot->blk, slot->data);
+     if (err != BFS_OK) return err;
+@@ -89,6 +101,11 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+     bfs_cache_t *c = (bfs_cache_t *)bio;
+ 
+     bfs_cache_slot_t *slot = cache_find(c, blk);
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.cache_read_calls++;
++    if (slot) bfs_perf_probe_counters.cache_read_hits++;
++    else bfs_perf_probe_counters.cache_read_misses++;
++#endif
+     if (slot) {
+         /* Slot buffers and BIO transfer buffers hold block_size bytes. */
+         memcpy(buf, slot->data, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+@@ -116,6 +133,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
+                                      const void *buf, bool retain_node)
+ {
+     bfs_cache_t *c = (bfs_cache_t *)bio;
++    cache_note_mutation(c);
+ 
+     /* Write-through: always write to device. A written block supersedes any
+      * deferred image of it. */
+@@ -207,6 +225,7 @@ static bfs_err_t cache_write_blocks(bfs_bio_t *bio, bfs_blk_t blk, uint32_t coun
+                                     const void *buf, uint32_t *written)
+ {
+     bfs_cache_t *c = (bfs_cache_t *)bio;
++    cache_note_mutation(c);
+     bfs_err_t err = bfs_bio_write_blocks(c->dev, blk, count, buf, written);
+     for (uint32_t i = 0; i < c->num_slots; i++) {
+         bfs_cache_slot_t *slot = &c->slots[i];
+@@ -241,6 +260,7 @@ static bfs_err_t cache_hold_node(bfs_cache_t *c, bfs_blk_t blk, const void *buf,
+ {
+     if (!buf == !adopt) return BFS_ERR_INVAL;
+     if (c->dirty_limit == 0) return BFS_ERR_UNSUPPORTED;
++    cache_note_mutation(c);
+     bfs_cache_slot_t *slot = cache_find(c, blk);
+     if ((!slot || !slot->dirty) && c->dirty_count >= c->dirty_limit) {
+         bfs_cache_slot_t *oldest = NULL;
+@@ -318,9 +338,13 @@ static void cache_discard_deferred(bfs_bio_t *bio, bfs_blk_t blk)
+     bfs_cache_t *c = (bfs_cache_t *)bio;
+     if (blk != BFS_BLK_NULL) {
+         bfs_cache_slot_t *slot = cache_find(c, blk);
+-        if (slot && slot->dirty) cache_drop_slot(c, slot);
++        if (slot && slot->dirty) {
++            cache_note_mutation(c);
++            cache_drop_slot(c, slot);
++        }
+         return;
+     }
++    if (c->dirty_count > 0) cache_note_mutation(c);
+     for (uint32_t i = 0; i < c->num_slots && c->dirty_count > 0; i++) {
+         bfs_cache_slot_t *slot = &c->slots[i];
+         if (slot->dirty) cache_drop_slot(c, slot);
+@@ -385,10 +409,16 @@ static void *cache_modify_dirty_node(bfs_bio_t *bio, bfs_blk_t blk,
+     bfs_cache_t *c = (bfs_cache_t *)bio;
+     bfs_cache_slot_t *slot = cache_find(c, blk);
+     if (!slot || !slot->dirty || !slot_structure_valid(slot, context)) return NULL;
++    cache_note_mutation(c);
+     slot->age = ++c->clock;
+     return slot->data;
+ }
+ 
++static uint64_t cache_read_mutation_epoch(bfs_bio_t *bio)
++{
++    return ((bfs_cache_t *)bio)->mutation_epoch;
++}
++
+ static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
+                                              const bfs_node_validation_t *context)
+ {
+@@ -455,6 +485,7 @@ static const bfs_bio_ops_t cache_ops = {
+     .write_blocks = cache_write_blocks,
+     .peek_valid_node = cache_peek_valid_node,
+     .modify_dirty_node = cache_modify_dirty_node,
++    .mutation_epoch = cache_read_mutation_epoch,
+ };
+ 
+ void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)
+@@ -572,6 +603,7 @@ void bfs_cache_destroy(bfs_cache_t *cache)
+ void bfs_cache_invalidate(bfs_cache_t *cache)
+ {
+     if (!cache || !cache->slots) return;
++    cache_note_mutation(cache);
+     for (uint32_t i = 0; i < 1u << (32u - cache->bucket_shift); i++)
+         cache->buckets[i] = NO_SLOT;
+     for (uint32_t i = 0; i < cache->num_slots; i++) {
+diff --git a/src/core/inode.c b/src/core/inode.c
+index e48599d..681da8e 100644
+--- a/src/core/inode.c
++++ b/src/core/inode.c
+@@ -5,6 +5,9 @@
+ 
+ #include "bfs_inode.h"
+ #include <string.h>
++#ifdef BFS_PERF_PROBE
++#include "perf_probe.h"
++#endif
+ 
+ void bfs_inode_apply_stamp(bfs_inode_t *inode, const bfs_inode_stamp_t *stamp,
+                            bool creation)
+@@ -68,6 +71,9 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
+ 
+ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.inode_read_calls++;
++#endif
+     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+     uint32_t key = bfs_be32(ino);
+@@ -80,6 +86,9 @@ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
+ 
+ bfs_err_t bfs_inode_read_unlinked(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.inode_read_calls++;
++#endif
+     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+     uint32_t key = bfs_be32(ino);

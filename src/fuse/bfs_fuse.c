@@ -70,6 +70,7 @@ static int fuse_error(bfs_err_t error)
     case BFS_ERR_INVAL: return EINVAL;
     case BFS_ERR_NOSPC: return ENOSPC;
     case BFS_ERR_OVERFLOW: return EOVERFLOW;
+    case BFS_ERR_PROTECTED: return EACCES;
     case BFS_ERR_NOMEM: return ENOMEM;
     case BFS_ERR_AGAIN: return EAGAIN;
     case BFS_ERR_UNSUPPORTED: return EOPNOTSUPP;

@@ -1,0 +1,5 @@
+FAIL /home/fabian/.cache/bfs-performance/metadata-2026-10-08.QvzB5w/build/benchmark/metadata-deep-v13-20261008-m3-1-bfs-first
+LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL_US	49406
+PASS	1
+ERROR: invalid or incomplete bfs workload output
+Series metadata-deep-v13-20261008 complete.

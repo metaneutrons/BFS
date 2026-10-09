@@ -1,0 +1,407 @@
+--- a/src/core/file.c
++++ b/src/core/file.c
+@@ -14,10 +14,25 @@
+ #include "perf_probe.h"
+ #endif
+ 
++/* Operation-local copy of a validated inode. It never outlives the locked
++ * write/append call and is usable only while the selected tree is unchanged. */
++typedef struct {
++    bool valid;
++    bfs_fs_t *fs;
++    bfs_btree_t *tree;
++    bfs_blk_t root;
++    uint64_t generation;
++    uint64_t recovery_generation;
++    uint32_t inode_nr;
++    bool unlinked;
++    bfs_inode_t inode;
++} file_inode_seed_t;
++
+ typedef struct {
+     bfs_inode_stamp_fn stamp_fn;
+     void *stamp_context;
+     uint32_t protection_clear;
++    file_inode_seed_t *inode_seed;
+ } file_write_metadata_t;
+ 
+ /* Only the disposable profiler marks file payload I/O. The production build
+@@ -96,11 +111,12 @@
+     return BFS_OK;
+ }
+ 
+-static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
+-                                              bfs_btree_t *inode_tree,
+-                                              uint32_t inode_nr, bool unlinked)
++static bfs_err_t file_open_from_inode_unlocked(bfs_file_t *f, bfs_fs_t *fs,
++                                               bfs_btree_t *inode_tree,
++                                               uint32_t inode_nr, bool unlinked,
++                                               const bfs_inode_t *inode)
+ {
+-    if (!f || !fs || !fs->mounted || !inode_tree || inode_nr == 0)
++    if (!f || !fs || !fs->mounted || !inode_tree || inode_nr == 0 || !inode)
+         return BFS_ERR_INVAL;
+     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+     memset(f, 0, sizeof(*f));
+@@ -111,19 +127,13 @@
+     f->recovery_generation = fs->recovery_generation;
+     f->unlinked = unlinked;
+ 
+-    /* Read the inode for its extent mapping and size */
+-    uint64_t size = 0;
+-    bfs_inode_t inode;
+-    bfs_err_t err = unlinked ? bfs_inode_read_unlinked(inode_tree, inode_nr, &inode)
+-                             : bfs_inode_read(inode_tree, inode_nr, &inode);
+-    if (err != BFS_OK) return err;
+-    uint32_t type = bfs_be32(inode.type);
++    uint32_t type = bfs_be32(inode->type);
+     if (type != BFS_INODE_FILE && type != BFS_INODE_SOFTLINK && type != BFS_INODE_HARDLINK)
+         return BFS_ERR_INVAL;
+-    size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
+-    f->size = size;
++    f->size = ((uint64_t)bfs_be32(inode->size_hi) << 32) |
++              bfs_be32(inode->size_lo);
+ 
+-    err = bfs_extent_open(&f->extents, fs->bio, &fs->freespace, &inode,
++    bfs_err_t err = bfs_extent_open(&f->extents, fs->bio, &fs->freespace, inode,
+                           fs->live_txn_id);
+     if (err != BFS_OK) return err;
+     f->extents.tree.txn_id_ptr = &fs->live_txn_id;
+@@ -132,36 +142,97 @@
+     return BFS_OK;
+ }
+ 
++static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
++                                              bfs_btree_t *inode_tree,
++                                              uint32_t inode_nr, bool unlinked)
++{
++    if (!f || !fs || !fs->mounted || !inode_tree || inode_nr == 0)
++        return BFS_ERR_INVAL;
++    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
++    /* Keep the prior failure state: a failed open leaves a cleared, identified
++     * handle rather than preserving uninitialized or earlier caller bytes. */
++    memset(f, 0, sizeof(*f));
++    f->fs = fs;
++    f->inode_tree = inode_tree;
++    f->inode_nr = inode_nr;
++    f->recovery_generation = fs->recovery_generation;
++    f->unlinked = unlinked;
++    bfs_inode_t inode;
++    bfs_err_t err = unlinked ? bfs_inode_read_unlinked(inode_tree, inode_nr, &inode)
++                             : bfs_inode_read(inode_tree, inode_nr, &inode);
++    if (err != BFS_OK) return err;
++    return file_open_from_inode_unlocked(f, fs, inode_tree, inode_nr, unlinked,
++                                         &inode);
++}
++
+ bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
+ {
+     return file_open_from_tree_unlocked(f, fs, &fs->inode_tree, inode_nr, false);
+ }
+ 
++static void file_inode_seed_store(file_inode_seed_t *seed, const bfs_file_t *f,
++                                  const bfs_inode_t *inode)
++{
++    if (!seed) return;
++    seed->valid = true;
++    seed->fs = f->fs;
++    seed->tree = f->inode_tree;
++    seed->root = f->inode_tree->root;
++    seed->generation = f->inode_tree->generation;
++    seed->recovery_generation = f->fs->recovery_generation;
++    seed->inode_nr = f->inode_nr;
++    seed->unlinked = f->unlinked;
++    if (inode != &seed->inode) seed->inode = *inode;
++}
++
++static bool file_inode_seed_matches(const file_inode_seed_t *seed,
++                                    const bfs_file_t *f)
++{
++    return seed && seed->valid && seed->fs == f->fs &&
++           seed->tree == f->inode_tree && seed->root == f->inode_tree->root &&
++           seed->generation == f->inode_tree->generation &&
++           seed->recovery_generation == f->fs->recovery_generation &&
++           seed->inode_nr == f->inode_nr && seed->unlinked == f->unlinked;
++}
++
+ static bfs_err_t file_update_inode(bfs_file_t *f,
+                                     const file_write_metadata_t *metadata)
+ {
+-    bfs_inode_t inode;
+-    bfs_err_t err = f->unlinked
+-                        ? bfs_inode_read_unlinked(f->inode_tree, f->inode_nr, &inode)
+-                        : bfs_inode_read(f->inode_tree, f->inode_nr, &inode);
+-    if (err != BFS_OK) return err;
+-    inode.inode_nr = bfs_be32(f->inode_nr);
+-    inode.size_hi = bfs_be32((uint32_t)(f->size >> 32));
+-    inode.size_lo = bfs_be32((uint32_t)(f->size & 0xFFFFFFFF));
+-    bfs_extent_store(&f->extents, &inode);
++    file_inode_seed_t *seed = metadata ? metadata->inode_seed : NULL;
++    bfs_inode_t fallback;
++    bfs_inode_t *inode = &fallback;
++    if (seed && file_inode_seed_matches(seed, f)) {
++        inode = &seed->inode;
++    } else {
++        bfs_err_t read_err = f->unlinked
++                                 ? bfs_inode_read_unlinked(f->inode_tree, f->inode_nr,
++                                                           inode)
++                                 : bfs_inode_read(f->inode_tree, f->inode_nr,
++                                                  inode);
++        if (read_err != BFS_OK) return read_err;
++    }
++    inode->inode_nr = bfs_be32(f->inode_nr);
++    inode->size_hi = bfs_be32((uint32_t)(f->size >> 32));
++    inode->size_lo = bfs_be32((uint32_t)(f->size & 0xFFFFFFFF));
++    bfs_extent_store(&f->extents, inode);
+     if (metadata) {
+         if (metadata->stamp_fn) {
+             bfs_inode_stamp_t stamp = {0};
+             metadata->stamp_fn(metadata->stamp_context, &stamp);
+-            bfs_inode_apply_stamp(&inode, &stamp, false);
++            bfs_inode_apply_stamp(inode, &stamp, false);
+         }
+         if (metadata->protection_clear != 0)
+-            inode.protection = bfs_be32(bfs_be32(inode.protection) &
++            inode->protection = bfs_be32(bfs_be32(inode->protection) &
+                                         ~metadata->protection_clear);
+     }
+-    return f->unlinked
+-               ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, &inode)
+-               : bfs_inode_write(f->inode_tree, f->inode_nr, &inode);
++    bfs_err_t err = f->unlinked
++                        ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, inode)
++                        : bfs_inode_write(f->inode_tree, f->inode_nr, inode);
++    if (err == BFS_OK)
++        file_inode_seed_store(seed, f, inode);
++    else if (seed)
++        seed->valid = false;
++    return err;
+ }
+ 
+ /* Reached a transaction commit point in the middle of a write or truncate: the
+@@ -169,11 +240,20 @@
+  * crash — or any later error return — leaves the just-allocated extent/data
+  * blocks unreferenced by the inode (orphaned and leaked), with the on-disk size
+  * inconsistent with the extent map. Always flush the inode, then sync. */
+-static bfs_err_t file_flush_and_sync(bfs_file_t *f)
++static bfs_err_t file_flush_and_sync(bfs_file_t *f,
++                                     const file_write_metadata_t *metadata)
+ {
+-    bfs_err_t err = file_update_inode(f, NULL);
++    /* Intermediate commits publish size and extents without applying the
++     * operation's final timestamp or protection update. */
++    file_write_metadata_t sync_metadata = {
++        .inode_seed = metadata ? metadata->inode_seed : NULL,
++    };
++    bfs_err_t err = file_update_inode(f, &sync_metadata);
+     if (err != BFS_OK) return err;
+-    return bfs_txn_commit(f->fs);
++    err = bfs_txn_commit(f->fs);
++    if (metadata && metadata->inode_seed)
++        metadata->inode_seed->valid = false;
++    return err;
+ }
+ 
+ static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode,
+@@ -190,6 +270,8 @@
+     if (state_error == BFS_OK && update_inode)
+         state_error = file_update_inode(f, metadata);
+     if (state_error != BFS_OK) {
++        if (metadata && metadata->inode_seed)
++            metadata->inode_seed->valid = false;
+         bfs_err_t reload_error = bfs_fs_reload_committed_unlocked(fs);
+         return reload_error == BFS_OK ? state_error : reload_error;
+     }
+@@ -319,7 +401,9 @@
+ }
+ 
+ static bfs_err_t file_prepare_new_run(bfs_file_t *f, uint32_t len,
+-                                      uint32_t file_block, uint32_t *run_count)
++                                      uint32_t file_block,
++                                      const file_write_metadata_t *metadata,
++                                      uint32_t *run_count)
+ {
+     bfs_fs_t *fs = f->fs;
+     const uint32_t bs = fs->bio->block_size;
+@@ -353,7 +437,7 @@
+     const uint32_t reserve = 4u * BFS_BTREE_MAX_OP_FREES;
+     if (reserve > bfs_fs_pending_cap(fs)) return BFS_OK;
+     if (fs->pending_count + reserve > bfs_fs_pending_cap(fs)) {
+-        err = file_flush_and_sync(f);
++        err = file_flush_and_sync(f, metadata);
+         if (err != BFS_OK) return err;
+     }
+ 
+@@ -406,12 +490,13 @@
+ 
+ static bfs_err_t file_write_new_run(bfs_file_t *f, const uint8_t *input,
+                                     uint32_t len, uint32_t file_block,
++                                    const file_write_metadata_t *metadata,
+                                     uint32_t *written, bool *handled)
+ {
+     *written = 0;
+     *handled = false;
+     uint32_t count;
+-    bfs_err_t err = file_prepare_new_run(f, len, file_block, &count);
++    bfs_err_t err = file_prepare_new_run(f, len, file_block, metadata, &count);
+     if (err != BFS_OK) {
+         *handled = true;
+         return err;
+@@ -453,7 +538,7 @@
+          * via the inode-flushing sync if short — a raw commit here would persist a
+          * stale inode (see file_flush_and_sync / C1). */
+         if (f->fs->pending_count + 3u * BFS_BTREE_MAX_OP_FREES > bfs_fs_pending_cap(f->fs)) {
+-            bfs_err_t ferr = file_flush_and_sync(f);
++            bfs_err_t ferr = file_flush_and_sync(f, metadata);
+             if (ferr != BFS_OK)
+                 return file_finish_write(metadata, f, total, ferr);
+         }
+@@ -463,7 +548,8 @@
+ 
+         uint32_t run_written;
+         bool run_handled;
+-        err = file_write_new_run(f, in, len, file_blk, &run_written, &run_handled);
++        err = file_write_new_run(f, in, len, file_blk, metadata, &run_written,
++                                 &run_handled);
+         if (run_handled) {
+             in += run_written;
+             f->offset += run_written;
+@@ -492,7 +578,7 @@
+             /* Try to reclaim pending frees if needed and worthwhile */
+             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
+                 if (f->fs->pending_count > BFS_SYNC_THRESHOLD) {
+-                    bfs_err_t serr = file_flush_and_sync(f);
++                    bfs_err_t serr = file_flush_and_sync(f, metadata);
+                     if (serr != BFS_OK)
+                         return file_finish_write(metadata, f, total, serr);
+                 }
+@@ -544,7 +630,7 @@
+             }
+         } else if (cow_block) {
+             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
+-                bfs_err_t serr = file_flush_and_sync(f);
++                bfs_err_t serr = file_flush_and_sync(f, metadata);
+                 if (serr != BFS_OK)
+                     return file_finish_write(metadata, f, total, serr);
+             }
+@@ -703,7 +789,7 @@
+             /* Flush the inode so it reflects the partially-truncated extent tree
+              * before the commit, then sync to reclaim pending_frees — a crash
+              * mid-truncate must not leave the inode pointing at freed blocks. */
+-            bfs_err_t sync_err = file_flush_and_sync(f);
++            bfs_err_t sync_err = file_flush_and_sync(f, NULL);
+             if (sync_err != BFS_OK) return file_finish_truncate(f, sync_err);
+         }
+         if (err != BFS_OK) return file_finish_truncate(f, err);
+@@ -714,7 +800,8 @@
+     return file_finish_truncate(f, BFS_OK);
+ }
+ 
+-static bfs_err_t file_refresh_unlocked(bfs_file_t *f)
++static bfs_err_t file_refresh_unlocked(bfs_file_t *f,
++                                       file_inode_seed_t *seed)
+ {
+     bfs_err_t err = file_handle_error(f);
+     if (err != BFS_OK) return err;
+@@ -722,21 +809,27 @@
+         f->fs->recovery_error = f->extents.tree.free_sink_err;
+         return f->fs->recovery_error;
+     }
+-    bfs_inode_t inode;
+-    err = f->unlinked ? bfs_inode_read_unlinked(f->inode_tree, f->inode_nr, &inode)
+-                      : bfs_inode_read(f->inode_tree, f->inode_nr, &inode);
++    bfs_inode_t fallback;
++    bfs_inode_t *inode = seed ? &seed->inode : &fallback;
++    if (seed) seed->valid = false;
++    err = f->unlinked ? bfs_inode_read_unlinked(f->inode_tree, f->inode_nr, inode)
++                      : bfs_inode_read(f->inode_tree, f->inode_nr, inode);
+     if (err != BFS_OK) return err;
+-    uint64_t size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
++    uint64_t size = ((uint64_t)bfs_be32(inode->size_hi) << 32) | bfs_be32(inode->size_lo);
+     /* An inline extent can grow while root and size stay the same. */
+-    if (bfs_extent_matches(&f->extents, &inode) && size == f->size)
++    if (bfs_extent_matches(&f->extents, inode) && size == f->size) {
++        file_inode_seed_store(seed, f, inode);
+         return BFS_OK;
++    }
+     /* Another handle published a new inode. Keep this handle's independent offset. */
+     bfs_file_t current;
+-    err = file_open_from_tree_unlocked(&current, f->fs, f->inode_tree, f->inode_nr,
+-                                       f->unlinked);
++    uint64_t offset = f->offset;
++    err = file_open_from_inode_unlocked(&current, f->fs, f->inode_tree, f->inode_nr,
++                                        f->unlinked, inode);
+     if (err != BFS_OK) return err;
+-    current.offset = f->offset;
++    current.offset = offset;
+     *f = current;
++    file_inode_seed_store(seed, f, inode);
+     return BFS_OK;
+ }
+ 
+@@ -767,7 +860,7 @@
+ {
+     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;
+     bfs_lock_write(&f->fs->lock);
+-    bfs_err_t err = file_refresh_unlocked(f);
++    bfs_err_t err = file_refresh_unlocked(f, NULL);
+     int64_t result = err == BFS_OK ? file_seek_unlocked(f, offset, mode) : err;
+     bfs_lock_unlock(&f->fs->lock);
+     return result;
+@@ -785,7 +878,7 @@
+      * never touch fs->scratch and keep the shared read lock, so they still run
+      * concurrently.) */
+     bfs_lock_write(&f->fs->lock);
+-    int32_t err = file_refresh_unlocked(f);
++    int32_t err = file_refresh_unlocked(f, NULL);
+     if (err == BFS_OK) err = bfs_file_read_unlocked(f, buf, len);
+     bfs_lock_unlock(&f->fs->lock);
+     return err;
+@@ -802,8 +895,16 @@
+         return BFS_ERR_INVAL;
+     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
+     bfs_lock_write(&f->fs->lock);
+-    int32_t err = file_refresh_unlocked(f);
+-    if (err == BFS_OK) err = file_write_with_metadata_unlocked(f, buf, len, metadata);
++    file_inode_seed_t seed = {0};
++    file_write_metadata_t write_metadata = { .inode_seed = &seed };
++    if (metadata) {
++        write_metadata.stamp_fn = metadata->stamp_fn;
++        write_metadata.stamp_context = metadata->stamp_context;
++        write_metadata.protection_clear = metadata->protection_clear;
++    }
++    int32_t err = file_refresh_unlocked(f, &seed);
++    if (err == BFS_OK)
++        err = file_write_with_metadata_unlocked(f, buf, len, &write_metadata);
+     bfs_lock_unlock(&f->fs->lock);
+     return err;
+ }
+@@ -844,12 +945,17 @@
+         return BFS_ERR_INVAL;
+     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
+     bfs_lock_write(&f->fs->lock);
+-    bfs_err_t err = file_refresh_unlocked(f);
++    file_inode_seed_t seed = {0};
++    file_write_metadata_t write_metadata = { .inode_seed = &seed };
++    bfs_err_t err = file_refresh_unlocked(f, &seed);
+     if (err == BFS_OK) {
+         int64_t offset = file_seek_unlocked(f, 0, BFS_SEEK_END);
+         if (offset < 0) err = (bfs_err_t)offset;
+     }
+-    int32_t result = err == BFS_OK ? bfs_file_write_unlocked(f, buf, len) : err;
++    int32_t result = err == BFS_OK
++                         ? file_write_with_metadata_unlocked(f, buf, len,
++                                                            &write_metadata)
++                         : err;
+     bfs_lock_unlock(&f->fs->lock);
+     return result;
+ }
+@@ -870,7 +976,7 @@
+     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;
+     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
+     bfs_lock_write(&f->fs->lock);
+-    bfs_err_t err = file_refresh_unlocked(f);
++    bfs_err_t err = file_refresh_unlocked(f, NULL);
+     if (err == BFS_OK) err = bfs_file_truncate_unlocked(f, new_size);
+     bfs_lock_unlock(&f->fs->lock);
+     return err;

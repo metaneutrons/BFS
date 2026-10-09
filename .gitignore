@@ -36,4 +36,23 @@ aros/
 .assets/
 .cache/
 *.fs-uae
+# Retained text configurations are part of qualification evidence.
+!docs/qualification/evidence/bfs-metadata-listing-2026-10-08/**/*.fs-uae
+!docs/qualification/evidence/bfs-listing-detail-2026-10-08/**/*.fs-uae
+!docs/qualification/evidence/bfs-leaf-range-performance-2026-10-08/**/*.fs-uae
+!docs/qualification/evidence/bfs-exact-key-fastpath-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-cursor-path-performance-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-scan-cache-performance-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-scan-admission-performance-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-sparse-key-crc-performance-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-sparse-crc-append-confirmation-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-read-flush-profile-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-read-flush-cachy-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-write-path-profile-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-floor-resident-pilot-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-goal-root-pilot-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-write-guard-pilot-2026-10-09/**/*.fs-uae
 .bench-wb/
+
+# Local session handoff (distinct from tracked HANDOFF.md).
+/handoff.md

@@ -1,0 +1,17 @@
+{"type":"bfs-conformance-replay","format_version":1,"catalog_version":1,"seed":20260909}
+{"type":"case","id":"empty-volume"}
+{"type":"case","id":"regular-file"}
+{"type":"case","id":"multi-block-file"}
+{"type":"case","id":"large-file"}
+{"type":"case","id":"read-only-refusal"}
+{"type":"case","id":"snapshot"}
+{"type":"case","id":"disk-full"}
+{"type":"case","id":"directory-scale"}
+{"type":"case","id":"hard-link"}
+{"type":"case","id":"soft-link"}
+{"type":"case","id":"name-encoding"}
+{"type":"case","id":"comment-metadata"}
+{"type":"case","id":"sparse-range"}
+{"type":"case","id":"remount"}
+{"type":"case","id":"invalid-name"}
+{"type":"complete"}

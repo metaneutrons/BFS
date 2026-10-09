@@ -1,0 +1,3 @@
+BFS format version 4 is too new.
+This driver supports version 3.
+Use a newer BFS driver.

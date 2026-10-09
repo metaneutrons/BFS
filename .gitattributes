@@ -1,0 +1,3 @@
+# Evidence files are raw records, checksummed byte for byte: never convert
+# line endings and do not flag their whitespace.
+docs/qualification/evidence/** -text -whitespace

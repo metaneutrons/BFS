@@ -1,0 +1,6 @@
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -Wframe-larger-than=16384 -noixemul -m68020 -O2 \
+		-Isrc/amiga \
+		-I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include \
+		-B/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/ \
+		-L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib \
+		-o /Volumes/Dev/Source/Amiga/BFS/build/perf-2026-10-08/profile/fs-compare-bench tools/fs-compare-bench.c -lamiga

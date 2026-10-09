@@ -1,0 +1,15 @@
+Decision: rejected standalone cursor-path experiment; previous M5 restored.
+Production pilot: four required runs verified, schema4,30buffers.
+Deep comparison: four required runs verified, schema14,30buffers.
+Full qualification: not run; strict40-run default rejects missing32runs.
+Candidate: 568host +568ASan/UBSan tests,60suites each, leak detection.
+Restored: 565host +565ASan/UBSan tests,60suites each, leak detection.
+Restored core/header/directory-test hashes exactly match previousM5.
+Restored production/probe binaries exactly match79d6dc6c.../a46a153a....
+Quality:113tests; summary rejection oracles:5; static analysis and builds pass.
+Asset audit: initial60runtime-library copies moved to ignored build area;
+complete final audit passes with only text evidence retained.
+Prior manifests: exact-key654, leaf-range1146, listing-detail103 and
+metadata-listing873 files verify unchanged.
+No commit, push, merge, remoteCI or running emulator. CIrunner inactive.
+Target <=5xPFS3 across all checked workloads/runs remains open.

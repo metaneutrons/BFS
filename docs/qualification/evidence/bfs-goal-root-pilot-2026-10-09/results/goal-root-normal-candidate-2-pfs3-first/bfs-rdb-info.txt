@@ -1,0 +1,14 @@
+BlockDevice:                0    16383      524288  256Mi  heads=1 sectors=32 block_size=512
+PhysicalDisk:               0     1023      524288  256Mi  heads=16 sectors=32 block_size=512
+LogicalDisk:                1     1023      523776  255Mi  rdb_blks=[0:511,#512] used=[hi=329,#330] cyl_blks=512
+Partition: #0 'DH1'         2     1023      523264  255Mi   99.90%  BFS0/0x42465300  auto
+                                                                      blk_longs=128, sec/blk=1, surf=16, blk/trk=32
+                                                                      fs_block_size=512
+                                                                      max_transfer=0xffffff
+                                                                      mask=0x7ffffffe
+                                                                      num_buffer=30
+                                                                      pre_alloc=0
+                                                                      boot_blocks=0
+                                                                      bootable=0
+                                                                      automount=1
+FileSystem #0 BFS0/0x42465300 version=1.0 size=160492 seg_list_blk=0x3 global_vec=0xffffffff

@@ -1,0 +1,62 @@
+SPARSE_CRC_PROBE	1
+META	oracle	independent-bitwise-reflected-IEEE
+META	api	bfs_crc32_sparse; m68k size_t is 32-bit
+FIXTURE	name	description
+FIXTURE	small	zero,dense,32-nonzero+224-zero per 256; lengths 0,1,15,16,17,31,32,63,64,65,66,127,128,129; offsets 0..7
+FIXTURE	zero_run_boundary	prefix byte; 63,64,65 supplied zero bytes; following byte included separately
+FIXTURE	large	4096-byte zero,dense,block256,dirkey264; seeds 00000000,FFFFFFFF,12345678; offsets 0..7
+FIXTURE	dirkey_like_264	synthetic packed 264-byte key: parent4,hash4,nameLen1,four-char name; 251 zero tail bytes
+FIXTURE	single_byte_perturbation	4096 zero bytes with one A5 at offsets 0,63,64,65,255,256,2047,4095
+FIXTURE	mixed128_384	density control; 128 nonzero and 384 zero bytes per 512-byte group; not an inode fixture
+COUNT	vector_cases	1297
+COUNT	baseline_calls	1297
+COUNT	sparse_calls	1297
+COUNT	abi_positive_checks	2594
+COUNT	abi_negative_control_cases	2
+COUNT	abi_negative_control_passes	2
+COUNT	abi_negative_control_errors	0
+COUNT	oracle_errors	0
+COUNT	abi_errors	0
+COUNT	timing_errors	0
+COUNT	errors	0
+COUNT	timer_available	1
+CLOCK_HZ	709379
+COUNT	oracle_digest_fnv1a32	2555652288
+COUNT	timing_cases	5
+COUNT	timing_samples	30
+COUNT	baseline_timing_calls	4608
+COUNT	sparse_timing_calls	4608
+COUNT	timing_order_baseline_first	15
+COUNT	timing_order_sparse_first	15
+TIMING	case	length	repeats	sample	order	baseline_ticks	sparse_ticks
+TIMING	dense4096	4096	64	0	baseline-first	22428	15072
+TIMING	dense4096	4096	64	1	sparse-first	13030	14755
+TIMING	dense4096	4096	64	2	baseline-first	16617	15054
+TIMING	dense4096	4096	64	3	sparse-first	13328	16210
+TIMING	dense4096	4096	64	4	baseline-first	12939	14528
+TIMING	dense4096	4096	64	5	sparse-first	13303	14664
+TIMING	zero4096	4096	64	0	baseline-first	13166	1362
+TIMING	zero4096	4096	64	1	sparse-first	13212	1407
+TIMING	zero4096	4096	64	2	baseline-first	12990	1362
+TIMING	zero4096	4096	64	3	sparse-first	12757	1589
+TIMING	zero4096	4096	64	4	baseline-first	12985	1317
+TIMING	zero4096	4096	64	5	sparse-first	12894	1362
+TIMING	sparse4096-dirkey264	4096	64	0	baseline-first	13347	5403
+TIMING	sparse4096-dirkey264	4096	64	1	sparse-first	14710	5412
+TIMING	sparse4096-dirkey264	4096	64	2	baseline-first	15980	5721
+TIMING	sparse4096-dirkey264	4096	64	3	sparse-first	12939	5448
+TIMING	sparse4096-dirkey264	4096	64	4	baseline-first	13892	5267
+TIMING	sparse4096-dirkey264	4096	64	5	sparse-first	13120	5584
+TIMING	short64-dense	64	512	0	baseline-first	1770	2180
+TIMING	short64-dense	64	512	1	sparse-first	1771	2179
+TIMING	short64-dense	64	512	2	baseline-first	1725	2406
+TIMING	short64-dense	64	512	3	sparse-first	1752	2270
+TIMING	short64-dense	64	512	4	baseline-first	1770	2134
+TIMING	short64-dense	64	512	5	sparse-first	1680	2133
+TIMING	mixed128-384	512	64	0	baseline-first	1589	999
+TIMING	mixed128-384	512	64	1	sparse-first	1680	726
+TIMING	mixed128-384	512	64	2	baseline-first	1589	727
+TIMING	mixed128-384	512	64	3	sparse-first	1634	726
+TIMING	mixed128-384	512	64	4	baseline-first	1589	727
+TIMING	mixed128-384	512	64	5	sparse-first	1569	726
+STATUS	PASS

@@ -1,0 +1,12 @@
+
+Mounted disks:
+Unit      Size       Used       Free Full Errs   Status   Name
+DF0       No disk present
+DH0      4095M    4194304    4194303  50%   0  Read/Write System
+DH1       255M       2827      62581   4%   0  Read/Write BFSTest
+DH2       234M          0     479771   0%   0  Read/Write PFSTest
+
+Volumes available:
+BFSTest [Mounted]
+PFSTest [Mounted]
+System [Mounted]

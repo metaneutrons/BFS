@@ -1,0 +1,34 @@
+FailAt 11
+C:cli-fixture Compat: >SYS:fixture-create.txt
+C:bfs snapshot create Compat: invalid/name >SYS:snapshot-invalid-name.txt
+C:bfs snapshot dir Compat: smoke INVALID >SYS:snapshot-invalid-option.txt
+C:bfs snapshot create Compat: >SYS:snapshot-missing-name.txt
+FailAt 21
+C:bfs info Missing: >SYS:info-missing-drive.txt
+C:bfs check Missing: >SYS:check-missing-drive.txt
+C:bfs check Compat: >SYS:check.txt
+C:bfs snapshot create Compat: smoke >SYS:snapshot-create.txt
+C:bfs snapshot list Compat: >SYS:snapshot-list.txt
+C:bfs snapshot dir Compat: smoke >SYS:snapshot-dir.txt
+C:bfs snapshot dir Compat: smoke DIRS >SYS:snapshot-dir-dirs.txt
+C:bfs snapshot dir Compat: smoke FILES >SYS:snapshot-dir-files.txt
+C:bfs snapshot inspect Compat: smoke >SYS:snapshot-inspect.txt
+C:bfs snapshot inspect Compat: smoke FILES >SYS:snapshot-inspect-files.txt
+C:bfs info Compat: >SYS:info.txt
+C:bfs snapshot mount Compat: smoke Compat: >SYS:snapshot-mount-collision.txt
+C:bfs snapshot mount Compat: smoke SnapshotView: >SYS:snapshot-mount.txt
+C:bfs snapshot mount Compat: smoke SnapshotSecond: >SYS:snapshot-second-mount.txt
+C:cli-fixture SnapshotView: PROBE >SYS:snapshot-mounted-before-live-change.txt
+C:Delete Compat:cli-file
+C:Delete Compat:cli-dir/nested-file
+C:Delete Compat:cli-dir/nested-link
+C:cli-fixture SnapshotView: PROBE >SYS:snapshot-mounted-file.txt
+C:cli-fixture SnapshotSecond: PROBE >SYS:snapshot-second-mounted-file.txt
+C:cli-fixture Compat: EXPECTBUSY=smoke >SYS:snapshot-delete-busy.txt
+C:bfs snapshot unmount SnapshotView: >SYS:snapshot-unmount.txt
+C:cli-fixture SnapshotView: EXPECTABSENT >SYS:snapshot-unmounted.txt
+C:cli-fixture Compat: EXPECTBUSY=smoke >SYS:snapshot-delete-still-busy.txt
+C:bfs snapshot unmount SnapshotSecond: >SYS:snapshot-second-unmount.txt
+C:cli-fixture SnapshotSecond: EXPECTABSENT >SYS:snapshot-second-unmounted.txt
+C:bfs snapshot delete Compat: smoke >SYS:snapshot-delete.txt
+C:compatibility-probe 0

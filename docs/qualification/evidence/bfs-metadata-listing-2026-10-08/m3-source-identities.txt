@@ -1,0 +1,5 @@
+94af3bc48609439508c43271a3560a7c74c95b3525d7e2a09d07c01031ea3818  build/perf-2026-10-08/m3-src.sBWdrn/include/bfs_btree.h
+6b11eb4b8f8ac1f1256659e2668fc8c305965a3f0ec340e45c3280b62e11ad6e  build/perf-2026-10-08/m3-src.sBWdrn/include/bfs_dir.h
+ba05441dd1f456de4fd783b29d51e3bcb8ddf33a741d0168da32c037498078d9  build/perf-2026-10-08/m3-src.sBWdrn/src/core/btree.c
+f1f3010e3aab749abe20d2cabc952ff4a450d0340d43c8e9f8aad648ea6bfb03  build/perf-2026-10-08/m3-src.sBWdrn/src/core/dir.c
+af875cc4193e5b26e75df3da1ececc386cbc5d670717fa969e3273188b100ac3  build/perf-2026-10-08/m3-src.sBWdrn/src/amiga/handler.c

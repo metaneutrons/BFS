@@ -1,0 +1,8 @@
+{"type":"bfs-conformance-replay","format_version":1,"catalog_version":1,"seed":20260909}
+{"type":"case","id":"empty-volume"}
+{"type":"case","id":"regular-file"}
+{"type":"case","id":"multi-block-file"}
+{"type":"case","id":"large-file"}
+{"type":"case","id":"read-only-refusal"}
+{"type":"case","id":"snapshot"}
+{"type":"complete"}

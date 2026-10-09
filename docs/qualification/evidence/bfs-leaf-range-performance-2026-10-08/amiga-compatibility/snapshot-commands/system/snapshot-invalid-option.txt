@@ -1,0 +1,1 @@
+Valid DIR and INSPECT options are DIRS and FILES.

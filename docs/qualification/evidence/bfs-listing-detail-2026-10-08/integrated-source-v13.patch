@@ -1,0 +1,3331 @@
+diff --git a/.gitignore b/.gitignore
+index f76b45a..3dd515a 100644
+--- a/.gitignore
++++ b/.gitignore
+@@ -36,4 +36,7 @@ aros/
+ .assets/
+ .cache/
+ *.fs-uae
++# Retained text configurations are part of qualification evidence.
++!docs/qualification/evidence/bfs-metadata-listing-2026-10-08/**/*.fs-uae
++!docs/qualification/evidence/bfs-listing-detail-2026-10-08/**/*.fs-uae
+ .bench-wb/
+diff --git a/emulator-test/verify-bench-results.sh b/emulator-test/verify-bench-results.sh
+index 89691b4..d35ea19 100755
+--- a/emulator-test/verify-bench-results.sh
++++ b/emulator-test/verify-bench-results.sh
+@@ -9,6 +9,8 @@ fixed_metric_name=
+ fixed_metric_value=
+ fixed_metric_name2=
+ fixed_metric_value2=
++fixed_metric_name3=
++fixed_metric_value3=
+ case "$mode" in
+     compare)
+         marker_text=BFS-PFS3-COMPLETE
+@@ -76,6 +78,15 @@ case "$mode" in
+         for cpu_scope in "${deep_compare_cpu_scopes[@]}"; do
+             deep_compare_counters_v11+=("${cpu_scope}_CALLS" "${cpu_scope}_SAMPLES" "${cpu_scope}_SAMPLE_TICKS")
+         done
++        deep_compare_lookup_counters=(INODE_READ_CALLS BTREE_SEARCH_CALLS BTREE_INDEX_HINT_HITS BTREE_LEAF_HINT_HITS CACHE_READ_CALLS CACHE_READ_HITS CACHE_READ_MISSES FREE_TREE_NODE_VIEWS FREE_TREE_RESIDENT_VIEWS DIR_TREE_NODE_VIEWS DIR_TREE_RESIDENT_VIEWS INODE_TREE_NODE_VIEWS INODE_TREE_RESIDENT_VIEWS REFCOUNT_TREE_NODE_VIEWS REFCOUNT_TREE_RESIDENT_VIEWS OTHER_TREE_NODE_VIEWS OTHER_TREE_RESIDENT_VIEWS)
++        deep_compare_counters_v12=("${deep_compare_counters_v11[@]}" "${deep_compare_lookup_counters[@]}")
++        deep_compare_detail_scopes=(DETAIL_INODE_READ DETAIL_INODE_VALIDATE DETAIL_INODE_SEARCH DETAIL_INODE_NODE_VIEW DETAIL_DIR_NODE_VIEW DETAIL_INODE_BINARY_SEARCH DETAIL_DIR_BINARY_SEARCH DETAIL_NODE_STRUCTURE DETAIL_CACHE_PEEK DETAIL_BUFFER_ALLOC DETAIL_BUFFER_FREE DETAIL_EXALL_FILL)
++        deep_compare_counters_v13=("${deep_compare_counters_v12[@]}")
++        for detail_scope in "${deep_compare_detail_scopes[@]}"; do
++            deep_compare_counters_v13+=("${detail_scope}_CALLS" "${detail_scope}_SAMPLES" "${detail_scope}_SAMPLE_TICKS")
++        done
++        deep_compare_readonly_counters=(BIO_WRITES BIO_UPDATES DATA_READS DATA_WRITES NODE_WRITES TXN_COMMITS FREESPACE_ALLOCS EXTENT_MAPS FREE_TREE_NODE_WRITES DIR_TREE_NODE_WRITES INODE_TREE_NODE_WRITES REFCOUNT_TREE_NODE_WRITES OTHER_TREE_NODE_WRITES NODE_CRC_WRITE_CALLS NODE_CRC_WRITE_SAMPLES NODE_CRC_WRITE_SAMPLE_TICKS FREE_TREE_RESERVE_RETURN_CALLS FREE_TREE_RESERVE_RETURN_RUNS FREE_TREE_RESERVE_RETURN_BLOCKS FREE_TREE_RESERVE_RETURN_RUNS_1_BLOCK FREE_TREE_RESERVE_RETURN_RUNS_2_3_BLOCKS FREE_TREE_RESERVE_RETURN_RUNS_4_7_BLOCKS FREE_TREE_RESERVE_RETURN_RUNS_8_PLUS_BLOCKS FREE_TREE_RESERVE_RETURN_MAX_RUN_BLOCKS FREE_TREE_RESERVE_RETURN_MAX_NODE_WRITES_PER_RUN FREE_TREE_RESERVE_RETURN_RUN_NODE_WRITES FREE_TREE_RESERVE_RETURN_BATCH_CALLS FREE_TREE_RESERVE_RETURN_BATCH_BLOCKS FREE_TREE_RESERVE_RETURN_BATCH_NODE_WRITES FREE_TREE_RESERVE_RETURN_SKIP_SHAPE FREE_TREE_RESERVE_RETURN_SKIP_SMALL FREE_TREE_RESERVE_RETURN_SKIP_EMERGENCY FREE_TREE_RESERVE_RETURN_SKIP_CAPACITY POST_PUBLISH_RECLAIM_PASSES MAX_POST_PUBLISH_RECLAIM_PASSES_PER_COMMIT SUPERBLOCK_PUBLICATIONS SEALED_COMMITS SEALED_METADATA_FENCES)
++        deep_compare_phases_v12=(SMALL_CREATE_40 LOOKUP_400 SMALL_READ_40 SEQ_WRITE_8M SEQ_READ_8M SMALL_DELETE_40 APPEND_4K_1M APPEND_1K_256K APPEND_READ_1280K LIST_EXNEXT_40_ENTRIES_FIRST_PASS LIST_EXNEXT_40_ENTRIES_REPEAT10_TOTAL LIST_EXALL_40_ENTRIES_FIRST_PASS LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL LIST_EXNEXT_400_ENTRIES_FIRST_PASS LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL LIST_EXALL_400_ENTRIES_FIRST_PASS LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL LIST_EXNEXT_1000_ENTRIES_FIRST_PASS LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL LIST_EXALL_1000_ENTRIES_FIRST_PASS LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL)
+         deep_compare_bfs_metrics=
+         deep_compare_pfs3_metrics=
+         positive_metric_names=
+@@ -108,11 +119,12 @@ for filesystem in "${filesystems[@]}"; do
+         read -r -a metric_names_array <<<"$metrics"
+         metric_count=${#metric_names_array[@]}
+     elif [[ -n "${versioned_compare:-}" ]]; then
+-        # Schema 2 adds the directory listing phases after the small reads;
+-        # schema 3 adds small-step appends and their read-back at the end.
++        # Schema 2 adds the legacy listings after the small reads; schema 3
++        # appends small-step growth; schema 4 appends validated listing scales.
+         IFS=$'\t' read -r observed_header observed_version < "$output"
+         if [[ "$observed_header" != "$header" ||
+-              ( "$observed_version" != 1 && "$observed_version" != 2 && "$observed_version" != 3 ) ]]; then
++              ( "$observed_version" != 1 && "$observed_version" != 2 &&
++                "$observed_version" != 3 && "$observed_version" != 4 ) ]]; then
+             printf 'ERROR: invalid compare schema header in %s output\n' "$filesystem" >&2
+             exit 1
+         fi
+@@ -126,8 +138,10 @@ for filesystem in "${filesystems[@]}"; do
+             metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
+         elif [[ "$header_version" == 2 ]]; then
+             metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US LIST_EXNEXT_400_US LIST_EXALL_400_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US'
+-        else
++        elif [[ "$header_version" == 3 ]]; then
+             metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US LIST_EXNEXT_400_US LIST_EXALL_400_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US APPEND_4K_1M_US APPEND_1K_256K_US APPEND_READ_1280K_US'
++        else
++            metrics='SMALL_CREATE_40_US LOOKUP_400_US SMALL_READ_40_US LIST_EXNEXT_400_US LIST_EXALL_400_US SEQ_WRITE_8M_US SEQ_READ_8M_US SMALL_DELETE_40_US APPEND_4K_1M_US APPEND_1K_256K_US APPEND_READ_1280K_US LIST_EXNEXT_40_ENTRIES_FIRST_PASS_US LIST_EXNEXT_40_ENTRIES_REPEAT10_TOTAL_US LIST_EXALL_40_ENTRIES_FIRST_PASS_US LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL_US LIST_EXNEXT_400_ENTRIES_FIRST_PASS_US LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL_US LIST_EXALL_400_ENTRIES_FIRST_PASS_US LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL_US LIST_EXNEXT_1000_ENTRIES_FIRST_PASS_US LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL_US LIST_EXALL_1000_ENTRIES_FIRST_PASS_US LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL_US'
+         fi
+         read -r -a metric_names_array <<<"$metrics"
+         metric_count=${#metric_names_array[@]}
+@@ -139,11 +153,14 @@ for filesystem in "${filesystems[@]}"; do
+             exit 1
+         fi
+         if [[ "$filesystem" == bfs ]]; then
+-            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 && "$observed_version" != 7 && "$observed_version" != 8 && "$observed_version" != 9 && "$observed_version" != 10 && "$observed_version" != 11 ]]; then
++            if [[ "$observed_version" != 4 && "$observed_version" != 5 && "$observed_version" != 6 && "$observed_version" != 7 && "$observed_version" != 8 && "$observed_version" != 9 && "$observed_version" != 10 && "$observed_version" != 11 && "$observed_version" != 12 && "$observed_version" != 13 ]]; then
+                 printf 'ERROR: unsupported deep-compare schema version %s\n' "$observed_version" >&2
+                 exit 1
+             fi
+             header_version=$observed_version
++            if (( header_version >= 12 )); then
++                deep_compare_phases=("${deep_compare_phases_v12[@]}")
++            fi
+             if [[ "$header_version" == 4 ]]; then
+                 deep_compare_counters=("${deep_compare_counters_v4[@]}")
+             elif [[ "$header_version" == 5 ]]; then
+@@ -158,8 +175,12 @@ for filesystem in "${filesystems[@]}"; do
+                 deep_compare_counters=("${deep_compare_counters_v9[@]}")
+             elif [[ "$header_version" == 10 ]]; then
+                 deep_compare_counters=("${deep_compare_counters_v10[@]}")
+-            else
++            elif [[ "$header_version" == 11 ]]; then
+                 deep_compare_counters=("${deep_compare_counters_v11[@]}")
++            elif [[ "$header_version" == 12 ]]; then
++                deep_compare_counters=("${deep_compare_counters_v12[@]}")
++            else
++                deep_compare_counters=("${deep_compare_counters_v13[@]}")
+             fi
+             deep_compare_bfs_metrics=
+             for deep_phase in "${deep_compare_phases[@]}"; do
+@@ -171,12 +192,18 @@ for filesystem in "${filesystems[@]}"; do
+             done
+             deep_compare_bfs_metrics+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
+             positive_metric_names+=" CLOCK_HZ CRC_SAMPLE_STRIDE"
+-            if [[ "$header_version" == 10 || "$header_version" == 11 ]]; then
++            if (( header_version >= 10 )); then
+                 deep_compare_bfs_metrics+=" CPU_SAMPLE_STRIDE"
+                 positive_metric_names+=" CPU_SAMPLE_STRIDE"
+                 fixed_metric_name2=CPU_SAMPLE_STRIDE
+                 fixed_metric_value2=1
+             fi
++            if (( header_version >= 13 )); then
++                deep_compare_bfs_metrics+=" DETAIL_SAMPLE_STRIDE"
++                positive_metric_names+=" DETAIL_SAMPLE_STRIDE"
++                fixed_metric_name3=DETAIL_SAMPLE_STRIDE
++                fixed_metric_value3=17
++            fi
+         elif [[ "$observed_version" != "$header_version" ]]; then
+             printf 'ERROR: mixed deep-compare schema versions\n' >&2
+             exit 1
+@@ -193,7 +220,9 @@ for filesystem in "${filesystems[@]}"; do
+     else
+         positive_metric_names=
+     fi
+-    awk -F '\t' -v drive="$drive" -v header="$header" -v header_version="$header_version" -v metric_names="$metrics" -v metric_count="$metric_count" -v value_pattern="$value_pattern" -v positive_metric_names="${positive_metric_names:-}" -v fixed_metric_name="$fixed_metric_name" -v fixed_metric_value="$fixed_metric_value" -v fixed_metric_name2="$fixed_metric_name2" -v fixed_metric_value2="$fixed_metric_value2" -v phases="${deep_compare_phases[*]:-}" -v cpu_scopes="${deep_compare_cpu_scopes[*]:-}" -v packet_categories="${deep_compare_packet_categories[*]:-}" '
++    # Expanded diagnostic schemas exceed Linux's per-argument size limit.
++    # Read the ordered metric inventory from stdin, not one giant -v argument.
++    printf '%s\n' "$metrics" | awk -F '\t' -v drive="$drive" -v header="$header" -v header_version="$header_version" -v metric_count="$metric_count" -v value_pattern="$value_pattern" -v positive_metric_names="${positive_metric_names:-}" -v fixed_metric_name="$fixed_metric_name" -v fixed_metric_value="$fixed_metric_value" -v fixed_metric_name2="$fixed_metric_name2" -v fixed_metric_value2="$fixed_metric_value2" -v fixed_metric_name3="$fixed_metric_name3" -v fixed_metric_value3="$fixed_metric_value3" -v phases="${deep_compare_phases[*]:-}" -v cpu_scopes="${deep_compare_cpu_scopes[*]:-}" -v packet_categories="${deep_compare_packet_categories[*]:-}" -v lookup_counters="${deep_compare_lookup_counters[*]:-}" -v detail_scopes="${deep_compare_detail_scopes[*]:-}" -v readonly_counters="${deep_compare_readonly_counters[*]:-}" '
+         function decimal_normalize(value) {
+             while (length(value) > 1 && substr(value, 1, 1) == "0")
+                 value = substr(value, 2)
+@@ -234,10 +263,15 @@ for filesystem in "${filesystems[@]}"; do
+             return decimal_normalize(result)
+         }
+         BEGIN {
++            if ((getline metric_names < "/dev/stdin") != 1) exit 1
++            close("/dev/stdin")
+             split(metric_names, names, " ")
+             positive_count = split(positive_metric_names, positive_names, " ")
+             cpu_scope_count = split(cpu_scopes, cpu_scope_names, " ")
+             packet_category_count = split(packet_categories, packet_category_names, " ")
++            lookup_counter_count = split(lookup_counters, lookup_counter_names, " ")
++            detail_scope_count = split(detail_scopes, detail_scope_names, " ")
++            readonly_counter_count = split(readonly_counters, readonly_counter_names, " ")
+         }
+         NR == 1 { if (NF != 2 || $1 != header || $2 != header_version) exit 1; next }
+         NR == 2 { if (NF != 2 || $1 != "DRIVE" || $2 != drive) exit 1; next }
+@@ -249,6 +283,7 @@ for filesystem in "${filesystems[@]}"; do
+                 if ($1 == positive_names[i] && $2 !~ /^[1-9][0-9]*$/) exit 1
+             if ($1 == fixed_metric_name && $2 != fixed_metric_value) exit 1
+             if ($1 == fixed_metric_name2 && $2 != fixed_metric_value2) exit 1
++            if ($1 == fixed_metric_name3 && $2 != fixed_metric_value3) exit 1
+             next
+         }
+         NR == metric_count + 3 { if (NF != 2 || $1 != "PASS" || $2 != "1") exit 1; next }
+@@ -353,7 +388,7 @@ for filesystem in "${filesystems[@]}"; do
+                             (iface_samples == 0 && iface_ticks != 0) ||
+                             (freespace_samples == 0 && freespace_ticks != 0)) exit 1
+                     }
+-                    if (header_version == 11) {
++                    if (header_version >= 11) {
+                         for (scope_index = 1; scope_index <= cpu_scope_count; scope_index++) {
+                             scope = cpu_scope_names[scope_index]
+                             scope_calls = decimal_normalize(metric_text[phase "_" scope "_CALLS"])
+@@ -382,6 +417,127 @@ for filesystem in "${filesystems[@]}"; do
+                             length(packet_ticks) != length(category_ticks) ||
+                             ("x" packet_ticks) != ("x" category_ticks)) exit 1
+                     }
++                    if (header_version >= 12 && drive == "DH1:") {
++                        for (counter_index = 1;
++                             counter_index <= lookup_counter_count;
++                             counter_index++) {
++                            counter = lookup_counter_names[counter_index]
++                            counter_value = metric_text[phase "_" counter]
++                            if (!decimal_leq(counter_value, "4294967295")) exit 1
++                        }
++
++                        cache_calls = metric_text[phase "_CACHE_READ_CALLS"]
++                        cache_hits = metric_text[phase "_CACHE_READ_HITS"]
++                        cache_misses = metric_text[phase "_CACHE_READ_MISSES"]
++                        if (!decimal_equal(cache_calls,
++                                           decimal_add(cache_hits, cache_misses))) exit 1
++
++                        searches = metric_text[phase "_BTREE_SEARCH_CALLS"]
++                        hint_hits = decimal_add(metric_text[phase "_BTREE_INDEX_HINT_HITS"], metric_text[phase "_BTREE_LEAF_HINT_HITS"])
++                        if (!decimal_leq(hint_hits, searches)) exit 1
++
++                        for (tree_name_index = 1; tree_name_index <= 5;
++                             tree_name_index++) {
++                            if (tree_name_index == 1) tree_name = "FREE_TREE"
++                            else if (tree_name_index == 2) tree_name = "DIR_TREE"
++                            else if (tree_name_index == 3) tree_name = "INODE_TREE"
++                            else if (tree_name_index == 4) tree_name = "REFCOUNT_TREE"
++                            else tree_name = "OTHER_TREE"
++                            views = metric_text[phase "_" tree_name "_NODE_VIEWS"]
++                            resident = metric_text[phase "_" tree_name "_RESIDENT_VIEWS"]
++                            if (!decimal_leq(resident, views)) exit 1
++                        }
++
++                        read_crc_calls = metric_values[phase "_NODE_CRC_READ_CALLS"]
++                        read_crc_samples = metric_values[phase "_NODE_CRC_READ_SAMPLES"]
++                        write_crc_calls = metric_values[phase "_NODE_CRC_WRITE_CALLS"]
++                        write_crc_samples = metric_values[phase "_NODE_CRC_WRITE_SAMPLES"]
++                        crc_stride = metric_values["CRC_SAMPLE_STRIDE"]
++                        if (!decimal_leq(metric_text[phase "_NODE_CRC_READ_CALLS"], "4294967295") ||
++                            !decimal_leq(metric_text[phase "_NODE_CRC_READ_SAMPLES"], "4294967295") ||
++                            !decimal_leq(metric_text[phase "_NODE_CRC_WRITE_CALLS"], "4294967295") ||
++                            !decimal_leq(metric_text[phase "_NODE_CRC_WRITE_SAMPLES"], "4294967295") ||
++                            !decimal_leq(metric_text[phase "_NODE_CRC_READ_SAMPLE_TICKS"], "18446744073709551615") ||
++                            !decimal_leq(metric_text[phase "_NODE_CRC_WRITE_SAMPLE_TICKS"], "18446744073709551615")) exit 1
++                        if (read_crc_samples != int(read_crc_calls / crc_stride) ||
++                            write_crc_samples != int(write_crc_calls / crc_stride)) exit 1
++                        if ((read_crc_samples == 0 &&
++                             metric_values[phase "_NODE_CRC_READ_SAMPLE_TICKS"] != 0) ||
++                            (write_crc_samples == 0 &&
++                             metric_values[phase "_NODE_CRC_WRITE_SAMPLE_TICKS"] != 0)) exit 1
++
++                        if (phase ~ /^LIST_/) {
++                            for (counter_index = 1;
++                                 counter_index <= readonly_counter_count;
++                                 counter_index++) {
++                                counter = readonly_counter_names[counter_index]
++                                if (!decimal_equal(metric_text[phase "_" counter], "0")) exit 1
++                            }
++                            for (scope_index = 1;
++                                 scope_index <= cpu_scope_count;
++                                 scope_index++) {
++                                scope = cpu_scope_names[scope_index]
++                                if ((scope == "CORE_CREATE" ||
++                                     scope == "CORE_DELETE" ||
++                                     scope == "CORE_FILE_WRITE" ||
++                                     scope == "CORE_SYNC" ||
++                                     scope == "SEAL_COMMIT") &&
++                                    !decimal_equal(metric_text[phase "_" scope "_CALLS"], "0")) exit 1
++                            }
++
++                            expected_inodes = 0
++                            if (phase ~ /_40_ENTRIES_/) expected_inodes = 40
++                            else if (phase ~ /_400_ENTRIES_/) expected_inodes = 400
++                            else if (phase ~ /_1000_ENTRIES_/) expected_inodes = 1000
++                            if (phase ~ /REPEAT10_TOTAL$/) expected_inodes *= 10
++                            if (!decimal_leq(sprintf("%.0f", expected_inodes),
++                                             metric_text[phase "_INODE_READ_CALLS"])) exit 1
++                        }
++                    }
++                    if (header_version >= 13 && drive == "DH1:") {
++                        detail_stride = metric_values["DETAIL_SAMPLE_STRIDE"]
++                        for (detail_index = 1;
++                             detail_index <= detail_scope_count;
++                             detail_index++) {
++                            detail_scope = detail_scope_names[detail_index]
++                            detail_calls_name = phase "_" detail_scope "_CALLS"
++                            detail_samples_name = phase "_" detail_scope "_SAMPLES"
++                            detail_ticks_name = phase "_" detail_scope "_SAMPLE_TICKS"
++                            detail_calls = metric_text[detail_calls_name]
++                            detail_samples = metric_text[detail_samples_name]
++                            detail_ticks = metric_text[detail_ticks_name]
++                            if (!decimal_leq(detail_calls, "4294967295") ||
++                                !decimal_leq(detail_samples, "4294967295") ||
++                                !decimal_leq(detail_ticks, "18446744073709551615") ||
++                                detail_samples != int((detail_calls + 0) / detail_stride) ||
++                                (decimal_equal(detail_samples, "0") &&
++                                 !decimal_equal(detail_ticks, "0"))) exit 1
++                        }
++
++                        if (!decimal_equal(metric_text[phase "_DETAIL_INODE_READ_CALLS"],
++                                           metric_text[phase "_INODE_READ_CALLS"]) ||
++                            !decimal_leq(metric_text[phase "_DETAIL_INODE_SEARCH_CALLS"],
++                                        metric_text[phase "_BTREE_SEARCH_CALLS"]) ||
++                            !decimal_equal(metric_text[phase "_DETAIL_INODE_NODE_VIEW_CALLS"],
++                                           metric_text[phase "_INODE_TREE_NODE_VIEWS"]) ||
++                            !decimal_equal(metric_text[phase "_DETAIL_DIR_NODE_VIEW_CALLS"],
++                                           metric_text[phase "_DIR_TREE_NODE_VIEWS"])) exit 1
++
++                        if (phase ~ /^LIST_EXNEXT_/) {
++                            if (!decimal_equal(metric_text[phase "_DETAIL_INODE_VALIDATE_CALLS"],
++                                               metric_text[phase "_INODE_READ_CALLS"]) ||
++                                !decimal_equal(metric_text[phase "_DETAIL_INODE_SEARCH_CALLS"],
++                                               metric_text[phase "_INODE_READ_CALLS"]) ||
++                                !decimal_equal(metric_text[phase "_DETAIL_EXALL_FILL_CALLS"], "0")) exit 1
++                        } else if (phase ~ /^LIST_EXALL_/) {
++                            if (!decimal_equal(metric_text[phase "_DETAIL_INODE_VALIDATE_CALLS"],
++                                               metric_text[phase "_INODE_READ_CALLS"]) ||
++                                !decimal_equal(metric_text[phase "_DETAIL_INODE_SEARCH_CALLS"],
++                                               metric_text[phase "_INODE_READ_CALLS"]) ||
++                                !decimal_leq(metric_text[phase "_INODE_READ_CALLS"],
++                                            metric_text[phase "_DETAIL_EXALL_FILL_CALLS"])) exit 1
++                        }
++                    }
+                 }
+             }
+         }
+diff --git a/include/bfs_bio.h b/include/bfs_bio.h
+index 9c64525..4454d15 100644
+--- a/include/bfs_bio.h
++++ b/include/bfs_bio.h
+@@ -124,6 +124,13 @@ typedef struct bfs_bio_ops {
+      * The pointer is valid only until the next call into this BIO. */
+     void *(*modify_dirty_node)(bfs_bio_t *bio, bfs_blk_t blk,
+                                const bfs_node_validation_t *context);
++
++    /* Optional read-only epoch that advances before any BIO mutation that can
++     * change bytes visible to a later read. A caller may use equality to guard
++     * hints that bypass a tree path; without this hook those hints are unsafe.
++     * UINT64_MAX disables hints on saturation. Guarded hints must not outlive
++     * this backend's initialization; reinitialization requires fresh trees. */
++    uint64_t (*mutation_epoch)(bfs_bio_t *bio);
+ } bfs_bio_ops_t;
+ 
+ /* Base block device — all implementations embed this as first member */
+@@ -141,6 +148,19 @@ struct bfs_bio {
+ void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size);
+ void bfs_bio_free_buffer(bfs_bio_t *bio, void *buffer);
+ 
++/* Read the optional BIO mutation epoch. UINT64_MAX is reserved to mean the
++ * backend can no longer advance the epoch, so guarded hints must be disabled. */
++static inline bool bfs_bio_get_mutation_epoch(bfs_bio_t *bio,
++                                               uint64_t *epoch_out)
++{
++    if (!bio || !bio->ops || !bio->ops->mutation_epoch || !epoch_out)
++        return false;
++    uint64_t epoch = bio->ops->mutation_epoch(bio);
++    if (epoch == UINT64_MAX) return false;
++    *epoch_out = epoch;
++    return true;
++}
++
+ /* Select filesystem geometry without truncating the block address range.
+  * A trailing partial block is unused, as in existing v2 volumes.
+  * Failure leaves the previous geometry unchanged. */
+diff --git a/include/bfs_btree.h b/include/bfs_btree.h
+index 75895c9..dd85612 100644
+--- a/include/bfs_btree.h
++++ b/include/bfs_btree.h
+@@ -77,6 +77,28 @@ int bfs_btree_key_compare_be32(const void *a, const void *b);
+  * treated as corrupt (the descent loops abort with BFS_ERR_CORRUPT). */
+ #define BFS_BTREE_MAX_DEPTH 32
+ 
++/* Optional fixed-size cache of key locations in validated resident leaves.
++ * Entries contain no value bytes; callers always read the current value from
++ * the BIO-resident leaf after checking the key, tree identity, generation, and
++ * BIO mutation epoch. */
++#define BFS_BTREE_KEY_HINT_SLOTS 64u
++
++typedef struct {
++    uint32_t key;       /* host-order u32 key */
++    bfs_blk_t leaf;     /* BFS_BLK_NULL marks an unused entry */
++    uint32_t index;     /* entry index in the leaf */
++    uint32_t generation;
++    bfs_blk_t root;
++    uint64_t mutation_epoch;
++} bfs_btree_key_hint_t;
++
++typedef struct {
++    bfs_btree_key_hint_t slots[BFS_BTREE_KEY_HINT_SLOTS];
++} bfs_btree_key_hint_cache_t;
++
++/* Clear all location hints. The owning tree must be reattached separately. */
++void bfs_btree_key_hint_cache_reset(bfs_btree_key_hint_cache_t *cache);
++
+ /* Worst-case number of OLD-transaction node blocks a single insert or delete
+  * hands to the deferred-free sink. Delete dominates: along the root-to-leaf
+  * path it COWs and at most merges/borrows one extra node per level (≤ 2·depth),
+@@ -164,11 +186,18 @@ typedef struct bfs_btree {
+     // cppcheck-suppress unusedStructMember
+     uint32_t          generation;
+ 
+-    /* The leaf the last search ended in, valid at hint_generation. */
++    /* The leaf the last search ended in, valid at these tree/BIO versions. */
+     // cppcheck-suppress unusedStructMember
+     bfs_blk_t         hint_leaf;
+     // cppcheck-suppress unusedStructMember
++    bfs_blk_t         hint_root;
++    // cppcheck-suppress unusedStructMember
+     uint32_t          hint_generation;
++    uint64_t          hint_mutation_epoch;
++
++    /* Optional owner-provided u32-key location cache. It is never owned by
++     * the tree and is cleared on every bfs_btree_init(). */
++    bfs_btree_key_hint_cache_t *key_hint_cache;
+ } bfs_btree_t;
+ 
+ static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
+@@ -268,6 +297,10 @@ typedef struct {
+     // cppcheck-suppress unusedStructMember
+     uint32_t stop_index;    /* entry whose callback stopped the scan, if any */
+     // cppcheck-suppress unusedStructMember
++    uint64_t mutation_epoch; /* BIO epoch when this leaf copy was captured */
++    // cppcheck-suppress unusedStructMember
++    bool mutation_epoch_valid;
++    // cppcheck-suppress unusedStructMember
+     bool stopped;
+     // cppcheck-suppress unusedStructMember
+     bool valid;
+@@ -287,6 +320,20 @@ void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor);
+ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+                                 const void *start_key, bfs_scan_cb cb, void *ctx);
+ 
++/* Return the stopped key when cursor still names a current, in-bounds stop
++ * entry; otherwise return NULL. The returned pointer belongs to cursor->leaf
++ * and remains valid until that cursor is released or reused. */
++const void *bfs_btree_cursor_stop_key(const bfs_btree_t *tree,
++                                     const bfs_btree_cursor_t *cursor);
++
++/* Resume exclusively after the entry where the previous callback stopped.
++ * This requires a current cursor and a BIO mutation epoch captured with its
++ * leaf; if either is unavailable or stale, return BFS_ERR_AGAIN without
++ * calling cb. */
++bfs_err_t bfs_btree_scan_cursor_resume(bfs_btree_t *tree,
++                                      bfs_btree_cursor_t *cursor,
++                                      bfs_scan_cb cb, void *ctx);
++
+ /* Search for the largest key <= search_key.
+  * Returns BFS_OK if found, BFS_ERR_NOTFOUND if tree is empty or all keys > search_key.
+  * On success, copies the found key to key_out and value to val_out. */
+diff --git a/include/bfs_cache.h b/include/bfs_cache.h
+index b9a89a6..a60ebd9 100644
+--- a/include/bfs_cache.h
++++ b/include/bfs_cache.h
+@@ -19,7 +19,11 @@
+  * B-tree operations (read, validate and mark), not just individual BIO calls.
+  * Do not reenter/mutate this cache from a comparator or another BIO callback.
+  * Changing device/media or block geometry requires invalidation or reinit;
+- * resizing block buffers requires destroy/reinit. The Amiga handler processes
++ * resizing block buffers requires destroy/reinit. A mounted filesystem or
++ * live tree must not survive cache destroy/reinit: finish filesystem unmount
++ * or abandon, release standalone tree/cursor users, then reinitialize and
++ * mount/init fresh handles. This also prevents mutation-epoch reuse (ABA).
++ * The Amiga handler processes
+  * packets in one task; host users must provide exclusive external locking.
+  */
+ 
+@@ -64,6 +68,7 @@ typedef struct bfs_cache {
+     // cppcheck-suppress unusedStructMember
+     uint32_t           bucket_shift; /* 32 minus log2 of the bucket count */
+     uint32_t           clock;   /* LRU clock */
++    uint64_t           mutation_epoch; /* changes before potentially visible writes */
+     bool               retain_written_nodes;
+     // cppcheck-suppress unusedStructMember
+     uint32_t           dirty_count;  /* slots holding deferred node images */
+@@ -84,13 +89,15 @@ void bfs_cache_set_node_write_retention(bfs_cache_t *cache, bool enabled);
+  * early when the limit is reached. */
+ void bfs_cache_set_deferred_node_limit(bfs_cache_t *cache, uint32_t limit);
+ 
+-/* Destroy cache (free resident and retained scratch buffers). All temporary
+- * buffer leases must already be released; a live cache must not be copied. */
++/* Destroy cache (free resident and retained scratch buffers). All filesystem,
++ * tree/cursor users and temporary buffer leases must already be released;
++ * a live cache must not be copied. */
+ void bfs_cache_destroy(bfs_cache_t *cache);
+ 
+-/* Invalidate resident entries (call after format or fsck). Deferred node
+- * images are discarded, not written. Temporary leases and their bytes remain
+- * independent of resident cache invalidation. */
++/* Invalidate resident entries (call after format, fsck, or any out-of-band
++ * device/media mutation). Deferred node images are discarded, not written.
++ * Temporary leases and their bytes remain independent of resident cache
++ * invalidation. */
+ void bfs_cache_invalidate(bfs_cache_t *cache);
+ 
+ #endif /* BFS_CACHE_H */
+diff --git a/include/bfs_dir.h b/include/bfs_dir.h
+index ba97204..1afec3b 100644
+--- a/include/bfs_dir.h
++++ b/include/bfs_dir.h
+@@ -84,6 +84,12 @@ bfs_err_t bfs_dir_scan_cursor(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
+                               uint32_t parent_id, const char *name,
+                               uint8_t name_len, bfs_dir_scan_cb cb, void *ctx);
+ 
++/* Resume exclusively after a current stopped entry for this parent. A stale
++ * or missing cursor, unavailable BIO mutation epoch, or stop in another
++ * parent returns BFS_ERR_AGAIN without calling cb. */
++bfs_err_t bfs_dir_scan_resume(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
++                              uint32_t parent_id, bfs_dir_scan_cb cb, void *ctx);
++
+ /* Cheap pre-check for a scan: *maybe is false only if parent_id has no
+  * entries; true means it may have some. */
+ bfs_err_t bfs_dir_may_have_entries(bfs_dir_tree_t *dt, uint32_t parent_id,
+diff --git a/include/bfs_file.h b/include/bfs_file.h
+index 777e913..c54fca6 100644
+--- a/include/bfs_file.h
++++ b/include/bfs_file.h
+@@ -47,8 +47,10 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len);
+ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len);
+ 
+ /* Optional completion metadata, folded into the existing final inode COW.
+- * Samples once after positive progress and a fresh inode read, not at intermediate
+- * commits. Clears only the requested protection bits on that fresh inode.
++ * Samples once after positive progress, not at intermediate commits. The
++ * current inode is freshly read or reused from this same locked operation
++ * while its tree/root/generation remain unchanged. Clears only the requested
++ * protection bits on that current inode.
+  * No progress means no sampling/metadata update. NULL/zero is ordinary write.
+  * The sampler follows bfs_inode_stamp_fn's no-reentry contract. */
+ int32_t bfs_file_write_with_stamp(bfs_file_t *f, const void *buf, uint32_t len,
+diff --git a/include/bfs_fs.h b/include/bfs_fs.h
+index 6da7220..b10ce9c 100644
+--- a/include/bfs_fs.h
++++ b/include/bfs_fs.h
+@@ -46,6 +46,7 @@ typedef struct bfs_fs {
+     bfs_txn_t         txn;
+     bfs_freespace_t   freespace;
+     bfs_dir_tree_t    dir_tree;
++    bfs_btree_key_hint_cache_t inode_key_hints; /* validated leaf/index hints */
+     bfs_btree_t       inode_tree;  /* inode B+tree: key=inode_nr(u32), value=bfs_inode_t */
+     bfs_refcount_t    refcount;    /* block refcount tree (for snapshots) */
+     uint32_t           next_ino;   /* next inode number to allocate */
+diff --git a/src/amiga/handler.c b/src/amiga/handler.c
+index 545c8f9..4099040 100644
+--- a/src/amiga/handler.c
++++ b/src/amiga/handler.c
+@@ -210,6 +210,7 @@ typedef struct {
+     uint32_t position;
+     uint8_t name_len;
+     char name[BFS_NAME_MAX];
++    bool consumed_stop; /* tree stop is the entry ExNext returned to DOS */
+     bfs_btree_cursor_t tree;
+ } bfs_scan_cursor_t;
+ 
+@@ -1252,24 +1253,42 @@ static bfs_scan_cursor_t *CursorFor(bfs_lock_t *lk)
+ }
+ 
+ static void CursorRemember(bfs_lock_t *lk, uint32_t position,
+-                           const char *name, uint8_t name_len)
++                           const char *name, uint8_t name_len,
++                           bool consumed_stop)
+ {
+     if (!CursorFor(lk)) return; /* the next call counts from the start */
+     lk->cursor->position = position;
+     lk->cursor->name_len = name_len;
+     memcpy(lk->cursor->name, name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    lk->cursor->consumed_stop = consumed_stop;
++}
++
++static void CursorClearConsumedStop(bfs_lock_t *lk)
++{
++    if (lk->cursor) lk->cursor->consumed_stop = false;
+ }
+ 
+ /* Scan the directory of lk from the entry after position. *skip tells the
+  * callback how many entries to pass over first. */
+ static bfs_err_t ScanDirectoryFrom(struct bfs_handler *h, bfs_lock_t *lk,
+                                    uint32_t position, bfs_dir_scan_cb cb,
+-                                   void *ctx, uint32_t *skip)
++                                   void *ctx, uint32_t *skip,
++                                   bool allow_exclusive_resume)
+ {
+     bfs_scan_cursor_t *cursor = CursorFor(lk);
+     bfs_btree_cursor_t *tree_cursor = cursor ? &cursor->tree : NULL;
+     if (position > 0 && cursor && cursor->position == position) {
+         *skip = 0;
++        if (allow_exclusive_resume && cursor->consumed_stop) {
++            bfs_err_t err = bfs_dir_scan_resume(&h->fs.dir_tree, tree_cursor,
++                                                lk->ino, cb, ctx);
++            if (err != BFS_ERR_AGAIN) return err;
++        }
++        if (cursor->name_len == 0) {
++            *skip = position;
++            return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino,
++                                      NULL, 0, cb, ctx);
++        }
+         return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino, cursor->name,
+                                    cursor->name_len, cb, ctx);
+     }
+@@ -1669,8 +1688,23 @@ static LONG ExAllFixedSize(LONG type)
+ 
+ /* Stateful callback for single-pass linear directory scanning.
+  * Manages skip_count, pattern matching, and user buffer overflow. */
++#ifdef BFS_PERF_PROBE
++static bool exall_optimized_cb_body(const char *name, uint8_t name_len,
++                                    uint32_t inode_nr, uint32_t entry_type, void *ctx);
+ static bool exall_optimized_cb(const char *name, uint8_t name_len,
+                                uint32_t inode_nr, uint32_t entry_type, void *ctx)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_EXALL_FILL);
++    bool result = exall_optimized_cb_body(name, name_len, inode_nr, entry_type, ctx);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bool exall_optimized_cb_body(const char *name, uint8_t name_len,
++#else
++static bool exall_optimized_cb(const char *name, uint8_t name_len,
++#endif
++                               uint32_t inode_nr, uint32_t entry_type, void *ctx)
+ {
+     exall_optimized_ctx_t *ec = (exall_optimized_ctx_t *)ctx;
+ 
+@@ -2450,7 +2484,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+         ctx.got_entry = false;
+ 
+         bfs_err_t err = ScanDirectoryFrom(h, lk, position, exam_next_cb, &ctx,
+-                                          &ctx.skip_count);
++                                          &ctx.skip_count, true);
++        CursorClearConsumedStop(lk);
+         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+ 
+         if (!ctx.got_entry) {
+@@ -2471,7 +2506,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+ #endif
+         err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
+         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+-        CursorRemember(lk, position + 1, namebuf, ctx.name_len);
++        CursorRemember(lk, position + 1, namebuf, ctx.name_len, true);
+         fib->fib_DiskKey = (LONG)(position + 1);
+ #ifdef BFS_AROS
+         if (wide_fib)
+@@ -2775,10 +2810,11 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+             .last_ead = NULL, .overflow = false, .err = BFS_OK
+         };
+ 
++        CursorClearConsumedStop(lk);
+         bfs_err_t err = ScanDirectoryFrom(h, lk, ectx.position, exall_optimized_cb,
+-                                          &ectx, &ectx.skip_count);
++                                          &ectx, &ectx.skip_count, false);
+         if (ectx.last_name)
+-            CursorRemember(lk, ectx.position, ectx.last_name, ectx.last_len);
++            CursorRemember(lk, ectx.position, ectx.last_name, ectx.last_len, false);
+         if (err == BFS_OK) err = ectx.err;
+         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+ 
+diff --git a/src/amiga/perf_probe.c b/src/amiga/perf_probe.c
+index 4de7b87..a8bad2c 100644
+--- a/src/amiga/perf_probe.c
++++ b/src/amiga/perf_probe.c
+@@ -8,6 +8,7 @@
+ #include <stdlib.h>
+ 
+ #include "perf_probe.h"
++#include "bfs_fs.h"
+ 
+ struct Device *TimerBase;
+ bfs_perf_probe_snapshot_t bfs_perf_probe_counters;
+@@ -18,6 +19,27 @@ ULONG bfs_perf_probe_free_tree_phase;
+ static struct timerequest *probe_timer;
+ static BOOL timer_open;
+ 
++void bfs_perf_probe_node_view(const struct bfs_btree *tree, BOOL resident)
++{
++    bfs_perf_probe_snapshot_t *c = &bfs_perf_probe_counters;
++    if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->freespace.tree) {
++        c->free_tree_node_views++;
++        if (resident) c->free_tree_resident_views++;
++    } else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->dir_tree.tree) {
++        c->dir_tree_node_views++;
++        if (resident) c->dir_tree_resident_views++;
++    } else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->inode_tree) {
++        c->inode_tree_node_views++;
++        if (resident) c->inode_tree_resident_views++;
++    } else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->refcount.tree) {
++        c->refcount_tree_node_views++;
++        if (resident) c->refcount_tree_resident_views++;
++    } else {
++        c->other_tree_node_views++;
++        if (resident) c->other_tree_resident_views++;
++    }
++}
++
+ void bfs_perf_probe_init(struct MsgPort *port)
+ {
+     if (!port) return;
+@@ -143,6 +165,50 @@ void bfs_perf_probe_cpu_scope_record(enum bfs_perf_cpu_scope scope,
+     }
+ }
+ 
++bfs_perf_detail_sample_t bfs_perf_probe_detail_begin(enum bfs_perf_detail_scope scope)
++{
++    bfs_perf_detail_sample_t sample = {{0}, scope, FALSE};
++    ULONG call = 0;
++    switch (scope) {
++#define BFS_PERF_DETAIL_SCOPE_CALL(upper, lower) \
++    case BFS_PERF_DETAIL_SCOPE_##upper: \
++        call = ++bfs_perf_probe_counters.lower##_calls; break;
++        BFS_PERF_DETAIL_SCOPES(BFS_PERF_DETAIL_SCOPE_CALL)
++#undef BFS_PERF_DETAIL_SCOPE_CALL
++    case BFS_PERF_DETAIL_SCOPE_DISABLED: return sample;
++    }
++    sample.sampled = (call % BFS_PERF_DETAIL_SAMPLE_STRIDE) == 0;
++    if (sample.sampled) bfs_perf_probe_begin(&sample.start);
++    return sample;
++}
++
++bfs_perf_detail_sample_t bfs_perf_probe_detail_tree_begin(
++    const struct bfs_btree *tree, enum bfs_perf_detail_scope inode_scope,
++    enum bfs_perf_detail_scope dir_scope)
++{
++    enum bfs_perf_detail_scope scope = BFS_PERF_DETAIL_SCOPE_DISABLED;
++    if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->inode_tree)
++        scope = inode_scope;
++    else if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->dir_tree.tree)
++        scope = dir_scope;
++    return bfs_perf_probe_detail_begin(scope);
++}
++
++void bfs_perf_probe_detail_end(const bfs_perf_detail_sample_t *sample)
++{
++    if (!sample->sampled) return;
++    uint64_t ticks = bfs_perf_probe_elapsed(&sample->start);
++    switch (sample->scope) {
++#define BFS_PERF_DETAIL_SCOPE_SAMPLE(upper, lower) \
++    case BFS_PERF_DETAIL_SCOPE_##upper: \
++        bfs_perf_probe_counters.lower##_samples++; \
++        bfs_perf_probe_counters.lower##_sample_ticks += ticks; break;
++        BFS_PERF_DETAIL_SCOPES(BFS_PERF_DETAIL_SCOPE_SAMPLE)
++#undef BFS_PERF_DETAIL_SCOPE_SAMPLE
++    case BFS_PERF_DETAIL_SCOPE_DISABLED: break;
++    }
++}
++
+ /* Direct B-tree buffer heap calls only. These diagnostic intervals include
+  * the underlying allocator, but not caller-side buffer copies/initialization.
+  * They may lie inside the inclusive allocation scopes; never add them to
+diff --git a/src/amiga/perf_probe.h b/src/amiga/perf_probe.h
+index fd97d7d..3cffffd 100644
+--- a/src/amiga/perf_probe.h
++++ b/src/amiga/perf_probe.h
+@@ -9,9 +9,32 @@
+ 
+ #define BFS_ACTION_PERF_RESET 3010
+ #define BFS_ACTION_PERF_READ  3011
+-#define BFS_PERF_PROBE_VERSION 12
++#define BFS_PERF_PROBE_VERSION 14
+ #define BFS_PERF_CRC_SAMPLE_STRIDE 64u
+ #define BFS_PERF_CPU_SAMPLE_STRIDE 1u
++#define BFS_PERF_DETAIL_SAMPLE_STRIDE 17u
++
++/* Exact diagnostic calls, not elapsed-time or device-I/O estimates. A node
++ * view counts node_view invocations; resident views count its validated-cache
++ * branch, before the per-visit level/bounds checks. Search hints are separate. */
++#define BFS_PERF_LOOKUP_COUNTERS(X) \
++    X(INODE_READ_CALLS, inode_read_calls) \
++    X(BTREE_SEARCH_CALLS, btree_search_calls) \
++    X(BTREE_INDEX_HINT_HITS, btree_index_hint_hits) \
++    X(BTREE_LEAF_HINT_HITS, btree_leaf_hint_hits) \
++    X(CACHE_READ_CALLS, cache_read_calls) \
++    X(CACHE_READ_HITS, cache_read_hits) \
++    X(CACHE_READ_MISSES, cache_read_misses) \
++    X(FREE_TREE_NODE_VIEWS, free_tree_node_views) \
++    X(FREE_TREE_RESIDENT_VIEWS, free_tree_resident_views) \
++    X(DIR_TREE_NODE_VIEWS, dir_tree_node_views) \
++    X(DIR_TREE_RESIDENT_VIEWS, dir_tree_resident_views) \
++    X(INODE_TREE_NODE_VIEWS, inode_tree_node_views) \
++    X(INODE_TREE_RESIDENT_VIEWS, inode_tree_resident_views) \
++    X(REFCOUNT_TREE_NODE_VIEWS, refcount_tree_node_views) \
++    X(REFCOUNT_TREE_RESIDENT_VIEWS, refcount_tree_resident_views) \
++    X(OTHER_TREE_NODE_VIEWS, other_tree_node_views) \
++    X(OTHER_TREE_RESIDENT_VIEWS, other_tree_resident_views)
+ 
+ /* One source of truth for the diagnostic CPU-scope ABI and guest schema. */
+ #define BFS_PERF_CPU_SCOPES(X) \
+@@ -30,6 +53,24 @@
+     X(IFACE_FREE, iface_free) \
+     X(SEAL_COMMIT, seal_commit)
+ 
++/* Fine-grained, inclusive diagnostic intervals. Every 17th invocation is
++ * timed: a prime stride avoids always selecting one side of root/leaf pairs.
++ * Samples are not exclusive CPU time and must not be added across
++ * nested scopes or extrapolated into a production speedup. */
++#define BFS_PERF_DETAIL_SCOPES(X) \
++    X(DETAIL_INODE_READ, detail_inode_read) \
++    X(DETAIL_INODE_VALIDATE, detail_inode_validate) \
++    X(DETAIL_INODE_SEARCH, detail_inode_search) \
++    X(DETAIL_INODE_NODE_VIEW, detail_inode_node_view) \
++    X(DETAIL_DIR_NODE_VIEW, detail_dir_node_view) \
++    X(DETAIL_INODE_BINARY_SEARCH, detail_inode_binary_search) \
++    X(DETAIL_DIR_BINARY_SEARCH, detail_dir_binary_search) \
++    X(DETAIL_NODE_STRUCTURE, detail_node_structure) \
++    X(DETAIL_CACHE_PEEK, detail_cache_peek) \
++    X(DETAIL_BUFFER_ALLOC, detail_buffer_alloc) \
++    X(DETAIL_BUFFER_FREE, detail_buffer_free) \
++    X(DETAIL_EXALL_FILL, detail_exall_fill)
++
+ typedef struct bfs_perf_probe_snapshot {
+     ULONG version;
+     ULONG size;
+@@ -118,10 +159,20 @@ typedef struct bfs_perf_probe_snapshot {
+     /* cppcheck-suppress unusedStructMember */ uint64_t lower##_sample_ticks;
+     BFS_PERF_CPU_SCOPES(BFS_PERF_CPU_SCOPE_FIELDS)
+ #undef BFS_PERF_CPU_SCOPE_FIELDS
++#define BFS_PERF_LOOKUP_FIELD(upper, lower) ULONG lower;
++    BFS_PERF_LOOKUP_COUNTERS(BFS_PERF_LOOKUP_FIELD)
++#undef BFS_PERF_LOOKUP_FIELD
++#define BFS_PERF_DETAIL_SCOPE_FIELDS(upper, lower) \
++    ULONG lower##_calls; \
++    ULONG lower##_samples; \
++    /* cppcheck-suppress unusedStructMember */ uint64_t lower##_sample_ticks;
++    BFS_PERF_DETAIL_SCOPES(BFS_PERF_DETAIL_SCOPE_FIELDS)
++#undef BFS_PERF_DETAIL_SCOPE_FIELDS
+ } bfs_perf_probe_snapshot_t;
+ 
+ #ifdef BFS_PERF_PROBE
+ struct bfs_fs;
++struct bfs_btree;
+ extern bfs_perf_probe_snapshot_t bfs_perf_probe_counters;
+ extern ULONG bfs_perf_probe_data_depth;
+ extern struct bfs_fs *bfs_perf_probe_fs;
+@@ -147,6 +198,25 @@ enum bfs_perf_cpu_scope {
+ #undef BFS_PERF_CPU_SCOPE_ENUM
+ };
+ 
++enum bfs_perf_detail_scope {
++    BFS_PERF_DETAIL_SCOPE_DISABLED,
++#define BFS_PERF_DETAIL_SCOPE_ENUM(upper, lower) BFS_PERF_DETAIL_SCOPE_##upper,
++    BFS_PERF_DETAIL_SCOPES(BFS_PERF_DETAIL_SCOPE_ENUM)
++#undef BFS_PERF_DETAIL_SCOPE_ENUM
++};
++
++typedef struct bfs_perf_detail_sample {
++    struct EClockVal start;
++    enum bfs_perf_detail_scope scope;
++    BOOL sampled;
++} bfs_perf_detail_sample_t;
++
++bfs_perf_detail_sample_t bfs_perf_probe_detail_begin(enum bfs_perf_detail_scope scope);
++bfs_perf_detail_sample_t bfs_perf_probe_detail_tree_begin(
++    const struct bfs_btree *tree, enum bfs_perf_detail_scope inode_scope,
++    enum bfs_perf_detail_scope dir_scope);
++void bfs_perf_probe_detail_end(const bfs_perf_detail_sample_t *sample);
++
+ void bfs_perf_probe_init(struct MsgPort *port);
+ void bfs_perf_probe_close(void);
+ void bfs_perf_probe_reset(void);
+@@ -163,6 +233,7 @@ void bfs_perf_probe_end(enum bfs_perf_io_kind kind, BOOL data,
+                         const struct EClockVal *start);
+ void bfs_perf_probe_cpu_scope_record(enum bfs_perf_cpu_scope scope,
+                                      uint64_t ticks);
++void bfs_perf_probe_node_view(const struct bfs_btree *tree, BOOL resident);
+ #endif
+ 
+ #endif /* BFS_AMIGA_PERF_PROBE_H */
+diff --git a/src/core/btree.c b/src/core/btree.c
+index 0178453..47104eb 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -38,12 +38,27 @@
+ 
+ static uint8_t *alloc_buf(const bfs_btree_t *tree)
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_BUFFER_ALLOC);
++    uint8_t *buf = bfs_bio_alloc_buffer(tree->bio, tree->bio->block_size);
++    bfs_perf_probe_detail_end(&sample);
++    return buf;
++#else
+     return bfs_bio_alloc_buffer(tree->bio, tree->bio->block_size);
++#endif
+ }
+ 
+ static void free_buf(const bfs_btree_t *tree, void *buffer)
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_BUFFER_FREE);
++#endif
+     bfs_bio_free_buffer(tree->bio, buffer);
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_detail_end(&sample);
++#endif
+ }
+ 
+ static void copy_bytes(uint8_t *destination, const uint8_t *source, uint32_t length)
+@@ -93,7 +108,20 @@ static bfs_node_validation_t node_validation_context(const bfs_btree_t *tree)
+ /* Node-local structure: header fields, strictly ascending keys, in-range
+  * children and leaf entries the tree accepts. Parent bounds and the expected
+  * level are checked by traversals. */
++#ifdef BFS_PERF_PROBE
++static bool node_structure_ok_body(const bfs_btree_t *tree, uint8_t *buf);
+ static bool node_structure_ok(const bfs_btree_t *tree, uint8_t *buf)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_NODE_STRUCTURE);
++    bool result = node_structure_ok_body(tree, buf);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bool node_structure_ok_body(const bfs_btree_t *tree, uint8_t *buf)
++#else
++static bool node_structure_ok(const bfs_btree_t *tree, uint8_t *buf)
++#endif
+ {
+     const bfs_btnode_hdr_t *hdr = (const bfs_btnode_hdr_t *)buf;
+     uint16_t level = bfs_be16(hdr->level);
+@@ -282,6 +310,29 @@ static bfs_err_t node_compute_write_crc(const bfs_btree_t *tree, uint8_t *buf,
+     return BFS_OK;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++/* Both direct and deferred finalization compute a CRC. Sampling just direct
++ * writes undercounts the deferred branch and breaks the calls/stride oracle. */
++static bfs_err_t node_compute_profiled_write_crc(const bfs_btree_t *tree,
++                                                 uint8_t *buf,
++                                                 uint32_t *crc_out)
++{
++    struct EClockVal started = {0};
++    ULONG call = ++bfs_perf_probe_counters.node_crc_write_calls;
++    BOOL sample = (call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
++    if (sample) bfs_perf_probe_begin(&started);
++    bfs_err_t err = node_compute_write_crc(tree, buf, crc_out);
++    if (sample) {
++        bfs_perf_probe_counters.node_crc_write_samples++;
++        bfs_perf_probe_counters.node_crc_write_sample_ticks +=
++            bfs_perf_probe_elapsed(&started);
++    }
++    return err;
++}
++#define node_compute_write_crc(tree, buf, out) \
++    node_compute_profiled_write_crc(tree, buf, out)
++#endif
++
+ static bool owned_contains(const bfs_btree_t *tree, bfs_blk_t blk);
+ 
+ /* Completes a deferred node image: canonical padding and the full-block CRC,
+@@ -298,7 +349,6 @@ static bfs_err_t node_finalize_deferred(const void *layout, uint32_t block_size,
+     if (err != BFS_OK) return err;
+     hdr->crc32 = bfs_be32(crc);
+ #ifdef BFS_PERF_PROBE
+-    bfs_perf_probe_counters.node_crc_write_calls++;
+     bfs_perf_probe_counters.btree_node_writes++;
+ #endif
+     return BFS_OK;
+@@ -337,22 +387,11 @@ static bfs_err_t node_write_image(bfs_btree_t *tree, bfs_blk_t blk, uint8_t **im
+         }
+         if (err != BFS_ERR_UNSUPPORTED) return err;
+     }
+-#ifdef BFS_PERF_PROBE
+-    struct EClockVal crc_started = {0};
+-    ULONG crc_call = ++bfs_perf_probe_counters.node_crc_write_calls;
+-    BOOL sample_crc = (crc_call % BFS_PERF_CRC_SAMPLE_STRIDE) == 0;
+-    if (sample_crc) bfs_perf_probe_begin(&crc_started);
+-#endif
+     uint32_t crc;
+     bfs_err_t crc_err = node_compute_write_crc(tree, buf, &crc);
+     if (crc_err != BFS_OK) return crc_err;
+     hdr->crc32 = bfs_be32(crc);
+ #ifdef BFS_PERF_PROBE
+-    if (sample_crc) {
+-        bfs_perf_probe_counters.node_crc_write_samples++;
+-        bfs_perf_probe_counters.node_crc_write_sample_ticks +=
+-            bfs_perf_probe_elapsed(&crc_started);
+-    }
+     bfs_perf_probe_counters.btree_node_writes++;
+     if (bfs_perf_probe_fs && tree == &bfs_perf_probe_fs->freespace.tree) {
+         bfs_perf_probe_counters.free_tree_node_writes++;
+@@ -438,18 +477,43 @@ static bfs_err_t node_read_bounded(const bfs_btree_t *tree, bfs_blk_t blk,
+  * already validated is used in place, anything else is read into buf. The
+  * level and parent bounds are checked on every visit either way. A resident
+  * view is valid only until the next BIO call and must not be modified. */
++#ifdef BFS_PERF_PROBE
++static bfs_err_t node_view_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++                                uint16_t level, const node_bounds_t *bounds,
++                                uint8_t **node);
+ static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
+                            uint16_t level, const node_bounds_t *bounds,
+                            uint8_t **node)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
++        tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_NODE_VIEW,
++        BFS_PERF_DETAIL_SCOPE_DETAIL_DIR_NODE_VIEW);
++    bfs_err_t result = node_view_body(tree, blk, buf, level, bounds, node);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bfs_err_t node_view_body(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++#else
++static bfs_err_t node_view(const bfs_btree_t *tree, bfs_blk_t blk, uint8_t *buf,
++#endif
++                           uint16_t level, const node_bounds_t *bounds,
++                           uint8_t **node)
+ {
+     *node = buf;
+-    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count)
++    if (blk == BFS_BLK_NULL || blk >= tree->bio->block_count) {
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_node_view(tree, FALSE);
++#endif
+         return BFS_ERR_CORRUPT;
++    }
+     const void *resident = NULL;
+     if (tree->ops->cache_key_order) {
+         bfs_node_validation_t validation = node_validation_context(tree);
+         resident = bfs_bio_peek_valid_node(tree->bio, blk, &validation);
+     }
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_node_view(tree, resident != NULL);
++#endif
+     if (!resident)
+         return bounds ? node_read_bounded(tree, blk, buf, level, bounds)
+                       : node_read_at_level(tree, blk, buf, level);
+@@ -483,7 +547,23 @@ int bfs_btree_key_compare_be32(const void *a, const void *b)
+     return bfs_cmp_be32(a, b);
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static uint32_t node_search_body(const bfs_btree_t *tree, uint8_t *buf,
++                                 const void *search_key, bool *found);
++static uint32_t node_search(const bfs_btree_t *tree, uint8_t *buf,
++                            const void *search_key, bool *found)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
++        tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_BINARY_SEARCH,
++        BFS_PERF_DETAIL_SCOPE_DETAIL_DIR_BINARY_SEARCH);
++    uint32_t result = node_search_body(tree, buf, search_key, found);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static uint32_t node_search_body(const bfs_btree_t *tree, uint8_t *buf,
++#else
+ static uint32_t node_search(const bfs_btree_t *tree, uint8_t *buf,
++#endif
+                             const void *search_key, bool *found)
+ {
+     uint32_t lo = 0, hi = num_keys(buf);
+@@ -520,6 +600,14 @@ static uint32_t node_search(const bfs_btree_t *tree, uint8_t *buf,
+     return lo;
+ }
+ 
++void bfs_btree_key_hint_cache_reset(bfs_btree_key_hint_cache_t *cache)
++{
++    if (!cache) return;
++    memset(cache, 0, sizeof(*cache));
++    for (uint32_t i = 0; i < BFS_BTREE_KEY_HINT_SLOTS; i++)
++        cache->slots[i].leaf = BFS_BLK_NULL;
++}
++
+ /* ── Public: init and search ───────────────────────────────── */
+ 
+ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
+@@ -544,7 +632,10 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
+     tree->free_sink_err = BFS_OK;
+     tree->generation = 0;
+     tree->hint_leaf = BFS_BLK_NULL;
++    tree->hint_root = BFS_BLK_NULL;
+     tree->hint_generation = 0;
++    tree->hint_mutation_epoch = 0;
++    tree->key_hint_cache = NULL;
+ 
+     if (leaf_max_keys(tree) < 3 || internal_max_keys(tree) < 3)
+         return BFS_ERR_INVAL;
+@@ -671,9 +762,12 @@ static uint8_t *owned_leaf_in_place(bfs_btree_t *tree, const void *key,
+ /* The leaf of the last search, if the tree has not changed since, it is
+  * still resident and validated, and key lies between its first and last
+  * keys: in a B+tree every key of that range is in that leaf. */
+-static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key)
++static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key,
++                            uint64_t mutation_epoch)
+ {
+     if (tree->hint_leaf == BFS_BLK_NULL || tree->hint_generation != tree->generation ||
++        tree->hint_root != tree->root ||
++        tree->hint_mutation_epoch != mutation_epoch ||
+         !tree->ops->cache_key_order)
+         return NULL;
+     bfs_node_validation_t validation = node_validation_context(tree);
+@@ -687,20 +781,125 @@ static uint8_t *hinted_leaf(const bfs_btree_t *tree, const void *key)
+     return leaf;
+ }
+ 
++/* This location cache is deliberately narrower than the general B-tree
++ * validation cache. It is enabled only for canonical big-endian u32 keys and
++ * only when the BIO can return a freshly validated resident node. */
++static bool key_hint_cache_eligible(const bfs_btree_t *tree)
++{
++    return tree->key_hint_cache && tree->ops->cache_key_order &&
++           tree->ops->key_compare == bfs_btree_key_compare_be32 &&
++           tree->ops->key_size == sizeof(uint32_t) &&
++           tree->bio->ops->peek_valid_node;
++}
++
++static uint32_t key_hint_slot(uint32_t key)
++{
++    return (key * 2654435761u) >> 26;
++}
++
++static bool key_hint_read(const bfs_btree_t *tree, const void *key,
++                          void *val_out, uint64_t mutation_epoch)
++{
++    if (!key_hint_cache_eligible(tree)) return false;
++
++    uint32_t key_value = bfs_load_be32(key);
++    const bfs_btree_key_hint_t *hint =
++        &tree->key_hint_cache->slots[key_hint_slot(key_value)];
++    if (hint->leaf == BFS_BLK_NULL || hint->key != key_value ||
++        hint->root != tree->root || hint->generation != tree->generation ||
++        hint->mutation_epoch != mutation_epoch ||
++        hint->leaf >= tree->bio->block_count)
++        return false;
++
++    bfs_node_validation_t validation = node_validation_context(tree);
++    const uint8_t *leaf = bfs_bio_peek_valid_node(tree->bio, hint->leaf,
++                                                   &validation);
++    if (!leaf || node_level((uint8_t *)leaf) != BFS_BTNODE_LEAF ||
++        hint->index >= num_keys((uint8_t *)leaf) ||
++        tree->ops->key_compare(node_key(tree, (uint8_t *)leaf, hint->index),
++                               key) != 0)
++        return false;
++
++    /* peek_valid_node's pointer is valid only until the next BIO call. Copy
++     * the current value immediately; the cache stores no inode/value bytes. */
++    memcpy(val_out, leaf_val(tree, (uint8_t *)leaf, hint->index),
++           tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++    return true;
++}
++
++static void key_hint_remember(bfs_btree_t *tree, const void *key,
++                             bfs_blk_t leaf, uint32_t index,
++                             uint64_t mutation_epoch)
++{
++    if (!key_hint_cache_eligible(tree)) return;
++
++    uint32_t key_value = bfs_load_be32(key);
++    bfs_btree_key_hint_t *hint =
++        &tree->key_hint_cache->slots[key_hint_slot(key_value)];
++    hint->key = key_value;
++    hint->leaf = leaf;
++    hint->index = index;
++    hint->generation = tree->generation;
++    hint->root = tree->root;
++    hint->mutation_epoch = mutation_epoch;
++}
++
++#ifdef BFS_PERF_PROBE
++static bfs_err_t btree_search_body(bfs_btree_t *tree, const void *key, void *val_out);
+ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
+ {
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
++        tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_SEARCH,
++        BFS_PERF_DETAIL_SCOPE_DISABLED);
++    bfs_err_t result = btree_search_body(tree, key, val_out);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bfs_err_t btree_search_body(bfs_btree_t *tree, const void *key, void *val_out)
++#else
++bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
++#endif
++{
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.btree_search_calls++;
++#endif
+     if (!tree || !tree->bio || !tree->ops || !key || !val_out)
+         return BFS_ERR_INVAL;
+     if (tree->root == BFS_BLK_NULL)
+         return BFS_ERR_NOTFOUND;
+     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+ 
+-    uint8_t *hinted = hinted_leaf(tree, key);
++    uint64_t mutation_epoch = 0;
++    bool mutation_epoch_valid =
++        bfs_bio_get_mutation_epoch(tree->bio, &mutation_epoch);
++    if (!mutation_epoch_valid) {
++        /* A backend without an epoch cannot prove that the remembered leaf is
++         * still on the current path, so neither shortcut may be used. */
++        tree->hint_leaf = BFS_BLK_NULL;
++        tree->hint_root = BFS_BLK_NULL;
++        tree->hint_generation = 0;
++        tree->hint_mutation_epoch = 0;
++    }
++
++    if (mutation_epoch_valid &&
++        key_hint_read(tree, key, val_out, mutation_epoch)) {
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_counters.btree_index_hint_hits++;
++#endif
++        return BFS_OK;
++    }
++
++    uint8_t *hinted = mutation_epoch_valid
++        ? hinted_leaf(tree, key, mutation_epoch) : NULL;
+     if (hinted) {
+         bool found;
+         uint32_t idx = node_search(tree, hinted, key, &found);
+         if (!found) return BFS_ERR_NOTFOUND;
+         memcpy(val_out, leaf_val(tree, hinted, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++        key_hint_remember(tree, key, tree->hint_leaf, idx, mutation_epoch);
++#ifdef BFS_PERF_PROBE
++        bfs_perf_probe_counters.btree_leaf_hint_hits++;
++#endif
+         return BFS_OK;
+     }
+ 
+@@ -721,10 +920,16 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
+         uint32_t idx = node_search(tree, node, key, &found);
+ 
+         if (is_leaf(node)) {
+-            tree->hint_leaf = blk;
+-            tree->hint_generation = tree->generation;
++            if (mutation_epoch_valid) {
++                tree->hint_leaf = blk;
++                tree->hint_root = tree->root;
++                tree->hint_generation = tree->generation;
++                tree->hint_mutation_epoch = mutation_epoch;
++            }
+             if (!found) { free_buf(tree, buf); return BFS_ERR_NOTFOUND; }
+             memcpy(val_out, leaf_val(tree, node, idx), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
++            if (mutation_epoch_valid)
++                key_hint_remember(tree, key, blk, idx, mutation_epoch);
+             free_buf(tree, buf);
+             return BFS_OK;
+         }
+@@ -1990,8 +2195,22 @@ void bfs_btree_cursor_release(bfs_btree_cursor_t *cursor)
+ 
+ static bool cursor_current(const bfs_btree_t *tree, const bfs_btree_cursor_t *cursor)
+ {
+-    return cursor->valid && cursor->tree == tree && cursor->root == tree->root &&
+-           cursor->generation == tree->generation;
++    if (!tree->bio || !tree->bio->ops || !cursor->leaf || !cursor->valid ||
++        cursor->tree != tree || cursor->root != tree->root ||
++        cursor->generation != tree->generation)
++        return false;
++
++    /* Keep legacy keyed cursors working on BIOs without an epoch hook. When
++     * a backend does provide one, however, a cache invalidation or raw write
++     * makes the saved leaf copy unsafe even if the tree generation is equal. */
++    if (tree->bio->ops->mutation_epoch) {
++        uint64_t mutation_epoch;
++        if (!cursor->mutation_epoch_valid ||
++            !bfs_bio_get_mutation_epoch(tree->bio, &mutation_epoch) ||
++            cursor->mutation_epoch != mutation_epoch)
++            return false;
++    }
++    return true;
+ }
+ 
+ /* True if the cursor's copy is the current leaf that holds key. */
+@@ -2014,16 +2233,63 @@ static bool cursor_stopped_at(const bfs_btree_t *tree, const bfs_btree_cursor_t
+            tree->ops->key_compare(node_key(tree, cursor->leaf, cursor->stop_index), key) == 0;
+ }
+ 
++static bool cursor_tree_geometry_valid(const bfs_btree_t *tree)
++{
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops ||
++        !tree->ops->key_compare ||
++        !bfs_block_size_valid(tree->bio->block_size) ||
++        tree->ops->key_size == 0 || tree->ops->key_size > BFS_MAX_KEY_SIZE ||
++        tree->ops->val_size == 0 ||
++        tree->ops->key_size > UINT32_MAX - tree->ops->val_size)
++        return false;
++
++    uint32_t data_size = tree->bio->block_size - sizeof(bfs_btnode_hdr_t);
++    uint32_t leaf_stride = tree->ops->key_size + tree->ops->val_size;
++    uint32_t internal_stride = tree->ops->key_size + sizeof(uint32_t);
++    return leaf_stride != 0 && internal_stride != 0 &&
++           data_size / leaf_stride >= 3 &&
++           data_size >= sizeof(uint32_t) &&
++           (data_size - sizeof(uint32_t)) / internal_stride >= 3;
++}
++
++const void *bfs_btree_cursor_stop_key(const bfs_btree_t *tree,
++                                     const bfs_btree_cursor_t *cursor)
++{
++    if (!cursor_tree_geometry_valid(tree) || !cursor || !cursor->leaf ||
++        !cursor->stopped || !cursor_current(tree, cursor) ||
++        node_level(cursor->leaf) != BFS_BTNODE_LEAF)
++        return NULL;
++
++    uint32_t n = num_keys(cursor->leaf);
++    if (n == 0 || n > leaf_max_keys(tree) || cursor->stop_index >= n)
++        return NULL;
++    return node_key(tree, cursor->leaf, cursor->stop_index);
++}
++
+ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
+                            bfs_scan_cb cb, void *ctx)
+ {
+     return bfs_btree_scan_cursor(tree, NULL, start_key, cb, ctx);
+ }
+ 
+-bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+-                                const void *start_key, bfs_scan_cb cb, void *ctx)
++static bool scan_epoch_changed(const bfs_btree_t *tree, bool epoch_valid,
++                               uint64_t scan_epoch)
++{
++    if (!tree->bio->ops || !tree->bio->ops->mutation_epoch || !epoch_valid)
++        return false;
++    uint64_t current_epoch;
++    return !bfs_bio_get_mutation_epoch(tree->bio, &current_epoch) ||
++           current_epoch != scan_epoch;
++}
++
++static bfs_err_t btree_scan_cursor_impl(bfs_btree_t *tree,
++                                        bfs_btree_cursor_t *cursor,
++                                        const void *start_key,
++                                        bool resume_exclusive,
++                                        bfs_scan_cb cb, void *ctx)
+ {
+-    if (!tree || !tree->bio || !tree->ops || !cb) return BFS_ERR_INVAL;
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops || !cb)
++        return BFS_ERR_INVAL;
+     if (tree->root == BFS_BLK_NULL)
+         return BFS_OK;
+     if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+@@ -2043,7 +2309,15 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+     bool have_path = true;
+     bfs_err_t err = BFS_OK;
+     bool positioned = false;
+-    if (cursor && start_key && cursor_stopped_at(tree, cursor, start_key)) {
++    if (resume_exclusive) {
++        /* The caller verified this is a current stopped cursor. Keep the
++         * existing traversal loop so leaf-boundary and mutation recovery
++         * continue to use the same path as ordinary scans. */
++        leaf = cursor->leaf;
++        have_path = false;
++        idx = cursor->stop_index + 1;
++        positioned = true;
++    } else if (cursor && start_key && cursor_stopped_at(tree, cursor, start_key)) {
+         leaf = cursor->leaf;
+         have_path = false;
+         idx = cursor->stop_index;
+@@ -2071,12 +2345,19 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+         if (idx < n) {
+             /* Callbacks may do I/O, which can invalidate a view. */
+             uint8_t *copy = cursor ? cursor->leaf : buf;
++            uint64_t scan_epoch = 0;
++            bool scan_epoch_valid =
++                bfs_bio_get_mutation_epoch(tree->bio, &scan_epoch);
+             if (leaf != copy) copy_leaf_entries(tree, copy, leaf);
+             leaf = copy;
+             if (cursor) {
+                 cursor->tree = tree;
+                 cursor->root = tree->root;
+                 cursor->generation = tree->generation;
++                /* Capture before callbacks: a callback can mutate the BIO,
++                 * so stamping the copy afterward could bless stale bytes. */
++                cursor->mutation_epoch = scan_epoch;
++                cursor->mutation_epoch_valid = scan_epoch_valid;
+                 cursor->valid = true;
+             }
+             uint32_t generation = tree->generation;
+@@ -2091,7 +2372,8 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+                     break;
+                 }
+                 /* The rest of this copy may be stale once the tree changed. */
+-                if (tree->generation != generation) {
++                if (tree->generation != generation ||
++                    scan_epoch_changed(tree, scan_epoch_valid, scan_epoch)) {
+                     changed = true;
+                     reached = i + 1;
+                     break;
+@@ -2128,6 +2410,30 @@ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+     return err;
+ }
+ 
++bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
++                                const void *start_key, bfs_scan_cb cb, void *ctx)
++{
++    return btree_scan_cursor_impl(tree, cursor, start_key, false, cb, ctx);
++}
++
++bfs_err_t bfs_btree_scan_cursor_resume(bfs_btree_t *tree,
++                                       bfs_btree_cursor_t *cursor,
++                                       bfs_scan_cb cb, void *ctx)
++{
++    if (!tree || !tree->bio || !tree->bio->ops || !tree->ops || !cb)
++        return BFS_ERR_INVAL;
++    uint64_t current_epoch;
++    if (!tree->bio->ops || !tree->bio->ops->mutation_epoch || !cursor ||
++        !cursor->mutation_epoch_valid ||
++        !bfs_bio_get_mutation_epoch(tree->bio, &current_epoch) ||
++        current_epoch != cursor->mutation_epoch)
++        return BFS_ERR_AGAIN;
++    if (tree->root == BFS_BLK_NULL) return BFS_ERR_AGAIN;
++    if (!bfs_btree_cursor_stop_key(tree, cursor)) return BFS_ERR_AGAIN;
++    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
++    return btree_scan_cursor_impl(tree, cursor, NULL, true, cb, ctx);
++}
++
+ 
+ /* ── Floor search ──────────────────────────────────────────── */
+ 
+diff --git a/src/core/cache.c b/src/core/cache.c
+index 356ee38..063326f 100644
+--- a/src/core/cache.c
++++ b/src/core/cache.c
+@@ -6,6 +6,9 @@
+ #include "bfs_cache.h"
+ #include <string.h>
+ #include <stdlib.h>
++#ifdef BFS_PERF_PROBE
++#include "perf_probe.h"
++#endif
+ 
+ /* ── Hash index ────────────────────────────────────────────── */
+ 
+@@ -70,10 +73,19 @@ static void cache_drop_slot(bfs_cache_t *c, bfs_cache_slot_t *slot)
+     slot->node_structure_valid = false;
+ }
+ 
++/* UINT64_MAX is reserved by bfs_bio_get_mutation_epoch as an unavailable
++ * token. Saturation disables guarded hints instead of permitting an ABA. */
++static void cache_note_mutation(bfs_cache_t *cache)
++{
++    if (cache->mutation_epoch != UINT64_MAX)
++        cache->mutation_epoch++;
++}
++
+ /* Complete and write a dirty node image. On failure the image stays dirty:
+  * it is the only copy of the transaction's node. */
+ static bfs_err_t cache_write_back(bfs_cache_t *c, bfs_cache_slot_t *slot)
+ {
++    cache_note_mutation(c);
+     bfs_err_t err = slot->finalize(slot->layout, c->bio.block_size, slot->data);
+     if (err == BFS_OK) err = bfs_bio_write(c->dev, slot->blk, slot->data);
+     if (err != BFS_OK) return err;
+@@ -89,6 +101,11 @@ static bfs_err_t cache_read(bfs_bio_t *bio, bfs_blk_t blk, void *buf)
+     bfs_cache_t *c = (bfs_cache_t *)bio;
+ 
+     bfs_cache_slot_t *slot = cache_find(c, blk);
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.cache_read_calls++;
++    if (slot) bfs_perf_probe_counters.cache_read_hits++;
++    else bfs_perf_probe_counters.cache_read_misses++;
++#endif
+     if (slot) {
+         /* Slot buffers and BIO transfer buffers hold block_size bytes. */
+         memcpy(buf, slot->data, bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+@@ -116,6 +133,7 @@ static bfs_err_t cache_write_common(bfs_bio_t *bio, bfs_blk_t blk,
+                                      const void *buf, bool retain_node)
+ {
+     bfs_cache_t *c = (bfs_cache_t *)bio;
++    cache_note_mutation(c);
+ 
+     /* Write-through: always write to device. A written block supersedes any
+      * deferred image of it. */
+@@ -207,6 +225,7 @@ static bfs_err_t cache_write_blocks(bfs_bio_t *bio, bfs_blk_t blk, uint32_t coun
+                                     const void *buf, uint32_t *written)
+ {
+     bfs_cache_t *c = (bfs_cache_t *)bio;
++    cache_note_mutation(c);
+     bfs_err_t err = bfs_bio_write_blocks(c->dev, blk, count, buf, written);
+     for (uint32_t i = 0; i < c->num_slots; i++) {
+         bfs_cache_slot_t *slot = &c->slots[i];
+@@ -241,6 +260,7 @@ static bfs_err_t cache_hold_node(bfs_cache_t *c, bfs_blk_t blk, const void *buf,
+ {
+     if (!buf == !adopt) return BFS_ERR_INVAL;
+     if (c->dirty_limit == 0) return BFS_ERR_UNSUPPORTED;
++    cache_note_mutation(c);
+     bfs_cache_slot_t *slot = cache_find(c, blk);
+     if ((!slot || !slot->dirty) && c->dirty_count >= c->dirty_limit) {
+         bfs_cache_slot_t *oldest = NULL;
+@@ -318,9 +338,13 @@ static void cache_discard_deferred(bfs_bio_t *bio, bfs_blk_t blk)
+     bfs_cache_t *c = (bfs_cache_t *)bio;
+     if (blk != BFS_BLK_NULL) {
+         bfs_cache_slot_t *slot = cache_find(c, blk);
+-        if (slot && slot->dirty) cache_drop_slot(c, slot);
++        if (slot && slot->dirty) {
++            cache_note_mutation(c);
++            cache_drop_slot(c, slot);
++        }
+         return;
+     }
++    if (c->dirty_count > 0) cache_note_mutation(c);
+     for (uint32_t i = 0; i < c->num_slots && c->dirty_count > 0; i++) {
+         bfs_cache_slot_t *slot = &c->slots[i];
+         if (slot->dirty) cache_drop_slot(c, slot);
+@@ -369,7 +393,22 @@ static bool cache_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
+     return slot && slot_structure_valid(slot, context);
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static const void *cache_peek_valid_node_body(bfs_bio_t *bio, bfs_blk_t blk,
++                                             const bfs_node_validation_t *context);
++static const void *cache_peek_valid_node(bfs_bio_t *bio, bfs_blk_t blk,
++                                         const bfs_node_validation_t *context)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_CACHE_PEEK);
++    const void *result = cache_peek_valid_node_body(bio, blk, context);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static const void *cache_peek_valid_node_body(bfs_bio_t *bio, bfs_blk_t blk,
++#else
+ static const void *cache_peek_valid_node(bfs_bio_t *bio, bfs_blk_t blk,
++#endif
+                                          const bfs_node_validation_t *context)
+ {
+     bfs_cache_t *c = (bfs_cache_t *)bio;
+@@ -385,10 +424,16 @@ static void *cache_modify_dirty_node(bfs_bio_t *bio, bfs_blk_t blk,
+     bfs_cache_t *c = (bfs_cache_t *)bio;
+     bfs_cache_slot_t *slot = cache_find(c, blk);
+     if (!slot || !slot->dirty || !slot_structure_valid(slot, context)) return NULL;
++    cache_note_mutation(c);
+     slot->age = ++c->clock;
+     return slot->data;
+ }
+ 
++static uint64_t cache_read_mutation_epoch(bfs_bio_t *bio)
++{
++    return ((bfs_cache_t *)bio)->mutation_epoch;
++}
++
+ static void cache_mark_node_structure_valid(bfs_bio_t *bio, bfs_blk_t blk,
+                                              const bfs_node_validation_t *context)
+ {
+@@ -455,6 +500,7 @@ static const bfs_bio_ops_t cache_ops = {
+     .write_blocks = cache_write_blocks,
+     .peek_valid_node = cache_peek_valid_node,
+     .modify_dirty_node = cache_modify_dirty_node,
++    .mutation_epoch = cache_read_mutation_epoch,
+ };
+ 
+ void *bfs_bio_alloc_buffer(bfs_bio_t *bio, size_t size)
+@@ -572,6 +618,7 @@ void bfs_cache_destroy(bfs_cache_t *cache)
+ void bfs_cache_invalidate(bfs_cache_t *cache)
+ {
+     if (!cache || !cache->slots) return;
++    cache_note_mutation(cache);
+     for (uint32_t i = 0; i < 1u << (32u - cache->bucket_shift); i++)
+         cache->buckets[i] = NO_SLOT;
+     for (uint32_t i = 0; i < cache->num_slots; i++) {
+diff --git a/src/core/dir.c b/src/core/dir.c
+index 573c881..4c1bcff 100644
+--- a/src/core/dir.c
++++ b/src/core/dir.c
+@@ -218,6 +218,7 @@ typedef struct {
+     void *ctx;
+     bfs_err_t err;
+     const uint8_t *skip_key; /* resume point that is not reported again */
++    bool boundary_stop;
+ } dir_scan_ctx_t;
+ 
+ static bool dir_scan_cb(const void *key, const void *val, void *ctx)
+@@ -227,7 +228,10 @@ static bool dir_scan_cb(const void *key, const void *val, void *ctx)
+     const bfs_dir_val_t *v = (const bfs_dir_val_t *)val;
+ 
+     uint32_t pid = bfs_load_be32(k);
+-    if (pid != sc->parent_id) return false; /* different parent, stop */
++    if (pid != sc->parent_id) {
++        sc->boundary_stop = true;
++        return false; /* different parent, stop */
++    }
+     if (sc->skip_key) {
+         /* The scan starts at the first key not below the resume key, so
+          * only that first key can be the resume entry itself. */
+@@ -278,6 +282,28 @@ bfs_err_t bfs_dir_scan_cursor(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
+         bfs_store_be32(start_key, parent_id);
+     }
+     bfs_err_t err = bfs_btree_scan_cursor(&dt->tree, cursor, start_key, dir_scan_cb, &sc);
++    if (sc.boundary_stop && cursor) cursor->stopped = false;
++    return sc.err != BFS_OK ? sc.err : err;
++}
++
++bfs_err_t bfs_dir_scan_resume(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
++                              uint32_t parent_id, bfs_dir_scan_cb cb, void *ctx)
++{
++    if (!dt || !dt->tree.bio || !dt->tree.bio->ops || !dt->tree.ops || !cb)
++        return BFS_ERR_INVAL;
++    if (!cursor) return BFS_ERR_AGAIN;
++
++    const uint8_t *stop_key =
++        (const uint8_t *)bfs_btree_cursor_stop_key(&dt->tree, cursor);
++    if (!stop_key || bfs_load_be32(stop_key) != parent_id)
++        return BFS_ERR_AGAIN;
++
++    dir_scan_ctx_t sc = {
++        .parent_id = parent_id, .cb = cb, .ctx = ctx, .err = BFS_OK,
++    };
++    bfs_err_t err = bfs_btree_scan_cursor_resume(&dt->tree, cursor,
++                                                 dir_scan_cb, &sc);
++    if (sc.boundary_stop) cursor->stopped = false;
+     return sc.err != BFS_OK ? sc.err : err;
+ }
+ 
+diff --git a/src/core/file.c b/src/core/file.c
+index 4fa3577..fe4cc11 100644
+--- a/src/core/file.c
++++ b/src/core/file.c
+@@ -14,10 +14,25 @@
+ #include "perf_probe.h"
+ #endif
+ 
++/* Operation-local copy of a validated inode. It never outlives the locked
++ * write/append call and is usable only while the selected tree is unchanged. */
++typedef struct {
++    bool valid;
++    bfs_fs_t *fs;
++    bfs_btree_t *tree;
++    bfs_blk_t root;
++    uint64_t generation;
++    uint64_t recovery_generation;
++    uint32_t inode_nr;
++    bool unlinked;
++    bfs_inode_t inode;
++} file_inode_seed_t;
++
+ typedef struct {
+     bfs_inode_stamp_fn stamp_fn;
+     void *stamp_context;
+     uint32_t protection_clear;
++    file_inode_seed_t *inode_seed;
+ } file_write_metadata_t;
+ 
+ /* Only the disposable profiler marks file payload I/O. The production build
+@@ -96,11 +111,12 @@ static bfs_err_t file_block_for_offset(bfs_fs_t *fs, uint64_t offset, uint32_t *
+     return BFS_OK;
+ }
+ 
+-static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
+-                                              bfs_btree_t *inode_tree,
+-                                              uint32_t inode_nr, bool unlinked)
++static bfs_err_t file_open_from_inode_unlocked(bfs_file_t *f, bfs_fs_t *fs,
++                                               bfs_btree_t *inode_tree,
++                                               uint32_t inode_nr, bool unlinked,
++                                               const bfs_inode_t *inode)
+ {
+-    if (!f || !fs || !fs->mounted || !inode_tree || inode_nr == 0)
++    if (!f || !fs || !fs->mounted || !inode_tree || inode_nr == 0 || !inode)
+         return BFS_ERR_INVAL;
+     if (fs->recovery_error != BFS_OK) return fs->recovery_error;
+     memset(f, 0, sizeof(*f));
+@@ -111,19 +127,13 @@ static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
+     f->recovery_generation = fs->recovery_generation;
+     f->unlinked = unlinked;
+ 
+-    /* Read the inode for its extent mapping and size */
+-    uint64_t size = 0;
+-    bfs_inode_t inode;
+-    bfs_err_t err = unlinked ? bfs_inode_read_unlinked(inode_tree, inode_nr, &inode)
+-                             : bfs_inode_read(inode_tree, inode_nr, &inode);
+-    if (err != BFS_OK) return err;
+-    uint32_t type = bfs_be32(inode.type);
++    uint32_t type = bfs_be32(inode->type);
+     if (type != BFS_INODE_FILE && type != BFS_INODE_SOFTLINK && type != BFS_INODE_HARDLINK)
+         return BFS_ERR_INVAL;
+-    size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
+-    f->size = size;
++    f->size = ((uint64_t)bfs_be32(inode->size_hi) << 32) |
++              bfs_be32(inode->size_lo);
+ 
+-    err = bfs_extent_open(&f->extents, fs->bio, &fs->freespace, &inode,
++    bfs_err_t err = bfs_extent_open(&f->extents, fs->bio, &fs->freespace, inode,
+                           fs->live_txn_id);
+     if (err != BFS_OK) return err;
+     f->extents.tree.txn_id_ptr = &fs->live_txn_id;
+@@ -132,36 +142,97 @@ static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
+     return BFS_OK;
+ }
+ 
++static bfs_err_t file_open_from_tree_unlocked(bfs_file_t *f, bfs_fs_t *fs,
++                                              bfs_btree_t *inode_tree,
++                                              uint32_t inode_nr, bool unlinked)
++{
++    if (!f || !fs || !fs->mounted || !inode_tree || inode_nr == 0)
++        return BFS_ERR_INVAL;
++    if (fs->recovery_error != BFS_OK) return fs->recovery_error;
++    /* Keep the prior failure state: a failed open leaves a cleared, identified
++     * handle rather than preserving uninitialized or earlier caller bytes. */
++    memset(f, 0, sizeof(*f));
++    f->fs = fs;
++    f->inode_tree = inode_tree;
++    f->inode_nr = inode_nr;
++    f->recovery_generation = fs->recovery_generation;
++    f->unlinked = unlinked;
++    bfs_inode_t inode;
++    bfs_err_t err = unlinked ? bfs_inode_read_unlinked(inode_tree, inode_nr, &inode)
++                             : bfs_inode_read(inode_tree, inode_nr, &inode);
++    if (err != BFS_OK) return err;
++    return file_open_from_inode_unlocked(f, fs, inode_tree, inode_nr, unlinked,
++                                         &inode);
++}
++
+ bfs_err_t bfs_file_open_unlocked(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr)
+ {
+     return file_open_from_tree_unlocked(f, fs, &fs->inode_tree, inode_nr, false);
+ }
+ 
++static void file_inode_seed_store(file_inode_seed_t *seed, const bfs_file_t *f,
++                                  const bfs_inode_t *inode)
++{
++    if (!seed) return;
++    seed->valid = true;
++    seed->fs = f->fs;
++    seed->tree = f->inode_tree;
++    seed->root = f->inode_tree->root;
++    seed->generation = f->inode_tree->generation;
++    seed->recovery_generation = f->fs->recovery_generation;
++    seed->inode_nr = f->inode_nr;
++    seed->unlinked = f->unlinked;
++    if (inode != &seed->inode) seed->inode = *inode;
++}
++
++static bool file_inode_seed_matches(const file_inode_seed_t *seed,
++                                    const bfs_file_t *f)
++{
++    return seed && seed->valid && seed->fs == f->fs &&
++           seed->tree == f->inode_tree && seed->root == f->inode_tree->root &&
++           seed->generation == f->inode_tree->generation &&
++           seed->recovery_generation == f->fs->recovery_generation &&
++           seed->inode_nr == f->inode_nr && seed->unlinked == f->unlinked;
++}
++
+ static bfs_err_t file_update_inode(bfs_file_t *f,
+                                     const file_write_metadata_t *metadata)
+ {
+-    bfs_inode_t inode;
+-    bfs_err_t err = f->unlinked
+-                        ? bfs_inode_read_unlinked(f->inode_tree, f->inode_nr, &inode)
+-                        : bfs_inode_read(f->inode_tree, f->inode_nr, &inode);
+-    if (err != BFS_OK) return err;
+-    inode.inode_nr = bfs_be32(f->inode_nr);
+-    inode.size_hi = bfs_be32((uint32_t)(f->size >> 32));
+-    inode.size_lo = bfs_be32((uint32_t)(f->size & 0xFFFFFFFF));
+-    bfs_extent_store(&f->extents, &inode);
++    file_inode_seed_t *seed = metadata ? metadata->inode_seed : NULL;
++    bfs_inode_t fallback;
++    bfs_inode_t *inode = &fallback;
++    if (seed && file_inode_seed_matches(seed, f)) {
++        inode = &seed->inode;
++    } else {
++        bfs_err_t read_err = f->unlinked
++                                 ? bfs_inode_read_unlinked(f->inode_tree, f->inode_nr,
++                                                           inode)
++                                 : bfs_inode_read(f->inode_tree, f->inode_nr,
++                                                  inode);
++        if (read_err != BFS_OK) return read_err;
++    }
++    inode->inode_nr = bfs_be32(f->inode_nr);
++    inode->size_hi = bfs_be32((uint32_t)(f->size >> 32));
++    inode->size_lo = bfs_be32((uint32_t)(f->size & 0xFFFFFFFF));
++    bfs_extent_store(&f->extents, inode);
+     if (metadata) {
+         if (metadata->stamp_fn) {
+             bfs_inode_stamp_t stamp = {0};
+             metadata->stamp_fn(metadata->stamp_context, &stamp);
+-            bfs_inode_apply_stamp(&inode, &stamp, false);
++            bfs_inode_apply_stamp(inode, &stamp, false);
+         }
+         if (metadata->protection_clear != 0)
+-            inode.protection = bfs_be32(bfs_be32(inode.protection) &
++            inode->protection = bfs_be32(bfs_be32(inode->protection) &
+                                         ~metadata->protection_clear);
+     }
+-    return f->unlinked
+-               ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, &inode)
+-               : bfs_inode_write(f->inode_tree, f->inode_nr, &inode);
++    bfs_err_t err = f->unlinked
++                        ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, inode)
++                        : bfs_inode_write(f->inode_tree, f->inode_nr, inode);
++    if (err == BFS_OK)
++        file_inode_seed_store(seed, f, inode);
++    else if (seed)
++        seed->valid = false;
++    return err;
+ }
+ 
+ /* Reached a transaction commit point in the middle of a write or truncate: the
+@@ -169,11 +240,20 @@ static bfs_err_t file_update_inode(bfs_file_t *f,
+  * crash — or any later error return — leaves the just-allocated extent/data
+  * blocks unreferenced by the inode (orphaned and leaked), with the on-disk size
+  * inconsistent with the extent map. Always flush the inode, then sync. */
+-static bfs_err_t file_flush_and_sync(bfs_file_t *f)
++static bfs_err_t file_flush_and_sync(bfs_file_t *f,
++                                     const file_write_metadata_t *metadata)
+ {
+-    bfs_err_t err = file_update_inode(f, NULL);
++    /* Intermediate commits publish size and extents without applying the
++     * operation's final timestamp or protection update. */
++    file_write_metadata_t sync_metadata = {
++        .inode_seed = metadata ? metadata->inode_seed : NULL,
++    };
++    bfs_err_t err = file_update_inode(f, &sync_metadata);
+     if (err != BFS_OK) return err;
+-    return bfs_txn_commit(f->fs);
++    err = bfs_txn_commit(f->fs);
++    if (metadata && metadata->inode_seed)
++        metadata->inode_seed->valid = false;
++    return err;
+ }
+ 
+ static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode,
+@@ -190,6 +270,8 @@ static bfs_err_t file_publish_or_recover(bfs_file_t *f, bool update_inode,
+     if (state_error == BFS_OK && update_inode)
+         state_error = file_update_inode(f, metadata);
+     if (state_error != BFS_OK) {
++        if (metadata && metadata->inode_seed)
++            metadata->inode_seed->valid = false;
+         bfs_err_t reload_error = bfs_fs_reload_committed_unlocked(fs);
+         return reload_error == BFS_OK ? state_error : reload_error;
+     }
+@@ -319,7 +401,9 @@ static bfs_blk_t file_data_goal(bfs_file_t *f, uint32_t file_block)
+ }
+ 
+ static bfs_err_t file_prepare_new_run(bfs_file_t *f, uint32_t len,
+-                                      uint32_t file_block, uint32_t *run_count)
++                                      uint32_t file_block,
++                                      const file_write_metadata_t *metadata,
++                                      uint32_t *run_count)
+ {
+     bfs_fs_t *fs = f->fs;
+     const uint32_t bs = fs->bio->block_size;
+@@ -353,7 +437,7 @@ static bfs_err_t file_prepare_new_run(bfs_file_t *f, uint32_t len,
+     const uint32_t reserve = 4u * BFS_BTREE_MAX_OP_FREES;
+     if (reserve > bfs_fs_pending_cap(fs)) return BFS_OK;
+     if (fs->pending_count + reserve > bfs_fs_pending_cap(fs)) {
+-        err = file_flush_and_sync(f);
++        err = file_flush_and_sync(f, metadata);
+         if (err != BFS_OK) return err;
+     }
+ 
+@@ -406,12 +490,13 @@ static bfs_err_t file_write_allocated_run(bfs_file_t *f, const uint8_t *input,
+ 
+ static bfs_err_t file_write_new_run(bfs_file_t *f, const uint8_t *input,
+                                     uint32_t len, uint32_t file_block,
++                                    const file_write_metadata_t *metadata,
+                                     uint32_t *written, bool *handled)
+ {
+     *written = 0;
+     *handled = false;
+     uint32_t count;
+-    bfs_err_t err = file_prepare_new_run(f, len, file_block, &count);
++    bfs_err_t err = file_prepare_new_run(f, len, file_block, metadata, &count);
+     if (err != BFS_OK) {
+         *handled = true;
+         return err;
+@@ -453,7 +538,7 @@ static int32_t file_write_with_metadata_unlocked(
+          * via the inode-flushing sync if short — a raw commit here would persist a
+          * stale inode (see file_flush_and_sync / C1). */
+         if (f->fs->pending_count + 3u * BFS_BTREE_MAX_OP_FREES > bfs_fs_pending_cap(f->fs)) {
+-            bfs_err_t ferr = file_flush_and_sync(f);
++            bfs_err_t ferr = file_flush_and_sync(f, metadata);
+             if (ferr != BFS_OK)
+                 return file_finish_write(metadata, f, total, ferr);
+         }
+@@ -463,7 +548,8 @@ static int32_t file_write_with_metadata_unlocked(
+ 
+         uint32_t run_written;
+         bool run_handled;
+-        err = file_write_new_run(f, in, len, file_blk, &run_written, &run_handled);
++        err = file_write_new_run(f, in, len, file_blk, metadata, &run_written,
++                                 &run_handled);
+         if (run_handled) {
+             in += run_written;
+             f->offset += run_written;
+@@ -492,7 +578,7 @@ static int32_t file_write_with_metadata_unlocked(
+             /* Try to reclaim pending frees if needed and worthwhile */
+             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
+                 if (f->fs->pending_count > BFS_SYNC_THRESHOLD) {
+-                    bfs_err_t serr = file_flush_and_sync(f);
++                    bfs_err_t serr = file_flush_and_sync(f, metadata);
+                     if (serr != BFS_OK)
+                         return file_finish_write(metadata, f, total, serr);
+                 }
+@@ -544,7 +630,7 @@ static int32_t file_write_with_metadata_unlocked(
+             }
+         } else if (cow_block) {
+             if (data_alloc_available(f->fs) <= f->fs->freespace.global_reserve) {
+-                bfs_err_t serr = file_flush_and_sync(f);
++                bfs_err_t serr = file_flush_and_sync(f, metadata);
+                 if (serr != BFS_OK)
+                     return file_finish_write(metadata, f, total, serr);
+             }
+@@ -703,7 +789,7 @@ bfs_err_t bfs_file_truncate_unlocked(bfs_file_t *f, uint64_t new_size)
+             /* Flush the inode so it reflects the partially-truncated extent tree
+              * before the commit, then sync to reclaim pending_frees — a crash
+              * mid-truncate must not leave the inode pointing at freed blocks. */
+-            bfs_err_t sync_err = file_flush_and_sync(f);
++            bfs_err_t sync_err = file_flush_and_sync(f, NULL);
+             if (sync_err != BFS_OK) return file_finish_truncate(f, sync_err);
+         }
+         if (err != BFS_OK) return file_finish_truncate(f, err);
+@@ -714,7 +800,8 @@ bfs_err_t bfs_file_truncate_unlocked(bfs_file_t *f, uint64_t new_size)
+     return file_finish_truncate(f, BFS_OK);
+ }
+ 
+-static bfs_err_t file_refresh_unlocked(bfs_file_t *f)
++static bfs_err_t file_refresh_unlocked(bfs_file_t *f,
++                                       file_inode_seed_t *seed)
+ {
+     bfs_err_t err = file_handle_error(f);
+     if (err != BFS_OK) return err;
+@@ -722,21 +809,27 @@ static bfs_err_t file_refresh_unlocked(bfs_file_t *f)
+         f->fs->recovery_error = f->extents.tree.free_sink_err;
+         return f->fs->recovery_error;
+     }
+-    bfs_inode_t inode;
+-    err = f->unlinked ? bfs_inode_read_unlinked(f->inode_tree, f->inode_nr, &inode)
+-                      : bfs_inode_read(f->inode_tree, f->inode_nr, &inode);
++    bfs_inode_t fallback;
++    bfs_inode_t *inode = seed ? &seed->inode : &fallback;
++    if (seed) seed->valid = false;
++    err = f->unlinked ? bfs_inode_read_unlinked(f->inode_tree, f->inode_nr, inode)
++                      : bfs_inode_read(f->inode_tree, f->inode_nr, inode);
+     if (err != BFS_OK) return err;
+-    uint64_t size = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
++    uint64_t size = ((uint64_t)bfs_be32(inode->size_hi) << 32) | bfs_be32(inode->size_lo);
+     /* An inline extent can grow while root and size stay the same. */
+-    if (bfs_extent_matches(&f->extents, &inode) && size == f->size)
++    if (bfs_extent_matches(&f->extents, inode) && size == f->size) {
++        file_inode_seed_store(seed, f, inode);
+         return BFS_OK;
++    }
+     /* Another handle published a new inode. Keep this handle's independent offset. */
+     bfs_file_t current;
+-    err = file_open_from_tree_unlocked(&current, f->fs, f->inode_tree, f->inode_nr,
+-                                       f->unlinked);
++    uint64_t offset = f->offset;
++    err = file_open_from_inode_unlocked(&current, f->fs, f->inode_tree, f->inode_nr,
++                                        f->unlinked, inode);
+     if (err != BFS_OK) return err;
+-    current.offset = f->offset;
++    current.offset = offset;
+     *f = current;
++    file_inode_seed_store(seed, f, inode);
+     return BFS_OK;
+ }
+ 
+@@ -767,7 +860,7 @@ int64_t bfs_file_seek(bfs_file_t *f, int64_t offset, int mode)
+ {
+     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;
+     bfs_lock_write(&f->fs->lock);
+-    bfs_err_t err = file_refresh_unlocked(f);
++    bfs_err_t err = file_refresh_unlocked(f, NULL);
+     int64_t result = err == BFS_OK ? file_seek_unlocked(f, offset, mode) : err;
+     bfs_lock_unlock(&f->fs->lock);
+     return result;
+@@ -785,7 +878,7 @@ int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len)
+      * never touch fs->scratch and keep the shared read lock, so they still run
+      * concurrently.) */
+     bfs_lock_write(&f->fs->lock);
+-    int32_t err = file_refresh_unlocked(f);
++    int32_t err = file_refresh_unlocked(f, NULL);
+     if (err == BFS_OK) err = bfs_file_read_unlocked(f, buf, len);
+     bfs_lock_unlock(&f->fs->lock);
+     return err;
+@@ -802,8 +895,16 @@ static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len
+         return BFS_ERR_INVAL;
+     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
+     bfs_lock_write(&f->fs->lock);
+-    int32_t err = file_refresh_unlocked(f);
+-    if (err == BFS_OK) err = file_write_with_metadata_unlocked(f, buf, len, metadata);
++    file_inode_seed_t seed = {0};
++    file_write_metadata_t write_metadata = { .inode_seed = &seed };
++    if (metadata) {
++        write_metadata.stamp_fn = metadata->stamp_fn;
++        write_metadata.stamp_context = metadata->stamp_context;
++        write_metadata.protection_clear = metadata->protection_clear;
++    }
++    int32_t err = file_refresh_unlocked(f, &seed);
++    if (err == BFS_OK)
++        err = file_write_with_metadata_unlocked(f, buf, len, &write_metadata);
+     bfs_lock_unlock(&f->fs->lock);
+     return err;
+ }
+@@ -844,12 +945,17 @@ int32_t bfs_file_append(bfs_file_t *f, const void *buf, uint32_t len)
+         return BFS_ERR_INVAL;
+     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
+     bfs_lock_write(&f->fs->lock);
+-    bfs_err_t err = file_refresh_unlocked(f);
++    file_inode_seed_t seed = {0};
++    file_write_metadata_t write_metadata = { .inode_seed = &seed };
++    bfs_err_t err = file_refresh_unlocked(f, &seed);
+     if (err == BFS_OK) {
+         int64_t offset = file_seek_unlocked(f, 0, BFS_SEEK_END);
+         if (offset < 0) err = (bfs_err_t)offset;
+     }
+-    int32_t result = err == BFS_OK ? bfs_file_write_unlocked(f, buf, len) : err;
++    int32_t result = err == BFS_OK
++                         ? file_write_with_metadata_unlocked(f, buf, len,
++                                                            &write_metadata)
++                         : err;
+     bfs_lock_unlock(&f->fs->lock);
+     return result;
+ }
+@@ -870,7 +976,7 @@ bfs_err_t bfs_file_truncate(bfs_file_t *f, uint64_t new_size)
+     if (!f || !f->fs || !f->fs->mounted) return BFS_ERR_INVAL;
+     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
+     bfs_lock_write(&f->fs->lock);
+-    bfs_err_t err = file_refresh_unlocked(f);
++    bfs_err_t err = file_refresh_unlocked(f, NULL);
+     if (err == BFS_OK) err = bfs_file_truncate_unlocked(f, new_size);
+     bfs_lock_unlock(&f->fs->lock);
+     return err;
+diff --git a/src/core/fs.c b/src/core/fs.c
+index 3ac1a7f..d4c876a 100644
+--- a/src/core/fs.c
++++ b/src/core/fs.c
+@@ -254,6 +254,10 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
+     fs->owned_nodes.recovery_state = &fs->recovery_error;
+     err = fs_open_namespace_trees(fs);
+     if (err != BFS_OK) return err;
++    /* fs_load_working_state also runs after transaction recovery. Drop every
++     * locator before attaching the new inode-tree handle and its root. */
++    bfs_btree_key_hint_cache_reset(&fs->inode_key_hints);
++    fs->inode_tree.key_hint_cache = &fs->inode_key_hints;
+     err = fs_open_refcount_tree(fs);
+     if (err != BFS_OK) return err;
+     fs->next_ino = bfs_be32(sb->next_ino);
+diff --git a/src/core/inode.c b/src/core/inode.c
+index e48599d..e574196 100644
+--- a/src/core/inode.c
++++ b/src/core/inode.c
+@@ -5,6 +5,9 @@
+ 
+ #include "bfs_inode.h"
+ #include <string.h>
++#ifdef BFS_PERF_PROBE
++#include "perf_probe.h"
++#endif
+ 
+ void bfs_inode_apply_stamp(bfs_inode_t *inode, const bfs_inode_stamp_t *stamp,
+                            bool creation)
+@@ -51,8 +54,23 @@ bool bfs_inode_valid(const bfs_btree_t *tree, uint32_t ino,
+     return inline_length == 0 && inode->inline_crc32 == 0;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static bfs_err_t validate_inode_body(const bfs_btree_t *tree, uint32_t ino,
++                                     const bfs_inode_t *inode, bool unlinked);
+ static bfs_err_t validate_inode(const bfs_btree_t *tree, uint32_t ino,
+                                 const bfs_inode_t *inode, bool unlinked)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_VALIDATE);
++    bfs_err_t result = validate_inode_body(tree, ino, inode, unlinked);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bfs_err_t validate_inode_body(const bfs_btree_t *tree, uint32_t ino,
++#else
++static bfs_err_t validate_inode(const bfs_btree_t *tree, uint32_t ino,
++#endif
++                                const bfs_inode_t *inode, bool unlinked)
+ {
+     if (!bfs_inode_valid(tree, ino, inode) ||
+         (bfs_be32(inode->link_count) == 0) != unlinked)
+@@ -66,8 +84,24 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
+     return bfs_btree_init(tree, bio, alloc, &bfs_inode_ops, root, txn_id);
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static bfs_err_t inode_read_body(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out);
++bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_READ);
++    bfs_err_t result = inode_read_body(tree, ino, out);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bfs_err_t inode_read_body(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
++#else
+ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
++#endif
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.inode_read_calls++;
++#endif
+     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+     uint32_t key = bfs_be32(ino);
+@@ -78,8 +112,25 @@ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
+     return BFS_OK;
+ }
+ 
++#ifdef BFS_PERF_PROBE
++static bfs_err_t inode_read_unlinked_body(bfs_btree_t *tree, uint32_t ino,
++                                         bfs_inode_t *out);
++bfs_err_t bfs_inode_read_unlinked(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
++{
++    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
++        BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_READ);
++    bfs_err_t result = inode_read_unlinked_body(tree, ino, out);
++    bfs_perf_probe_detail_end(&sample);
++    return result;
++}
++static bfs_err_t inode_read_unlinked_body(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
++#else
+ bfs_err_t bfs_inode_read_unlinked(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
++#endif
+ {
++#ifdef BFS_PERF_PROBE
++    bfs_perf_probe_counters.inode_read_calls++;
++#endif
+     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+     uint32_t key = bfs_be32(ino);
+diff --git a/tests/quality/test_bench_verifier.py b/tests/quality/test_bench_verifier.py
+index 7857ddd..6343c81 100644
+--- a/tests/quality/test_bench_verifier.py
++++ b/tests/quality/test_bench_verifier.py
+@@ -2,6 +2,7 @@
+ """Positive and corrupt-input probes for the Amiga filesystem bench verifier."""
+ 
+ from pathlib import Path
++import re
+ import shutil
+ import subprocess  # nosec B404 - invokes only the fixed repository verifier, without a shell
+ import tempfile
+@@ -35,6 +36,48 @@ CPU_SCOPE_VALUES = {
+     "IFACE_FREE": (19, 19, 190),
+     "SEAL_COMMIT": (23, 23, 230),
+ }
++LISTING_V4_METRICS = (
++    "LIST_EXNEXT_40_ENTRIES_FIRST_PASS_US",
++    "LIST_EXNEXT_40_ENTRIES_REPEAT10_TOTAL_US",
++    "LIST_EXALL_40_ENTRIES_FIRST_PASS_US",
++    "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL_US",
++    "LIST_EXNEXT_400_ENTRIES_FIRST_PASS_US",
++    "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL_US",
++    "LIST_EXALL_400_ENTRIES_FIRST_PASS_US",
++    "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL_US",
++    "LIST_EXNEXT_1000_ENTRIES_FIRST_PASS_US",
++    "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL_US",
++    "LIST_EXALL_1000_ENTRIES_FIRST_PASS_US",
++    "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL_US",
++)
++DEEP_COMPARE_V12_PHASES = (
++    "SMALL_CREATE_40", "LOOKUP_400", "SMALL_READ_40", "SEQ_WRITE_8M",
++    "SEQ_READ_8M", "SMALL_DELETE_40", "APPEND_4K_1M", "APPEND_1K_256K",
++    "APPEND_READ_1280K", "LIST_EXNEXT_40_ENTRIES_FIRST_PASS",
++    "LIST_EXNEXT_40_ENTRIES_REPEAT10_TOTAL", "LIST_EXALL_40_ENTRIES_FIRST_PASS",
++    "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL", "LIST_EXNEXT_400_ENTRIES_FIRST_PASS",
++    "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL", "LIST_EXALL_400_ENTRIES_FIRST_PASS",
++    "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL", "LIST_EXNEXT_1000_ENTRIES_FIRST_PASS",
++    "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL", "LIST_EXALL_1000_ENTRIES_FIRST_PASS",
++    "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL",
++)
++LOOKUP_COUNTERS = (
++    "INODE_READ_CALLS", "BTREE_SEARCH_CALLS", "BTREE_INDEX_HINT_HITS",
++    "BTREE_LEAF_HINT_HITS", "CACHE_READ_CALLS", "CACHE_READ_HITS",
++    "CACHE_READ_MISSES", "FREE_TREE_NODE_VIEWS", "FREE_TREE_RESIDENT_VIEWS",
++    "DIR_TREE_NODE_VIEWS", "DIR_TREE_RESIDENT_VIEWS", "INODE_TREE_NODE_VIEWS",
++    "INODE_TREE_RESIDENT_VIEWS", "REFCOUNT_TREE_NODE_VIEWS",
++    "REFCOUNT_TREE_RESIDENT_VIEWS", "OTHER_TREE_NODE_VIEWS",
++    "OTHER_TREE_RESIDENT_VIEWS",
++)
++DETAIL_SCOPES = (
++    "DETAIL_INODE_READ", "DETAIL_INODE_VALIDATE", "DETAIL_INODE_SEARCH",
++    "DETAIL_INODE_NODE_VIEW", "DETAIL_DIR_NODE_VIEW",
++    "DETAIL_INODE_BINARY_SEARCH", "DETAIL_DIR_BINARY_SEARCH",
++    "DETAIL_NODE_STRUCTURE", "DETAIL_CACHE_PEEK", "DETAIL_BUFFER_ALLOC",
++    "DETAIL_BUFFER_FREE", "DETAIL_EXALL_FILL",
++)
++DETAIL_SAMPLE_STRIDE = 17
+ 
+ 
+ class BenchVerifierTests(unittest.TestCase):
+@@ -391,6 +434,200 @@ class BenchVerifierTests(unittest.TestCase):
+         pfs_lines[0] = "FS_DEEP_COMPARE\t11"
+         pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
+ 
++    def upgrade_deep_compare_to_v12(self):
++        self.upgrade_deep_compare_to_v11()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original_bfs = bfs.read_text(encoding="ascii").splitlines()
++        self.assertEqual(original_bfs[0], "FS_DEEP_COMPARE\t11")
++        original_values = {
++            name: value
++            for row in original_bfs
++            if "\t" in row
++            for name, value in [row.split("\t")]
++        }
++        first_phase = DEEP_COMPARE_V12_PHASES[0]
++        old_counters = [
++            name[len(first_phase) + 1:]
++            for name in original_values
++            if name.startswith(first_phase + "_") and name != first_phase + "_US"
++        ]
++        # These are schema-shape fixtures, not measured workload predictions.
++        # Keep new counters internally consistent and make each listing expose
++        # at least its expected number of inode metadata reads.
++        output_bfs = ["FS_DEEP_COMPARE\t12", "DRIVE\tDH1:"]
++        for phase in DEEP_COMPARE_V12_PHASES:
++            if phase in DEEP_COMPARE_V12_PHASES[:6]:
++                output_bfs.append(f"{phase}_US\t{original_values[phase + '_US']}")
++                output_bfs.extend(
++                    f"{phase}_{counter}\t{original_values[phase + '_' + counter]}"
++                    for counter in old_counters
++                )
++            else:
++                output_bfs.append(f"{phase}_US\t100")
++                output_bfs.extend(f"{phase}_{counter}\t0" for counter in old_counters)
++
++            values = {
++                "INODE_READ_CALLS": 0,
++                "BTREE_SEARCH_CALLS": 8,
++                "BTREE_INDEX_HINT_HITS": 2,
++                "BTREE_LEAF_HINT_HITS": 1,
++                "CACHE_READ_CALLS": 100,
++                "CACHE_READ_HITS": 80,
++                "CACHE_READ_MISSES": 20,
++                "FREE_TREE_NODE_VIEWS": 0,
++                "FREE_TREE_RESIDENT_VIEWS": 0,
++                "DIR_TREE_NODE_VIEWS": 10,
++                "DIR_TREE_RESIDENT_VIEWS": 8,
++                "INODE_TREE_NODE_VIEWS": 20,
++                "INODE_TREE_RESIDENT_VIEWS": 18,
++                "REFCOUNT_TREE_NODE_VIEWS": 0,
++                "REFCOUNT_TREE_RESIDENT_VIEWS": 0,
++                "OTHER_TREE_NODE_VIEWS": 0,
++                "OTHER_TREE_RESIDENT_VIEWS": 0,
++            }
++            if phase.startswith("LIST_"):
++                if "_40_ENTRIES_" in phase:
++                    expected = 40
++                elif "_400_ENTRIES_" in phase:
++                    expected = 400
++                else:
++                    expected = 1000
++                if phase.endswith("REPEAT10_TOTAL"):
++                    expected *= 10
++                values["INODE_READ_CALLS"] = expected
++            output_bfs.extend(
++                f"{phase}_{counter}\t{values[counter]}"
++                for counter in LOOKUP_COUNTERS
++            )
++
++        output_bfs.extend(
++            line for line in original_bfs
++            if line.startswith(("CLOCK_HZ\t", "CRC_SAMPLE_STRIDE\t",
++                                "CPU_SAMPLE_STRIDE\t", "PASS\t"))
++        )
++        bfs.write_text("\n".join(output_bfs) + "\n", encoding="ascii")
++
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        original_pfs = pfs3.read_text(encoding="ascii").splitlines()
++        self.assertEqual(original_pfs[0], "FS_DEEP_COMPARE\t11")
++        original_values = {
++            name: value
++            for row in original_pfs
++            if "\t" in row
++            for name, value in [row.split("\t")]
++        }
++        output_pfs = ["FS_DEEP_COMPARE\t12", "DRIVE\tDH2:"]
++        for phase in DEEP_COMPARE_V12_PHASES:
++            value = original_values.get(phase + "_US", "100")
++            output_pfs.append(f"{phase}_US\t{value}")
++        output_pfs.append("PASS\t1")
++        pfs3.write_text("\n".join(output_pfs) + "\n", encoding="ascii")
++
++    def upgrade_deep_compare_to_v13(self):
++        self.upgrade_deep_compare_to_v12()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii").splitlines()
++        self.assertEqual(original[0], "FS_DEEP_COMPARE\t12")
++        values = {
++            name: value
++            for row in original
++            if "\t" in row
++            for name, value in [row.split("\t")]
++        }
++        phase_values = {}
++        for phase in DEEP_COMPARE_V12_PHASES:
++            phase_values[phase] = {
++                name[len(phase) + 1:]: value
++                for name, value in values.items()
++                if name.startswith(phase + "_")
++            }
++            phase_data = phase_values[phase]
++            inode_reads = int(phase_data["INODE_READ_CALLS"])
++            if phase.startswith("LIST_"):
++                # Listing search calls are one per inode read in this synthetic
++                # profile, so the corresponding B-tree total must be large enough.
++                phase_data["BTREE_SEARCH_CALLS"] = str(max(
++                    int(phase_data["BTREE_SEARCH_CALLS"]), inode_reads,
++                ))
++
++        output = ["FS_DEEP_COMPARE\t13", "DRIVE\tDH1:"]
++        current_phase = None
++        for line in original[2:]:
++            name, value = line.split("\t")
++            if name == "PASS":
++                output.append(line)
++                continue
++            if name in ("CLOCK_HZ", "CRC_SAMPLE_STRIDE", "CPU_SAMPLE_STRIDE"):
++                output.append(line)
++                if name == "CPU_SAMPLE_STRIDE":
++                    output.append(f"DETAIL_SAMPLE_STRIDE\t{DETAIL_SAMPLE_STRIDE}")
++                continue
++            if name.endswith("_US") and not any(
++                name.startswith(phase + "_") for phase in DEEP_COMPARE_V12_PHASES
++            ):
++                output.append(line)
++                continue
++            phase = next((candidate for candidate in DEEP_COMPARE_V12_PHASES
++                          if name.startswith(candidate + "_")), None)
++            if phase is None:
++                self.fail(f"unexpected schema-12 metric: {name}")
++            current_phase = phase
++            phase_data = phase_values[phase]
++            suffix = name[len(phase) + 1:]
++            output.append(f"{name}\t{phase_data.get(suffix, value)}")
++            if suffix != "OTHER_TREE_RESIDENT_VIEWS":
++                continue
++
++            inode_reads = int(phase_data["INODE_READ_CALLS"])
++            inode_views = int(phase_data["INODE_TREE_NODE_VIEWS"])
++            dir_views = int(phase_data["DIR_TREE_NODE_VIEWS"])
++            searches = int(phase_data["BTREE_SEARCH_CALLS"])
++            if phase.startswith("LIST_"):
++                inode_validate = inode_reads
++                inode_search = inode_reads
++                exall_fill = inode_reads + 1 if phase.startswith("LIST_EXALL_") else 0
++            else:
++                inode_validate = inode_reads + (4 if any(
++                    word in phase for word in ("CREATE", "WRITE", "DELETE", "APPEND")
++                ) else 0)
++                inode_search = min(searches, 2)
++                exall_fill = 0
++            detail_calls = {
++                "DETAIL_INODE_READ": inode_reads,
++                "DETAIL_INODE_VALIDATE": inode_validate,
++                "DETAIL_INODE_SEARCH": inode_search,
++                "DETAIL_INODE_NODE_VIEW": inode_views,
++                "DETAIL_DIR_NODE_VIEW": dir_views,
++                "DETAIL_INODE_BINARY_SEARCH": min(searches, 2),
++                "DETAIL_DIR_BINARY_SEARCH": min(searches, 1),
++                "DETAIL_NODE_STRUCTURE": inode_views + dir_views,
++                "DETAIL_CACHE_PEEK": int(phase_data["CACHE_READ_CALLS"]),
++                "DETAIL_BUFFER_ALLOC": 1 if any(
++                    word in phase for word in ("CREATE", "WRITE", "APPEND")
++                ) else 0,
++                "DETAIL_BUFFER_FREE": 1 if any(
++                    word in phase for word in ("DELETE", "WRITE", "APPEND")
++                ) else 0,
++                "DETAIL_EXALL_FILL": exall_fill,
++            }
++            for scope in DETAIL_SCOPES:
++                calls = detail_calls[scope]
++                samples = calls // DETAIL_SAMPLE_STRIDE
++                # Zero ticks with nonzero samples is valid; sampling contributes
++                # no timing lower bound, and scopes are inclusive/nested.
++                output.extend((
++                    f"{phase}_{scope}_CALLS\t{calls}",
++                    f"{phase}_{scope}_SAMPLES\t{samples}",
++                    f"{phase}_{scope}_SAMPLE_TICKS\t0",
++                ))
++        bfs.write_text("\n".join(output) + "\n", encoding="ascii")
++
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        pfs_lines = pfs3.read_text(encoding="ascii").splitlines()
++        self.assertEqual(pfs_lines[0], "FS_DEEP_COMPARE\t12")
++        pfs_lines[0] = "FS_DEEP_COMPARE\t13"
++        pfs3.write_text("\n".join(pfs_lines) + "\n", encoding="ascii")
++
+     def upgrade_raw_deep_compare_v8_to_v9(self):
+         source = ROOT / "docs/qualification/evidence/bfs-sealed-settlement-2026-10-01/baseline-deep"
+         for name in (
+@@ -675,12 +912,84 @@ class BenchVerifierTests(unittest.TestCase):
+         path.write_text("\n".join(lines) + "\n", encoding="ascii")
+         self.assertNotEqual(self.verify("compare").returncode, 0)
+ 
++    def append_compare_v4_metrics(self, suffix="tsv", header="FS_COMPARE_BENCH",
++                                  filesystems=("bfs", "pfs3")):
++        for filesystem in filesystems:
++            path = self.results / f"{filesystem}.{suffix}"
++            lines = path.read_text(encoding="ascii").splitlines()
++            self.assertEqual(lines[0], f"{header}\t3")
++            lines[0] = f"{header}\t4"
++            position = next(index for index, line in enumerate(lines)
++                            if line.startswith("PASS\t"))
++            lines[position:position] = [
++                f"{metric}\t{1000 + index}"
++                for index, metric in enumerate(LISTING_V4_METRICS)
++            ]
++            path.write_text("\n".join(lines) + "\n", encoding="ascii")
++
++    def upgrade_compare_to_v4(self, suffix="tsv", header="FS_COMPARE_BENCH",
++                              filesystems=("bfs", "pfs3")):
++        self.upgrade_compare_to_v3(suffix, header, filesystems)
++        self.append_compare_v4_metrics(suffix, header, filesystems)
++
++    def test_compare_v4_accepts_listing_scaling_phases(self):
++        self.load_evidence("compare-bfs-first", "tsv")
++        self.upgrade_compare_to_v4()
++        result = self.verify("compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_durable_compare_v4_accepts_listing_scaling_phases(self):
++        self.load_durable_evidence("compare-bfs-first")
++        self.upgrade_compare_to_v4(suffix="durable.tsv",
++                                   header="FS_DURABLE_COMPARE")
++        result = self.verify("durable-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_compare_v4_rejects_missing_listing_metric(self):
++        self.load_evidence("compare-bfs-first", "tsv")
++        self.upgrade_compare_to_v4()
++        path = self.results / "pfs3.tsv"
++        lines = path.read_text(encoding="ascii").splitlines()
++        lines = [line for line in lines
++                 if not line.startswith("LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL_US\t")]
++        path.write_text("\n".join(lines) + "\n", encoding="ascii")
++        self.assertNotEqual(self.verify("compare").returncode, 0)
++
++    def test_compare_v4_rejects_reordered_listing_metrics(self):
++        self.load_evidence("compare-bfs-first", "tsv")
++        self.upgrade_compare_to_v4()
++        path = self.results / "bfs.tsv"
++        lines = path.read_text(encoding="ascii").splitlines()
++        first = next(index for index, line in enumerate(lines)
++                     if line.startswith(LISTING_V4_METRICS[0] + "\t"))
++        lines[first], lines[first + 1] = lines[first + 1], lines[first]
++        path.write_text("\n".join(lines) + "\n", encoding="ascii")
++        self.assertNotEqual(self.verify("compare").returncode, 0)
++
++    def test_compare_v4_rejects_mixed_schema_versions(self):
++        self.load_evidence("compare-bfs-first", "tsv")
++        self.upgrade_compare_to_v3()
++        self.append_compare_v4_metrics(filesystems=("bfs",))
++        self.assertNotEqual(self.verify("compare").returncode, 0)
++
++    def test_compare_v4_rejects_mislabeled_listing_metric(self):
++        self.load_evidence("compare-bfs-first", "tsv")
++        self.upgrade_compare_to_v4()
++        path = self.results / "bfs.tsv"
++        lines = path.read_text(encoding="ascii").splitlines()
++        metric = LISTING_V4_METRICS[8]
++        index = next(index for index, line in enumerate(lines)
++                     if line.startswith(metric + "\t"))
++        lines[index] = lines[index].replace("FIRST_PASS", "COLD_PASS")
++        path.write_text("\n".join(lines) + "\n", encoding="ascii")
++        self.assertNotEqual(self.verify("compare").returncode, 0)
++
+     def test_compare_rejects_unknown_schema_version(self):
+         self.load_evidence("compare-bfs-first", "tsv")
+         for filesystem in ("bfs", "pfs3"):
+             path = self.results / f"{filesystem}.tsv"
+             lines = path.read_text(encoding="ascii").splitlines()
+-            lines[0] = "FS_COMPARE_BENCH\t4"
++            lines[0] = "FS_COMPARE_BENCH\t5"
+             path.write_text("\n".join(lines) + "\n", encoding="ascii")
+         self.assertNotEqual(self.verify("compare").returncode, 0)
+ 
+@@ -1120,6 +1429,252 @@ class BenchVerifierTests(unittest.TestCase):
+         result = self.verify("deep-compare")
+         self.assertEqual(result.returncode, 0, result.stderr)
+ 
++    def test_deep_compare_v12_accepts_append_and_listing_probe_profile(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v12()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        self.assertIn("FS_DEEP_COMPARE\t12", contents)
++        # Keep this fixture above Linux's single argv-string ceiling: passing
++        # the metric inventory as one awk -v argument must not regress.
++        inventory = " ".join(line.split("\t", 1)[0]
++                             for line in contents.splitlines()[2:-1])
++        self.assertGreater(len(inventory.encode("ascii")), 131072)
++        for phase in DEEP_COMPARE_V12_PHASES:
++            for counter in LOOKUP_COUNTERS:
++                self.assertIn(f"{phase}_{counter}\t", contents)
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_deep_compare_detail_scope_order_matches_probe_header_macro(self):
++        header = (ROOT / "src/amiga/perf_probe.h").read_text(encoding="ascii")
++        lines = header.splitlines()
++        macro_start = next((index for index, line in enumerate(lines)
++                            if line.startswith("#define BFS_PERF_DETAIL_SCOPES(X)")), None)
++        self.assertIsNotNone(macro_start, "detail scope macro is missing")
++        macro_lines = [lines[macro_start]]
++        while macro_lines[-1].rstrip().endswith("\\"):
++            macro_lines.append(lines[macro_start + len(macro_lines)])
++        header_scopes = tuple(re.findall(
++            r"X\(\s*(DETAIL_[A-Z0-9_]+)\s*,", "\n".join(macro_lines),
++        ))
++        self.assertEqual(header_scopes, DETAIL_SCOPES)
++
++        verifier = VERIFIER.read_text(encoding="ascii")
++        match = re.search(
++            r"deep_compare_detail_scopes=\(([^)]*)\)", verifier,
++        )
++        self.assertIsNotNone(match, "verifier detail scope inventory is missing")
++        self.assertEqual(tuple(match.group(1).split()), header_scopes)
++
++    def test_deep_compare_v13_accepts_detail_sampling_profile(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v13()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        contents = bfs.read_text(encoding="ascii")
++        self.assertIn("FS_DEEP_COMPARE\t13", contents)
++        self.assertIn("CPU_SAMPLE_STRIDE\t1\nDETAIL_SAMPLE_STRIDE\t17\n", contents)
++        inventory = " ".join(line.split("\t", 1)[0]
++                             for line in contents.splitlines()[2:-1])
++        self.assertGreater(len(inventory.encode("ascii")), 131072)
++        for phase in DEEP_COMPARE_V12_PHASES:
++            for scope in DETAIL_SCOPES:
++                for suffix in ("CALLS", "SAMPLES", "SAMPLE_TICKS"):
++                    self.assertIn(f"{phase}_{scope}_{suffix}\t", contents)
++        # Inclusive scopes have no partition or packet-duration sum rule.
++        self.set_metrics(bfs, {
++            "SMALL_CREATE_40_DETAIL_CACHE_PEEK_SAMPLE_TICKS": UINT64_MAX,
++        })
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_deep_compare_v13_rejects_missing_reordered_and_mixed_rows(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v13()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        original_bfs = bfs.read_text(encoding="ascii")
++        first_row = "SMALL_CREATE_40_DETAIL_INODE_READ_CALLS\t"
++        lines = original_bfs.splitlines()
++        row_index = next(index for index, line in enumerate(lines)
++                         if line.startswith(first_row))
++        missing = "\n".join(lines[:row_index] + lines[row_index + 1:]) + "\n"
++        lines[row_index], lines[row_index + 1] = lines[row_index + 1], lines[row_index]
++        reordered = "\n".join(lines) + "\n"
++        cases = (
++            ("missing detail row", missing),
++            ("reordered detail rows", reordered),
++            ("duplicate detail row", original_bfs.replace(
++                "PASS\t1\n", lines[row_index] + "\nPASS\t1\n", 1,
++            )),
++        )
++        for label, mutated in cases:
++            with self.subTest(shape=label):
++                bfs.write_text(mutated, encoding="ascii")
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++        bfs.write_text(original_bfs, encoding="ascii")
++        pfs_original = pfs3.read_text(encoding="ascii")
++        pfs3.write_text(pfs_original.replace(
++            "FS_DEEP_COMPARE\t13\n", "FS_DEEP_COMPARE\t12\n", 1,
++        ), encoding="ascii")
++        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v13_checks_stride_and_unsigned_detail_bounds(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v13()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        cases = (
++            ("global detail stride", {
++                "DETAIL_SAMPLE_STRIDE": 16,
++            }),
++            ("sample floor", {
++                "SMALL_CREATE_40_DETAIL_CACHE_PEEK_SAMPLES": 4,
++            }),
++            ("ticks with zero samples", {
++                "SMALL_CREATE_40_DETAIL_BUFFER_ALLOC_SAMPLE_TICKS": 1,
++            }),
++            ("ULONG calls overflow", {
++                "SMALL_CREATE_40_DETAIL_BUFFER_ALLOC_CALLS": UINT32_MAX + 1,
++                "SMALL_CREATE_40_DETAIL_BUFFER_ALLOC_SAMPLES": (UINT32_MAX + 1) // DETAIL_SAMPLE_STRIDE,
++            }),
++            ("ULONG samples overflow", {
++                "SMALL_CREATE_40_DETAIL_BUFFER_ALLOC_SAMPLES": UINT32_MAX + 1,
++            }),
++            ("uint64 ticks overflow", {
++                "SMALL_CREATE_40_DETAIL_CACHE_PEEK_SAMPLE_TICKS": UINT64_MAX + 1,
++            }),
++        )
++        for label, updates in cases:
++            with self.subTest(bound=label):
++                bfs.write_text(original, encoding="ascii")
++                self.set_metrics(bfs, updates)
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++        # Upper ULONG call count and UINT64 ticks remain exact; a nonzero sample
++        # count is allowed to have zero ticks.
++        bfs.write_text(original, encoding="ascii")
++        self.set_metrics(bfs, {
++            "SMALL_CREATE_40_DETAIL_BUFFER_ALLOC_CALLS": UINT32_MAX,
++            "SMALL_CREATE_40_DETAIL_BUFFER_ALLOC_SAMPLES": UINT32_MAX // DETAIL_SAMPLE_STRIDE,
++            "SMALL_CREATE_40_DETAIL_BUFFER_ALLOC_SAMPLE_TICKS": UINT64_MAX,
++        })
++        result = self.verify("deep-compare")
++        self.assertEqual(result.returncode, 0, result.stderr)
++
++    def test_deep_compare_v13_rejects_detail_accounting_errors(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v13()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        exall = "LIST_EXALL_400_ENTRIES_FIRST_PASS"
++        exnext = "LIST_EXNEXT_400_ENTRIES_FIRST_PASS"
++        read_calls = self.metric_value(original, exall + "_INODE_READ_CALLS")
++        btree_searches = self.metric_value(original, "SMALL_CREATE_40_BTREE_SEARCH_CALLS")
++        cases = (
++            ("inode read wrapper identity", {
++                "SMALL_CREATE_40_DETAIL_INODE_READ_CALLS": 1,
++                "SMALL_CREATE_40_DETAIL_INODE_READ_SAMPLES": 0,
++            }),
++            ("inode search bounded by B-tree searches", {
++                "SMALL_CREATE_40_DETAIL_INODE_SEARCH_CALLS": btree_searches + 1,
++                "SMALL_CREATE_40_DETAIL_INODE_SEARCH_SAMPLES": (btree_searches + 1) // DETAIL_SAMPLE_STRIDE,
++            }),
++            ("inode node view identity", {
++                "SMALL_CREATE_40_DETAIL_INODE_NODE_VIEW_CALLS": 21,
++                "SMALL_CREATE_40_DETAIL_INODE_NODE_VIEW_SAMPLES": 1,
++            }),
++            ("directory node view identity", {
++                "SMALL_CREATE_40_DETAIL_DIR_NODE_VIEW_CALLS": 11,
++                "SMALL_CREATE_40_DETAIL_DIR_NODE_VIEW_SAMPLES": 0,
++            }),
++            ("listing validate identity", {
++                f"{exall}_DETAIL_INODE_VALIDATE_CALLS": read_calls + 1,
++                f"{exall}_DETAIL_INODE_VALIDATE_SAMPLES": (read_calls + 1) // DETAIL_SAMPLE_STRIDE,
++            }),
++            ("listing search identity", {
++                f"{exall}_DETAIL_INODE_SEARCH_CALLS": read_calls - 1,
++                f"{exall}_DETAIL_INODE_SEARCH_SAMPLES": (read_calls - 1) // DETAIL_SAMPLE_STRIDE,
++            }),
++            ("ExAll fill covers inode reads", {
++                f"{exall}_DETAIL_EXALL_FILL_CALLS": read_calls - 1,
++                f"{exall}_DETAIL_EXALL_FILL_SAMPLES": (read_calls - 1) // DETAIL_SAMPLE_STRIDE,
++            }),
++            ("ExNext has no ExAll fill", {
++                f"{exnext}_DETAIL_EXALL_FILL_CALLS": 1,
++                f"{exnext}_DETAIL_EXALL_FILL_SAMPLES": 0,
++            }),
++        )
++        for label, updates in cases:
++            with self.subTest(accounting=label):
++                bfs.write_text(original, encoding="ascii")
++                self.set_metrics(bfs, updates)
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v12_rejects_missing_reordered_and_mixed_rows(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v12()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        pfs3 = self.results / "pfs3.deep-compare.tsv"
++        original_bfs = bfs.read_text(encoding="ascii")
++        original_pfs3 = pfs3.read_text(encoding="ascii")
++        missing_row = "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL_CACHE_READ_MISSES\t20\n"
++        self.assertIn(missing_row, original_bfs)
++        missing = original_bfs.replace(missing_row, "", 1)
++        lines = original_bfs.splitlines()
++        first = next(index for index, line in enumerate(lines)
++                     if line.startswith("APPEND_4K_1M_US\t"))
++        lines[first], lines[first + 1] = lines[first + 1], lines[first]
++        reordered = "\n".join(lines) + "\n"
++        bfs.write_text(missing, encoding="ascii")
++        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++        bfs.write_text(reordered, encoding="ascii")
++        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++        bfs.write_text(original_bfs, encoding="ascii")
++        pfs3.write_text(original_pfs3.replace(
++            "FS_DEEP_COMPARE\t12\n", "FS_DEEP_COMPARE\t11\n", 1,
++        ), encoding="ascii")
++        self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
++    def test_deep_compare_v12_rejects_lookup_accounting_invariant_violations(self):
++        self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
++        self.upgrade_deep_compare_to_v12()
++        bfs = self.results / "bfs.deep-compare.tsv"
++        original = bfs.read_text(encoding="ascii")
++        cases = (
++            ("cache accounting", {
++                "LIST_EXALL_400_ENTRIES_FIRST_PASS_CACHE_READ_HITS": 79,
++            }),
++            ("resident views exceed visits", {
++                "LIST_EXALL_400_ENTRIES_FIRST_PASS_DIR_TREE_RESIDENT_VIEWS": 11,
++            }),
++            ("hint hits exceed searches", {
++                "LIST_EXALL_400_ENTRIES_FIRST_PASS_BTREE_INDEX_HINT_HITS": 7,
++                "LIST_EXALL_400_ENTRIES_FIRST_PASS_BTREE_LEAF_HINT_HITS": 2,
++            }),
++            ("listing data read", {
++                "LIST_EXALL_400_ENTRIES_FIRST_PASS_DATA_READS": 1,
++            }),
++            ("listing write", {
++                "LIST_EXNEXT_40_ENTRIES_FIRST_PASS_BIO_WRITES": 1,
++            }),
++            ("listing commit", {
++                "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL_TXN_COMMITS": 1,
++            }),
++            ("CRC sample stride", {
++                "SMALL_CREATE_40_NODE_CRC_READ_SAMPLES": 0,
++            }),
++            ("CPU sample stride", {
++                "CPU_SAMPLE_STRIDE": 2,
++            }),
++        )
++        for label, updates in cases:
++            with self.subTest(invariant=label):
++                bfs.write_text(original, encoding="ascii")
++                self.set_metrics(bfs, updates)
++                self.assertNotEqual(self.verify("deep-compare").returncode, 0)
++
+     def test_deep_compare_v11_rejects_missing_malformed_and_duplicate_scopes(self):
+         self.load_evidence("deep-compare-bfs-first", "deep-compare.tsv")
+         self.upgrade_deep_compare_to_v11()
+diff --git a/tools/bench-summary.py b/tools/bench-summary.py
+index bf15c44..256e640 100755
+--- a/tools/bench-summary.py
++++ b/tools/bench-summary.py
+@@ -48,15 +48,16 @@ def summarize(prefix, suffix):
+     print(f"== {prefix}: {len(rows)} valid runs")
+     if not rows:
+         return
+-    print(f"{'phase':20} {'BFS mean':>10} {'cv%':>5} {'PFS3 mean':>10} {'cv%':>5} "
+-          f"{'ratio':>6} {'range':>12} {'median':>6} {'>5x':>4}")
+     phases = [name for name in rows[0][0] if name.endswith("_US")]
++    phase_width = max((len(name[:-3]) for name in phases), default=len("phase"))
++    print(f"{'phase':<{phase_width}} {'BFS mean':>10} {'cv%':>5} {'PFS3 mean':>10} {'cv%':>5} "
++          f"{'ratio':>6} {'range':>12} {'median':>6} {'>5x':>4}")
+     for phase in phases:
+         bfs = [int(b[phase]) for b, _ in rows]
+         pfs3 = [int(p[phase]) for _, p in rows]
+         ratios = [b / p for b, p in zip(bfs, pfs3)]
+         over = sum(ratio > LIMIT for ratio in ratios)
+-        print(f"{phase[:-3]:20} {statistics.mean(bfs):10.0f} {variation(bfs):5.1f} "
++        print(f"{phase[:-3]:<{phase_width}} {statistics.mean(bfs):10.0f} {variation(bfs):5.1f} "
+               f"{statistics.mean(pfs3):10.0f} {variation(pfs3):5.1f} "
+               f"{statistics.mean(bfs) / statistics.mean(pfs3):6.2f} "
+               f"{min(ratios):5.2f}-{max(ratios):<6.2f} {statistics.median(ratios):6.2f} "
+diff --git a/tools/bfs-test.c b/tools/bfs-test.c
+index ede41e8..7bb20b6 100644
+--- a/tools/bfs-test.c
++++ b/tools/bfs-test.c
+@@ -18,6 +18,7 @@
+ #include <dos/dosextens.h>
+ #include <dos/rdargs.h>
+ #include <dos/exall.h>
++#include <stddef.h>
+ #include <proto/exec.h>
+ #include <proto/dos.h>
+ #include "../src/amiga/dos_packets.h"
+@@ -1823,15 +1824,24 @@ static BOOL remove_items(const char *dir, int count)
+     return DeleteFile(vpath(dir));
+ }
+ 
+-/* Mark item_NN as seen; FALSE for any other name or a repeat. */
+-static BOOL mark_item(const char *name, int count, UBYTE *seen)
++/* Parse the shared item_NN fixture name with a bounded index. */
++static BOOL item_number(const char *name, int count, UBYTE *number)
+ {
+-    if (tool_strlen(name) != 7 || tool_memcmp(name, "item_", 5) ||
++    if (!name || tool_strlen(name) != 7 || tool_memcmp(name, "item_", 5) ||
+         name[5] < '0' || name[5] > '9' || name[6] < '0' || name[6] > '9')
+         return FALSE;
+     int i = (name[5] - '0') * 10 + (name[6] - '0');
+-    if (i >= count || seen[i]) return FALSE;
+-    seen[i] = 1;
++    if (i >= count) return FALSE;
++    *number = (UBYTE)i;
++    return TRUE;
++}
++
++/* Mark item_NN as seen; FALSE for any other name or a repeat. */
++static BOOL mark_item(const char *name, int count, UBYTE *seen)
++{
++    UBYTE number;
++    if (!item_number(name, count, &number) || seen[number]) return FALSE;
++    seen[number] = 1;
+     return TRUE;
+ }
+ 
+@@ -1917,36 +1927,210 @@ static void test_exall_delete(void)
+     if (ok) pass(T); else fail(T, "batched listing while deleting or cleanup");
+ }
+ 
++/* Save the directory's ExNext order as compact indices. ExAll has no
++ * ordering promise of its own; this gives the mixed-call oracle one exact
++ * reference sequence for both APIs. */
++static BOOL exallpack_item_number(const char *name, UBYTE *number)
++{
++    return item_number(name, 40, number);
++}
++
++static BOOL exallpack_collect_order(BPTR lock, struct FileInfoBlock *fib,
++                                    UBYTE order[40])
++{
++    UBYTE seen[40] = {0};
++    ULONG count = 0;
++    if (!Examine(lock, fib)) return FALSE;
++    while (ExNext(lock, fib)) {
++        UBYTE number;
++        if (count >= 40 || !exallpack_item_number(fib->fib_FileName, &number) ||
++            seen[number]) return FALSE;
++        seen[number] = 1;
++        order[count++] = number;
++    }
++    return IoErr() == ERROR_NO_MORE_ENTRIES && count == 40 && all_seen(seen, 40);
++}
++
++static BOOL exallpack_consume_number(UBYTE number, const UBYTE order[40],
++                                    UBYTE seen[40], ULONG *position)
++{
++    if (*position >= 40 || order[*position] != number || seen[number]) return FALSE;
++    seen[number] = 1;
++    (*position)++;
++    return TRUE;
++}
++
++/* Validate one packed ED_COMMENT batch, including pointer bounds before
++ * following the variable-length list. */
++static BOOL exallpack_check_batch(const UBYTE *storage, ULONG storage_size,
++                                  struct ExAllControl *control,
++                                  const UBYTE order[40], UBYTE seen[40],
++                                  ULONG *position)
++{
++    const UBYTE *end = storage + storage_size;
++    ULONG fixed_size = (ULONG)offsetof(struct ExAllData, ed_OwnerUID);
++    ULONG entries = control->eac_Entries;
++    if (*position > 40 || !entries || entries > 40 - *position) return FALSE;
++
++    struct ExAllData *entry = (struct ExAllData *)storage;
++    for (ULONG n = 0; n < entries; n++) {
++        if (!entry || (const UBYTE *)entry < storage ||
++            (const UBYTE *)entry > end - fixed_size) return FALSE;
++        const UBYTE *name = (const UBYTE *)entry->ed_Name;
++        const UBYTE *comment = (const UBYTE *)entry->ed_Comment;
++        if (!name || name < storage || name > end - 8 ||
++            !comment || comment < storage || comment >= end || comment[0] != 0 ||
++            entry->ed_Type != ST_FILE || entry->ed_Size != 0) return FALSE;
++        char bounded_name[8];
++        for (int i = 0; i < 7; i++) bounded_name[i] = (char)name[i];
++        bounded_name[7] = (char)name[7];
++        UBYTE number;
++        if (bounded_name[7] != 0 ||
++            !exallpack_item_number(bounded_name, &number) ||
++            !exallpack_consume_number(number, order, seen, position)) return FALSE;
++
++        struct ExAllData *next = entry->ed_Next;
++        if (n + 1 < entries) {
++            if (!next || (const UBYTE *)next < storage ||
++                (const UBYTE *)next > end - fixed_size) return FALSE;
++        } else if (next) {
++            return FALSE;
++        }
++        entry = next;
++    }
++    return entry == NULL && control->eac_LastKey == *position;
++}
++
++/* Preserve the original single-call packing regression alongside the mixed
++ * continuation oracle. */
++static BOOL exallpack_packed_oracle(BPTR lock, struct ExAllControl *control,
++                                    const UBYTE order[40])
++{
++    static ULONG storage[1024] EXALL_BUFFER;
++    UBYTE seen[40] = {0};
++    ULONG position = 0;
++    control->eac_MatchString = NULL;
++    control->eac_MatchFunc = NULL;
++    control->eac_LastKey = 0;
++    BOOL more = ExAll(lock, (struct ExAllData *)storage, sizeof(storage),
++                      ED_COMMENT, control);
++    LONG error = IoErr();
++    if (more) {
++        ExAllEnd(lock, (struct ExAllData *)storage, sizeof(storage),
++                 ED_COMMENT, control);
++        return FALSE;
++    }
++    return error == ERROR_NO_MORE_ENTRIES && control->eac_Entries == 40 &&
++           exallpack_check_batch((const UBYTE *)storage, sizeof(storage), control,
++                                 order, seen, &position) &&
++           position == 40 && all_seen(seen, 40);
++}
++
++/* On the same DOS lock, alternate bounded ExAll batches with ExNext. The
++ * continuation key means "entries consumed": ExNext must return the first
++ * item beyond the just-delivered ExAll batch. */
++static BOOL exallpack_mixed_oracle(BPTR lock, struct ExAllControl *control,
++                                   struct FileInfoBlock *fib,
++                                   const UBYTE order[40], UBYTE seen[40],
++                                   UBYTE *storage, ULONG storage_size,
++                                   BOOL *exall_pending)
++{
++    ULONG position = 0, batches = 0, overflow_batches = 0;
++    BOOL more;
++    if (!Examine(lock, fib) || !ExNext(lock, fib)) return FALSE;
++    UBYTE number;
++    if (!exallpack_item_number(fib->fib_FileName, &number) ||
++        !exallpack_consume_number(number, order, seen, &position) ||
++        position != 1 || (ULONG)fib->fib_DiskKey != position) return FALSE;
++
++    control->eac_MatchString = NULL;
++    control->eac_MatchFunc = NULL;
++    control->eac_LastKey = (ULONG)fib->fib_DiskKey;
++    do {
++        more = ExAll(lock, (struct ExAllData *)storage, storage_size,
++                     ED_COMMENT, control);
++        LONG error = IoErr();
++        *exall_pending = more;
++        batches++;
++        if (control->eac_Entries == 0) {
++            if (more || error != ERROR_NO_MORE_ENTRIES || position != 40 ||
++                control->eac_LastKey != 40) return FALSE;
++        } else if (!exallpack_check_batch(storage, storage_size, control,
++                                          order, seen, &position)) {
++            return FALSE;
++        }
++        if (!more) {
++            if (error != ERROR_NO_MORE_ENTRIES || position != 40) return FALSE;
++            break;
++        }
++        overflow_batches++;
++        if (position >= 40) return FALSE;
++
++        fib->fib_DiskKey = (LONG)control->eac_LastKey;
++        if (!ExNext(lock, fib)) return FALSE;
++        if (!exallpack_item_number(fib->fib_FileName, &number) ||
++            !exallpack_consume_number(number, order, seen, &position) ||
++            (ULONG)fib->fib_DiskKey != position) return FALSE;
++        control->eac_LastKey = (ULONG)fib->fib_DiskKey;
++    } while (batches <= 40);
++
++    if (more || batches <= 1 || overflow_batches == 0 || !all_seen(seen, 40))
++        return FALSE;
++    fib->fib_DiskKey = (LONG)control->eac_LastKey;
++    if (ExNext(lock, fib) || IoErr() != ERROR_NO_MORE_ENTRIES) return FALSE;
++    return TRUE;
++}
++
+ /* ExAll packs entries by the requested type and the real comment length,
+  * so 40 entries without comments fit one 4 KiB call with ED_COMMENT. */
+ static void test_exall_packing(void)
+ {
+     const char *T = "exallpack_50";
+     struct ExAllControl *control = AllocDosObject(DOS_EXALLCONTROL, NULL);
+-    BOOL ok = control && make_items("exallpack", 40);
++    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
++    static ULONG storage[32] EXALL_BUFFER;
++    BOOL ok = control && fib && make_items("exallpack", 40);
+     BPTR lock = ok ? Lock(vpath("exallpack"), SHARED_LOCK) : 0;
+     if (!lock) ok = FALSE;
++    BOOL exall_pending = FALSE;
++    UBYTE order[40], seen[40] = {0};
++    LONG original_size = 0, original_protection = 0, original_type = 0;
++    UWORD original_uid = 0, original_gid = 0;
++    struct DateStamp original_date = {0};
+     if (ok) {
+-        UBYTE seen[64] = {0};
+-        static ULONG storage[1024] EXALL_BUFFER;
+-        BOOL more = ExAll(lock, (struct ExAllData *)storage, 4096, ED_COMMENT, control);
+-        if (more) {
+-            ok = FALSE;
+-            ExAllEnd(lock, (struct ExAllData *)storage, 4096, ED_COMMENT, control);
++        ok = Examine(lock, fib);
++        if (ok) {
++            original_size = fib->fib_Size;
++            original_protection = fib->fib_Protection;
++            original_type = fib->fib_DirEntryType;
++            original_uid = fib->fib_OwnerUID;
++            original_gid = fib->fib_OwnerGID;
++            original_date = fib->fib_Date;
+         }
+-        if (ok) ok = IoErr() == ERROR_NO_MORE_ENTRIES && control->eac_Entries == 40;
+-        struct ExAllData *entry = (struct ExAllData *)storage;
+-        for (ULONG n = 0; ok && n < control->eac_Entries; n++, entry = entry->ed_Next) {
+-            ok = entry && mark_item((const char *)entry->ed_Name, 40, seen) &&
+-                 entry->ed_Type == ST_FILE && entry->ed_Size == 0 &&
+-                 entry->ed_Comment && entry->ed_Comment[0] == 0;
++        if (ok) ok = exallpack_collect_order(lock, fib, order);
++        if (ok) ok = exallpack_packed_oracle(lock, control, order);
++        if (ok) ok = exallpack_mixed_oracle(lock, control, fib, order, seen,
++                                            (UBYTE *)storage, sizeof(storage),
++                                            &exall_pending);
++        if (ok) {
++            ok = Examine(lock, fib) && fib->fib_Size == original_size &&
++                 fib->fib_Protection == original_protection &&
++                 fib->fib_DirEntryType == original_type &&
++                 fib->fib_OwnerUID == original_uid && fib->fib_OwnerGID == original_gid &&
++                 fib->fib_Date.ds_Days == original_date.ds_Days &&
++                 fib->fib_Date.ds_Minute == original_date.ds_Minute &&
++                 fib->fib_Date.ds_Tick == original_date.ds_Tick;
+         }
+-        if (ok) ok = all_seen(seen, 40);
+     }
++    if (exall_pending && lock && control) {
++        ExAllEnd(lock, (struct ExAllData *)storage, sizeof(storage),
++                 ED_COMMENT, control);
++    }
++    if (fib) FreeDosObject(DOS_FIB, fib);
+     if (lock) UnLock(lock);
+     if (control) FreeDosObject(DOS_EXALLCONTROL, control);
+     if (!remove_items("exallpack", 40)) ok = FALSE;
+-    if (ok) pass(T); else fail(T, "one packed call with every entry");
++    if (ok) pass(T); else fail(T, "packed/mixed ExAll, ExNext continuation, or metadata");
+ }
+ 
+ /* MakeLink passes a soft link's target as a C string. ReadLink returns it
+diff --git a/tools/fs-compare-bench.c b/tools/fs-compare-bench.c
+index 18efbb1..21d575b 100644
+--- a/tools/fs-compare-bench.c
++++ b/tools/fs-compare-bench.c
+@@ -17,6 +17,8 @@
+ #define LARGE_BYTES (8UL * 1024UL * 1024UL)
+ #define LIST_PASSES 10
+ #define LIST_BUFFER_BYTES 4096
++#define LIST_SEEN_WORDS 32
++#define LIST_MAX_COUNT 1000
+ #define APPEND_BLOCK_BYTES 4096
+ #define APPEND_BLOCK_TOTAL (1024UL * 1024UL)
+ #define APPEND_SMALL_BYTES 1024
+@@ -27,6 +29,9 @@ static struct timerequest *timer_request;
+ static BOOL timer_open;
+ static UBYTE *expected;
+ static UBYTE *received;
++static const char *listing_directory;
++static ULONG listing_expected_count;
++static ULONG listing_pass_count;
+ 
+ static ULONG text_length(const char *value)
+ {
+@@ -294,6 +299,17 @@ static void emit_deep_counter_rows(const char *phase,
+                     (unsigned long long)snapshot->lower##_sample_ticks);
+     BFS_PERF_CPU_SCOPES(BFS_EMIT_CPU_SCOPE)
+ #undef BFS_EMIT_CPU_SCOPE
++#define BFS_EMIT_LOOKUP_COUNTER(UPPER, lower) \
++    prefixed_metric(phase, #UPPER, snapshot->lower);
++    BFS_PERF_LOOKUP_COUNTERS(BFS_EMIT_LOOKUP_COUNTER)
++#undef BFS_EMIT_LOOKUP_COUNTER
++#define BFS_EMIT_DETAIL_SCOPE(UPPER, lower) \
++    prefixed_metric(phase, #UPPER "_CALLS", snapshot->lower##_calls); \
++    prefixed_metric(phase, #UPPER "_SAMPLES", snapshot->lower##_samples); \
++    prefixed_metric(phase, #UPPER "_SAMPLE_TICKS", \
++                    (unsigned long long)snapshot->lower##_sample_ticks);
++    BFS_PERF_DETAIL_SCOPES(BFS_EMIT_DETAIL_SCOPE)
++#undef BFS_EMIT_DETAIL_SCOPE
+ }
+ 
+ static BOOL make_path(char *path, ULONG capacity, const char *drive, const char *suffix)
+@@ -319,6 +335,48 @@ static BOOL small_path(char *path, ULONG capacity, const char *drive, ULONG inde
+     return TRUE;
+ }
+ 
++static BOOL listing_path(char *path, ULONG capacity, const char *drive,
++                         const char *directory, ULONG index)
++{
++    ULONG drive_length = text_length(drive);
++    ULONG directory_length = text_length(directory);
++    if (index >= LIST_MAX_COUNT || drive_length + directory_length + 6 > capacity)
++        return FALSE;
++    copy_bytes(path, drive, drive_length);
++    copy_bytes(path + drive_length, directory, directory_length);
++    path[drive_length + directory_length] = '/';
++    path[drive_length + directory_length + 1] = 'f';
++    path[drive_length + directory_length + 2] = (char)('0' + (index / 100) % 10);
++    path[drive_length + directory_length + 3] = (char)('0' + (index / 10) % 10);
++    path[drive_length + directory_length + 4] = (char)('0' + index % 10);
++    path[drive_length + directory_length + 5] = '\0';
++    return TRUE;
++}
++
++static BOOL checked_close(BPTR handle);
++
++static const char *create_listing_fixture(const char *drive, const char *directory,
++                                          ULONG expected_count)
++{
++    char path[128];
++    ULONG index;
++    BPTR lock;
++    if (expected_count == 0 || expected_count > LIST_MAX_COUNT ||
++        !make_path(path, sizeof(path), drive, directory)) return "listing-path";
++    lock = CreateDir(path);
++    if (!lock) return "listing-mkdir";
++    UnLock(lock);
++    for (index = 0; index < expected_count; index++) {
++        BPTR handle;
++        if (!listing_path(path, sizeof(path), drive, directory, index))
++            return "listing-path";
++        handle = Open(path, MODE_NEWFILE);
++        if (!handle) return "listing-open";
++        if (!checked_close(handle)) return "listing-close";
++    }
++    return NULL;
++}
++
+ static BOOL checked_close(BPTR handle)
+ {
+     return Close(handle) != 0;
+@@ -382,30 +440,32 @@ static const char *read_small_files(const char *drive)
+     return NULL;
+ }
+ 
+-/* Mark small file fNNN as listed; FALSE for another name or a repeat. */
+-static BOOL mark_listed(const char *name, ULONG seen[2])
++/* Mark an expected regular file fNNN; FALSE for wrong type/name or a repeat. */
++static BOOL mark_listed(const char *name, LONG type, ULONG expected_count,
++                        ULONG seen[LIST_SEEN_WORDS])
+ {
+     ULONG index;
+-    if (name[0] != 'f' || name[1] < '0' || name[1] > '9' || name[2] < '0' ||
++    if (type != ST_FILE || name[0] != 'f' || name[1] < '0' || name[1] > '9' || name[2] < '0' ||
+         name[2] > '9' || name[3] < '0' || name[3] > '9' || name[4] != '\0')
+         return FALSE;
+     index = (ULONG)(name[1] - '0') * 100 + (ULONG)(name[2] - '0') * 10 +
+             (ULONG)(name[3] - '0');
+-    if (index >= SMALL_COUNT || (seen[index / 32] & (1UL << (index % 32))))
++    if (index >= expected_count || (seen[index / 32] & (1UL << (index % 32))))
+         return FALSE;
+     seen[index / 32] |= 1UL << (index % 32);
+     return TRUE;
+ }
+ 
+-/* Every listing must return each small file exactly once. */
+-static const char *list_exnext(const char *drive)
++/* Every pass returns each expected regular file exactly once. */
++static const char *list_exnext_entries(const char *drive, const char *directory,
++                                       ULONG expected_count, ULONG pass_count)
+ {
+     char path[128];
+     const char *error = NULL;
+     ULONG pass;
+     BPTR lock;
+     struct FileInfoBlock *fib;
+-    if (!make_path(path, sizeof(path), drive, "perf")) return "path";
++    if (!make_path(path, sizeof(path), drive, directory)) return "path";
+     lock = Lock(path, SHARED_LOCK);
+     if (!lock) return "list-lock";
+     fib = AllocDosObject(DOS_FIB, NULL);
+@@ -413,21 +473,22 @@ static const char *list_exnext(const char *drive)
+         UnLock(lock);
+         return "list-allocation";
+     }
+-    for (pass = 0; pass < LIST_PASSES && !error; pass++) {
+-        ULONG seen[2] = {0, 0};
++    for (pass = 0; pass < pass_count && !error; pass++) {
++        ULONG seen[LIST_SEEN_WORDS] = {0};
+         ULONG count = 0;
+         if (!Examine(lock, fib)) {
+             error = "list-examine";
+             break;
+         }
+         while (ExNext(lock, fib)) {
+-            if (!mark_listed(fib->fib_FileName, seen)) {
++            if (!mark_listed(fib->fib_FileName, fib->fib_DirEntryType,
++                             expected_count, seen)) {
+                 error = "list-exnext-name";
+                 break;
+             }
+             count++;
+         }
+-        if (!error && (IoErr() != ERROR_NO_MORE_ENTRIES || count != SMALL_COUNT))
++        if (!error && (IoErr() != ERROR_NO_MORE_ENTRIES || count != expected_count))
+             error = "list-exnext-count";
+     }
+     FreeDosObject(DOS_FIB, fib);
+@@ -435,14 +496,21 @@ static const char *list_exnext(const char *drive)
+     return error;
+ }
+ 
+-static const char *list_exall(const char *drive)
++static const char *list_exnext(const char *drive)
++{
++    return list_exnext_entries(drive, listing_directory, listing_expected_count,
++                               listing_pass_count);
++}
++
++static const char *list_exall_entries(const char *drive, const char *directory,
++                                      ULONG expected_count, ULONG pass_count)
+ {
+     char path[128];
+     const char *error = NULL;
+     ULONG pass;
+     BPTR lock;
+     struct ExAllControl *control;
+-    if (!make_path(path, sizeof(path), drive, "perf")) return "path";
++    if (!make_path(path, sizeof(path), drive, directory)) return "path";
+     lock = Lock(path, SHARED_LOCK);
+     if (!lock) return "list-lock";
+     control = AllocDosObject(DOS_EXALLCONTROL, NULL);
+@@ -450,8 +518,8 @@ static const char *list_exall(const char *drive)
+         UnLock(lock);
+         return "list-allocation";
+     }
+-    for (pass = 0; pass < LIST_PASSES && !error; pass++) {
+-        ULONG seen[2] = {0, 0};
++    for (pass = 0; pass < pass_count && !error; pass++) {
++        ULONG seen[LIST_SEEN_WORDS] = {0};
+         ULONG count = 0;
+         BOOL more;
+         control->eac_LastKey = 0;
+@@ -466,7 +534,8 @@ static const char *list_exall(const char *drive)
+                 break;
+             }
+             for (index = 0; index < control->eac_Entries; index++) {
+-                if (!entry || !mark_listed((const char *)entry->ed_Name, seen)) {
++                if (!entry || !mark_listed((const char *)entry->ed_Name,
++                                           entry->ed_Type, expected_count, seen)) {
+                     error = "list-exall-name";
+                     break;
+                 }
+@@ -476,13 +545,19 @@ static const char *list_exall(const char *drive)
+         } while (more && !error);
+         if (more) ExAllEnd(lock, (struct ExAllData *)received, LIST_BUFFER_BYTES,
+                            ED_COMMENT, control);
+-        if (!error && count != SMALL_COUNT) error = "list-exall-count";
++        if (!error && count != expected_count) error = "list-exall-count";
+     }
+     FreeDosObject(DOS_EXALLCONTROL, control);
+     UnLock(lock);
+     return error;
+ }
+ 
++static const char *list_exall(const char *drive)
++{
++    return list_exall_entries(drive, listing_directory, listing_expected_count,
++                              listing_pass_count);
++}
++
+ static const char *write_large_file(const char *drive)
+ {
+     char path[128];
+@@ -644,6 +719,72 @@ static const char *run_phase(const char *drive, const char *phase,
+     return NULL;
+ }
+ 
++static const char *run_listing_pair(const char *drive, const char *directory,
++                                   ULONG expected_count, const char *first_phase,
++                                   const char *repeat_phase, workload_fn workload,
++                                   BOOL probe_enabled, ULONG *clock_hz)
++{
++    const char *error;
++    listing_directory = directory;
++    listing_expected_count = expected_count;
++    listing_pass_count = 1;
++    error = run_phase(drive, first_phase, "perf-reset-list", "timer-list-first",
++                      probe_enabled, FALSE, clock_hz, workload);
++    if (error) return error;
++    listing_pass_count = LIST_PASSES;
++    return run_phase(drive, repeat_phase, "perf-reset-list", "timer-list-repeat",
++                     probe_enabled, FALSE, clock_hz, workload);
++}
++
++static const char *run_listing_schema4(const char *drive, BOOL probe_enabled,
++                                       ULONG *clock_hz)
++{
++    struct listing_fixture {
++        const char *directory;
++        ULONG expected_count;
++        const char *first_phase;
++        const char *repeat_phase;
++        workload_fn workload;
++    };
++    static const struct listing_fixture fixtures[] = {
++        {"perf_exnext_40", 40, "LIST_EXNEXT_40_ENTRIES_FIRST_PASS",
++         "LIST_EXNEXT_40_ENTRIES_REPEAT10_TOTAL", list_exnext},
++        {"perf_exall_40", 40, "LIST_EXALL_40_ENTRIES_FIRST_PASS",
++         "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL", list_exall},
++        {"perf_exnext_400", 400, "LIST_EXNEXT_400_ENTRIES_FIRST_PASS",
++         "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL", list_exnext},
++        {"perf_exall_400", 400, "LIST_EXALL_400_ENTRIES_FIRST_PASS",
++         "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL", list_exall},
++        {"perf_exnext_1000", 1000, "LIST_EXNEXT_1000_ENTRIES_FIRST_PASS",
++         "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL", list_exnext},
++        {"perf_exall_1000", 1000, "LIST_EXALL_1000_ENTRIES_FIRST_PASS",
++         "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL", list_exall},
++    };
++    ULONG index;
++    const char *error;
++
++    /* Setup is intentionally outside all listing timers. Creating these
++     * files may warm metadata; host/device cache state is not controlled. */
++    for (index = 0; index < sizeof(fixtures) / sizeof(fixtures[0]); index++) {
++        error = create_listing_fixture(drive, fixtures[index].directory,
++                                       fixtures[index].expected_count);
++        if (error) return error;
++    }
++    error = flush_volume(drive);
++    if (error) return error;
++
++    for (index = 0; index < sizeof(fixtures) / sizeof(fixtures[0]); index++) {
++        error = run_listing_pair(drive, fixtures[index].directory,
++                                 fixtures[index].expected_count,
++                                 fixtures[index].first_phase,
++                                 fixtures[index].repeat_phase,
++                                 fixtures[index].workload, probe_enabled,
++                                 clock_hz);
++        if (error) return error;
++    }
++    return NULL;
++}
++
+ static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
+                BOOL probe_enabled)
+ {
+@@ -655,9 +796,9 @@ static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
+     handle = CreateDir(path);
+     if (!handle) return fail("mkdir");
+     UnLock(handle);
+-    if (deep_mode) emit("FS_DEEP_COMPARE\t11\nDRIVE\t");
+-    else if (durable_mode) emit("FS_DURABLE_COMPARE\t3\nDRIVE\t");
+-    else emit("FS_COMPARE_BENCH\t3\nDRIVE\t");
++    if (deep_mode) emit("FS_DEEP_COMPARE\t13\nDRIVE\t");
++    else if (durable_mode) emit("FS_DURABLE_COMPARE\t4\nDRIVE\t");
++    else emit("FS_COMPARE_BENCH\t4\nDRIVE\t");
+     emit(drive);
+     emit("\n");
+     error = run_phase(drive, "SMALL_CREATE_40", "perf-reset-create", "timer-create",
+@@ -669,8 +810,13 @@ static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
+     error = run_phase(drive, "SMALL_READ_40", "perf-reset-small-read", "timer-small-read",
+                       probe_enabled, FALSE, &clock_hz, read_small_files);
+     if (error) return fail(error);
+-    /* The deep profile keeps its phase schema; listings are compared only. */
++    /* Legacy small-directory listing rows remain in the normal compare output.
++     * Deep schemas 12/13 profile scaled fixtures after the six established
++     * phases. */
+     if (!deep_mode) {
++        listing_directory = "perf";
++        listing_expected_count = SMALL_COUNT;
++        listing_pass_count = LIST_PASSES;
+         error = run_phase(drive, "LIST_EXNEXT_400", "perf-reset-list", "timer-list-exnext",
+                           FALSE, FALSE, &clock_hz, list_exnext);
+         if (error) return fail(error);
+@@ -688,23 +834,25 @@ static int run(const char *drive, BOOL deep_mode, BOOL durable_mode,
+                       probe_enabled, durable_mode, &clock_hz, delete_small_files);
+     if (error) return fail(error);
+     /* Schema 3 appends growth in small steps after the earlier phases, so
+-     * those run on the same volume state as before. */
+-    if (!deep_mode) {
+-        error = run_phase(drive, "APPEND_4K_1M", "perf-reset-append", "timer-append-4k",
+-                          FALSE, durable_mode, &clock_hz, append_block_file);
+-        if (error) return fail(error);
+-        error = run_phase(drive, "APPEND_1K_256K", "perf-reset-append", "timer-append-1k",
+-                          FALSE, durable_mode, &clock_hz, append_small_file);
+-        if (error) return fail(error);
+-        error = run_phase(drive, "APPEND_READ_1280K", "perf-reset-append",
+-                          "timer-append-read", FALSE, FALSE, &clock_hz,
+-                          read_appended_files);
+-        if (error) return fail(error);
+-    }
++     * those run on the same volume state as before. Deep schemas 12/13 repeat
++     * those workloads with the internal probe enabled. */
++    error = run_phase(drive, "APPEND_4K_1M", "perf-reset-append", "timer-append-4k",
++                      probe_enabled, durable_mode, &clock_hz, append_block_file);
++    if (error) return fail(error);
++    error = run_phase(drive, "APPEND_1K_256K", "perf-reset-append", "timer-append-1k",
++                      probe_enabled, durable_mode, &clock_hz, append_small_file);
++    if (error) return fail(error);
++    error = run_phase(drive, "APPEND_READ_1280K", "perf-reset-append",
++                      "timer-append-read", probe_enabled, FALSE, &clock_hz,
++                      read_appended_files);
++    if (error) return fail(error);
++    error = run_listing_schema4(drive, probe_enabled, &clock_hz);
++    if (error) return fail(error);
+     if (probe_enabled) {
+         metric("CLOCK_HZ", clock_hz);
+         metric("CRC_SAMPLE_STRIDE", BFS_PERF_CRC_SAMPLE_STRIDE);
+         metric("CPU_SAMPLE_STRIDE", BFS_PERF_CPU_SAMPLE_STRIDE);
++        metric("DETAIL_SAMPLE_STRIDE", BFS_PERF_DETAIL_SAMPLE_STRIDE);
+     }
+     emit("PASS\t1\n");
+     return 0;

@@ -1,0 +1,10 @@
+test_duplicate_pass_and_wrong_schema_rejected (__main__.SummaryOracles.test_duplicate_pass_and_wrong_schema_rejected) ... ok
+test_exact_inventory_and_all_installed_copies (__main__.SummaryOracles.test_exact_inventory_and_all_installed_copies) ... ok
+test_missing_and_duplicate_inventory_rejected (__main__.SummaryOracles.test_missing_and_duplicate_inventory_rejected) ... ok
+test_wrong_actual_buffer_capacity_rejected (__main__.SummaryOracles.test_wrong_actual_buffer_capacity_rejected) ... ok
+test_wrong_installed_handler_rejected (__main__.SummaryOracles.test_wrong_installed_handler_rejected) ... ok
+
+----------------------------------------------------------------------
+Ran 5 tests in 0.034s
+
+OK

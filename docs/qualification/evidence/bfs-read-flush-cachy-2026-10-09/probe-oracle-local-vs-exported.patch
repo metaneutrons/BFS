@@ -1,0 +1,61 @@
+--- docs/qualification/evidence/bfs-read-flush-cachy-2026-10-09/protocol/tests/test_perf_probe.exported.c	2026-10-09 19:49:14.036251600 +0200
++++ tests/test_perf_probe.c	2026-10-09 19:04:12.538562983 +0200
+@@ -312,6 +312,15 @@
+ 
+     bfs_perf_probe_snapshot_t *counters = &bfs_perf_probe_counters;
+     TEST_ASSERT(counters->deferred_node_writes > 0);
++    TEST_ASSERT(counters->node_crc_write_calls > 0);
++    TEST_ASSERT_EQ(counters->node_crc_read_samples,
++                   counters->node_crc_read_calls / BFS_PERF_CRC_SAMPLE_STRIDE);
++    TEST_ASSERT_EQ(counters->node_crc_write_samples,
++                   counters->node_crc_write_calls / BFS_PERF_CRC_SAMPLE_STRIDE);
++    TEST_ASSERT_EQ(counters->node_crc_read_sample_ticks,
++                   (uint64_t)counters->node_crc_read_samples * 5u);
++    TEST_ASSERT_EQ(counters->node_crc_write_sample_ticks,
++                   (uint64_t)counters->node_crc_write_samples * 5u);
+     TEST_ASSERT_EQ(counters->free_tree_node_writes + counters->dir_tree_node_writes +
+                    counters->inode_tree_node_writes +
+                    counters->refcount_tree_node_writes +
+@@ -347,6 +356,36 @@
+     unlink(TEST_IMG);
+ }
+ 
++static void test_uncached_crc_sampling_stride(void)
++{
++    unlink(TEST_IMG);
++    bfs_bio_t *device = bio_emu_create(TEST_IMG, BLOCK_SIZE, BLOCK_COUNT);
++    TEST_ASSERT(device != NULL);
++    TEST_ASSERT_EQ(bfs_fs_format(device, "CrcStride", 0), BFS_OK);
++    start_probe();
++    bfs_fs_t fs;
++    TEST_ASSERT_EQ(bfs_fs_mount(&fs, device), BFS_OK);
++    bfs_perf_probe_fs = &fs;
++    uint32_t ino;
++    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, BFS_ROOT_INO, "stride", 6, &ino), BFS_OK);
++    bfs_perf_probe_snapshot_t *counters = &bfs_perf_probe_counters;
++    TEST_ASSERT(counters->node_crc_read_calls > 0);
++    TEST_ASSERT(counters->node_crc_write_calls > 0);
++    TEST_ASSERT_EQ(counters->node_crc_read_samples,
++                   counters->node_crc_read_calls / BFS_PERF_CRC_SAMPLE_STRIDE);
++    TEST_ASSERT_EQ(counters->node_crc_write_samples,
++                   counters->node_crc_write_calls / BFS_PERF_CRC_SAMPLE_STRIDE);
++    TEST_ASSERT_EQ(counters->node_crc_read_sample_ticks,
++                   (uint64_t)counters->node_crc_read_samples * 5u);
++    TEST_ASSERT_EQ(counters->node_crc_write_sample_ticks,
++                   (uint64_t)counters->node_crc_write_samples * 5u);
++    bfs_perf_probe_fs = NULL;
++    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
++    stop_probe();
++    bfs_bio_close(device);
++    unlink(TEST_IMG);
++}
++
+ TEST_SUITE_BEGIN("Performance probe host oracles")
+     setbuf(stdout, NULL);
+     TEST_RUN(test_detail_sampling_disabled_tree_and_reset);
+@@ -354,4 +393,5 @@
+     TEST_RUN(test_direct_and_deferred_tree_attribution);
+     TEST_RUN(test_expected_level_node_view_accounting);
+     TEST_RUN(test_filesystem_cache_finalizes_deferred_nodes);
++    TEST_RUN(test_uncached_crc_sampling_stride);
+ TEST_SUITE_END()

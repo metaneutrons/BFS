@@ -1,0 +1,4 @@
+Directory "smoke:" on Compat:
+  cli-file                
+  cli-dir                 (dir)
+2 entries

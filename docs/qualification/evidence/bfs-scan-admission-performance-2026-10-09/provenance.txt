@@ -1,0 +1,56 @@
+BFS scan admission experiment, 2026-10-09
+
+Primary checkout: /Volumes/Dev/Source/Amiga/BFS
+Branch: fix/metadata-listing-performance
+Git base: 07216b7f17912c9f28b9b4a920caaa6828b00ccb
+The baseline is the pre-candidate dirty M5 tree, not the Git base.
+
+Isolated Cachy workspace:
+/home/fabian/.cache/bfs-performance/scan-admission-2026-10-09.VxOoB5
+Frozen baseline/ and candidate/ exports include preexisting local changes.
+Exported-file inventories exclude build/ and docs/qualification/evidence/.
+The candidate production/probe binaries are in the workspace parent;
+candidate/build/inputs/ holds the M5 production/probe and shared guest.
+Binary/ROM/Workbench/HDF inputs remain outside repository evidence.
+
+Timing inventory: four normal schema4 pilots and four ABI16/schema15 deep
+comparisons. The unchanged formatter, shared guest and PFS3 handler serve both
+variants. Each variant runs BFS-first once and PFS3-first once. Actual RDB
+de_NumBuffers=30 is verified, not inferred from the environment default.
+Installed input digests are captured after each completed series.
+No heavy Cachy build or test overlaps the eight timed runs.
+
+Candidate tests: initial host/SAN logs contain 566 preexisting tests in 60
+suites each. admission-host-final.log contains all 578 tests in 61 suites.
+admission-san-final.log contains 577 tests: its allocation-fault executable
+was stale because copied source mtime preceded that cached executable.
+The forced -B allocation-fault rebuild and full sanitizer rerun are retained
+in admission-san-corrected.log, which passes all 578 tests in 61 suites.
+Corrected/restored sanitizer runs enable leak detection and halt-on-error.
+Fresh frozen-baseline host and SAN builds each pass 566 tests in 60 suites.
+No measured handler binary is taken from these host test build directories.
+
+Restoration: candidate.patch preserves exactly six core/header and two test
+file changes. Seven existing files compare byte-for-byte with their frozen
+pre-candidate copies; tests/test_scan_admission.c is removed from the live
+checkout but remains in the patch. The patch passes an apply check against
+the restored checkout. Production, ABI16 probe and guest rebuilds match the
+retained M5/ABI16/guest identities in restored-inputs.sha256.
+
+Earlier evidence manifests verified unchanged, with these file counts:
+873 bfs-metadata-listing-2026-10-08
+103 bfs-listing-detail-2026-10-08
+1146 bfs-leaf-range-performance-2026-10-08
+654 bfs-exact-key-fastpath-2026-10-09
+190 bfs-cursor-path-performance-2026-10-09
+141 bfs-scan-cache-performance-2026-10-09
+All 3107 manifest entries pass. Verification logs remain in the ignored
+primary checkout build/ directory, rather than duplicating old raw bundles.
+
+The default 40-run verifier fails deliberately because no full normal/durable
+series was started. Pilot/deep selections independently verify every required
+run without filtering. All 12 summary rejection oracles pass. Format progress
+logs use lossless base64 text with original-byte digests; TSVs are unchanged.
+All bundle files except ignored Python bytecode pass the repository asset audit.
+No emulator remains. snapdog-runner.service is inactive. No commit, push,
+merge or remote CI is started. Format v3 and durability guarantees are unchanged.

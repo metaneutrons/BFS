@@ -1,0 +1,46 @@
+Independent Luna review of the candidate core
+
+The optional BIO wrapper no-ops for a missing hook or an out-of-range block.
+Cache advice marks only clean resident slots and changes no bytes, validation
+state, dirty state or mutation epoch. Replacement skips dirty slots before
+applying cold priority. Demand reads/peeks, slot reassignment, writes, dirty
+modification/write-back and invalidation clear the priority flag.
+
+Scans record the physical leaf during descent/next-leaf traversal and advise
+only after a private copy and before callbacks. Cursor-only copies are
+excluded. Consumed leaves save their last key before advice. No supported-use
+correctness defect was found. This is replacement after admission: a first
+miss can still evict the ordinary LRU victim. Existing explicit discard,
+invalidation and failed-write paths are unchanged.
+
+Independent Luna review of the probe producer and summary
+
+ABI16 appends eight ULONG counters and the guest checks both version and
+size. Classification uses expected traversal level before level validation,
+not the node's unchecked stored level or a CPU-time estimate. Positive hint
+peeks remain outside node_view. Schema15 counter order matches the verifier;
+normal/durable schema4 workloads remain unchanged. PFS deep output is timing
+only. All six expected runtime digests match root checks.
+
+The summary requires exact run inventory, installed input digest map, one
+BFS0 partition at 30 buffers, strict repository verification, matching positive
+phase inventories and same-repeat/order pairs. No filtering was found.
+An undefined fixture constant was corrected after root reproduced two oracle
+errors. Eleven final tests pass, including unexpected-directory rejection and
+positive paired-output coverage added following review. Default inventory
+rejects the 32 missing qualification runs. Separate pilot/deep selections
+verify all 8 completed runs, but do not establish full qualification.
+
+Final independent report audit
+
+Timing medians/ranges, slower-pair counts, PFS3 ranges and the deep read/CRC/
+view table match strict summaries and both raw orders. Restored logs confirm
+566 tests/60 suites each; binary hashes and measured sizes match the report.
+The operations-table growth from 20 to 24 bytes is now also stated.
+
+One proposed wording correction confused nonresident-view differences with
+total views. Root checked exact raw keys: ExAll1000 M5 has 560 inode-internal
+views/560 resident; candidate has521/521, in both orders. The reviewer
+confirmed the mistake and withdrew that finding. Zero internal misses does
+not mean zero internal views. The report now explicitly limits its residency
+statement to the observed inode-internal views in the repeated phases shown.

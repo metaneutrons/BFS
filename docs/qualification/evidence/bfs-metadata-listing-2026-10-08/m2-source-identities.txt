@@ -1,0 +1,10 @@
+86e5f072feeebe2d4805184c5466de2b8f47ef86eb80fb396bc3d18fe273f2f4  build/perf-2026-10-08/m2-src.5scbGt/include/bfs_bio.h
+0107b545c432e202c4d72407ebd4ed78c635c190278d5738ed620f121c20465c  build/perf-2026-10-08/m2-src.5scbGt/include/bfs_btree.h
+e9fe6d4f7a76a2ef94c7b88ffd859c76c0617013590ebfb25f3998e08e344f92  build/perf-2026-10-08/m2-src.5scbGt/include/bfs_cache.h
+0fe71a358c483508adf38c25457c51fc1b347eac0f5d5e900c1ef6217af43f34  build/perf-2026-10-08/m2-src.5scbGt/include/bfs_fs.h
+b6f983d34a87712c1c55b4c3b284399dedda3f7a24cf6cd2a35650b5c5fb429f  build/perf-2026-10-08/m2-src.5scbGt/src/core/btree.c
+f0da1e1e9bc7317ab527bf301830d0ce2e245fddb81a824e6dc943a274504f10  build/perf-2026-10-08/m2-src.5scbGt/src/core/cache.c
+c5ea12203b67dc10d11cb4b43de18ca0a8ac03dce2ff31d9e721c7bdaf432f31  build/perf-2026-10-08/m2-src.5scbGt/src/core/fs.c
+4021ee0051f8cbfc32ea8e7aebb4d9c63b6ceb9128ccf8b13c4dcd989480beff  build/perf-2026-10-08/m2-src.5scbGt/src/core/file.c
+798d411aa8d38f63bcb0cf315dfd2ab02983350fd58e2638cc119e133cc80b52  build/perf-2026-10-08/listing-guest/fs-compare-bench
+9895eb1a5a30ef8710decb0f5a7ce61e7a1d82f06754f3680964c07fac659b1e  tests/test_inode_lookup_hints.c

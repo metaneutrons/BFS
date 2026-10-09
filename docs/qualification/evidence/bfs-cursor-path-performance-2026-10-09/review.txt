@@ -1,0 +1,39 @@
+Independent Luna review and primary integration, 2026-10-09
+
+The reviewer did not author the cursor-path code or focused tests. Static
+review found no supported-use reachability, epoch, stop-index, leaf-boundary,
+callback-mutation or maximum-depth defect. Saved coordinates contain no node
+images or borrowed pointers; ordinary validated parent/leaf access remains.
+The documented mount/BIO lifetime must still be respected. In-place backend,
+layout or geometry rebinding while keeping root/generation/epoch equal is
+unsupported and is not made safe by a path guard checked only at the boundary.
+
+The 30-buffer positive oracle compares a retained path with a forced pathless
+cursor and checks expected next entry plus complete ordered enumeration.
+Its counter combines cache read_block and peek_valid_node calls, not device
+reads or elapsed time. The retained cursor runs first on the same live cache;
+physical-read claims use the separate identified diagnostic runs instead.
+The four corrupted saved-path guard cases preserve expected next-entry output.
+
+Summary review confirms the strict 40-run default inventory and explicit
+4-pilot / 4-deep / 32-production selections; no PASS/outlier filtering.
+Both unique DH1 and BFS0 checks require actual num_buffer=30. Primary
+integration corrected pilot/probe digest mapping before real qualification;
+the independent production/probe hash oracle now passes. Deep ABI15 is bound
+by exact handler/guest hashes; there is no separate ABI15 TSV field.
+
+Candidate correctness: 568 host and 568 ASan/UBSan tests, 60 suites each.
+Exploratory measurement: all four production pilots and all four deep runs
+verify, with complete identities and unchanged schema4/schema14 verifier.
+More directory views are avoided, but both deep repeats add20 device reads
+and CRC computations in the large repeated phases. This is not sufficient
+locality improvement. The small repeated ExAll pilot has both pairs slower.
+Decision: reject standalone candidate, preserve all raw evidence, do not start
+full production qualification, restore only its three source/test edits.
+
+Final independent report audit finds no numerical error or scope overclaim.
+Pilot ratios and slow-pair counts match the strict summary. Both deep orders
+match the stated view/residency/read/CRC counts. BIO_READS counts Amiga DoIO
+read operations, not host-disk I/O. Timing-ratio wording is clarified in the
+report. The exploratory two-pair scope and missing full qualification remain
+explicit.

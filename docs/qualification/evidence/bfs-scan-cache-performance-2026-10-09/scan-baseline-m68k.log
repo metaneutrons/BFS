@@ -1,0 +1,12 @@
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -Wframe-larger-than=16384 -O2 -m68020 -noixemul -fomit-frame-pointer -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include -o build/perf-2026-10-09/scan-baseline/bfshandler \
+		src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s src/amiga/handler.c src/amiga/amiga_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c \
+		-nostdlib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib -lamiga -lgcc -lnix -s
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -Wframe-larger-than=16384 -O2 -m68020 -noixemul -fomit-frame-pointer -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include -DBFS_PERF_PROBE=1 -o build/perf-2026-10-09/scan-baseline/bfshandler-probe \
+		src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s src/amiga/handler.c src/amiga/amiga_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c src/amiga/perf_probe.c \
+		-nostdlib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib -lamiga -lgcc -lnix -s
+m68k-amigaos-gcc -std=c99 -Wall -Wextra -Werror -Wno-pointer-sign -Wframe-larger-than=16384 -noixemul -m68020 -O2 \
+		-Isrc/amiga \
+		-I/opt/homebrew/opt/amiga-gcc/m68k-amigaos/ndk-include \
+		-B/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib/ \
+		-L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/libnix/lib -L/opt/homebrew/opt/amiga-gcc/m68k-amigaos/lib \
+		-o build/perf-2026-10-09/scan-baseline/fs-compare-bench tools/fs-compare-bench.c -lamiga

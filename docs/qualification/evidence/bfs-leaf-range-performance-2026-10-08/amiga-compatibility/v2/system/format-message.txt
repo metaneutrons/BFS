@@ -1,0 +1,5 @@
+BFS format version 2 is not supported.
+This driver supports version 3.
+Copy the data with a compatible driver, then format.
+Formatting DH1: as "Test"...
+Format complete.

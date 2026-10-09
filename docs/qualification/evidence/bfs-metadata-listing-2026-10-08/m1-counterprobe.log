@@ -1,0 +1,8 @@
+  FAIL: tests/test_file_inode_reuse.c:283: operation_comparisons == 6, expected 4
+=== File Inode Reuse ===
+  test_repeated_appends_from_two_stale_handles       OK
+  test_stamped_write_preserves_current_metadata_and_comment OK
+  test_stamped_write_to_open_unlinked_inode          OK
+  test_write_reuses_the_refresh_inode_lookup         FAILED
+
+3 passed, 1 failed

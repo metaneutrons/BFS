@@ -1,0 +1,3 @@
+glib-pacrunner.service                             static    -
+actions.runner.metaneutrons-snapdog-os.cachy.service disabled        disabled
+gitlab-runner.service                                disabled        disabled

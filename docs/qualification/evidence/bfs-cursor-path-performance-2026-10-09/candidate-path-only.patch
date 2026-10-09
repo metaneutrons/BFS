@@ -1,0 +1,622 @@
+--- a/include/bfs_btree.h
++++ b/include/bfs_btree.h
+@@ -305,7 +305,14 @@
+ bfs_err_t bfs_btree_scan(bfs_btree_t *tree, const void *start_key,
+                            bfs_scan_cb cb, void *ctx);
+ 
+-/* A copy of the leaf a scan last copied, for resuming without a descent. */
++/* Parent locations, not node images or borrowed BIO pointers. */
++typedef struct {
++    bfs_blk_t blk[BFS_BTREE_MAX_DEPTH];
++    uint32_t idx[BFS_BTREE_MAX_DEPTH];
++    uint32_t depth;
++} bfs_btree_scan_path_t;
++
++/* A copy of the leaf a scan last copied, with a guarded parent path. */
+ typedef struct {
+     // cppcheck-suppress unusedStructMember
+     const bfs_btree_t *tree;
+@@ -325,6 +332,13 @@
+     bool stopped;
+     // cppcheck-suppress unusedStructMember
+     bool valid;
++    bfs_btree_scan_path_t path;
++    const bfs_bio_t *path_bio;
++    const bfs_btree_ops_t *path_ops;
++    uint32_t path_block_size;
++    uint32_t path_block_count;
++    uint32_t path_height;
++    bool path_valid;
+ } bfs_btree_cursor_t;
+ 
+ void bfs_btree_cursor_init(bfs_btree_cursor_t *cursor);
+@@ -336,8 +350,11 @@
+  * and last keys: in a B+tree every key of that range is in that leaf. If
+  * start_key equals the entry at which a callback stopped the previous scan,
+  * that entry is the start without a search. The scan leaves its last copied
+- * leaf in the cursor. NULL behaves as bfs_btree_scan; failing to allocate
+- * the copy only costs the shortcut. */
++ * leaf in the cursor. With a current, available BIO mutation epoch, the
++ * saved parent path also avoids re-descending at a leaf boundary. Each parent
++ * and next leaf still go through ordinary validated node access. Missing or
++ * stale path guards retain the root-descent fallback. NULL behaves as
++ * bfs_btree_scan; failing to allocate the copy only costs the shortcut. */
+ bfs_err_t bfs_btree_scan_cursor(bfs_btree_t *tree, bfs_btree_cursor_t *cursor,
+                                 const void *start_key, bfs_scan_cb cb, void *ctx);
+ 
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -2240,11 +2240,7 @@
+ /* ── Scan ──────────────────────────────────────────────────── */
+ 
+ /* Inner nodes from the root to the current leaf and the child taken in each. */
+-typedef struct {
+-    bfs_blk_t blk[MAX_TREE_DEPTH];
+-    uint32_t idx[MAX_TREE_DEPTH];
+-    uint32_t depth;
+-} scan_path_t;
++typedef bfs_btree_scan_path_t scan_path_t;
+ 
+ /* Descend to the leaf where key belongs, or to the leftmost leaf for NULL,
+  * and record the path. Inner nodes are only viewed. *leaf is a view that the
+@@ -2368,6 +2364,34 @@
+     return true;
+ }
+ 
++/* Only reuse reachability recorded under an available unchanged epoch. A
++ * legacy keyed cursor without an epoch may reuse its leaf, but must obtain a
++ * new root path before crossing the boundary. Geometry and backend/layout
++ * identity are part of the path token, not inferred from the tree address. */
++static bool cursor_path_current(const bfs_btree_t *tree,
++                                 const bfs_btree_cursor_t *cursor)
++{
++    uint64_t epoch;
++    if (!cursor->path_valid || !cursor->mutation_epoch_valid ||
++        cursor->path_bio != tree->bio || cursor->path_ops != tree->ops ||
++        cursor->path_height != tree->height ||
++        cursor->path_block_size != tree->bio->block_size ||
++        cursor->path_block_count != tree->bio->block_count ||
++        !bfs_bio_get_mutation_epoch(tree->bio, &epoch) ||
++        epoch != cursor->mutation_epoch ||
++        cursor->path.depth != tree->height - 1)
++        return false;
++    if (cursor->path.depth > 0 && cursor->path.blk[0] != tree->root)
++        return false;
++    for (uint32_t d = 0; d < cursor->path.depth; d++) {
++        if (cursor->path.blk[d] == BFS_BLK_NULL ||
++            cursor->path.blk[d] >= tree->bio->block_count ||
++            cursor->path.idx[d] > internal_max_keys(tree))
++            return false;
++    }
++    return true;
++}
++
+ /* True if the cursor's copy is the current leaf that holds key. */
+ static bool cursor_covers(const bfs_btree_t *tree, const bfs_btree_cursor_t *cursor,
+                           const void *key)
+@@ -2457,11 +2481,12 @@
+     uint8_t *buf = alloc_buf(tree);
+     if (!buf) return BFS_ERR_NOMEM;
+     uint8_t *last = NULL;
+-    scan_path_t path;
++    scan_path_t local_path;
++    scan_path_t *path = cursor ? &cursor->path : &local_path;
+     uint8_t *leaf = NULL;
+     uint32_t idx = 0;
+-    /* A leaf taken from the cursor has no recorded path from the root. */
+     bool have_path = true;
++    bool saved_path = false;
+     bfs_err_t err = BFS_OK;
+     bool positioned = false;
+     if (resume_exclusive) {
+@@ -2469,19 +2494,23 @@
+          * existing traversal loop so leaf-boundary and mutation recovery
+          * continue to use the same path as ordinary scans. */
+         leaf = cursor->leaf;
+-        have_path = false;
++        have_path = cursor->path_valid;
++        saved_path = true;
+         idx = cursor->stop_index + 1;
+         positioned = true;
+     } else if (cursor && start_key && cursor_stopped_at(tree, cursor, start_key)) {
+         leaf = cursor->leaf;
+-        have_path = false;
++        have_path = cursor->path_valid;
++        saved_path = true;
+         idx = cursor->stop_index;
+         positioned = true;
+     } else if (cursor && start_key && cursor_covers(tree, cursor, start_key)) {
+         leaf = cursor->leaf;
+-        have_path = false;
++        have_path = cursor->path_valid;
++        saved_path = true;
+     } else {
+-        err = scan_descend(tree, start_key, buf, &path, &leaf);
++        if (cursor) cursor->path_valid = false;
++        err = scan_descend(tree, start_key, buf, path, &leaf);
+     }
+     if (cursor) cursor->stopped = false;
+     if (err == BFS_OK && start_key && !positioned) {
+@@ -2514,6 +2543,17 @@
+                 cursor->mutation_epoch = scan_epoch;
+                 cursor->mutation_epoch_valid = scan_epoch_valid;
+                 cursor->valid = true;
++                /* An inherited path keeps its original identity until it is
++                 * checked at the boundary; do not bless it after a backend
++                 * or geometry change merely by copying the same old leaf. */
++                if (!saved_path) {
++                    cursor->path_bio = tree->bio;
++                    cursor->path_ops = tree->ops;
++                    cursor->path_height = tree->height;
++                    cursor->path_block_size = tree->bio->block_size;
++                    cursor->path_block_count = tree->bio->block_count;
++                    cursor->path_valid = have_path && scan_epoch_valid;
++                }
+             }
+             uint32_t generation = tree->generation;
+             bool stopped = false;
+@@ -2545,23 +2585,31 @@
+             }
+             memcpy(last, node_key(tree, leaf, reached - 1), tree->ops->key_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+         }
+-        if (changed && cursor) cursor->valid = false;
++        if (changed && cursor) {
++            cursor->valid = false;
++            cursor->path_valid = false;
++        }
++        if (!changed && saved_path && have_path)
++            have_path = cursor_path_current(tree, cursor);
+         if (changed || !have_path) {
+             /* A callback changed the tree, or the leaf came from the cursor:
+              * find the place after last from the root. */
+-            err = scan_descend(tree, last, buf, &path, &leaf);
++            err = scan_descend(tree, last, buf, path, &leaf);
+             if (err != BFS_OK) break;
+             have_path = true;
++            saved_path = false;
+             bool found;
+             idx = node_search(tree, leaf, last, &found);
+             if (found) idx++;
+             continue;
+         }
+-        err = scan_next_leaf(tree, buf, &path, &leaf);
++        err = scan_next_leaf(tree, buf, path, &leaf);
++        saved_path = false;
+         idx = 0;
+     }
+     free(last);
+     free_buf(tree, buf);
++    if (cursor && (err != BFS_OK || !leaf)) cursor->path_valid = false;
+     return err;
+ }
+ 
+--- a/tests/test_dir_exclusive_cursor.c
++++ b/tests/test_dir_exclusive_cursor.c
+@@ -67,10 +67,19 @@
+     bfs_err_t write_error;
+ } invalidate_callback_ctx_t;
+ 
++typedef struct {
++    bfs_btree_cursor_t *cursor;
++    scan_log_t *log;
++} leaf_end_scan_ctx_t;
++
+ static scan_entry_t expected_entries[CURSOR_ENTRY_COUNT];
+ static scan_entry_t resumed_entries[CURSOR_ENTRY_COUNT];
+ static uint32_t compare_calls;
+ static const bfs_btree_ops_t *compare_base_ops;
++static bfs_bio_t *read_counter_target;
++static const bfs_bio_ops_t *read_counter_base_ops;
++static bfs_bio_ops_t read_counter_ops;
++static uint32_t read_counter_calls;
+ 
+ static int counted_dir_compare(const void *left, const void *right)
+ {
+@@ -78,13 +87,50 @@
+     return compare_base_ops->key_compare(left, right);
+ }
+ 
++static bfs_err_t counted_bio_read(bfs_bio_t *bio, bfs_blk_t blk,
++                                  void *buffer)
++{
++    (void)bio;
++    read_counter_calls++;
++    return read_counter_base_ops->read_block(read_counter_target, blk, buffer);
++}
++
++static const void *counted_valid_node_peek(
++    bfs_bio_t *bio, bfs_blk_t blk, const bfs_node_validation_t *context)
++{
++    (void)bio;
++    read_counter_calls++;
++    return read_counter_base_ops->peek_valid_node(read_counter_target, blk,
++                                                   context);
++}
++
++static void install_bio_read_counter(bfs_bio_t *bio)
++{
++    read_counter_target = bio;
++    read_counter_base_ops = bio->ops;
++    read_counter_ops = *read_counter_base_ops;
++    read_counter_ops.read_block = counted_bio_read;
++    if (read_counter_ops.peek_valid_node)
++        read_counter_ops.peek_valid_node = counted_valid_node_peek;
++    read_counter_calls = 0;
++    bio->ops = &read_counter_ops;
++}
++
++static void remove_bio_read_counter(bfs_bio_t *bio)
++{
++    bio->ops = read_counter_base_ops;
++    read_counter_target = NULL;
++    read_counter_base_ops = NULL;
++}
++
+ static uint64_t saturated_epoch(bfs_bio_t *bio)
+ {
+     (void)bio;
+     return UINT64_MAX;
+ }
+ 
+-static bool fixture_open(cursor_fixture_t *fixture)
++static bool fixture_open_with_slots(cursor_fixture_t *fixture,
++                                    uint32_t cache_slots)
+ {
+     memset(fixture, 0, sizeof(*fixture));
+     (void)unlink(CURSOR_IMAGE);
+@@ -92,7 +138,7 @@
+                                      CURSOR_BLOCK_COUNT);
+     if (!fixture->device) return false;
+     if (bfs_cache_init(&fixture->cache, fixture->device,
+-                       CURSOR_CACHE_SLOTS) != BFS_OK)
++                       cache_slots) != BFS_OK)
+         goto fail;
+     fixture->cache_ready = true;
+     if (bfs_freespace_init(&fixture->space, &fixture->cache.bio,
+@@ -119,6 +165,11 @@
+     return false;
+ }
+ 
++static bool fixture_open(cursor_fixture_t *fixture)
++{
++    return fixture_open_with_slots(fixture, CURSOR_CACHE_SLOTS);
++}
++
+ static void fixture_close(cursor_fixture_t *fixture)
+ {
+     (void)fixture->space_ready;
+@@ -191,6 +242,16 @@
+     return false;
+ }
+ 
++static bool collect_through_leaf_end(const char *name, uint8_t name_len,
++                                     uint32_t inode_nr, uint32_t entry_type,
++                                     void *ctx)
++{
++    leaf_end_scan_ctx_t *scan = (leaf_end_scan_ctx_t *)ctx;
++    if (!append_entry(scan->log, name, name_len, inode_nr, entry_type))
++        return false;
++    return scan->log->count < num_keys(scan->cursor->leaf);
++}
++
+ static bool collect_raw_value(const void *key, const void *value, void *ctx)
+ {
+     (void)key;
+@@ -331,6 +392,176 @@
+     fixture_close(&fixture);
+ }
+ 
++static void test_retained_path_advances_boundary_with_less_read_and_compare_work(void)
++{
++    cursor_fixture_t fixture;
++    TEST_ASSERT(fixture_open_with_slots(&fixture, 30u));
++    TEST_ASSERT(insert_entries(&fixture, CURSOR_PARENT, CURSOR_ENTRY_COUNT,
++                               1000));
++
++    scan_log_t expected = {
++        .entries = expected_entries,
++        .capacity = CURSOR_ENTRY_COUNT,
++    };
++    TEST_ASSERT_EQ(bfs_dir_scan(&fixture.dirs, CURSOR_PARENT, collect_all,
++                                &expected), BFS_OK);
++    TEST_ASSERT_EQ(expected.count, CURSOR_ENTRY_COUNT);
++
++    compare_base_ops = fixture.dirs.tree.ops;
++    bfs_btree_ops_t counted_ops = *compare_base_ops;
++    counted_ops.key_compare = counted_dir_compare;
++    fixture.dirs.tree.ops = &counted_ops;
++
++    bfs_btree_cursor_t cursor;
++    bfs_btree_cursor_init(&cursor);
++    scan_log_t prefix = {
++        .entries = resumed_entries,
++        .capacity = CURSOR_ENTRY_COUNT,
++    };
++    leaf_end_scan_ctx_t boundary = {.cursor = &cursor, .log = &prefix};
++    TEST_ASSERT_EQ(bfs_dir_scan_cursor(&fixture.dirs, &cursor, CURSOR_PARENT,
++                                      NULL, 0, collect_through_leaf_end,
++                                      &boundary), BFS_OK);
++    TEST_ASSERT(prefix.count > 0);
++    TEST_ASSERT_EQ(prefix.count, num_keys(cursor.leaf));
++    TEST_ASSERT_EQ(cursor.stop_index, prefix.count - 1u);
++    TEST_ASSERT(cursor.path_valid);
++    TEST_ASSERT_EQ(cursor.path.depth, fixture.dirs.tree.height - 1u);
++    for (uint32_t i = 0; i < prefix.count; i++)
++        TEST_ASSERT(scan_entries_equal(&prefix.entries[i], &expected.entries[i]));
++
++    const void *boundary_key = bfs_btree_cursor_stop_key(&fixture.dirs.tree,
++                                                          &cursor);
++    TEST_ASSERT(boundary_key != NULL);
++    raw_value_log_t boundary_retry = {0};
++    TEST_ASSERT_EQ(bfs_btree_scan_cursor(&fixture.dirs.tree, &cursor,
++                                        boundary_key, collect_raw_value,
++                                        &boundary_retry), BFS_OK);
++    TEST_ASSERT_EQ(boundary_retry.calls, 1);
++    TEST_ASSERT_EQ(boundary_retry.inode_nr,
++                   prefix.entries[prefix.count - 1u].inode_nr);
++    TEST_ASSERT(cursor.path_valid);
++
++    bfs_btree_cursor_t fallback_cursor = cursor;
++    fallback_cursor.leaf = (uint8_t *)malloc(CURSOR_BLOCK_SIZE);
++    TEST_ASSERT(fallback_cursor.leaf != NULL);
++    memcpy(fallback_cursor.leaf, cursor.leaf, CURSOR_BLOCK_SIZE);
++    fallback_cursor.path_valid = false;
++
++    scan_entry_t fallback_entry;
++    scan_log_t fallback_log = {
++        .entries = &fallback_entry,
++        .capacity = 1,
++    };
++
++    install_bio_read_counter(&fixture.cache.bio);
++    compare_calls = 0;
++    uint32_t before = prefix.count;
++    TEST_ASSERT_EQ(bfs_dir_scan_resume(&fixture.dirs, &cursor, CURSOR_PARENT,
++                                       collect_one, &prefix), BFS_OK);
++    uint32_t retained_reads = read_counter_calls;
++    uint32_t retained_compares = compare_calls;
++    TEST_ASSERT_EQ(prefix.count, before + 1u);
++
++    read_counter_calls = 0;
++    compare_calls = 0;
++    TEST_ASSERT_EQ(bfs_dir_scan_resume(&fixture.dirs, &fallback_cursor,
++                                       CURSOR_PARENT, collect_one,
++                                       &fallback_log), BFS_OK);
++    uint32_t fallback_reads = read_counter_calls;
++    uint32_t fallback_compares = compare_calls;
++    TEST_ASSERT_EQ(fallback_log.count, 1);
++    TEST_ASSERT(scan_entries_equal(&prefix.entries[before],
++                                   &fallback_entry));
++    TEST_ASSERT(scan_entries_equal(&prefix.entries[before],
++                                   &expected.entries[before]));
++    TEST_ASSERT(retained_reads < fallback_reads);
++    TEST_ASSERT(retained_compares < fallback_compares);
++    remove_bio_read_counter(&fixture.cache.bio);
++
++    while (prefix.count < expected.count) {
++        before = prefix.count;
++        TEST_ASSERT_EQ(bfs_dir_scan_resume(&fixture.dirs, &cursor,
++                                           CURSOR_PARENT, collect_one,
++                                           &prefix), BFS_OK);
++        TEST_ASSERT_EQ(prefix.count, before + 1u);
++    }
++    for (uint32_t i = 0; i < expected.count; i++)
++        TEST_ASSERT(scan_entries_equal(&prefix.entries[i], &expected.entries[i]));
++
++    bfs_btree_cursor_release(&fallback_cursor);
++    bfs_btree_cursor_release(&cursor);
++    fixture.dirs.tree.ops = compare_base_ops;
++    compare_base_ops = NULL;
++    fixture_close(&fixture);
++}
++
++static void test_invalid_saved_path_metadata_falls_back_without_skipping(void)
++{
++    cursor_fixture_t fixture;
++    TEST_ASSERT(fixture_open_with_slots(&fixture, 30u));
++    TEST_ASSERT(insert_entries(&fixture, CURSOR_PARENT, CURSOR_ENTRY_COUNT,
++                               1000));
++
++    scan_log_t expected = {
++        .entries = expected_entries,
++        .capacity = CURSOR_ENTRY_COUNT,
++    };
++    TEST_ASSERT_EQ(bfs_dir_scan(&fixture.dirs, CURSOR_PARENT, collect_all,
++                                &expected), BFS_OK);
++    TEST_ASSERT_EQ(expected.count, CURSOR_ENTRY_COUNT);
++
++    bfs_btree_cursor_t cursor;
++    bfs_btree_cursor_init(&cursor);
++    scan_log_t prefix = {
++        .entries = resumed_entries,
++        .capacity = CURSOR_ENTRY_COUNT,
++    };
++    leaf_end_scan_ctx_t boundary = {.cursor = &cursor, .log = &prefix};
++    TEST_ASSERT_EQ(bfs_dir_scan_cursor(&fixture.dirs, &cursor, CURSOR_PARENT,
++                                      NULL, 0, collect_through_leaf_end,
++                                      &boundary), BFS_OK);
++    TEST_ASSERT(cursor.path_valid);
++    TEST_ASSERT_EQ(cursor.path.depth, fixture.dirs.tree.height - 1u);
++    TEST_ASSERT(prefix.count < expected.count);
++
++    for (uint32_t invalidation = 0; invalidation < 4; invalidation++) {
++        bfs_btree_cursor_t damaged = cursor;
++        damaged.leaf = (uint8_t *)malloc(CURSOR_BLOCK_SIZE);
++        TEST_ASSERT(damaged.leaf != NULL);
++        memcpy(damaged.leaf, cursor.leaf, CURSOR_BLOCK_SIZE);
++        switch (invalidation) {
++        case 0:
++            damaged.path_bio = NULL;
++            break;
++        case 1:
++            damaged.path_height = 0;
++            break;
++        case 2:
++            damaged.path.depth--;
++            break;
++        default:
++            TEST_ASSERT(damaged.path.depth > 0);
++            damaged.path.idx[damaged.path.depth - 1u] =
++                internal_max_keys(&fixture.dirs.tree) + 1u;
++            break;
++        }
++
++        scan_entry_t next_entry;
++        scan_log_t next = {.entries = &next_entry, .capacity = 1};
++        TEST_ASSERT_EQ(bfs_dir_scan_resume(&fixture.dirs, &damaged,
++                                           CURSOR_PARENT, collect_one,
++                                           &next), BFS_OK);
++        TEST_ASSERT_EQ(next.count, 1);
++        TEST_ASSERT(scan_entries_equal(&next_entry,
++                                       &expected.entries[prefix.count]));
++        bfs_btree_cursor_release(&damaged);
++    }
++
++    bfs_btree_cursor_release(&cursor);
++    fixture_close(&fixture);
++}
++
+ static void test_missing_invalid_and_wrong_parent_stops_decline_without_callback(void)
+ {
+     cursor_fixture_t fixture;
+@@ -425,6 +656,7 @@
+     TEST_ASSERT_EQ(bfs_dir_scan_cursor(&fixture.dirs, &cursor, CURSOR_PARENT,
+                                       NULL, 0, collect_one, &log), BFS_OK);
+     TEST_ASSERT_EQ(log.count, 1);
++    TEST_ASSERT(cursor.path_valid);
+     char consumed[CURSOR_NAME_CAPACITY];
+     memcpy(consumed, log.entries[0].name, log.entries[0].name_len + 1u);
+     uint8_t consumed_len = log.entries[0].name_len;
+@@ -482,6 +714,15 @@
+     cursor_fixture_t fixture;
+     TEST_ASSERT(fixture_open(&fixture));
+     TEST_ASSERT(insert_entries(&fixture, CURSOR_PARENT, 40, 1000));
++
++    scan_log_t expected = {
++        .entries = expected_entries,
++        .capacity = CURSOR_ENTRY_COUNT,
++    };
++    TEST_ASSERT_EQ(bfs_dir_scan(&fixture.dirs, CURSOR_PARENT, collect_all,
++                                &expected), BFS_OK);
++    TEST_ASSERT_EQ(expected.count, 40);
++
+     bfs_btree_cursor_t cursor;
+     bfs_btree_cursor_init(&cursor);
+     scan_log_t initial = {.entries = resumed_entries,
+@@ -489,6 +730,7 @@
+     TEST_ASSERT_EQ(bfs_dir_scan_cursor(&fixture.dirs, &cursor, CURSOR_PARENT,
+                                       NULL, 0, collect_one, &initial), BFS_OK);
+     TEST_ASSERT_EQ(initial.count, 1);
++    TEST_ASSERT(cursor.path_valid);
+ 
+     static scan_entry_t callback_entries[4];
+     mutate_callback_ctx_t mutation = {
+@@ -503,10 +745,92 @@
+     TEST_ASSERT(mutation.changed);
+     TEST_ASSERT_EQ(mutation.mutation_error, BFS_OK);
+     TEST_ASSERT_EQ(mutation.log.count, 2);
+-    TEST_ASSERT(!scan_entries_equal(&initial.entries[0],
+-                                    &mutation.log.entries[0]));
+-    TEST_ASSERT(!scan_entries_equal(&mutation.log.entries[0],
+-                                    &mutation.log.entries[1]));
++    TEST_ASSERT(cursor.path_valid);
++    TEST_ASSERT(scan_entries_equal(&initial.entries[0], &expected.entries[0]));
++    TEST_ASSERT(scan_entries_equal(&mutation.log.entries[0],
++                                   &expected.entries[1]));
++    TEST_ASSERT(scan_entries_equal(&mutation.log.entries[1],
++                                   &expected.entries[2]));
++
++    scan_entry_t after_mutation_entry;
++    scan_log_t after_mutation = {.entries = &after_mutation_entry,
++                                 .capacity = 1};
++    TEST_ASSERT_EQ(bfs_dir_scan_resume(&fixture.dirs, &cursor, CURSOR_PARENT,
++                                       collect_one, &after_mutation), BFS_OK);
++    TEST_ASSERT_EQ(after_mutation.count, 1);
++    TEST_ASSERT(scan_entries_equal(&after_mutation_entry,
++                                   &expected.entries[3]));
++    bfs_btree_cursor_release(&cursor);
++    fixture_close(&fixture);
++}
++
++static void test_unavailable_or_saturated_epoch_disables_path_but_keeps_keyed_scan(void)
++{
++    cursor_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    TEST_ASSERT(insert_entries(&fixture, CURSOR_PARENT, 40, 1000));
++
++    const bfs_bio_ops_t *saved_ops = fixture.cache.bio.ops;
++    bfs_bio_ops_t test_ops = *saved_ops;
++    test_ops.mutation_epoch = NULL;
++    fixture.cache.bio.ops = &test_ops;
++
++    bfs_btree_cursor_t cursor;
++    bfs_btree_cursor_init(&cursor);
++    scan_log_t first = {.entries = resumed_entries,
++                        .capacity = CURSOR_ENTRY_COUNT};
++    TEST_ASSERT_EQ(bfs_dir_scan_cursor(&fixture.dirs, &cursor, CURSOR_PARENT,
++                                      NULL, 0, collect_one, &first), BFS_OK);
++    TEST_ASSERT_EQ(first.count, 1);
++    TEST_ASSERT(!cursor.mutation_epoch_valid);
++    TEST_ASSERT(!cursor.path_valid);
++
++    uint32_t before = first.count;
++    TEST_ASSERT_EQ(bfs_dir_scan_resume(&fixture.dirs, &cursor, CURSOR_PARENT,
++                                       collect_one, &first), BFS_ERR_AGAIN);
++    TEST_ASSERT_EQ(first.count, before);
++
++    const void *inclusive_key = bfs_btree_cursor_stop_key(&fixture.dirs.tree,
++                                                           &cursor);
++    TEST_ASSERT(inclusive_key != NULL);
++    raw_value_log_t retried = {0};
++    TEST_ASSERT_EQ(bfs_btree_scan_cursor(&fixture.dirs.tree, &cursor,
++                                        inclusive_key, collect_raw_value,
++                                        &retried), BFS_OK);
++    TEST_ASSERT_EQ(retried.calls, 1);
++    TEST_ASSERT_EQ(retried.inode_nr, first.entries[0].inode_nr);
++    TEST_ASSERT(!cursor.path_valid);
++
++    bfs_btree_cursor_release(&cursor);
++    bfs_btree_cursor_init(&cursor);
++    memset(&first, 0, sizeof(first));
++    first.entries = resumed_entries;
++    first.capacity = CURSOR_ENTRY_COUNT;
++    test_ops.mutation_epoch = saturated_epoch;
++    TEST_ASSERT_EQ(bfs_dir_scan_cursor(&fixture.dirs, &cursor, CURSOR_PARENT,
++                                      NULL, 0, collect_one, &first), BFS_OK);
++    TEST_ASSERT_EQ(first.count, 1);
++    TEST_ASSERT(!cursor.mutation_epoch_valid);
++    TEST_ASSERT(!cursor.path_valid);
++
++    before = first.count;
++    TEST_ASSERT_EQ(bfs_dir_scan_resume(&fixture.dirs, &cursor, CURSOR_PARENT,
++                                       collect_one, &first), BFS_ERR_AGAIN);
++    TEST_ASSERT_EQ(first.count, before);
++
++    /* Saturation makes the saved leaf unusable too, so a keyed retry must
++     * descend from the root and still return the requested key inclusively. */
++    const void *saturated_key = node_key(&fixture.dirs.tree, cursor.leaf,
++                                         cursor.stop_index);
++    memset(&retried, 0, sizeof(retried));
++    TEST_ASSERT_EQ(bfs_btree_scan_cursor(&fixture.dirs.tree, &cursor,
++                                        saturated_key, collect_raw_value,
++                                        &retried), BFS_OK);
++    TEST_ASSERT_EQ(retried.calls, 1);
++    TEST_ASSERT_EQ(retried.inode_nr, first.entries[0].inode_nr);
++    TEST_ASSERT(!cursor.path_valid);
++
++    fixture.cache.bio.ops = saved_ops;
+     bfs_btree_cursor_release(&cursor);
+     fixture_close(&fixture);
+ }
+@@ -612,8 +936,11 @@
+ 
+ TEST_SUITE_BEGIN("Directory exclusive scan cursors")
+     TEST_RUN(test_multileaf_resume_is_exclusive_and_visits_each_entry_once);
++    TEST_RUN(test_retained_path_advances_boundary_with_less_read_and_compare_work);
++    TEST_RUN(test_invalid_saved_path_metadata_falls_back_without_skipping);
+     TEST_RUN(test_missing_invalid_and_wrong_parent_stops_decline_without_callback);
+     TEST_RUN(test_insert_and_delete_between_calls_require_keyed_fallback);
+     TEST_RUN(test_callback_mutation_resumes_after_last_reported_entry);
++    TEST_RUN(test_unavailable_or_saturated_epoch_disables_path_but_keeps_keyed_scan);
+     TEST_RUN(test_epoch_absence_saturation_and_raw_invalidation_decline_cursor);
+ TEST_SUITE_END()

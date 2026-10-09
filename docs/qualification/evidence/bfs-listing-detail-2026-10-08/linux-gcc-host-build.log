@@ -1,0 +1,1703 @@
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_alloc tests/test_alloc.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_alloc_metadata_reuse tests/test_alloc_metadata_reuse.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_alloc_root_shift tests/test_alloc_root_shift.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_bio tests/test_bio.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_block_runs tests/test_block_runs.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_btree_buffers tests/test_btree_buffers.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_btree_bulk_slots tests/test_btree_bulk_slots.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_btree tests/test_btree.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_btree_noop tests/test_btree_noop.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_btree_scratch_lifetime tests/test_btree_scratch_lifetime.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_btree_validation_cache tests/test_btree_validation_cache.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_cache_buffer_faults tests/test_cache_buffer_faults.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_cache tests/test_cache.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_cache_resident_paths tests/test_cache_resident_paths.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_compatibility tests/test_compatibility.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:186:9:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:186:9:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:186:9:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:192:13:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:192:13:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:192:13:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:197:9:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:197:9:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:197:9:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: object ‘cache’ of size 144
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:186:9:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 7184 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: ‘cache’ declared here
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:192:13:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 7184 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: ‘cache’ declared here
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_hits_at_supported_slot_counts’ at tests/test_cache_resident_paths.c:197:9:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 7184 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_hits_at_supported_slot_counts’:
+tests/test_cache_resident_paths.c:180:21: note: ‘cache’ declared here
+  180 |         bfs_cache_t cache;
+      |                     ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_read_hit_and_validation’ at tests/test_cache_resident_paths.c:115:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_read_hit_and_validation’:
+tests/test_cache_resident_paths.c:110:17: note: object ‘cache’ of size 144
+  110 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_read_hit_and_validation’ at tests/test_cache_resident_paths.c:115:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_resident_read_hit_and_validation’:
+tests/test_cache_resident_paths.c:110:17: note: object ‘cache’ of size 144
+  110 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_read_hit_and_validation’ at tests/test_cache_resident_paths.c:115:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_read_hit_and_validation’:
+tests/test_cache_resident_paths.c:110:17: note: object ‘cache’ of size 144
+  110 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_read_hit_and_validation’ at tests/test_cache_resident_paths.c:116:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_read_hit_and_validation’:
+tests/test_cache_resident_paths.c:110:17: note: object ‘cache’ of size 144
+  110 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_read_hit_and_validation’ at tests/test_cache_resident_paths.c:116:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_resident_read_hit_and_validation’:
+tests/test_cache_resident_paths.c:110:17: note: object ‘cache’ of size 144
+  110 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_read_hit_and_validation’ at tests/test_cache_resident_paths.c:116:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_read_hit_and_validation’:
+tests/test_cache_resident_paths.c:110:17: note: object ‘cache’ of size 144
+  110 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:498:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: object ‘cache’ of size 144
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:498:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: object ‘cache’ of size 144
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:498:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: object ‘cache’ of size 144
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:498:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: object ‘cache’ of size 144
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:500:5:
+tests/test_cache.c:37:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~^~~~~~~~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: object ‘cache’ of size 144
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:500:5:
+tests/test_cache.c:37:19: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: object ‘cache’ of size 144
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:500:5:
+tests/test_cache.c:38:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   38 |     if (memory->fail_write) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: object ‘cache’ of size 144
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:500:5:
+tests/test_cache.c:41:26: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |            ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: object ‘cache’ of size 144
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:498:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ forming offset [144, 1039] is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: ‘cache’ declared here
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_io_errors’ at tests/test_cache.c:500:5:
+tests/test_cache.c:41:5: error: ‘memcpy’ forming offset [144, 1039] is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_io_errors’:
+tests/test_cache.c:492:17: note: ‘cache’ declared here
+  492 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_read_hit_and_validation’ at tests/test_cache_resident_paths.c:115:5:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 2064 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_read_hit_and_validation’:
+tests/test_cache_resident_paths.c:110:17: note: ‘cache’ declared here
+  110 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_resident_read_hit_and_validation’ at tests/test_cache_resident_paths.c:116:5:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 5136 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_resident_read_hit_and_validation’:
+tests/test_cache_resident_paths.c:110:17: note: ‘cache’ declared here
+  110 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:667:13:
+tests/test_cache.c:37:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~^~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:667:13:
+tests/test_cache.c:37:19: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:667:13:
+tests/test_cache.c:38:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   38 |     if (memory->fail_write) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:667:13:
+tests/test_cache.c:41:26: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |            ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:656:13:
+tests/test_cache.c:37:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~^~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:656:13:
+tests/test_cache.c:37:19: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:656:13:
+tests/test_cache.c:38:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   38 |     if (memory->fail_write) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:656:13:
+tests/test_cache.c:41:26: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |            ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:652:13:
+tests/test_cache.c:37:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~^~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:652:13:
+tests/test_cache.c:37:19: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:652:13:
+tests/test_cache.c:38:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   38 |     if (memory->fail_write) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:652:13:
+tests/test_cache.c:41:26: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |            ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:647:13:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:647:13:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:647:13:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:647:13:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: object ‘cache’ of size 144
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_failed_and_partial_writes_preserve_other_residents’ at tests/test_cache_resident_paths.c:308:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_failed_and_partial_writes_preserve_other_residents’:
+tests/test_cache_resident_paths.c:300:17: note: object ‘cache’ of size 144
+  300 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_failed_and_partial_writes_preserve_other_residents’ at tests/test_cache_resident_paths.c:308:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_failed_and_partial_writes_preserve_other_residents’:
+tests/test_cache_resident_paths.c:300:17: note: object ‘cache’ of size 144
+  300 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_failed_and_partial_writes_preserve_other_residents’ at tests/test_cache_resident_paths.c:308:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_failed_and_partial_writes_preserve_other_residents’:
+tests/test_cache_resident_paths.c:300:17: note: object ‘cache’ of size 144
+  300 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_failed_and_partial_writes_preserve_other_residents’ at tests/test_cache_resident_paths.c:309:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_failed_and_partial_writes_preserve_other_residents’:
+tests/test_cache_resident_paths.c:300:17: note: object ‘cache’ of size 144
+  300 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_failed_and_partial_writes_preserve_other_residents’ at tests/test_cache_resident_paths.c:309:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_failed_and_partial_writes_preserve_other_residents’:
+tests/test_cache_resident_paths.c:300:17: note: object ‘cache’ of size 144
+  300 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_failed_and_partial_writes_preserve_other_residents’ at tests/test_cache_resident_paths.c:309:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_failed_and_partial_writes_preserve_other_residents’:
+tests/test_cache_resident_paths.c:300:17: note: object ‘cache’ of size 144
+  300 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:647:13:
+tests/test_cache.c:30:5: error: ‘memcpy’ forming offset [144, 1039] is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: ‘cache’ declared here
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:652:13:
+tests/test_cache.c:41:5: error: ‘memcpy’ forming offset [144, 1039] is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: ‘cache’ declared here
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:656:13:
+tests/test_cache.c:41:5: error: ‘memcpy’ forming offset [144, 1039] is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: ‘cache’ declared here
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_hash_index_follows_slots’ at tests/test_cache.c:667:13:
+tests/test_cache.c:41:5: error: ‘memcpy’ forming offset [144, 1039] is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hash_index_follows_slots’:
+tests/test_cache.c:630:17: note: ‘cache’ declared here
+  630 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_failed_and_partial_writes_preserve_other_residents’ at tests/test_cache_resident_paths.c:308:5:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 1040 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_failed_and_partial_writes_preserve_other_residents’:
+tests/test_cache_resident_paths.c:300:17: note: ‘cache’ declared here
+  300 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_failed_and_partial_writes_preserve_other_residents’ at tests/test_cache_resident_paths.c:309:5:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 2064 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_failed_and_partial_writes_preserve_other_residents’:
+tests/test_cache_resident_paths.c:300:17: note: ‘cache’ declared here
+  300 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:376:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:369:17: note: object ‘first’ of size 144
+  369 |     bfs_cache_t first;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:376:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:369:17: note: object ‘first’ of size 144
+  369 |     bfs_cache_t first;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:376:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:369:17: note: object ‘first’ of size 144
+  369 |     bfs_cache_t first;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:377:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:369:17: note: object ‘first’ of size 144
+  369 |     bfs_cache_t first;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:377:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:369:17: note: object ‘first’ of size 144
+  369 |     bfs_cache_t first;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:377:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:369:17: note: object ‘first’ of size 144
+  369 |     bfs_cache_t first;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:378:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:370:17: note: object ‘second’ of size 144
+  370 |     bfs_cache_t second;
+      |                 ^~~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:378:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:370:17: note: object ‘second’ of size 144
+  370 |     bfs_cache_t second;
+      |                 ^~~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:378:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:370:17: note: object ‘second’ of size 144
+  370 |     bfs_cache_t second;
+      |                 ^~~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_verified_node_lifecycle’ at tests/test_cache.c:518:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_verified_node_lifecycle’:
+tests/test_cache.c:512:17: note: object ‘cache’ of size 144
+  512 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_verified_node_lifecycle’ at tests/test_cache.c:518:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_verified_node_lifecycle’:
+tests/test_cache.c:512:17: note: object ‘cache’ of size 144
+  512 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_verified_node_lifecycle’ at tests/test_cache.c:518:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_verified_node_lifecycle’:
+tests/test_cache.c:512:17: note: object ‘cache’ of size 144
+  512 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_verified_node_lifecycle’ at tests/test_cache.c:518:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_verified_node_lifecycle’:
+tests/test_cache.c:512:17: note: object ‘cache’ of size 144
+  512 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_verified_node_lifecycle’ at tests/test_cache.c:518:5:
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:377:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 3088 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 1040 is out of the bounds [0, 144] of object ‘first’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache.c: In function ‘test_verified_node_lifecycle’:
+tests/test_cache_resident_paths.c:369:17: note: ‘first’ declared here
+  369 |     bfs_cache_t first;
+      |                 ^~~~~
+tests/test_cache.c:512:17: note: ‘cache’ declared here
+  512 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_explicit_invalidation_and_separate_caches’ at tests/test_cache_resident_paths.c:378:5:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 3088 is out of the bounds [0, 144] of object ‘second’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_explicit_invalidation_and_separate_caches’:
+tests/test_cache_resident_paths.c:370:17: note: ‘second’ declared here
+  370 |     bfs_cache_t second;
+      |                 ^~~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:216:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:216:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:216:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:217:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:217:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:217:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:218:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:218:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:218:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:224:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:224:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:224:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: object ‘cache’ of size 144
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:429:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: object ‘cache’ of size 144
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:429:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: object ‘cache’ of size 144
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:429:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: object ‘cache’ of size 144
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:429:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: object ‘cache’ of size 144
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:433:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: object ‘cache’ of size 144
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:433:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: object ‘cache’ of size 144
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:433:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: object ‘cache’ of size 144
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:433:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: object ‘cache’ of size 144
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:429:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 3088 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: ‘cache’ declared here
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_hit_and_invalidate’ at tests/test_cache.c:433:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 3088 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_hit_and_invalidate’:
+tests/test_cache.c:424:17: note: ‘cache’ declared here
+  424 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:217:5:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 1040 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: ‘cache’ declared here
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_victim_replacement’ at tests/test_cache_resident_paths.c:224:5:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 2064 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_lru_victim_replacement’:
+tests/test_cache_resident_paths.c:211:17: note: ‘cache’ declared here
+  211 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:451:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:451:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:451:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:451:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:452:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:452:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:452:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:452:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:453:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:453:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:453:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:453:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:454:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:454:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:454:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:454:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: object ‘cache’ of size 144
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_successful_write_paths_track_resident_slot’ at tests/test_cache_resident_paths.c:245:5:
+tests/test_cache_resident_paths.c:23:11: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_successful_write_paths_track_resident_slot’:
+tests/test_cache_resident_paths.c:238:17: note: object ‘cache’ of size 144
+  238 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_successful_write_paths_track_resident_slot’ at tests/test_cache_resident_paths.c:245:5:
+tests/test_cache_resident_paths.c:23:18: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   23 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache_resident_paths.c: In function ‘test_successful_write_paths_track_resident_slot’:
+tests/test_cache_resident_paths.c:238:17: note: object ‘cache’ of size 144
+  238 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_successful_write_paths_track_resident_slot’ at tests/test_cache_resident_paths.c:245:5:
+tests/test_cache_resident_paths.c:25:34: error: array subscript ‘resident_memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_successful_write_paths_track_resident_slot’:
+tests/test_cache_resident_paths.c:238:17: note: object ‘cache’ of size 144
+  238 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:451:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ forming offset [144, 1039] is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: ‘cache’ declared here
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:452:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 1040 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: ‘cache’ declared here
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:453:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ forming offset [144, 1039] is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: ‘cache’ declared here
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_lru_eviction’ at tests/test_cache.c:454:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 2064 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_lru_eviction’:
+tests/test_cache.c:446:17: note: ‘cache’ declared here
+  446 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘resident_memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_successful_write_paths_track_resident_slot’ at tests/test_cache_resident_paths.c:245:5:
+tests/test_cache_resident_paths.c:25:5: error: ‘memcpy’ offset 4112 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   25 |     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache_resident_paths.c: In function ‘test_successful_write_paths_track_resident_slot’:
+tests/test_cache_resident_paths.c:238:17: note: ‘cache’ declared here
+  238 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:232:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: object ‘cache’ of size 144
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:232:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: object ‘cache’ of size 144
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:232:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: object ‘cache’ of size 144
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:232:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: object ‘cache’ of size 144
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:233:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: object ‘cache’ of size 144
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:233:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: object ‘cache’ of size 144
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:233:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: object ‘cache’ of size 144
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:233:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: object ‘cache’ of size 144
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+cc1: all warnings being treated as errors
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:232:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 1040 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: ‘cache’ declared here
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_scratch_leases’ at tests/test_cache.c:233:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 2064 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_cache_scratch_leases’:
+tests/test_cache.c:226:17: note: ‘cache’ declared here
+  226 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_io_and_crc_with_leased_buffer’ at tests/test_cache.c:353:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_cache_io_and_crc_with_leased_buffer’:
+tests/test_cache.c:339:17: note: object ‘cache’ of size 144
+  339 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_io_and_crc_with_leased_buffer’ at tests/test_cache.c:353:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_cache_io_and_crc_with_leased_buffer’:
+tests/test_cache.c:339:17: note: object ‘cache’ of size 144
+  339 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_io_and_crc_with_leased_buffer’ at tests/test_cache.c:353:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_cache_io_and_crc_with_leased_buffer’:
+tests/test_cache.c:339:17: note: object ‘cache’ of size 144
+  339 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_io_and_crc_with_leased_buffer’ at tests/test_cache.c:353:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_cache_io_and_crc_with_leased_buffer’:
+tests/test_cache.c:339:17: note: object ‘cache’ of size 144
+  339 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_cache_io_and_crc_with_leased_buffer’ at tests/test_cache.c:353:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 3088 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_cache_io_and_crc_with_leased_buffer’:
+tests/test_cache.c:339:17: note: ‘cache’ declared here
+  339 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:472:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:472:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:472:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:472:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:473:5:
+tests/test_cache.c:37:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~^~~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:473:5:
+tests/test_cache.c:37:19: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:473:5:
+tests/test_cache.c:38:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   38 |     if (memory->fail_write) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:473:5:
+tests/test_cache.c:41:26: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |            ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:478:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:478:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:478:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:478:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: object ‘cache’ of size 144
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:472:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 4112 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: ‘cache’ declared here
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:473:5:
+tests/test_cache.c:41:5: error: ‘memcpy’ offset 4112 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: ‘cache’ declared here
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_write_through’ at tests/test_cache.c:478:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 4112 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_write_through’:
+tests/test_cache.c:465:17: note: ‘cache’ declared here
+  465 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:553:5:
+tests/test_cache.c:37:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~^~~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:553:5:
+tests/test_cache.c:37:19: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:553:5:
+tests/test_cache.c:38:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   38 |     if (memory->fail_write) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:553:5:
+tests/test_cache.c:41:26: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |            ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:555:5:
+tests/test_cache.c:26:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:555:5:
+tests/test_cache.c:26:18: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   26 |     memory->reads++;
+      |     ~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:555:5:
+tests/test_cache.c:27:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   27 |     if (memory->fail_read) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:555:5:
+tests/test_cache.c:30:34: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |                    ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:560:5:
+tests/test_cache.c:37:11: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~^~~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:560:5:
+tests/test_cache.c:37:19: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   37 |     memory->writes++;
+      |     ~~~~~~~~~~~~~~^~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:560:5:
+tests/test_cache.c:38:15: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   38 |     if (memory->fail_write) return BFS_ERR_IO;
+      |         ~~~~~~^~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:560:5:
+tests/test_cache.c:41:26: error: array subscript ‘memory_bio_t[0]’ is partly outside array bounds of ‘bfs_cache_t[1]’ {aka ‘struct bfs_cache[1]’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |            ~~~~~~~~~~~~~~^~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: object ‘cache’ of size 144
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘bfs_bio_write_node’ at include/bfs_bio.h:202:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:553:5:
+tests/test_cache.c:41:5: error: ‘__builtin_memset’ offset 3088 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: ‘cache’ declared here
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_read’,
+    inlined from ‘bfs_bio_read’ at include/bfs_bio.h:184:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:555:5:
+tests/test_cache.c:30:5: error: ‘memcpy’ offset 3088 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   30 |     memcpy(buffer, memory->blocks[block], BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: ‘cache’ declared here
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+In function ‘memory_write’,
+    inlined from ‘bfs_bio_write’ at include/bfs_bio.h:191:12,
+    inlined from ‘test_node_write_retention’ at tests/test_cache.c:560:5:
+tests/test_cache.c:41:5: error: ‘__builtin_memset’ offset 4112 is out of the bounds [0, 144] of object ‘cache’ with type ‘bfs_cache_t’ {aka ‘struct bfs_cache’} [-Werror=array-bounds=]
+   41 |     memcpy(memory->blocks[block], buffer, BLOCK_SIZE); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+      |     ^~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+tests/test_cache.c: In function ‘test_node_write_retention’:
+tests/test_cache.c:546:17: note: ‘cache’ declared here
+  546 |     bfs_cache_t cache;
+      |                 ^~~~~
+cc1: all warnings being treated as errors
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_concurrency tests/test_concurrency.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_corruption tests/test_corruption.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -o build/host/test_crash_inject tests/test_crash_inject.c src/core/alloc.c src/core/bootstrap_alloc.c src/core/btree.c src/core/cache.c src/core/crc32.c src/core/crc32_zero.c src/core/dir.c src/core/extent.c src/core/file.c src/core/fs.c src/core/fsck.c src/core/inode.c src/core/namespace.c src/core/refcount.c src/core/snapshot.c src/core/superblock.c src/core/txn.c tests/block_device_emu.c
+make: *** [Makefile:280: build/host/test_cache] Error 1
+make: *** Waiting for unfinished jobs....
+make: *** [Makefile:279: build/host/test_cache_resident_paths] Error 1

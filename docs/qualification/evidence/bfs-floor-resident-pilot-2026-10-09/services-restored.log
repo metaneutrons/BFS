@@ -1,0 +1,20 @@
+2026-10-09T18:59:07Z
+true running
+PID                 PPID                COMMAND
+9438                9413                /bin/bash /opt/runner/run.sh
+9457                9438                /bin/bash /opt/runner/run-helper.sh
+9462                9457                /opt/runner/bin/Runner.Listener run
+LoadState=loaded
+ActiveState=active
+SubState=running
+MainPID=9487
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+MainPID=0
+LoadState=loaded
+ActiveState=inactive
+SubState=dead
+MainPID=0
+9462 /opt/runner/bin/Runner.Listener run
+9487 /usr/local/bin/fs-uae-tap /home/fabian/Amiga/Coffin/coffin.fs-uae

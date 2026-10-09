@@ -1,0 +1,22 @@
+--- build/goal-root-2026-10-09/baseline/alloc.c	2026-10-09 21:47:58.973724132 +0200
++++ src/core/alloc.c	2026-10-09 21:47:59.016621416 +0200
+@@ -14,6 +14,7 @@
+  */
+ 
+ #include "bfs_alloc.h"
++#include "bfs_btree_internal.h"
+ #include "bfs_fs.h"
+ #include <stdlib.h>
+ #include <string.h>
+@@ -584,7 +585,10 @@
+         return BFS_ERR_NOTFOUND;
+     uint32_t key = bfs_be32(goal);
+     uint32_t found_key, found_len;
+-    bfs_err_t err = bfs_btree_search_floor(&fs->tree, &key, &found_key, &found_len);
++    bfs_err_t err = bfs_btree_search_floor_resident_root(
++        &fs->tree, &key, &found_key, &found_len);
++    if (err == BFS_ERR_UNSUPPORTED)
++        err = bfs_btree_search_floor(&fs->tree, &key, &found_key, &found_len);
+     if (err != BFS_OK) return err;
+     bfs_blk_t start = bfs_be32(found_key);
+     uint32_t length = bfs_be32(found_len);

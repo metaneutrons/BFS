@@ -1,0 +1,579 @@
+diff -ruN a/include/bfs_file.h b/include/bfs_file.h
+--- a/include/bfs_file.h	2026-10-09 23:43:34
++++ b/include/bfs_file.h	2026-10-09 23:43:34
+@@ -57,6 +57,21 @@
+                                   bfs_inode_stamp_fn stamp_fn,
+                                   void *stamp_context, uint32_t protection_clear);
+ 
++/* bfs_file_write_with_stamp with an access check in the same locked operation.
++ * After the handle is refreshed under the write lock, and before any data,
++ * allocation, sampling or inode change, the write fails with
++ * BFS_ERR_PROTECTED if the current inode's protection word has any bit of
++ * protection_deny set. This also applies to len == 0. Invalid arguments
++ * (including len > INT32_MAX), a read-only mount and handle, recovery or
++ * inode-lookup errors take precedence; the file-size limit and resource errors
++ * are reported only for permitted writes. Nothing is cached between calls:
++ * every call checks the inode it is about to write. A zero mask makes this
++ * bfs_file_write_with_stamp. */
++int32_t bfs_file_write_checked(bfs_file_t *f, const void *buf, uint32_t len,
++                               bfs_inode_stamp_fn stamp_fn, void *stamp_context,
++                               uint32_t protection_clear,
++                               uint32_t protection_deny);
++
+ /* Append under one filesystem write lock. This is the only core entry point
+  * that guarantees an end-of-file placement is atomic against other writers. */
+ int32_t bfs_file_append(bfs_file_t *f, const void *buf, uint32_t len);
+diff -ruN a/include/bfs_types.h b/include/bfs_types.h
+--- a/include/bfs_types.h	2026-10-09 23:43:34
++++ b/include/bfs_types.h	2026-10-09 23:43:34
+@@ -44,6 +44,7 @@
+     BFS_ERR_AGAIN = -9,   /* operation incomplete, caller should retry */
+     BFS_ERR_UNSUPPORTED = -10, /* intact, but incompatible on-disk format */
+     BFS_ERR_OVERFLOW = -11, /* geometry exceeds the block address range */
++    BFS_ERR_PROTECTED = -12, /* denied by a caller-supplied protection mask */
+ } bfs_err_t;
+ 
+ /* On-disk structures use big-endian byte order. Native AROS may run on a
+diff -ruN a/src/amiga/handler.c b/src/amiga/handler.c
+--- a/src/amiga/handler.c	2026-10-09 23:43:34
++++ b/src/amiga/handler.c	2026-10-09 23:43:34
+@@ -1120,6 +1120,8 @@
+     case BFS_ERR_NOMEM:    return ERROR_NO_FREE_STORE;
+     case BFS_ERR_INVAL:    return ERROR_BAD_NUMBER;
+     case BFS_ERR_OVERFLOW: return ERROR_BAD_NUMBER;
++    /* Only the FIBF_WRITE check of bfs_file_write_checked returns it. */
++    case BFS_ERR_PROTECTED: return ERROR_WRITE_PROTECTED;
+     case BFS_ERR_UNSUPPORTED: return ERROR_NOT_IMPLEMENTED;
+     case BFS_ERR_CORRUPT:  return ERROR_NOT_A_DOS_DISK;
+     case BFS_ERR_AGAIN:    return ERROR_DISK_FULL;
+@@ -2272,10 +2274,11 @@
+             break;
+         }
+ 
+-        res2 = CheckProtection(h, f->inode_nr, FIBF_WRITE);
+-        if (res2) break;
+-        int32_t n = bfs_file_write_with_stamp(f, buf, (uint32_t)len,
+-                                             SampleInodeStamp, NULL, FIBF_ARCHIVE);
++        /* The core checks FIBF_WRITE on the inode it refreshes for the write,
++         * so the packet needs no separate inode read. */
++        int32_t n = bfs_file_write_checked(f, buf, (uint32_t)len,
++                                          SampleInodeStamp, NULL, FIBF_ARCHIVE,
++                                          FIBF_WRITE);
+         if (n < 0) {
+             res1 = -1;
+             res2 = Pfs4ToDosError((bfs_err_t)n);
+diff -ruN a/src/core/file.c b/src/core/file.c
+--- a/src/core/file.c	2026-10-09 23:43:34
++++ b/src/core/file.c	2026-10-09 23:43:34
+@@ -32,6 +32,7 @@
+     bfs_inode_stamp_fn stamp_fn;
+     void *stamp_context;
+     uint32_t protection_clear;
++    uint32_t protection_deny;
+     file_inode_seed_t *inode_seed;
+ } file_write_metadata_t;
+ 
+@@ -891,7 +892,7 @@
+ #endif
+                                      const file_write_metadata_t *metadata)
+ {
+-    if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf))
++    if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf) || len > INT32_MAX)
+         return BFS_ERR_INVAL;
+     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
+     bfs_lock_write(&f->fs->lock);
+@@ -903,6 +904,12 @@
+         write_metadata.protection_clear = metadata->protection_clear;
+     }
+     int32_t err = file_refresh_unlocked(f, &seed);
++    /* The refreshed inode is the one this operation writes, so the check and
++     * the write see the same state. Without a refreshed inode, deny. */
++    if (err == BFS_OK && metadata && metadata->protection_deny != 0 &&
++        (!seed.valid ||
++         (bfs_be32(seed.inode.protection) & metadata->protection_deny) != 0))
++        err = BFS_ERR_PROTECTED;
+     if (err == BFS_OK)
+         err = file_write_with_metadata_unlocked(f, buf, len, &write_metadata);
+     bfs_lock_unlock(&f->fs->lock);
+@@ -935,6 +942,20 @@
+         .stamp_fn = stamp_fn,
+         .stamp_context = stamp_context,
+         .protection_clear = protection_clear,
++    };
++    return file_write_operation(f, buf, len, &metadata);
++}
++
++int32_t bfs_file_write_checked(bfs_file_t *f, const void *buf, uint32_t len,
++                               bfs_inode_stamp_fn stamp_fn, void *stamp_context,
++                               uint32_t protection_clear,
++                               uint32_t protection_deny)
++{
++    const file_write_metadata_t metadata = {
++        .stamp_fn = stamp_fn,
++        .stamp_context = stamp_context,
++        .protection_clear = protection_clear,
++        .protection_deny = protection_deny,
+     };
+     return file_write_operation(f, buf, len, &metadata);
+ }
+diff -ruN a/src/fuse/bfs_fuse.c b/src/fuse/bfs_fuse.c
+--- a/src/fuse/bfs_fuse.c	2026-10-09 23:43:34
++++ b/src/fuse/bfs_fuse.c	2026-10-09 23:43:34
+@@ -70,6 +70,7 @@
+     case BFS_ERR_INVAL: return EINVAL;
+     case BFS_ERR_NOSPC: return ENOSPC;
+     case BFS_ERR_OVERFLOW: return EOVERFLOW;
++    case BFS_ERR_PROTECTED: return EACCES;
+     case BFS_ERR_NOMEM: return ENOMEM;
+     case BFS_ERR_AGAIN: return EAGAIN;
+     case BFS_ERR_UNSUPPORTED: return EOPNOTSUPP;
+diff -ruN a/tests/test_file_write_guard.c b/tests/test_file_write_guard.c
+--- a/tests/test_file_write_guard.c	1970-01-01 01:00:00
++++ b/tests/test_file_write_guard.c	2026-10-09 23:43:34
+@@ -0,0 +1,446 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++/* Contract of bfs_file_write_checked: the protection check uses the inode that
++ * the same locked operation refreshes and writes, it is repeated on every call,
++ * and a denied write changes nothing. */
++
++#include "test_harness.h"
++#include "bfs_file.h"
++#include "bfs_fs.h"
++#include "bfs_inode.h"
++#include "bfs_btree.h"
++#include "block_device_emu.h"
++#include <unistd.h>
++
++#define GUARD_IMAGE "test_file_write_guard.img"
++#define GUARD_BLOCK_SIZE 4096
++#define GUARD_BLOCK_COUNT 2048
++/* Amiga protection bits; the core carries the word without interpreting it. */
++#define GUARD_NO_DELETE 0x01u
++#define GUARD_NO_WRITE 0x04u
++#define GUARD_ARCHIVE 0x10u
++
++typedef struct {
++    bfs_fs_t fs;
++    bfs_bio_t *bio;
++} guard_fixture_t;
++
++typedef struct {
++    uint32_t calls;
++} guard_stamp_source_t;
++
++/* Everything a denied write must leave unchanged. */
++typedef struct {
++    bfs_inode_t inode;
++    bfs_blk_t inode_root;
++    uint64_t inode_generation;
++    uint32_t total_free;
++    uint64_t txn_id;
++    uint32_t pending_count;
++    bfs_err_t recovery_error;
++    uint64_t offset;
++} guard_state_t;
++
++static uint32_t guard_compare_calls;
++
++static bool fixture_open(guard_fixture_t *fixture)
++{
++    memset(fixture, 0, sizeof(*fixture));
++    (void)unlink(GUARD_IMAGE);
++    fixture->bio = bio_emu_create(GUARD_IMAGE, GUARD_BLOCK_SIZE, GUARD_BLOCK_COUNT);
++    if (!fixture->bio) return false;
++    if (bfs_fs_format(fixture->bio, "WriteGuard", 0) != BFS_OK ||
++        bfs_fs_mount(&fixture->fs, fixture->bio) != BFS_OK) {
++        bfs_bio_close(fixture->bio);
++        fixture->bio = NULL;
++        (void)unlink(GUARD_IMAGE);
++        return false;
++    }
++    return true;
++}
++
++static void fixture_close(guard_fixture_t *fixture)
++{
++    if (fixture->fs.mounted) (void)bfs_fs_unmount(&fixture->fs);
++    if (fixture->bio) bfs_bio_close(fixture->bio);
++    fixture->bio = NULL;
++    (void)unlink(GUARD_IMAGE);
++}
++
++static void count_stamp(void *context, bfs_inode_stamp_t *stamp)
++{
++    guard_stamp_source_t *source = (guard_stamp_source_t *)context;
++    source->calls++;
++    stamp->days = 1;
++    stamp->mins = 2;
++    stamp->ticks = 3;
++}
++
++static int compare_inode_key_counted(const void *a, const void *b)
++{
++    guard_compare_calls++;
++    return bfs_btree_key_compare_be32(a, b);
++}
++
++static bfs_err_t set_protection(guard_fixture_t *fixture, uint32_t ino,
++                                bool unlinked, uint32_t protection)
++{
++    bfs_btree_t *tree = &fixture->fs.inode_tree;
++    bfs_inode_t inode;
++    bfs_err_t err = unlinked ? bfs_inode_read_unlinked(tree, ino, &inode)
++                             : bfs_inode_read(tree, ino, &inode);
++    if (err != BFS_OK) return err;
++    inode.protection = bfs_be32(protection);
++    return unlinked ? bfs_inode_write_unlinked(tree, ino, &inode)
++                    : bfs_inode_write(tree, ino, &inode);
++}
++
++static bfs_err_t capture_state(guard_fixture_t *fixture, const bfs_file_t *file,
++                               bool unlinked, guard_state_t *state)
++{
++    memset(state, 0, sizeof(*state));
++    bfs_btree_t *tree = &fixture->fs.inode_tree;
++    bfs_err_t err = unlinked
++                        ? bfs_inode_read_unlinked(tree, file->inode_nr, &state->inode)
++                        : bfs_inode_read(tree, file->inode_nr, &state->inode);
++    state->inode_root = tree->root;
++    state->inode_generation = tree->generation;
++    state->total_free = fixture->fs.freespace.total_free;
++    state->txn_id = fixture->fs.live_txn_id;
++    state->pending_count = fixture->fs.pending_count;
++    state->recovery_error = fixture->fs.recovery_error;
++    state->offset = file->offset;
++    return err;
++}
++
++static void assert_state_unchanged(const guard_state_t *before,
++                                   const guard_state_t *after)
++{
++    TEST_ASSERT_MEM_EQ(&after->inode, &before->inode, sizeof(before->inode));
++    TEST_ASSERT_EQ(after->inode_root, before->inode_root);
++    TEST_ASSERT_EQ(after->inode_generation, before->inode_generation);
++    TEST_ASSERT_EQ(after->total_free, before->total_free);
++    TEST_ASSERT_EQ(after->txn_id, before->txn_id);
++    TEST_ASSERT_EQ(after->pending_count, before->pending_count);
++    TEST_ASSERT_EQ(after->recovery_error, before->recovery_error);
++    TEST_ASSERT_EQ(after->offset, before->offset);
++}
++
++/* Creates "name" with four bytes of content and commits it. */
++static bool create_committed_file(guard_fixture_t *fixture, const char *name,
++                                  uint32_t *ino, bfs_file_t *file)
++{
++    uint32_t name_len = (uint32_t)strlen(name);
++    if (bfs_fs_create_file(&fixture->fs, BFS_ROOT_INO, name, name_len, ino) != BFS_OK)
++        return false;
++    if (bfs_file_open(file, &fixture->fs, *ino) != BFS_OK) return false;
++    if (bfs_file_write(file, "base", 4) != 4) return false;
++    return bfs_fs_sync(&fixture->fs) == BFS_OK;
++}
++
++static void test_denied_write_changes_nothing(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t file;
++    TEST_ASSERT(create_committed_file(&fixture, "denied", &ino, &file));
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, GUARD_NO_WRITE | GUARD_ARCHIVE),
++                   BFS_OK);
++
++    static uint8_t block[GUARD_BLOCK_SIZE];
++    memset(block, 0x5A, sizeof(block));
++    guard_state_t before, after;
++    TEST_ASSERT_EQ(capture_state(&fixture, &file, false, &before), BFS_OK);
++    guard_stamp_source_t source = {0};
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, block, sizeof(block), count_stamp,
++                                          &source, GUARD_ARCHIVE, GUARD_NO_WRITE),
++                   BFS_ERR_PROTECTED);
++    TEST_ASSERT_EQ(source.calls, 0);
++    TEST_ASSERT_EQ(capture_state(&fixture, &file, false, &after), BFS_OK);
++    assert_state_unchanged(&before, &after);
++    /* The archive bit the write would have cleared is still set. */
++    TEST_ASSERT_EQ(bfs_be32(after.inode.protection) & GUARD_ARCHIVE, GUARD_ARCHIVE);
++
++    /* An overwrite inside the file is denied the same way. */
++    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_SET), 0);
++    TEST_ASSERT_EQ(capture_state(&fixture, &file, false, &before), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, "XXXX", 4, count_stamp, &source,
++                                          GUARD_ARCHIVE, GUARD_NO_WRITE),
++                   BFS_ERR_PROTECTED);
++    TEST_ASSERT_EQ(source.calls, 0);
++    TEST_ASSERT_EQ(capture_state(&fixture, &file, false, &after), BFS_OK);
++    assert_state_unchanged(&before, &after);
++
++    char content[8] = {0};
++    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_SET), 0);
++    TEST_ASSERT_EQ(bfs_file_read(&file, content, sizeof(content)), 4);
++    TEST_ASSERT_MEM_EQ(content, "base", 4);
++    fixture_close(&fixture);
++}
++
++static void test_denied_zero_length_write(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t file;
++    TEST_ASSERT(create_committed_file(&fixture, "empty", &ino, &file));
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, GUARD_NO_WRITE), BFS_OK);
++
++    guard_state_t before, after;
++    TEST_ASSERT_EQ(capture_state(&fixture, &file, false, &before), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, NULL, 0, NULL, NULL, 0,
++                                          GUARD_NO_WRITE),
++                   BFS_ERR_PROTECTED);
++    /* Without a deny mask, the same zero-length write is an ordinary no-op. */
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, NULL, 0, NULL, NULL, 0, 0), 0);
++    TEST_ASSERT_EQ(capture_state(&fixture, &file, false, &after), BFS_OK);
++    assert_state_unchanged(&before, &after);
++    fixture_close(&fixture);
++}
++
++static void test_other_protection_bits_allow_the_write(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t file;
++    TEST_ASSERT(create_committed_file(&fixture, "allowed", &ino, &file));
++    const uint32_t protection = GUARD_NO_DELETE | GUARD_ARCHIVE | 0xA5000000u;
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, protection), BFS_OK);
++
++    guard_stamp_source_t source = {0};
++    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_END), 4);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, "more", 4, count_stamp, &source,
++                                          GUARD_ARCHIVE, GUARD_NO_WRITE), 4);
++    TEST_ASSERT_EQ(source.calls, 1);
++    bfs_inode_t inode;
++    TEST_ASSERT_EQ(bfs_inode_read(&fixture.fs.inode_tree, ino, &inode), BFS_OK);
++    TEST_ASSERT_EQ(bfs_be32(inode.protection), protection & ~GUARD_ARCHIVE);
++    TEST_ASSERT_EQ(bfs_be32(inode.size_lo), 8);
++    TEST_ASSERT_EQ(bfs_be16(inode.modify_days), 1);
++
++    char content[8] = {0};
++    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_SET), 0);
++    TEST_ASSERT_EQ(bfs_file_read(&file, content, sizeof(content)), 8);
++    TEST_ASSERT_MEM_EQ(content, "basemore", 8);
++    fixture_close(&fixture);
++}
++
++static void test_check_uses_the_current_protection(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t file;
++    TEST_ASSERT(create_committed_file(&fixture, "current", &ino, &file));
++    TEST_ASSERT_EQ(bfs_file_seek(&file, 0, BFS_SEEK_END), 4);
++
++    /* Protection set after the handle was opened is honored ... */
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, GUARD_NO_WRITE), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, "x", 1, NULL, NULL, 0,
++                                          GUARD_NO_WRITE),
++                   BFS_ERR_PROTECTED);
++    /* ... and so is its removal: the denial is not remembered. */
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, 0), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, "x", 1, NULL, NULL, 0,
++                                          GUARD_NO_WRITE), 1);
++    /* A successful write does not exempt the next one. */
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, GUARD_NO_WRITE), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, "y", 1, NULL, NULL, 0,
++                                          GUARD_NO_WRITE),
++                   BFS_ERR_PROTECTED);
++
++    bfs_inode_t inode;
++    TEST_ASSERT_EQ(bfs_inode_read(&fixture.fs.inode_tree, ino, &inode), BFS_OK);
++    TEST_ASSERT_EQ(bfs_be32(inode.size_lo), 5);
++    fixture_close(&fixture);
++}
++
++static void test_check_follows_inode_published_by_another_handle(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t first;
++    TEST_ASSERT(create_committed_file(&fixture, "shared", &ino, &first));
++    bfs_file_t second;
++    TEST_ASSERT_EQ(bfs_file_open(&second, &fixture.fs, ino), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_seek(&first, 2, BFS_SEEK_SET), 2);
++
++    /* The second handle grows the file, then the file is protected. The first
++     * handle's cached size and extents are stale. */
++    static uint8_t block[GUARD_BLOCK_SIZE];
++    memset(block, 0xC3, sizeof(block));
++    TEST_ASSERT_EQ(bfs_file_append(&second, block, sizeof(block)),
++                   (int32_t)sizeof(block));
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, GUARD_NO_WRITE), BFS_OK);
++
++    guard_state_t before, after;
++    TEST_ASSERT_EQ(capture_state(&fixture, &first, false, &before), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&first, "zz", 2, NULL, NULL, 0,
++                                          GUARD_NO_WRITE),
++                   BFS_ERR_PROTECTED);
++    TEST_ASSERT_EQ(capture_state(&fixture, &first, false, &after), BFS_OK);
++    assert_state_unchanged(&before, &after);
++    TEST_ASSERT_EQ(first.offset, 2);
++    bfs_file_t reader;
++    char head[4] = {0};
++    TEST_ASSERT_EQ(bfs_file_open(&reader, &fixture.fs, ino), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_read(&reader, head, sizeof(head)), 4);
++    TEST_ASSERT_MEM_EQ(head, "base", 4);
++
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, 0), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&first, "zz", 2, NULL, NULL, 0,
++                                          GUARD_NO_WRITE), 2);
++    uint8_t content[4 + GUARD_BLOCK_SIZE];
++    TEST_ASSERT_EQ(bfs_file_seek(&first, 0, BFS_SEEK_SET), 0);
++    TEST_ASSERT_EQ(bfs_file_read(&first, content, sizeof(content)),
++                   (int32_t)sizeof(content));
++    TEST_ASSERT_MEM_EQ(content, "bazz", 4);
++    TEST_ASSERT_MEM_EQ(content + 4, block, sizeof(block));
++    fixture_close(&fixture);
++}
++
++static void test_denied_write_to_open_unlinked_inode(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t file;
++    TEST_ASSERT(create_committed_file(&fixture, "orphan", &ino, &file));
++    uint32_t orphan_ino = 0;
++    TEST_ASSERT_EQ(bfs_fs_unlink_open_file(&fixture.fs, BFS_ROOT_INO, "orphan", 6,
++                                           &orphan_ino), BFS_OK);
++    TEST_ASSERT_EQ(orphan_ino, ino);
++    TEST_ASSERT_EQ(bfs_file_mark_unlinked(&file), BFS_OK);
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, true, GUARD_NO_WRITE), BFS_OK);
++
++    guard_state_t before, after;
++    TEST_ASSERT_EQ(capture_state(&fixture, &file, true, &before), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, "new", 3, NULL, NULL, 0,
++                                          GUARD_NO_WRITE),
++                   BFS_ERR_PROTECTED);
++    TEST_ASSERT_EQ(capture_state(&fixture, &file, true, &after), BFS_OK);
++    assert_state_unchanged(&before, &after);
++
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, true, 0), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, "new", 3, NULL, NULL, 0,
++                                          GUARD_NO_WRITE), 3);
++    bfs_inode_t inode;
++    TEST_ASSERT_EQ(bfs_inode_read_unlinked(&fixture.fs.inode_tree, ino, &inode), BFS_OK);
++    TEST_ASSERT_EQ(bfs_be32(inode.link_count), 0);
++    TEST_ASSERT_EQ(bfs_be32(inode.size_lo), 7);
++    fixture_close(&fixture);
++}
++
++static void test_checked_write_looks_up_the_inode_once(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t file;
++    TEST_ASSERT(create_committed_file(&fixture, "probe", &ino, &file));
++    bfs_inode_t inode;
++    TEST_ASSERT_EQ(bfs_inode_read(&fixture.fs.inode_tree, ino, &inode), BFS_OK);
++
++    /* Count inode-tree key comparisons, as tests/test_file_inode_reuse.c does:
++     * a lookup and an update each cost a known number of comparisons. */
++    bfs_btree_t *tree = &fixture.fs.inode_tree;
++    const bfs_btree_ops_t *saved_ops = tree->ops;
++    bfs_btree_ops_t counting_ops = *saved_ops;
++    counting_ops.key_compare = compare_inode_key_counted;
++    tree->ops = &counting_ops;
++
++    tree->hint_leaf = BFS_BLK_NULL;
++    tree->hint_generation = 0;
++    guard_compare_calls = 0;
++    bfs_err_t lookup_err = bfs_inode_read(tree, ino, &inode);
++    uint32_t lookup = guard_compare_calls;
++
++    tree->hint_leaf = BFS_BLK_NULL;
++    tree->hint_generation = 0;
++    guard_compare_calls = 0;
++    bfs_err_t update_err = bfs_inode_write(tree, ino, &inode);
++    uint32_t update = guard_compare_calls;
++    bfs_err_t sync_err = bfs_fs_sync(&fixture.fs);
++
++    tree->hint_leaf = BFS_BLK_NULL;
++    tree->hint_generation = 0;
++    guard_compare_calls = 0;
++    int32_t allowed = bfs_file_write_checked(&file, "x", 1, NULL, NULL, 0,
++                                             GUARD_NO_WRITE);
++    uint32_t allowed_comparisons = guard_compare_calls;
++    bfs_err_t sync_after_err = bfs_fs_sync(&fixture.fs);
++
++    tree->ops = saved_ops;
++    bfs_err_t protect_err = set_protection(&fixture, ino, false, GUARD_NO_WRITE);
++    tree->ops = &counting_ops;
++    tree->hint_leaf = BFS_BLK_NULL;
++    tree->hint_generation = 0;
++    guard_compare_calls = 0;
++    int32_t denied = bfs_file_write_checked(&file, "y", 1, NULL, NULL, 0,
++                                            GUARD_NO_WRITE);
++    uint32_t denied_comparisons = guard_compare_calls;
++    tree->ops = saved_ops;
++
++    fixture_close(&fixture);
++    TEST_ASSERT_EQ(lookup_err, BFS_OK);
++    TEST_ASSERT_EQ(update_err, BFS_OK);
++    TEST_ASSERT_EQ(sync_err, BFS_OK);
++    TEST_ASSERT_EQ(sync_after_err, BFS_OK);
++    TEST_ASSERT_EQ(protect_err, BFS_OK);
++    TEST_ASSERT(lookup > 0);
++    TEST_ASSERT(update > 0);
++    TEST_ASSERT_EQ(allowed, 1);
++    TEST_ASSERT_EQ(allowed_comparisons, lookup + update);
++    TEST_ASSERT_EQ(denied, BFS_ERR_PROTECTED);
++    TEST_ASSERT_EQ(denied_comparisons, lookup);
++}
++
++static void test_invalid_length_takes_precedence(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t file;
++    TEST_ASSERT(create_committed_file(&fixture, "length", &ino, &file));
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, GUARD_NO_WRITE), BFS_OK);
++    /* The length is rejected before the buffer could be used. */
++    static uint8_t byte;
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, &byte, 0x80000000u, NULL, NULL, 0,
++                                          GUARD_NO_WRITE),
++                   BFS_ERR_INVAL);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, &byte, 0x80000000u, NULL, NULL, 0, 0),
++                   BFS_ERR_INVAL);
++    fixture_close(&fixture);
++}
++
++static void test_read_only_mount_takes_precedence(void)
++{
++    guard_fixture_t fixture;
++    TEST_ASSERT(fixture_open(&fixture));
++    uint32_t ino = 0;
++    bfs_file_t file;
++    TEST_ASSERT(create_committed_file(&fixture, "readonly", &ino, &file));
++    TEST_ASSERT_EQ(set_protection(&fixture, ino, false, GUARD_NO_WRITE), BFS_OK);
++    TEST_ASSERT_EQ(bfs_fs_unmount(&fixture.fs), BFS_OK);
++    TEST_ASSERT_EQ(bfs_fs_mount_readonly(&fixture.fs, fixture.bio), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_open(&file, &fixture.fs, ino), BFS_OK);
++    TEST_ASSERT_EQ(bfs_file_write_checked(&file, "x", 1, NULL, NULL, 0,
++                                          GUARD_NO_WRITE),
++                   BFS_ERR_UNSUPPORTED);
++    fixture_close(&fixture);
++}
++
++TEST_SUITE_BEGIN("File Write Guard")
++    TEST_RUN(test_denied_write_changes_nothing);
++    TEST_RUN(test_denied_zero_length_write);
++    TEST_RUN(test_other_protection_bits_allow_the_write);
++    TEST_RUN(test_check_uses_the_current_protection);
++    TEST_RUN(test_check_follows_inode_published_by_another_handle);
++    TEST_RUN(test_denied_write_to_open_unlinked_inode);
++    TEST_RUN(test_checked_write_looks_up_the_inode_once);
++    TEST_RUN(test_invalid_length_takes_precedence);
++    TEST_RUN(test_read_only_mount_takes_precedence);
++TEST_SUITE_END()

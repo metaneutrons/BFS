@@ -1,0 +1,84 @@
+/* SPDX-License-Identifier: MPL-2.0 */
+/*
+ * BFS — File I/O operations
+ *
+ * Provides read/write/seek/truncate on open files.
+ * Uses the extent tree for block mapping and the free space
+ * allocator for data block allocation.
+ */
+
+#ifndef BFS_FILE_H
+#define BFS_FILE_H
+
+#include "bfs_extent.h"
+#include "bfs_fs.h"
+
+typedef struct {
+    bfs_fs_t          *fs;
+    /* Defaults to fs->inode_tree. A read-only snapshot can supply its
+     * immutable inode tree without cloning filesystem state. */
+    bfs_btree_t       *inode_tree;
+    bfs_extent_tree_t  extents;
+    uint32_t            inode_nr;
+    uint64_t            size;       /* file size in bytes */
+    uint64_t            offset;     /* current read/write position */
+    /* Compared with fs->recovery_generation by file.c handle validation. */
+    // cppcheck-suppress unusedStructMember
+    uint64_t            recovery_generation;
+    // cppcheck-suppress unusedStructMember
+    bool                unlinked;  /* retained POSIX orphan; see mark_unlinked */
+} bfs_file_t;
+
+/* Open a file by inode number. Reads its extent mapping and size from the inode. */
+bfs_err_t bfs_file_open(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr);
+
+/* Open a file from an explicitly selected immutable inode tree. This is for
+ * read-only namespace views such as snapshots; mutation APIs reject it. */
+bfs_err_t bfs_file_open_readonly_view(bfs_file_t *f, bfs_fs_t *fs,
+                                      bfs_btree_t *inode_tree,
+                                      uint32_t inode_nr);
+
+/* Read up to 'len' bytes at current offset.
+ * Returns bytes read (>=0), or negative bfs_err_t on error if no bytes were read. */
+int32_t bfs_file_read(bfs_file_t *f, void *buf, uint32_t len);
+
+/* Write 'len' bytes at current offset. Extends file if needed. Returns
+ * BFS_ERR_UNSUPPORTED on a read-only mount. */
+int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len);
+
+/* Optional completion metadata, folded into the existing final inode COW.
+ * Samples once after positive progress, not at intermediate commits. The
+ * current inode is freshly read or reused from this same locked operation
+ * while its tree/root/generation remain unchanged. Clears only the requested
+ * protection bits on that current inode.
+ * No progress means no sampling/metadata update. NULL/zero is ordinary write.
+ * The sampler follows bfs_inode_stamp_fn's no-reentry contract. */
+int32_t bfs_file_write_with_stamp(bfs_file_t *f, const void *buf, uint32_t len,
+                                  bfs_inode_stamp_fn stamp_fn,
+                                  void *stamp_context, uint32_t protection_clear);
+
+/* Append under one filesystem write lock. This is the only core entry point
+ * that guarantees an end-of-file placement is atomic against other writers. */
+int32_t bfs_file_append(bfs_file_t *f, const void *buf, uint32_t len);
+
+/* Seek. mode: 0=SET, 1=CUR, 2=END. Returns new offset or <0 on error. */
+int64_t bfs_file_seek(bfs_file_t *f, int64_t offset, int mode);
+
+/* Truncate file to 'new_size' bytes. Returns BFS_ERR_UNSUPPORTED on a
+ * read-only mount. */
+bfs_err_t bfs_file_truncate(bfs_file_t *f, uint64_t new_size);
+
+/* Bind an already-open handle to an inode that was unlinked with
+ * bfs_fs_unlink_open_file(). */
+bfs_err_t bfs_file_mark_unlinked(bfs_file_t *f);
+
+/* Cached extent root from this handle's last operation, not a cross-handle view. */
+static inline bfs_blk_t bfs_file_extent_root(const bfs_file_t *f) {
+    return f->extents.tree.root;
+}
+
+#define BFS_SEEK_SET 0
+#define BFS_SEEK_CUR 1
+#define BFS_SEEK_END 2
+
+#endif /* BFS_FILE_H */

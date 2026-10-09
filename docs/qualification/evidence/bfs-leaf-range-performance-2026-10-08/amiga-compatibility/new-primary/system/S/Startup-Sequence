@@ -1,0 +1,3 @@
+FailAt 21
+C:bfs format DH1: Test >SYS:format-message.txt
+C:compatibility-probe 4
