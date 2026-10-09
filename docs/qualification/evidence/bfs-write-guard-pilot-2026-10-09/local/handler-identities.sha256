@@ -1,0 +1,16 @@
+# Record, not a check file: paths are relative to build/write-guard-2026-10-09
+# in the working tree, which is not retained.
+# Base: rebuilt from the working baseline (local/preimage in place of the candidate files)
+486e3bbbf5c09a2b7d5cae0e3afd02a3a0a57d76a892d0aca6dfec31dbdb21f4  baseline-tree/build/amiga/bfshandler
+e2f99ecc68e411358f96e5f85a9d452518af0d8c127b4cec4a3d3319d191d39c  baseline-tree/build/amiga/bfshandler-write-probe
+# Candidate: built in the working tree
+e9b6ce33f1531b96f11a6fe0168b54acf444594d2bbb6104c8fd34007cfc87ec  amiga/bfshandler
+54a17d69333fd7a134e447f8ddde3f8d8663b6dace63fd4d86f8bcc86ebae570  amiga/bfshandler-write-probe
+# Candidate: rebuilt from the 229-file pilot source tree
+e9b6ce33f1531b96f11a6fe0168b54acf444594d2bbb6104c8fd34007cfc87ec  candidate-rebuild/build/amiga/bfshandler
+54a17d69333fd7a134e447f8ddde3f8d8663b6dace63fd4d86f8bcc86ebae570  candidate-rebuild/build/amiga/bfshandler-write-probe
+# Pinned inputs as run (bfshandler-probe is the write-probe build)
+486e3bbbf5c09a2b7d5cae0e3afd02a3a0a57d76a892d0aca6dfec31dbdb21f4  inputs/base/bfshandler
+e2f99ecc68e411358f96e5f85a9d452518af0d8c127b4cec4a3d3319d191d39c  inputs/base/bfshandler-probe
+e9b6ce33f1531b96f11a6fe0168b54acf444594d2bbb6104c8fd34007cfc87ec  inputs/candidate/bfshandler
+54a17d69333fd7a134e447f8ddde3f8d8663b6dace63fd4d86f8bcc86ebae570  inputs/candidate/bfshandler-probe

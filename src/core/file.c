@@ -32,6 +32,7 @@ typedef struct {
     bfs_inode_stamp_fn stamp_fn;
     void *stamp_context;
     uint32_t protection_clear;
+    uint32_t protection_deny;
     file_inode_seed_t *inode_seed;
 } file_write_metadata_t;
 
@@ -891,7 +892,7 @@ static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len
 #endif
                                      const file_write_metadata_t *metadata)
 {
-    if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf))
+    if (!f || !f->fs || !f->fs->mounted || (len != 0 && !buf) || len > INT32_MAX)
         return BFS_ERR_INVAL;
     if (f->fs->read_only) return BFS_ERR_UNSUPPORTED;
     bfs_lock_write(&f->fs->lock);
@@ -903,6 +904,12 @@ static int32_t file_write_operation(bfs_file_t *f, const void *buf, uint32_t len
         write_metadata.protection_clear = metadata->protection_clear;
     }
     int32_t err = file_refresh_unlocked(f, &seed);
+    /* The refreshed inode is the one this operation writes, so the check and
+     * the write see the same state. Without a refreshed inode, deny. */
+    if (err == BFS_OK && metadata && metadata->protection_deny != 0 &&
+        (!seed.valid ||
+         (bfs_be32(seed.inode.protection) & metadata->protection_deny) != 0))
+        err = BFS_ERR_PROTECTED;
     if (err == BFS_OK)
         err = file_write_with_metadata_unlocked(f, buf, len, &write_metadata);
     bfs_lock_unlock(&f->fs->lock);
@@ -935,6 +942,20 @@ int32_t bfs_file_write_with_stamp(bfs_file_t *f, const void *buf, uint32_t len,
         .stamp_fn = stamp_fn,
         .stamp_context = stamp_context,
         .protection_clear = protection_clear,
+    };
+    return file_write_operation(f, buf, len, &metadata);
+}
+
+int32_t bfs_file_write_checked(bfs_file_t *f, const void *buf, uint32_t len,
+                               bfs_inode_stamp_fn stamp_fn, void *stamp_context,
+                               uint32_t protection_clear,
+                               uint32_t protection_deny)
+{
+    const file_write_metadata_t metadata = {
+        .stamp_fn = stamp_fn,
+        .stamp_context = stamp_context,
+        .protection_clear = protection_clear,
+        .protection_deny = protection_deny,
     };
     return file_write_operation(f, buf, len, &metadata);
 }

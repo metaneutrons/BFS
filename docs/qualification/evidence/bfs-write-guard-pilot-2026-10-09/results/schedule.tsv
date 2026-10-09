@@ -1,0 +1,15 @@
+sequence	family	repeat	order	variant	run_name
+1	diag	1	bfs-first	base	write-guard-diag-base-1-bfs-first
+2	diag	1	bfs-first	candidate	write-guard-diag-candidate-1-bfs-first
+3	normal	1	bfs-first	base	write-guard-normal-base-1-bfs-first
+4	normal	1	bfs-first	candidate	write-guard-normal-candidate-1-bfs-first
+5	durable	1	bfs-first	base	write-guard-durable-base-1-bfs-first
+6	durable	1	bfs-first	candidate	write-guard-durable-candidate-1-bfs-first
+7	durable	2	pfs3-first	candidate	write-guard-durable-candidate-2-pfs3-first
+8	durable	2	pfs3-first	base	write-guard-durable-base-2-pfs3-first
+9	normal	2	pfs3-first	candidate	write-guard-normal-candidate-2-pfs3-first
+10	normal	2	pfs3-first	base	write-guard-normal-base-2-pfs3-first
+11	aa-normal	1	bfs-first	basea	write-guard-aa-normal-basea-1-bfs-first
+12	aa-normal	1	bfs-first	baseb	write-guard-aa-normal-baseb-1-bfs-first
+13	aa-durable	1	pfs3-first	basea	write-guard-aa-durable-basea-1-pfs3-first
+14	aa-durable	1	pfs3-first	baseb	write-guard-aa-durable-baseb-1-pfs3-first

@@ -1120,6 +1120,8 @@ static LONG Pfs4ToDosError(bfs_err_t err)
     case BFS_ERR_NOMEM:    return ERROR_NO_FREE_STORE;
     case BFS_ERR_INVAL:    return ERROR_BAD_NUMBER;
     case BFS_ERR_OVERFLOW: return ERROR_BAD_NUMBER;
+    /* Only the FIBF_WRITE check of bfs_file_write_checked returns it. */
+    case BFS_ERR_PROTECTED: return ERROR_WRITE_PROTECTED;
     case BFS_ERR_UNSUPPORTED: return ERROR_NOT_IMPLEMENTED;
     case BFS_ERR_CORRUPT:  return ERROR_NOT_A_DOS_DISK;
     case BFS_ERR_AGAIN:    return ERROR_DISK_FULL;
@@ -2272,10 +2274,11 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             break;
         }
 
-        res2 = CheckProtection(h, f->inode_nr, FIBF_WRITE);
-        if (res2) break;
-        int32_t n = bfs_file_write_with_stamp(f, buf, (uint32_t)len,
-                                             SampleInodeStamp, NULL, FIBF_ARCHIVE);
+        /* The core checks FIBF_WRITE on the inode it refreshes for the write,
+         * so the packet needs no separate inode read. */
+        int32_t n = bfs_file_write_checked(f, buf, (uint32_t)len,
+                                          SampleInodeStamp, NULL, FIBF_ARCHIVE,
+                                          FIBF_WRITE);
         if (n < 0) {
             res1 = -1;
             res2 = Pfs4ToDosError((bfs_err_t)n);

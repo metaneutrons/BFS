@@ -1,0 +1,17 @@
+services-restored.log was written at 21:51:57 UTC on 9 October 2026 by this
+command on cachy (run over SSH from the Mac); its output lines, in order:
+
+  date -u +%FT%TZ                                  -> timestamp
+  docker inspect -f '{{.State.Running}} {{.State.Status}}' snapdog-runner
+                                                   -> "true running"
+  systemctl --user show coffin.service -p LoadState -p ActiveState -p SubState -p MainPID
+                                                   -> four Key=Value lines
+  docker top snapdog-runner -eo pid,args | grep -cE 'Runner\.Worker'
+                                                   -> "0": number of CI worker processes
+  for u in actions.runner.metaneutrons-snapdog-os.cachy.service gitlab-runner.service;
+      do systemctl show $u -p ActiveState -p MainPID; done
+                                                   -> two ActiveState/MainPID pairs, in that unit order
+  pgrep -x fs-uae || echo 'no fs-uae'              -> "no fs-uae"
+
+A check 22 seconds earlier (21:51:35 UTC, not retained as a file) also listed
+the runner's Runner.Listener process.

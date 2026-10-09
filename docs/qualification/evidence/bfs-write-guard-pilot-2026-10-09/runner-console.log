@@ -1,0 +1,32 @@
+snapdog-runner
+START 1 write-guard-diag-base-1-bfs-first 2026-10-09T21:42:10Z
+PASS 1 write-guard-diag-base-1-bfs-first 2026-10-09T21:42:52Z
+START 2 write-guard-diag-candidate-1-bfs-first 2026-10-09T21:42:52Z
+PASS 2 write-guard-diag-candidate-1-bfs-first 2026-10-09T21:43:33Z
+START 3 write-guard-normal-base-1-bfs-first 2026-10-09T21:43:33Z
+PASS 3 write-guard-normal-base-1-bfs-first 2026-10-09T21:44:12Z
+START 4 write-guard-normal-candidate-1-bfs-first 2026-10-09T21:44:12Z
+PASS 4 write-guard-normal-candidate-1-bfs-first 2026-10-09T21:44:50Z
+START 5 write-guard-durable-base-1-bfs-first 2026-10-09T21:44:50Z
+PASS 5 write-guard-durable-base-1-bfs-first 2026-10-09T21:45:27Z
+START 6 write-guard-durable-candidate-1-bfs-first 2026-10-09T21:45:27Z
+PASS 6 write-guard-durable-candidate-1-bfs-first 2026-10-09T21:46:05Z
+START 7 write-guard-durable-candidate-2-pfs3-first 2026-10-09T21:46:05Z
+PASS 7 write-guard-durable-candidate-2-pfs3-first 2026-10-09T21:46:43Z
+START 8 write-guard-durable-base-2-pfs3-first 2026-10-09T21:46:43Z
+PASS 8 write-guard-durable-base-2-pfs3-first 2026-10-09T21:47:21Z
+START 9 write-guard-normal-candidate-2-pfs3-first 2026-10-09T21:47:21Z
+PASS 9 write-guard-normal-candidate-2-pfs3-first 2026-10-09T21:47:59Z
+START 10 write-guard-normal-base-2-pfs3-first 2026-10-09T21:47:59Z
+PASS 10 write-guard-normal-base-2-pfs3-first 2026-10-09T21:48:37Z
+START 11 write-guard-aa-normal-basea-1-bfs-first 2026-10-09T21:48:38Z
+PASS 11 write-guard-aa-normal-basea-1-bfs-first 2026-10-09T21:49:16Z
+START 12 write-guard-aa-normal-baseb-1-bfs-first 2026-10-09T21:49:16Z
+PASS 12 write-guard-aa-normal-baseb-1-bfs-first 2026-10-09T21:49:55Z
+START 13 write-guard-aa-durable-basea-1-pfs3-first 2026-10-09T21:49:55Z
+PASS 13 write-guard-aa-durable-basea-1-pfs3-first 2026-10-09T21:50:33Z
+START 14 write-guard-aa-durable-baseb-1-pfs3-first 2026-10-09T21:50:33Z
+PASS 14 write-guard-aa-durable-baseb-1-pfs3-first 2026-10-09T21:51:12Z
+WRITE_GUARD_PILOT_COMPLETE 14 2026-10-09T21:51:12Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-09T21:51:14Z

@@ -1,0 +1,54 @@
+{
+  "checks": {
+    "diagnostic_4k_growth_saves_one_inode_read_per_write": true,
+    "diagnostic_no_count_field_increases": true,
+    "no_repeated_ten_percent_phase_slowdown": true
+  },
+  "diagnostic_4k_growth": {
+    "inode_reads": {
+      "WORK_INODE_READ_CALLS": {
+        "base": 515,
+        "candidate": 259
+      },
+      "WORK_WRITE_DETAIL_INODE_READ_CALLS": {
+        "base": 515,
+        "candidate": 259
+      }
+    },
+    "packet_writes": {
+      "base": 256,
+      "candidate": 256
+    },
+    "unchanged": {
+      "WORK_CORE_FILE_WRITE_CALLS": {
+        "base": 256,
+        "candidate": 256
+      },
+      "WORK_WRITE_DETAIL_INODE_WRITE_CALLS": {
+        "base": 257,
+        "candidate": 257
+      }
+    }
+  },
+  "diagnostic_count_increases": [],
+  "repeated_slowdowns": [],
+  "reported_4k_growth": {
+    "durable": {
+      "median": 0.9883936141750216,
+      "ratios": [
+        0.9127118644067796,
+        1.0640753639432636
+      ]
+    },
+    "normal": {
+      "median": 0.8477363998918435,
+      "ratios": [
+        0.8597928484602917,
+        0.8356799513233952
+      ]
+    }
+  },
+  "reported_4k_pairs_not_slower": 3,
+  "retain_locally": true,
+  "scope": "Pre-run retention rule of PILOT_SCOPE.md, not production performance clearance. Strict correctness and identity validation precede this calculation. Medians and pair counts are reported, not decisive."
+}

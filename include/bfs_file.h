@@ -57,6 +57,21 @@ int32_t bfs_file_write_with_stamp(bfs_file_t *f, const void *buf, uint32_t len,
                                   bfs_inode_stamp_fn stamp_fn,
                                   void *stamp_context, uint32_t protection_clear);
 
+/* bfs_file_write_with_stamp with an access check in the same locked operation.
+ * After the handle is refreshed under the write lock, and before any data,
+ * allocation, sampling or inode change, the write fails with
+ * BFS_ERR_PROTECTED if the current inode's protection word has any bit of
+ * protection_deny set. This also applies to len == 0. Invalid arguments
+ * (including len > INT32_MAX), a read-only mount and handle, recovery or
+ * inode-lookup errors take precedence; the file-size limit and resource errors
+ * are reported only for permitted writes. Nothing is cached between calls:
+ * every call checks the inode it is about to write. A zero mask makes this
+ * bfs_file_write_with_stamp. */
+int32_t bfs_file_write_checked(bfs_file_t *f, const void *buf, uint32_t len,
+                               bfs_inode_stamp_fn stamp_fn, void *stamp_context,
+                               uint32_t protection_clear,
+                               uint32_t protection_deny);
+
 /* Append under one filesystem write lock. This is the only core entry point
  * that guarantees an end-of-file placement is atomic against other writers. */
 int32_t bfs_file_append(bfs_file_t *f, const void *buf, uint32_t len);

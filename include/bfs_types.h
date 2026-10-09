@@ -44,6 +44,7 @@ typedef enum {
     BFS_ERR_AGAIN = -9,   /* operation incomplete, caller should retry */
     BFS_ERR_UNSUPPORTED = -10, /* intact, but incompatible on-disk format */
     BFS_ERR_OVERFLOW = -11, /* geometry exceeds the block address range */
+    BFS_ERR_PROTECTED = -12, /* denied by a caller-supplied protection mask */
 } bfs_err_t;
 
 /* On-disk structures use big-endian byte order. Native AROS may run on a
