@@ -1358,10 +1358,12 @@ static bool exam_next_pos_cb(const char *name, uint8_t name_len, uint32_t inode_
 
 /* One scan gathers the entries that the following ExNext calls return, so
  * that most calls need no scan. An entry is served only while the directory
- * tree is the one it was gathered from; its inode is read when it is served,
- * so size, protection and date are current. The batch grows while it is used
- * up and shrinks when a change discards it, so that a loop deleting each entry
- * it lists scans little more than before. */
+ * tree is the one it was gathered from. Their inodes are read in one ascending
+ * batch, as ExAll reads them; an entry uses its copy only while the inode tree
+ * and its pending inodes are unchanged since, and reads its inode again
+ * otherwise, so size, protection and date are current. The batch grows while
+ * it is used up and shrinks when a change discards it, so that a loop deleting
+ * each entry it lists scans little more than before. */
 #define EXNEXT_BATCH_MAX 32
 #define EXNEXT_BATCH_FIRST 8
 #define EXNEXT_NAME_KEEP 107 /* FillFib shows at most 107 name bytes */
@@ -1383,9 +1385,16 @@ typedef struct exnext_batch {
     bfs_blk_t dir_root;
     uint32_t dir_generation;
     uint64_t recovery_generation;
+    bfs_blk_t inode_root;    /* the inode tree the copies were read from */
+    uint32_t inode_generation;
+    uint32_t pending_version;
     uint32_t skip;
     uint32_t seen;
     exnext_entry_t entries[EXNEXT_BATCH_MAX];
+    bfs_inode_t inodes[EXNEXT_BATCH_MAX];  /* by read order, see read_index */
+    bfs_err_t results[EXNEXT_BATCH_MAX];
+    uint32_t inos[EXNEXT_BATCH_MAX];
+    uint8_t read_index[EXNEXT_BATCH_MAX];  /* entry -> its inode copy */
 } exnext_batch_t;
 
 static bool exnext_gather_cb(const char *name, uint8_t name_len, uint32_t inode_nr,
@@ -1416,6 +1425,48 @@ static bool ExNextBatchCurrent(const struct bfs_handler *h, const exnext_batch_t
     return b->dir_root == h->fs.dir_tree.tree.root &&
            b->dir_generation == h->fs.dir_tree.tree.generation &&
            b->recovery_generation == h->fs.recovery_generation;
+}
+
+/* Read the inodes of the gathered entries in ascending order. */
+static void ExNextReadInodes(struct bfs_handler *h, exnext_batch_t *b)
+{
+    uint8_t order[EXNEXT_BATCH_MAX];
+    for (uint32_t i = 0; i < b->count; i++) {
+        /* Insertion sort by inode number; batches are small. */
+        uint32_t at = i;
+        while (at > 0 && b->entries[order[at - 1]].ino > b->entries[i].ino) {
+            order[at] = order[at - 1];
+            at--;
+        }
+        order[at] = (uint8_t)i;
+    }
+    for (uint32_t k = 0; k < b->count; k++) {
+        b->inos[k] = b->entries[order[k]].ino;
+        b->read_index[order[k]] = (uint8_t)k;
+    }
+    b->inode_root = h->fs.inode_tree.root;
+    b->inode_generation = h->fs.inode_tree.generation;
+    b->pending_version = bfs_inode_pending_version(&h->fs.inode_tree);
+    if (bfs_inode_read_sorted(&h->fs.inode_tree, b->inos, b->count, b->inodes,
+                              b->results) != BFS_OK) {
+        for (uint32_t k = 0; k < b->count; k++) b->results[k] = BFS_ERR_AGAIN;
+    }
+}
+
+/* The inode of the entry ExNextEntry returned last: the batch's copy while it
+ * is current, otherwise a fresh read. */
+static bfs_err_t ExNextInode(struct bfs_handler *h, const exnext_batch_t *b,
+                             const exnext_entry_t *e, bfs_inode_t *out)
+{
+    uint8_t k = b->read_index[e - b->entries];
+    if (b->results[k] == BFS_OK && b->inode_root == h->fs.inode_tree.root &&
+        b->inode_generation == h->fs.inode_tree.generation &&
+        b->pending_version == bfs_inode_pending_version(&h->fs.inode_tree) &&
+        b->recovery_generation == h->fs.recovery_generation) {
+        *out = b->inodes[k];
+        return BFS_OK;
+    }
+    return bfs_inode_read(&h->fs.inode_tree, e->ino, out);
 }
 
 /* Forget the read-ahead, for example when ExAll moves the cursor. */
@@ -1465,6 +1516,7 @@ static const exnext_entry_t *ExNextEntry(struct bfs_handler *h, bfs_lock_t *lk,
     b->dir_root = h->fs.dir_tree.tree.root;
     b->dir_generation = h->fs.dir_tree.tree.generation;
     b->recovery_generation = h->fs.recovery_generation;
+    if (b->count) ExNextReadInodes(h, b);
     return b->count ? &b->entries[b->next++] : NULL;
 }
 
@@ -2871,7 +2923,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         /* Read inode for size, protection, dates */
         bfs_inode_t en_inode;
         uint64_t en_size = 0; uint32_t en_prot = 0;
-        err = bfs_inode_read(&h->fs.inode_tree, ctx.ino_out, &en_inode);
+        err = entry ? ExNextInode(h, lk->cursor->batch, entry, &en_inode)
+                    : bfs_inode_read(&h->fs.inode_tree, ctx.ino_out, &en_inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         en_size = ((uint64_t)bfs_be32(en_inode.size_hi) << 32) | bfs_be32(en_inode.size_lo);
         en_prot = bfs_be32(en_inode.protection);

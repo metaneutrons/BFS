@@ -1,0 +1,96 @@
+diff --git a/src/core/btree.c b/src/core/btree.c
+index ea37250..b580422 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -1807,13 +1807,12 @@ typedef struct {
+     bfs_blk_t new_right;
+ } split_result_t;
+ 
+-/* Split a full leaf. Left keeps first half, right gets second half.
++/* Split a full leaf. Left keeps the keys before mid, right gets the rest.
+  * Median key (first key of right) is returned for parent insertion. */
+ static bfs_err_t leaf_split(bfs_btree_t *tree, btree_mutation_t *mutation,
+-                            uint8_t *buf, split_result_t *result)
++                            uint8_t *buf, uint32_t mid, split_result_t *result)
+ {
+     uint32_t n = num_keys(buf);
+-    uint32_t mid = n / 2;
+     uint32_t ks = tree->ops->key_size;
+     uint32_t vs = tree->ops->val_size;
+ 
+@@ -1995,7 +1994,13 @@ bfs_err_t bfs_btree_insert(bfs_btree_t *tree, const void *key, const void *val)
+     split_result_t split = { .did_split = false };
+ 
+     if (num_keys(leaf) >= leaf_max_keys(tree)) {
+-        bfs_err_t err = leaf_split(tree, &mutation, leaf, &split);
++        /* A key past the end of the last leaf is an append, as inode numbers
++         * and file blocks grow: keep the left leaf full instead of leaving
++         * every leaf behind half empty. Otherwise split in the middle. */
++        uint32_t n = num_keys(leaf);
++        uint32_t mid = idx == n && bfs_be32(hdr_of(leaf)->right_sibling) == BFS_BLK_NULL
++                           ? n - 1 : n / 2;
++        bfs_err_t err = leaf_split(tree, &mutation, leaf, mid, &split);
+         if (err != BFS_OK) { rc = err; goto insert_cleanup; }
+ 
+         /* Determine which half the new key goes into */
+diff --git a/tests/test_btree_buffers.c b/tests/test_btree_buffers.c
+index 5491e34..0612a8f 100644
+--- a/tests/test_btree_buffers.c
++++ b/tests/test_btree_buffers.c
+@@ -398,8 +398,11 @@ static void test_cached_tree_lifecycle(uint32_t block_size)
+ 
+     uint32_t min_leaf = capacity / 2u; /* btree.c: leaf_min = leaf_max / 2 */
+     TEST_ASSERT_EQ(capacity % 2u, 0);
+-    uint32_t right_count_after_split = capacity - capacity / 2u + 3u;
+-    uint32_t right_deletes_to_min = right_count_after_split - min_leaf;
++    /* Ascending keys split at the end: the left leaf keeps capacity - 1 keys
++     * and the right leaf the last four. Each delete from the right leaves it
++     * below leaf_min and borrows one key from the left, until the left leaf
++     * is at leaf_min. */
++    uint32_t right_deletes_to_min = capacity - 1u - min_leaf;
+     for (uint32_t i = 0; i < right_deletes_to_min; i++) {
+         uint32_t key;
+         make_u32(&key, count - 1u - i);
+@@ -410,8 +413,9 @@ static void test_cached_tree_lifecycle(uint32_t block_size)
+     TEST_ASSERT_EQ(fixture.tree.height, 2);
+     TEST_ASSERT(tree_matches_prefix(&fixture, remaining));
+ 
+-    /* Removing the next rightmost key leaves leaf_min - 1 entries. The left
+-     * sibling is at leaf_min, so this is a merge, not a borrow. */
++    /* Removing the next rightmost key leaves the right leaf below leaf_min
++     * again. The left sibling is at leaf_min, so this is a merge, not a
++     * borrow. */
+     uint32_t merge_key;
+     make_u32(&merge_key, remaining - 1u);
+     bfs_blk_t root_before_merge_error = fixture.tree.root;
+diff --git a/tests/test_inode_lookup_hints.c b/tests/test_inode_lookup_hints.c
+index 847cac1..34fe894 100644
+--- a/tests/test_inode_lookup_hints.c
++++ b/tests/test_inode_lookup_hints.c
+@@ -745,7 +745,9 @@ static void test_range_table_is_sorted_bounded_and_replaces_old_leaves(void)
+     enum {
+         TEST_BLOCK_SIZE = 1024,
+         TEST_BLOCK_COUNT = 8192,
+-        KEY_COUNT = 700,
++        /* Ascending inserts fill each leaf but the last (16 keys at 1 KiB),
++         * so 1,400 keys give about 94 leaves, more than the 64 hint slots. */
++        KEY_COUNT = 1400,
+         MAX_LEAVES = 256,
+         CACHE_SLOTS = 128,
+     };
+diff --git a/tests/test_pending_frees.c b/tests/test_pending_frees.c
+index feeb24e..e93d520 100644
+--- a/tests/test_pending_frees.c
++++ b/tests/test_pending_frees.c
+@@ -37,8 +37,9 @@
+ #define BLK_SIZE  4096
+ #define BLK_COUNT 8192     /* 32 MB */
+ /* Above BFS_FS_OP_FREE_RESERVE so ops can still reserve, and low enough that a
+- * storm over the dense directory tree reaches the drain threshold. */
+-#define SMALL_CAP (BFS_FS_OP_FREE_RESERVE + 64u)
++ * storm over the dense directory tree and the inode tree, whose ascending
++ * inserts fill their leaves, reaches the drain threshold. */
++#define SMALL_CAP (BFS_FS_OP_FREE_RESERVE + 32u)
+ 
+ static bfs_fs_t   g_fs;
+ static bfs_bio_t *g_bio;

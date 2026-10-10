@@ -1921,6 +1921,49 @@ static void test_exnext_delete(void)
     if (ok) pass(T); else fail(T, "listing while deleting or cleanup");
 }
 
+/* ExNext reads ahead, but reports what is current: after the first entry,
+ * every other item gets new protection bits and one of them grows through a
+ * handle that stays open, and the rest of the listing shows both. */
+static void test_exnext_fresh(void)
+{
+    const char *T = "exnextfresh_55";
+    enum { COUNT = 20, GROWN = 300 };
+    static UBYTE data[GROWN];
+    UBYTE seen[COUNT] = {0};
+    if (!make_items("exfresh", COUNT)) { fail(T, "setup"); return; }
+    BPTR lock = Lock(vpath("exfresh"), SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    const char *step = "first entry";
+    UBYTE first = 0;
+    BOOL ok = lock && fib && Examine(lock, fib) && ExNext(lock, fib) &&
+              item_number(fib->fib_FileName, COUNT, &first);
+    if (ok) seen[first] = 1;
+    int grown = first == 0 ? 1 : 0;
+    BPTR fh = 0;
+    if (ok) {
+        step = "change the others";
+        for (int i = 0; ok && i < COUNT; i++)
+            if (i != first) ok = SetProtection(item_path("exfresh", i), FIBF_SCRIPT);
+        fh = ok ? Open(item_path("exfresh", grown), MODE_OLDFILE) : 0;
+        ok = fh && Write(fh, data, GROWN) == GROWN;
+    }
+    if (ok) step = "rest of the listing";
+    while (ok && ExNext(lock, fib)) {
+        UBYTE number;
+        ok = mark_item(fib->fib_FileName, COUNT, seen) &&
+             item_number(fib->fib_FileName, COUNT, &number) &&
+             fib->fib_Protection == FIBF_SCRIPT &&
+             fib->fib_Size == (number == grown ? GROWN : 0);
+    }
+    if (ok) ok = IoErr() == ERROR_NO_MORE_ENTRIES && all_seen(seen, COUNT);
+    if (fh && !close_checked(fh)) ok = FALSE;
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    for (int i = 0; i < COUNT; i++) SetProtection(item_path("exfresh", i), 0);
+    if (!remove_items("exfresh", COUNT)) ok = FALSE;
+    if (ok) pass(T); else fail(T, step);
+}
+
 /* ExAll in small batches, deleting each batch before asking for the next,
  * returns every file once. */
 static void test_exall_delete(void)

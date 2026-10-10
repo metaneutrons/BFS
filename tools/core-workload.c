@@ -136,7 +136,9 @@ static void read_small_files(bfs_fs_t *fs, uint32_t dir)
 
 /* ExNext as the handler runs it: one entry per call, served from a batch that
  * one scan gathered. The scan stops on the last entry it gathers, so the next
- * one resumes after it; the batch doubles up to 32 while it is used up. */
+ * one resumes after it; the batch doubles up to 32 while it is used up. The
+ * batch's inodes are read in one ascending batch, and an entry uses its copy
+ * while the inode tree and its pending inodes are unchanged. */
 #define EXNEXT_BATCH_MAX 32u
 #define EXNEXT_BATCH_FIRST 8u
 
@@ -145,7 +147,35 @@ typedef struct {
     bfs_dir_pos_t pos[EXNEXT_BATCH_MAX];
     uint32_t count, next, limit;
     bool stopped_at_last;
+    uint32_t sorted[EXNEXT_BATCH_MAX];
+    uint8_t read_index[EXNEXT_BATCH_MAX];
+    bfs_inode_t inodes[EXNEXT_BATCH_MAX];
+    bfs_err_t results[EXNEXT_BATCH_MAX];
+    bfs_blk_t inode_root;
+    uint32_t inode_generation, pending_version;
 } exnext_batch_t;
+
+static void exnext_read_inodes(bfs_fs_t *fs, exnext_batch_t *b)
+{
+    uint8_t order[EXNEXT_BATCH_MAX];
+    for (uint32_t i = 0; i < b->count; i++) {
+        uint32_t at = i;
+        while (at > 0 && b->ino[order[at - 1]] > b->ino[i]) {
+            order[at] = order[at - 1];
+            at--;
+        }
+        order[at] = (uint8_t)i;
+    }
+    for (uint32_t k = 0; k < b->count; k++) {
+        b->sorted[k] = b->ino[order[k]];
+        b->read_index[order[k]] = (uint8_t)k;
+    }
+    b->inode_root = fs->inode_tree.root;
+    b->inode_generation = fs->inode_tree.generation;
+    b->pending_version = bfs_inode_pending_version(&fs->inode_tree);
+    require(bfs_inode_read_sorted(&fs->inode_tree, b->sorted, b->count, b->inodes,
+                                  b->results), "exnext-inodes");
+}
 
 static bool exnext_gather(const char *name, uint8_t name_len, uint32_t ino,
                           uint32_t type, const bfs_dir_pos_t *pos, void *context)
@@ -185,10 +215,17 @@ static void list_exnext(bfs_fs_t *fs, uint32_t dir, uint32_t expected_count)
                                                   count ? &last : NULL, exnext_gather, &b);
                 require(err, "exnext");
                 if (b.count == 0) break;
+                exnext_read_inodes(fs, &b);
             }
             uint32_t i = b.next++;
+            uint8_t k = b.read_index[i];
             bfs_inode_t inode;
-            require(bfs_inode_read(&fs->inode_tree, b.ino[i], &inode), "list-inode");
+            if (b.results[k] == BFS_OK && b.inode_root == fs->inode_tree.root &&
+                b.inode_generation == fs->inode_tree.generation &&
+                b.pending_version == bfs_inode_pending_version(&fs->inode_tree))
+                inode = b.inodes[k];
+            else
+                require(bfs_inode_read(&fs->inode_tree, b.ino[i], &inode), "list-inode");
             if (bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT) require(BFS_ERR_CORRUPT, "list-comment");
             last = b.pos[i];
             consumed_stop = b.next == b.count && b.stopped_at_last;

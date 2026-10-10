@@ -38,9 +38,10 @@ to 64 entries at a time, as many as their smallest size lets fit, reads their
 inodes in ascending order, and then writes them in directory order; without
 memory for that batch it reads entry by entry. ExNext gathers the entries of
 its next calls in one scan, 8 at first and up to 32 while each batch is used
-up, and serves them while the directory tree is unchanged; it reads each
-entry's inode when it returns the entry, so size, protection and date are
-current. A change to the directory tree discards the batch and halves the
+up, and serves them while the directory tree is unchanged. It reads their
+inodes in one ascending batch as well and returns an entry's copy only while
+the inode tree and its pending inodes are unchanged since; otherwise it reads
+the inode again, so size, protection and date are current. A change to the directory tree discards the batch and halves the
 next one, so a loop that deletes each entry it lists scans about as much as
 one entry per call. ExAll on the same lock discards the batch. An entry
 created during a listing may or may not appear. If the number does not match (a second

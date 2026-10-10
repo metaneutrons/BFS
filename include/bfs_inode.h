@@ -80,7 +80,8 @@ typedef struct {
 } bfs_inode_pending_slot_t;
 
 typedef struct bfs_inode_pending {
-    uint32_t used; /* occupied slots; reads skip the table when 0 */
+    uint32_t used;    /* occupied slots; reads skip the table when 0 */
+    uint32_t version; /* changes with every change of a slot */
     bfs_inode_pending_slot_t slot[BFS_INODE_PENDING_SLOTS];
 } bfs_inode_pending_t;
 
@@ -94,6 +95,12 @@ void bfs_inode_pending_discard(bfs_btree_t *tree);
 /* Publish a linked inode. Without a table, or when the inode was not yet
  * written in this transaction, this is bfs_inode_write. */
 bfs_err_t bfs_inode_publish(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *inode);
+
+/* A value that changes whenever a read of the tree's inodes could return
+ * something else through the table: with the tree's root and generation it
+ * tells a reader whether an inode it read is still current. 0 without a
+ * table. */
+uint32_t bfs_inode_pending_version(const bfs_btree_t *tree);
 
 /* The pending copy of ino, or NULL. Valid until the next call that changes
  * the tree or the table; for readers that walk the tree directly. */

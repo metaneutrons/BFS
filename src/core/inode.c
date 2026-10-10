@@ -106,6 +106,7 @@ static void pending_drop(const bfs_btree_t *tree, uint32_t ino)
     if (slot && tree) {
         memset(slot, 0, sizeof(*slot));
         tree->inode_pending->used--;
+        tree->inode_pending->version++;
     }
 }
 
@@ -132,6 +133,11 @@ static void pending_settle(const bfs_btree_t *tree, uint32_t ino, bfs_err_t err)
     if (tree && (err == BFS_OK || tree->free_sink_err != BFS_OK)) pending_drop(tree, ino);
 }
 
+uint32_t bfs_inode_pending_version(const bfs_btree_t *tree)
+{
+    return tree && tree->inode_pending ? tree->inode_pending->version : 0;
+}
+
 const bfs_inode_t *bfs_inode_pending_peek(const bfs_btree_t *tree, uint32_t ino)
 {
     if (!tree || ino == 0) return NULL;
@@ -148,8 +154,10 @@ void bfs_inode_pending_attach(bfs_btree_t *tree, bfs_inode_pending_t *pending)
 
 void bfs_inode_pending_discard(bfs_btree_t *tree)
 {
-    if (tree && tree->inode_pending)
-        memset(tree->inode_pending, 0, sizeof(*tree->inode_pending));
+    if (!tree || !tree->inode_pending) return;
+    uint32_t version = tree->inode_pending->version;
+    memset(tree->inode_pending, 0, sizeof(*tree->inode_pending));
+    tree->inode_pending->version = version + 1u;
 }
 
 #ifdef BFS_PERF_PROBE
@@ -364,6 +372,7 @@ bfs_err_t bfs_inode_publish(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *
     if (slot && slot->txn_id == txn_id) {
         slot->inode = *inode;
         slot->dirty = true;
+        tree->inode_pending->version++;
         return BFS_OK;
     }
     /* First publication in this transaction: write the tree, so that the leaf
@@ -373,6 +382,7 @@ bfs_err_t bfs_inode_publish(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *
     slot = pending_take(tree);
     if (slot) {
         if (slot->ino == 0) tree->inode_pending->used++;
+        tree->inode_pending->version++;
         slot->ino = ino;
         slot->dirty = false;
         slot->txn_id = txn_id;
@@ -386,6 +396,7 @@ bfs_err_t bfs_inode_flush_pending(bfs_btree_t *tree)
     if (!tree || !tree->inode_pending) return BFS_OK;
     bfs_err_t result = BFS_OK;
     if (tree->inode_pending->used == 0) return BFS_OK;
+    tree->inode_pending->version++;
     for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++) {
         bfs_inode_pending_slot_t slot = tree->inode_pending->slot[i];
         memset(&tree->inode_pending->slot[i], 0, sizeof(slot));
