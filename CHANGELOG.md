@@ -1,5 +1,32 @@
 # Changelog
 
+## [0.2.0](https://github.com/metaneutrons/BFS/compare/v0.1.4...v0.2.0) (2026-10-10)
+
+
+### ⚠ BREAKING CHANGES
+
+* format v3 directory records changed in place; v3 images written before this release must be recreated. New names longer than 107 bytes require LONGNAMES (AmigaDOS) or --long-names (FUSE).
+* consolidate on-disk format v3 and the write-path performance chain onto main ([#83](https://github.com/metaneutrons/BFS/issues/83))
+
+### Features
+
+* add fault corruption qualification campaign ([#70](https://github.com/metaneutrons/BFS/issues/70)) ([37912d9](https://github.com/metaneutrons/BFS/commit/37912d9d98603887b1a5df473ba6b55a1ff03383))
+* **amiga:** create, read and follow soft links through dos.library ([#85](https://github.com/metaneutrons/BFS/issues/85)) ([8c314b7](https://github.com/metaneutrons/BFS/commit/8c314b77d4bdb6af112bfee1f3522fb3864fbaa9))
+* **amiga:** mount snapshots as read-only volumes ([#72](https://github.com/metaneutrons/BFS/issues/72)) ([3243afb](https://github.com/metaneutrons/BFS/commit/3243afb7efc4f3c1433cd2e591ed847bf94323a9))
+* **amiga:** unify administration commands under bfs ([#63](https://github.com/metaneutrons/BFS/issues/63)) ([80b372d](https://github.com/metaneutrons/BFS/commit/80b372df81e05b13170afb41c36a742e5f428801))
+* **aros:** build and test BFS natively on AROS x86_64 ([#86](https://github.com/metaneutrons/BFS/issues/86)) ([07216b7](https://github.com/metaneutrons/BFS/commit/07216b7f17912c9f28b9b4a920caaa6828b00ccb))
+* **ci:** add reproducible M7 Linux qualification ([#58](https://github.com/metaneutrons/BFS/issues/58)) ([cdf477d](https://github.com/metaneutrons/BFS/commit/cdf477dd0d8db636312c4a8742f2c9bdd4517b8f))
+* compact directory records, inode write-back and faster listings ([#88](https://github.com/metaneutrons/BFS/issues/88)) ([dc1034c](https://github.com/metaneutrons/BFS/commit/dc1034c5e769c1fa3076c14f711c53dd167a5f24))
+* consolidate on-disk format v3 and the write-path performance chain onto main ([#83](https://github.com/metaneutrons/BFS/issues/83)) ([b8ea972](https://github.com/metaneutrons/BFS/commit/b8ea972cbaf69324030070a999ee14e4ddc62086))
+* **fuse:** add qualified serialized read-write mount ([e6e8f02](https://github.com/metaneutrons/BFS/commit/e6e8f02e57dc78ec39ae266f84bebcbe639a8f39)), closes [#41](https://github.com/metaneutrons/BFS/issues/41)
+* unify BFS administration commands ([#67](https://github.com/metaneutrons/BFS/issues/67)) ([5b202ff](https://github.com/metaneutrons/BFS/commit/5b202ff003878ccf1160f62b47e9d079f1b2d660))
+
+
+### Performance Improvements
+
+* consolidate AmigaOS free-tree performance work onto main ([#81](https://github.com/metaneutrons/BFS/issues/81)) ([79df2e9](https://github.com/metaneutrons/BFS/commit/79df2e99fe9ed4fcf26621e722080f49a8779cf7))
+* speed up metadata listing and drop the handler's protection read on writes ([#87](https://github.com/metaneutrons/BFS/issues/87)) ([4ec3d51](https://github.com/metaneutrons/BFS/commit/4ec3d51b2fb740abcced4dd5ad9863e13a704de2))
+
 ## [0.1.4](https://github.com/metaneutrons/BFS/compare/v0.1.3...v0.1.4) (2026-09-10)
 
 
