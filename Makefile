@@ -94,6 +94,7 @@ AMIGA_ENDIAN_TEST_BIN = $(BUILD_HOST)/test_endian_amiga_profile
 # The write probe's sidecar oracles, built as the Amiga write-probe handler is.
 WRITE_PROBE_FLAGS = -DBFS_PERF_WRITE_DETAIL=1 -DBFS_PERF_CRC_SAMPLE_STRIDE=1
 WRITE_PROBE_TEST_BIN = $(BUILD_HOST)/test_perf_probe_write
+HOST_TEST_BINS = $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN) $(WRITE_PROBE_TEST_BIN)
 AROS_DOS_NAME_TEST_BIN = $(BUILD_HOST)/test_dos_name_aros_profile
 
 # ── Phony targets ───────────────────────────────────────────
@@ -131,7 +132,10 @@ fault-qualification-verify:
 	@test -n "$(OUTPUT)" || { echo "OUTPUT is required" >&2; exit 2; }
 	@python3 tests/qualification/verify_fault_campaign.py --output "$(OUTPUT)"
 
-linux-qualification-fast: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests
+# The host test binaries are built first: the qualification times running
+# them, and building every binary one after another no longer fits its limit.
+linux-qualification-fast: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests \
+		$(HOST_TEST_BINS)
 	@test -c /dev/fuse || { echo "/dev/fuse is required for M7 qualification" >&2; exit 1; }
 	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
 	@python3 tests/qualification/linux_qualification.py \
@@ -201,10 +205,10 @@ analyze:
 		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L $(CORE_SRC) $(HOST_SRC) \
 		tools/bfs-conformance-core.c tools/bfs-conformance-posix.c $(EMU_SRC)
 
-host-test: $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN) $(WRITE_PROBE_TEST_BIN)
+host-test: $(HOST_TEST_BINS)
 	@echo "=== Running tests ==="
 	@fail=0; \
-	for t in $(notdir $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN) $(WRITE_PROBE_TEST_BIN)); do \
+	for t in $(notdir $(HOST_TEST_BINS)); do \
 		echo "--- $(BUILD_HOST)/$$t ---"; \
 		(cd $(BUILD_HOST) && ./$$t) || fail=1; \
 	done; \
