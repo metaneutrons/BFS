@@ -1,0 +1,8 @@
+snapdog-runner
+START 1 dirvalid-pilot-1-bfs-first 2026-10-10T08:40:42Z
+PASS 1 dirvalid-pilot-1-bfs-first 2026-10-10T08:41:22Z
+START 2 dirvalid-pilot-2-pfs3-first 2026-10-10T08:41:22Z
+PASS 2 dirvalid-pilot-2-pfs3-first 2026-10-10T08:42:00Z
+DIRVALID_PILOT_COMPLETE 2 2026-10-10T08:42:00Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-10T08:42:02Z

@@ -193,7 +193,8 @@ build/host/bfs mount work.bfs /mnt/bfs-rw --read-write
 The default mount is read-only. The `bfs` binary contains the FUSE adapter on
 Linux builds, so mount lifecycle, image range (`--offset`, `--length`) and
 snapshot selection (`--snapshot` or `--snapshot-id`) have one canonical entry
-point. A writable mount is explicit and is refused for snapshots.
+point. A writable mount is explicit and is refused for snapshots. New names longer than
+107 bytes are refused unless `--long-names` is given (see "File names").
 
 ### Stress test binary
 
@@ -296,6 +297,29 @@ superblocks remain the only publication mechanism.
 close and every standalone metadata operation. `bfs commit DRIVE: SYNC` or
 `DELAYED` switches a mounted volume until the next mount; `bfs commit DRIVE:`
 shows the active mode.
+
+### File names
+
+BFS stores names of up to 255 bytes. An AmigaDOS `FileInfoBlock` holds only
+107 of them, so Examine and ExNext would list a longer name cut short, under
+which a program cannot open it. The handler therefore refuses a new name
+longer than 107 bytes with `ERROR_INVALID_COMPONENT_NAME`, for files,
+directories, links and rename targets. `Control = "LONGNAMES"` in the
+Mountlist entry allows up to 255 bytes; ExAll reports such names in full.
+Control words are separated by blanks or commas, as in
+`Control = "COMMIT=SYNC LONGNAMES"`. Names that
+already exist stay readable, and can be deleted or renamed to a shorter name.
+The Linux mount applies the same limit (`ENAMETOOLONG`); `bfs mount
+--long-names` allows 255 bytes.
+
+### Buffers
+
+The handler caches whole filesystem blocks. `Buffers` in the Mountlist sets
+their number, but the handler keeps at least 64 of them, and for blocks
+larger than 4 KiB as many as fit in 256 KiB; a larger `Buffers` value applies
+as given. With 4 KiB blocks that is 256 KiB, enough for a directory of about
+1,000 entries and their inodes to stay in memory. If that memory is not
+available, the handler uses `Buffers` as given.
 
 ### DMA settings
 

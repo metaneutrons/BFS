@@ -3,7 +3,7 @@
  * BFS — B+tree engine
  *
  * Generic B+tree stored in disk blocks. Used for:
- *   - Directory index (key=dirkey, value=inode_nr)
+ *   - Directory index (12-byte keys, 40-byte records; see bfs_ondisk.h)
  *   - Extent tree (key=file_block, value=extent)
  *   - Free space tree (key=block_nr, value=length)
  *
@@ -43,7 +43,7 @@ typedef struct bfs_allocator {
 
 /* ── B+tree operations vtable ──────────────────────────────── */
 
-#define BFS_MAX_KEY_SIZE 512  /* Must accommodate largest key (DIR_KEY_SIZE=264) */
+#define BFS_MAX_KEY_SIZE 512  /* Upper bound for any tree's fixed key size */
 
 typedef struct bfs_btree_ops {
     /* Compare two keys. Returns <0, 0, >0. */
@@ -223,6 +223,11 @@ typedef struct bfs_btree {
     /* Optional owner-provided u32-key location cache. It is never owned by
      * the tree and is cleared on every bfs_btree_init(). */
     bfs_btree_key_hint_cache_t *key_hint_cache;
+
+    /* Inode trees only: pending inodes of the live transaction (bfs_inode.h).
+     * Owned by the filesystem and cleared on every bfs_btree_init(). */
+    // cppcheck-suppress unusedStructMember
+    struct bfs_inode_pending *inode_pending;
 } bfs_btree_t;
 
 static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
@@ -245,6 +250,28 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
 /* Search for a key. Returns BFS_OK and copies value to val_out,
  * or BFS_ERR_NOTFOUND. */
 bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out);
+
+/* Searches for keys in ascending (non-decreasing) order: keys of one leaf
+ * share a single view of it, found through the leaf hints or one descent.
+ * Between begin and end the caller makes no other call on the tree, its BIO
+ * or its cache; the view would not survive one. */
+typedef struct {
+    // cppcheck-suppress unusedStructMember
+    uint8_t *buf;          /* descent buffer */
+    // cppcheck-suppress unusedStructMember
+    uint8_t *leaf;         /* current leaf view */
+    // cppcheck-suppress unusedStructMember
+    bfs_blk_t blk;
+    // cppcheck-suppress unusedStructMember
+    bool epoch_valid;
+    uint64_t mutation_epoch;
+} bfs_btree_sorted_t;
+
+bfs_err_t bfs_btree_sorted_begin(bfs_btree_t *tree, bfs_btree_sorted_t *state);
+/* As bfs_btree_search; key must not be smaller than the previous key. */
+bfs_err_t bfs_btree_sorted_search(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                                  const void *key, void *val_out);
+void bfs_btree_sorted_end(bfs_btree_t *tree, bfs_btree_sorted_t *state);
 
 /* Insert a key/value pair. Returns BFS_OK, BFS_ERR_EXISTS, or error.
  * Updates tree->root if the root splits. */
@@ -287,6 +314,13 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key);
 /* Update a key's value in-place with COW. Single traversal.
  * Returns BFS_OK or BFS_ERR_NOTFOUND. */
 bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val);
+
+/* bfs_btree_update, but the deferred-free headroom is checked after the
+ * descent and only for path nodes of older transactions. Updating a key whose
+ * path this transaction already wrote then needs no headroom, which a commit
+ * relies on when it writes pending inodes into a nearly full free queue. */
+bfs_err_t bfs_btree_update_path_headroom(bfs_btree_t *tree, const void *key,
+                                         const void *new_val);
 
 /* Replace a stored key with a byte-distinct key that compares equal. This is
  * used for case-only directory renames: ordering is unchanged, but the stored

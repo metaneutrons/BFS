@@ -70,6 +70,24 @@ static void test_crc32_lengths_alignments_and_seeds(void)
     TEST_ASSERT(bfs_crc32(0, buf, 64) != bfs_crc32(0, buf + 1, 64));
 }
 
+/* Eight-byte blocks: every start offset modulo 8, every remainder, and a
+ * chained call split at every position. */
+static void test_crc32_blocks_offsets_and_splits(void)
+{
+    static uint8_t buf[320];
+    for (size_t i = 0; i < sizeof(buf); i++)
+        buf[i] = (uint8_t)(i * 151u + 7u + (i >> 3));
+    for (size_t offset = 0; offset < 8; offset++) {
+        for (size_t length = 0; length <= 300; length++)
+            TEST_ASSERT_EQ(bfs_crc32(0x0BADF00Du, buf + offset, length),
+                           reference_crc32(0x0BADF00Du, buf + offset, length));
+    }
+    const uint32_t whole = reference_crc32(0x5EEDu, buf, 129);
+    for (size_t split = 0; split <= 129; split++)
+        TEST_ASSERT_EQ(bfs_crc32(bfs_crc32(0x5EEDu, buf, split), buf + split, 129 - split),
+                       whole);
+}
+
 static void test_crc32_full_node(void)
 {
     static uint8_t buf[4096 + 3];
@@ -345,6 +363,7 @@ TEST_SUITE_BEGIN("CRC32")
     TEST_RUN(test_crc32_chaining);
     TEST_RUN(test_crc32_all_ff);
     TEST_RUN(test_crc32_lengths_alignments_and_seeds);
+    TEST_RUN(test_crc32_blocks_offsets_and_splits);
     TEST_RUN(test_crc32_full_node);
     TEST_RUN(test_crc32_zero_append_oracle);
     TEST_RUN(test_crc32_zero_append_chaining);

@@ -1,0 +1,19 @@
+[fs-uae]
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 8192
+cpu = 68040
+uae_cpu_speed = max
+uae_cpu_24bit_addressing = false
+kickstart_file = /home/fabian/Amiga/kick.a1200.47.102.rom
+hard_drive_0 = /home/fabian/.cache/bfs-performance/writeback-2026-10-10.sKa6aK/results/writeback-1-bfs-first-candidate/system
+hard_drive_0_label = System
+hard_drive_0_priority = 0
+hard_drive_1 = /home/fabian/.cache/bfs-performance/writeback-2026-10-10.sKa6aK/results/writeback-1-bfs-first-candidate/bench-bfs.hdf
+hard_drive_2 = /home/fabian/.cache/bfs-performance/writeback-2026-10-10.sKa6aK/results/writeback-1-bfs-first-candidate/bench-pfs3.hdf
+floppy_speed = 0
+window_width = 800
+window_height = 600
+window_hidden = 1
+automatic_input_grab = 0
+audio_driver = null

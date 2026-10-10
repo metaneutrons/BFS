@@ -45,6 +45,7 @@ typedef enum {
     BFS_ERR_UNSUPPORTED = -10, /* intact, but incompatible on-disk format */
     BFS_ERR_OVERFLOW = -11, /* geometry exceeds the block address range */
     BFS_ERR_PROTECTED = -12, /* denied by a caller-supplied protection mask */
+    BFS_ERR_NAME_TOO_LONG = -13, /* longer than the mount's name limit */
 } bfs_err_t;
 
 /* On-disk structures use big-endian byte order. Native AROS may run on a
@@ -92,6 +93,22 @@ typedef enum {
   }
 #endif
 
+#if defined(__GNUC__) && defined(__m68k__)
+/* m68k-amigaos-gcc copies a memcpy'd word through a stack slot and loads it
+ * again. Words that may alias any buffer at any alignment compile to a single
+ * move on the 68020 and later, and to byte moves where alignment is required.
+ * The 68k is big-endian, so no swap follows. */
+typedef uint16_t __attribute__((__may_alias__, __aligned__(1))) bfs_any_be16_t;
+typedef uint32_t __attribute__((__may_alias__, __aligned__(1))) bfs_any_be32_t;
+typedef uint64_t __attribute__((__may_alias__, __aligned__(1))) bfs_any_be64_t;
+
+static inline uint16_t bfs_load_be16(const void *p) { return *(const bfs_any_be16_t *)p; }
+static inline uint32_t bfs_load_be32(const void *p) { return *(const bfs_any_be32_t *)p; }
+static inline uint64_t bfs_load_be64(const void *p) { return *(const bfs_any_be64_t *)p; }
+static inline void bfs_store_be16(void *p, uint16_t v) { *(bfs_any_be16_t *)p = v; }
+static inline void bfs_store_be32(void *p, uint32_t v) { *(bfs_any_be32_t *)p = v; }
+static inline void bfs_store_be64(void *p, uint64_t v) { *(bfs_any_be64_t *)p = v; }
+#else
 static inline uint16_t bfs_load_be16(const void *p)
 {
     uint16_t v;
@@ -130,6 +147,7 @@ static inline void bfs_store_be64(void *p, uint64_t v)
     v = bfs_be64(v);
     memcpy(p, &v, sizeof(v));
 }
+#endif
 
 /* Standard comparator for B+trees keyed by a big-endian uint32 (block, inode,
  * snapshot-id and file-block numbers all use this). Single source of truth for
@@ -143,7 +161,7 @@ static inline int bfs_cmp_be32(const void *a, const void *b)
     return 0;
 }
 
-/* Min block size 1024 (264-byte dir keys need at least 3 entries per node) */
+/* Min block size 1024: every tree then holds at least 16 records per leaf. */
 #define BFS_MIN_BLOCK_SIZE  1024
 #define BFS_MAX_BLOCK_SIZE  65536
 

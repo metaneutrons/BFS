@@ -36,7 +36,9 @@
 #define TEST_IMG  "test_pending_frees.img"
 #define BLK_SIZE  4096
 #define BLK_COUNT 8192     /* 32 MB */
-#define SMALL_CAP 512      /* > BFS_FS_OP_FREE_RESERVE (325) so ops can still reserve */
+/* Above BFS_FS_OP_FREE_RESERVE so ops can still reserve, and low enough that a
+ * storm over the dense directory tree reaches the drain threshold. */
+#define SMALL_CAP (BFS_FS_OP_FREE_RESERVE + 64u)
 
 static bfs_fs_t   g_fs;
 static bfs_bio_t *g_bio;
@@ -185,7 +187,7 @@ static void test_compaction_mass_free_no_leak(void)
 {
     uint32_t free_full = 0, free_small = 0;
     compact_fragmented(BFS_PENDING_FREES_MAX, &free_full);  /* never drains mid-walk */
-    compact_fragmented(128, &free_small);                   /* must drain mid-walk repeatedly */
+    compact_fragmented(8, &free_small);                     /* must drain mid-walk repeatedly */
     TEST_ASSERT_EQ(free_small, free_full);
 }
 

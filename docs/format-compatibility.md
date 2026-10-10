@@ -5,8 +5,14 @@ document defines compatibility and refusal behavior on top of that layout.
 
 The current on-disk format is **v3**, independently of the driver release
 version. Version 3 replaced version 2 by extending the inode record with
-inline extents and inode flags. This driver neither reads, writes nor migrates
-v2 volumes, and the format does not add 64-bit block addresses.
+inline extents and inode flags and by storing the directory tree as compact
+records. This driver neither reads, writes nor migrates v2 volumes, and the
+format does not add 64-bit block addresses.
+
+Before the first release of v3, development images carried version 3 with the
+version 2 directory tree. They have no marker that tells them apart: the
+superblock is accepted, and mount rejects the directory tree as corrupt
+(`BFS_ERR_CORRUPT`). Such images are rebuilt, not migrated.
 
 ## Recognition and refusal
 

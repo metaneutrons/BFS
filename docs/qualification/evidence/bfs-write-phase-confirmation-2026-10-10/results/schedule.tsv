@@ -1,0 +1,17 @@
+sequence	round	order	variant	run_name
+1	1	bfs-first	candidate	confirm-1-bfs-first-candidate
+2	1	bfs-first	reference	confirm-1-bfs-first-reference
+3	2	pfs3-first	reference	confirm-2-pfs3-first-reference
+4	2	pfs3-first	candidate	confirm-2-pfs3-first-candidate
+5	3	bfs-first	candidate	confirm-3-bfs-first-candidate
+6	3	bfs-first	reference	confirm-3-bfs-first-reference
+7	4	pfs3-first	reference	confirm-4-pfs3-first-reference
+8	4	pfs3-first	candidate	confirm-4-pfs3-first-candidate
+9	5	bfs-first	candidate	confirm-5-bfs-first-candidate
+10	5	bfs-first	reference	confirm-5-bfs-first-reference
+11	6	pfs3-first	reference	confirm-6-pfs3-first-reference
+12	6	pfs3-first	candidate	confirm-6-pfs3-first-candidate
+13	7	bfs-first	candidate	confirm-7-bfs-first-candidate
+14	7	bfs-first	reference	confirm-7-bfs-first-reference
+15	8	pfs3-first	reference	confirm-8-pfs3-first-reference
+16	8	pfs3-first	candidate	confirm-8-pfs3-first-candidate

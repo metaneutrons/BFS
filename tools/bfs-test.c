@@ -56,6 +56,8 @@ static int tests_run, tests_pass, tests_fail;
 static BPTR logfh; /* log file handle (0 = no log) */
 static BOOL serial_log; /* mirror the log to the debug console (AROS) */
 static BOOL quick_mode;
+/* The volume is mounted with Control = "LONGNAMES". */
+static BOOL long_names_mode;
 static BOOL io_failed, log_failed;
 static char logpath[480];
 
@@ -1449,6 +1451,26 @@ static void test_empty_file(void)
     pass(T);
 }
 
+/* Without LONGNAMES the handler refuses a new name longer than the 107 bytes
+ * fib_FileName holds. */
+static BOOL refuses_long_name(const char *name)
+{
+    BPTR fh = Open(vpath(name), MODE_NEWFILE);
+    if (fh) {
+        Close(fh);
+        DeleteFile(vpath(name));
+        return FALSE;
+    }
+    if (IoErr() != ERROR_INVALID_COMPONENT_NAME) return FALSE;
+    BPTR lock = CreateDir(vpath(name));
+    if (lock) {
+        UnLock(lock);
+        DeleteFile(vpath(name));
+        return FALSE;
+    }
+    return IoErr() == ERROR_INVALID_COMPONENT_NAME;
+}
+
 static void test_max_name(void)
 {
     const char *T = "maxname_27";
@@ -1457,6 +1479,13 @@ static void test_max_name(void)
     char name[256];
     int i; for (i = 0; i < 251; i++) name[i] = 'a' + (i % 26);
     name[251] = 0;
+    if (!long_names_mode) {
+        if (!refuses_long_name(name)) { fail(T, "251-byte name accepted"); return; }
+        name[108] = 0;
+        if (!refuses_long_name(name)) { fail(T, "108-byte name accepted"); return; }
+        pass(T);
+        return;
+    }
     fill(databuf, 10, 0x2727);
     BPTR fh = Open(vpath(name), MODE_NEWFILE);
     if (!fh) { fail(T, "write"); return; }
@@ -1892,6 +1921,49 @@ static void test_exnext_delete(void)
     if (ok) pass(T); else fail(T, "listing while deleting or cleanup");
 }
 
+/* ExNext reads ahead, but reports what is current: after the first entry,
+ * every other item gets new protection bits and one of them grows through a
+ * handle that stays open, and the rest of the listing shows both. */
+static void test_exnext_fresh(void)
+{
+    const char *T = "exnextfresh_55";
+    enum { COUNT = 20, GROWN = 300 };
+    UBYTE seen[COUNT] = {0};
+    if (!make_items("exfresh", COUNT)) { fail(T, "setup"); return; }
+    BPTR lock = Lock(vpath("exfresh"), SHARED_LOCK);
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    const char *step = "first entry";
+    UBYTE first = 0;
+    BOOL ok = lock && fib && Examine(lock, fib) && ExNext(lock, fib) &&
+              item_number(fib->fib_FileName, COUNT, &first);
+    if (ok) seen[first] = 1;
+    int grown = first == 0 ? 1 : 0;
+    BPTR fh = 0;
+    if (ok) {
+        static UBYTE data[GROWN];
+        step = "change the others";
+        for (int i = 0; ok && i < COUNT; i++)
+            if (i != first) ok = SetProtection(item_path("exfresh", i), FIBF_SCRIPT);
+        fh = ok ? Open(item_path("exfresh", grown), MODE_OLDFILE) : 0;
+        ok = fh && Write(fh, data, GROWN) == GROWN;
+    }
+    if (ok) step = "rest of the listing";
+    while (ok && ExNext(lock, fib)) {
+        UBYTE number;
+        ok = mark_item(fib->fib_FileName, COUNT, seen) &&
+             item_number(fib->fib_FileName, COUNT, &number) &&
+             fib->fib_Protection == FIBF_SCRIPT &&
+             fib->fib_Size == (number == grown ? GROWN : 0);
+    }
+    if (ok) ok = IoErr() == ERROR_NO_MORE_ENTRIES && all_seen(seen, COUNT);
+    if (fh && !close_checked(fh)) ok = FALSE;
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    for (int i = 0; i < COUNT; i++) SetProtection(item_path("exfresh", i), 0);
+    if (!remove_items("exfresh", COUNT)) ok = FALSE;
+    if (ok) pass(T); else fail(T, step);
+}
+
 /* ExAll in small batches, deleting each batch before asking for the next,
  * returns every file once. */
 static void test_exall_delete(void)
@@ -2231,6 +2303,65 @@ static void test_soft_link_resolution(void)
     if (ok) pass(T); else fail(T, step);
 }
 
+/* A soft link made through dos.library survives a remount. softpersist_53
+ * leaves a relative link to a file behind and softpersist_54 resolves and
+ * removes it: in the full suite in the same boot, and run alone in a second
+ * boot of the same image (emulator-test/softlink-remount.sh). */
+static void test_soft_link_persist_make(void)
+{
+    const char *T = "softpersist_53";
+    char dir[96], file[96], link[96];
+    if (!volpath(dir, sizeof(dir), "slkeep") || !volpath(file, sizeof(file), "slkeep/data") ||
+        !volpath(link, sizeof(link), "slkeeplnk")) {
+        fail(T, "path");
+        return;
+    }
+    BPTR made = CreateDir(dir);
+    if (!made) { fail(T, "mkdir"); return; }
+    UnLock(made);
+    const char *step = "make";
+    BOOL ok = write_seeded(file, 2000, 0x5353) &&
+              MakeLink(link, TEST_PTR("slkeep/data"), LINK_SOFT);
+    if (ok) { step = "open the link"; ok = verify_seeded(link, 2000, 0x5353); }
+    /* Commit now: the emulator may stop before the delayed commit. */
+    if (ok) {
+        step = "flush";
+        struct MsgPort *port = DeviceProc(vol);
+        ok = port && DoPkt(port, ACTION_FLUSH, 0, 0, 0, 0, 0) == DOSTRUE;
+    }
+    if (ok) pass(T); else fail(T, step);
+}
+
+static void test_soft_link_persist_check(void)
+{
+    const char *T = "softpersist_54";
+    char dir[96], file[96], link[96];
+    if (!volpath(dir, sizeof(dir), "slkeep") || !volpath(file, sizeof(file), "slkeep/data") ||
+        !volpath(link, sizeof(link), "slkeeplnk")) {
+        fail(T, "path");
+        return;
+    }
+    struct MsgPort *port = DeviceProc(vol);
+    BPTR root = Lock(vol, SHARED_LOCK);
+    const char *step = "read the link";
+    BOOL ok = port && root;
+    if (ok) {
+        /* The relative target replaces the link after the volume prefix. */
+        char buffer[96];
+        LONG length = ReadLink(port, root, link, buffer, sizeof(buffer));
+        ok = length == tool_strlen(file) &&
+             tool_memcmp(buffer, file, tool_strlen(file) + 1) == 0;
+    }
+    if (root) UnLock(root);
+    if (ok) { step = "open the link"; ok = verify_seeded(link, 2000, 0x5353); }
+    if (ok) { step = "list the link"; ok = exnext_type("slkeeplnk") == ST_SOFTLINK; }
+    BOOL removed = DeleteFile(link);
+    removed = DeleteFile(file) && removed;
+    removed = DeleteFile(dir) && removed;
+    if (ok && !removed) { ok = FALSE; step = "cleanup"; }
+    if (ok) pass(T); else fail(T, step);
+}
+
 /* ── Test table ────────────────────────────────────────────── */
 
 typedef void (*test_fn)(void);
@@ -2308,19 +2439,20 @@ int main(void)
     me->pr_WindowPtr = (APTR)-1;
 
     struct RDArgs *rdargs;
-    test_word_t args[5] = {0, 0, 0, 0, 0};
+    test_word_t args[6] = {0, 0, 0, 0, 0, 0};
 #ifdef BFS_AROS
-    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S,SERIAL/S", args, NULL);
+    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S,LONGNAMES/S,SERIAL/S", args, NULL);
 #else
-    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S", args, NULL);
+    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S,LONGNAMES/S", args, NULL);
 #endif
     if (!rdargs) {
-        put("Usage: bfs-test VOLUME [LOG=path] [filter] [QUICK]\n");
+        put("Usage: bfs-test VOLUME [LOG=path] [filter] [QUICK] [LONGNAMES]\n");
         put("  bfs-test DH1:                   (run all)\n");
         put("  bfs-test DH1: large             (run matching)\n");
         put("  bfs-test DH1: a+b               (run matching filters)\n");
         put("  bfs-test DH1: LOG=SYS:test.log  (CI mode)\n");
         put("  bfs-test DH1: LOG=SYS:x large   (both)\n");
+        put("  bfs-test DH1: LONGNAMES         (DH1: mounted with LONGNAMES)\n");
 #ifdef BFS_AROS
         put("  bfs-test DH1: SERIAL            (log to the debug console)\n");
 #endif
@@ -2329,7 +2461,8 @@ int main(void)
     }
 
     quick_mode = args[3] != 0;
-    serial_log = args[4] != 0;
+    long_names_mode = args[4] != 0;
+    serial_log = args[5] != 0;
 
     /* Validate and copy all ReadArgs-backed strings before FreeArgs. */
     const char *volume_arg = (const char *)args[0];

@@ -410,6 +410,13 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_counters.txn_commit_calls++;
 #endif
+    /* Inodes published in this transaction belong to it. A failed write leaves
+     * the inode tree uncertain, so the transaction is never committed. */
+    bfs_err_t pending_err = bfs_inode_flush_pending(&fs->inode_tree);
+    if (pending_err != BFS_OK) {
+        fs->recovery_error = pending_err;
+        return pending_err;
+    }
     /* An ordered-data flush has not modified commit state, so it can be retried. */
     if (fs->options & BFS_OPT_DATA_ORDERED) {
         bfs_err_t err = bfs_bio_sync(fs->bio);

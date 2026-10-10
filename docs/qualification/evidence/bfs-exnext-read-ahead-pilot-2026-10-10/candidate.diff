@@ -1,0 +1,831 @@
+diff --git a/include/bfs_btree.h b/include/bfs_btree.h
+index b762c25..06747bf 100644
+--- a/include/bfs_btree.h
++++ b/include/bfs_btree.h
+@@ -223,6 +223,10 @@ typedef struct bfs_btree {
+     /* Optional owner-provided u32-key location cache. It is never owned by
+      * the tree and is cleared on every bfs_btree_init(). */
+     bfs_btree_key_hint_cache_t *key_hint_cache;
++
++    /* Inode trees only: pending inodes of the live transaction (bfs_inode.h).
++     * Owned by the filesystem and cleared on every bfs_btree_init(). */
++    struct bfs_inode_pending *inode_pending;
+ } bfs_btree_t;
+ 
+ static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
+@@ -306,6 +310,13 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key);
+  * Returns BFS_OK or BFS_ERR_NOTFOUND. */
+ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val);
+ 
++/* bfs_btree_update, but the deferred-free headroom is checked after the
++ * descent and only for path nodes of older transactions. Updating a key whose
++ * path this transaction already wrote then needs no headroom, which a commit
++ * relies on when it writes pending inodes into a nearly full free queue. */
++bfs_err_t bfs_btree_update_path_headroom(bfs_btree_t *tree, const void *key,
++                                         const void *new_val);
++
+ /* Replace a stored key with a byte-distinct key that compares equal. This is
+  * used for case-only directory renames: ordering is unchanged, but the stored
+  * display spelling changes. */
+diff --git a/include/bfs_fs.h b/include/bfs_fs.h
+index 6707cc6..74cedba 100644
+--- a/include/bfs_fs.h
++++ b/include/bfs_fs.h
+@@ -61,6 +61,8 @@ typedef struct bfs_fs {
+     bfs_freespace_t   freespace;
+     bfs_dir_tree_t    dir_tree;
+     bfs_btree_key_hint_cache_t inode_key_hints; /* validated leaf/index hints */
++    /* Inodes published in the live transaction; written at its commit. */
++    bfs_inode_pending_t inode_pending;
+     bfs_btree_t       inode_tree;  /* inode B+tree: key=inode_nr(u32), value=bfs_inode_t */
+     bfs_refcount_t    refcount;    /* block refcount tree (for snapshots) */
+     uint32_t           next_ino;   /* next inode number to allocate */
+diff --git a/include/bfs_inode.h b/include/bfs_inode.h
+index f624e67..7237cd6 100644
+--- a/include/bfs_inode.h
++++ b/include/bfs_inode.h
+@@ -58,4 +58,50 @@ bfs_err_t bfs_inode_write_unlinked(bfs_btree_t *tree, uint32_t ino,
+ 
+ bfs_err_t bfs_inode_delete(bfs_btree_t *tree, uint32_t ino);
+ 
++/*
++ * Inode write-back within a transaction (docs/plans/bfs-inode-write-back-v1.md).
++ *
++ * A tree with an attached table holds published inodes until the next
++ * commit. The first publication of an inode in a transaction writes the tree,
++ * so the path to its leaf belongs to the transaction and writing the copy
++ * later needs no deferred-free headroom; later publications of that inode in
++ * the same transaction only replace the pending copy. Every read returns the
++ * pending copy, every other write or delete of the inode replaces it in the
++ * tree and then drops it, and bfs_inode_flush_pending writes the pending
++ * copies before the transaction commits. Snapshot views have no table.
++ */
++#define BFS_INODE_PENDING_SLOTS 8
++
++typedef struct {
++    uint32_t    ino;     /* 0: free */
++    bool        dirty;   /* newer than the tree */
++    uint64_t    txn_id;  /* transaction of the tree write that made it writable */
++    bfs_inode_t inode;
++} bfs_inode_pending_slot_t;
++
++typedef struct bfs_inode_pending {
++    uint32_t used; /* occupied slots; reads skip the table when 0 */
++    bfs_inode_pending_slot_t slot[BFS_INODE_PENDING_SLOTS];
++} bfs_inode_pending_t;
++
++/* Attach an emptied table to a live inode tree. */
++void bfs_inode_pending_attach(bfs_btree_t *tree, bfs_inode_pending_t *pending);
++
++/* Drop every pending copy without writing it, as uncommitted tree changes
++ * are dropped when the committed state is reloaded. */
++void bfs_inode_pending_discard(bfs_btree_t *tree);
++
++/* Publish a linked inode. Without a table, or when the inode was not yet
++ * written in this transaction, this is bfs_inode_write. */
++bfs_err_t bfs_inode_publish(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *inode);
++
++/* The pending copy of ino, or NULL. Valid until the next call that changes
++ * the tree or the table; for readers that walk the tree directly. */
++const bfs_inode_t *bfs_inode_pending_peek(const bfs_btree_t *tree, uint32_t ino);
++
++/* Write every pending copy into the tree and empty the table. Required
++ * before the tree's root is committed or its nodes are walked directly. On
++ * error the table is emptied too; the transaction must not be committed. */
++bfs_err_t bfs_inode_flush_pending(bfs_btree_t *tree);
++
+ #endif /* BFS_INODE_H */
+diff --git a/include/bfs_types.h b/include/bfs_types.h
+index 3a7e6e1..a044da9 100644
+--- a/include/bfs_types.h
++++ b/include/bfs_types.h
+@@ -93,6 +93,22 @@ typedef enum {
+   }
+ #endif
+ 
++#if defined(__GNUC__) && defined(__m68k__)
++/* m68k-amigaos-gcc copies a memcpy'd word through a stack slot and loads it
++ * again. Words that may alias any buffer at any alignment compile to a single
++ * move on the 68020 and later, and to byte moves where alignment is required.
++ * The 68k is big-endian, so no swap follows. */
++typedef uint16_t __attribute__((__may_alias__, __aligned__(1))) bfs_any_be16_t;
++typedef uint32_t __attribute__((__may_alias__, __aligned__(1))) bfs_any_be32_t;
++typedef uint64_t __attribute__((__may_alias__, __aligned__(1))) bfs_any_be64_t;
++
++static inline uint16_t bfs_load_be16(const void *p) { return *(const bfs_any_be16_t *)p; }
++static inline uint32_t bfs_load_be32(const void *p) { return *(const bfs_any_be32_t *)p; }
++static inline uint64_t bfs_load_be64(const void *p) { return *(const bfs_any_be64_t *)p; }
++static inline void bfs_store_be16(void *p, uint16_t v) { *(bfs_any_be16_t *)p = v; }
++static inline void bfs_store_be32(void *p, uint32_t v) { *(bfs_any_be32_t *)p = v; }
++static inline void bfs_store_be64(void *p, uint64_t v) { *(bfs_any_be64_t *)p = v; }
++#else
+ static inline uint16_t bfs_load_be16(const void *p)
+ {
+     uint16_t v;
+@@ -131,6 +147,7 @@ static inline void bfs_store_be64(void *p, uint64_t v)
+     v = bfs_be64(v);
+     memcpy(p, &v, sizeof(v));
+ }
++#endif
+ 
+ /* Standard comparator for B+trees keyed by a big-endian uint32 (block, inode,
+  * snapshot-id and file-block numbers all use this). Single source of truth for
+diff --git a/src/amiga/handler.c b/src/amiga/handler.c
+index 1b4187f..e3e71f7 100644
+--- a/src/amiga/handler.c
++++ b/src/amiga/handler.c
+@@ -213,11 +213,14 @@ void EntryPoint(void);
+  * first entry. That keeps a listing linear and keeps its place when entries
+  * are deleted while it runs. The leaf copy in tree lets most calls skip the
+  * descent. */
++struct exnext_batch;
++
+ typedef struct {
+     uint32_t position;
+     bfs_dir_pos_t last;
+     bool consumed_stop; /* tree stop is the entry ExNext returned to DOS */
+     bfs_btree_cursor_t tree;
++    struct exnext_batch *batch; /* ExNext read-ahead, allocated on first use */
+ } bfs_scan_cursor_t;
+ 
+ typedef struct {
+@@ -847,6 +850,7 @@ static void DisposeLock(bfs_lock_t *lock)
+ {
+     if (lock->cursor) {
+         bfs_btree_cursor_release(&lock->cursor->tree);
++        if (lock->cursor->batch) FreeVec(lock->cursor->batch);
+         FreeVec(lock->cursor);
+     }
+     FreeVec(lock);
+@@ -1350,6 +1354,120 @@ static bool exam_next_pos_cb(const char *name, uint8_t name_len, uint32_t inode_
+     return exam_next_cb(name, name_len, inode_nr, entry_type, ctx);
+ }
+ 
++/* ── ExNext read-ahead ────────────────────────────────────── */
++
++/* One scan gathers the entries that the following ExNext calls return, so
++ * that most calls need no scan. An entry is served only while the directory
++ * tree is the one it was gathered from; its inode is read when it is served,
++ * so size, protection and date are current. The batch grows while it is used
++ * up and shrinks when a change discards it, so that a loop deleting each entry
++ * it lists scans little more than before. */
++#define EXNEXT_BATCH_MAX 32
++#define EXNEXT_BATCH_FIRST 8
++#define EXNEXT_NAME_KEEP 107 /* FillFib shows at most 107 name bytes */
++
++typedef struct {
++    uint32_t ino;
++    uint32_t type;
++    bfs_dir_pos_t pos;
++    uint8_t name_len;
++    char name[EXNEXT_NAME_KEEP];
++} exnext_entry_t;
++
++typedef struct exnext_batch {
++    uint32_t first_position; /* fib_DiskKey that serves entries[0] */
++    uint32_t count;
++    uint32_t next;
++    uint32_t limit;          /* entries the next scan gathers */
++    bool stopped_at_last;    /* the tree cursor stopped on entries[count - 1] */
++    bfs_blk_t dir_root;
++    uint32_t dir_generation;
++    uint64_t recovery_generation;
++    uint32_t skip;
++    uint32_t seen;
++    exnext_entry_t entries[EXNEXT_BATCH_MAX];
++} exnext_batch_t;
++
++static bool exnext_gather_cb(const char *name, uint8_t name_len, uint32_t inode_nr,
++                             uint32_t entry_type, const bfs_dir_pos_t *pos, void *ctx)
++{
++    exnext_batch_t *b = (exnext_batch_t *)ctx;
++    if (b->seen < b->skip) {
++        b->seen++;
++        return true;
++    }
++    exnext_entry_t *e = &b->entries[b->count++];
++    e->ino = inode_nr;
++    e->type = entry_type;
++    e->pos = *pos;
++    e->name_len = name_len;
++    memcpy(e->name, name, name_len < EXNEXT_NAME_KEEP ? name_len : EXNEXT_NAME_KEEP);
++    /* Stop on the last entry gathered: the tree cursor then rests on it and
++     * the next scan resumes after it without a search. */
++    if (b->count == b->limit) {
++        b->stopped_at_last = true;
++        return false;
++    }
++    return true;
++}
++
++static bool ExNextBatchCurrent(const struct bfs_handler *h, const exnext_batch_t *b)
++{
++    return b->dir_root == h->fs.dir_tree.tree.root &&
++           b->dir_generation == h->fs.dir_tree.tree.generation &&
++           b->recovery_generation == h->fs.recovery_generation;
++}
++
++/* Forget the read-ahead, for example when ExAll moves the cursor. */
++static void ExNextBatchDrop(bfs_lock_t *lk)
++{
++    if (lk->cursor && lk->cursor->batch) lk->cursor->batch->count = 0;
++}
++
++/* The entry ExNext returns at position, NULL when the directory has no more
++ * entries. Without memory for the batch, *fallback is set and nothing read. */
++static const exnext_entry_t *ExNextEntry(struct bfs_handler *h, bfs_lock_t *lk,
++                                         uint32_t position, bfs_err_t *err,
++                                         bool *fallback)
++{
++    *err = BFS_OK;
++    *fallback = false;
++    bfs_scan_cursor_t *cursor = CursorFor(lk);
++    if (cursor && !cursor->batch) {
++        cursor->batch = AllocVec(sizeof(exnext_batch_t), MEMF_ANY | MEMF_CLEAR);
++        if (cursor->batch) cursor->batch->limit = EXNEXT_BATCH_FIRST;
++    }
++    if (!cursor || !cursor->batch) {
++        *fallback = true;
++        return NULL;
++    }
++    exnext_batch_t *b = cursor->batch;
++    bool current = ExNextBatchCurrent(h, b);
++    if (b->next < b->count && current && position == b->first_position + b->next)
++        return &b->entries[b->next++];
++
++    /* Scan again: grow after a batch was used up, shrink after a change. */
++    if (b->next < b->count && !current)
++        b->limit = b->limit > 2 ? b->limit / 2 : 1;
++    else if (b->count > 0 && b->next == b->count && b->limit < EXNEXT_BATCH_MAX)
++        b->limit *= 2;
++    b->first_position = position;
++    b->count = 0;
++    b->next = 0;
++    b->seen = 0;
++    b->stopped_at_last = false;
++    *err = ScanDirectoryFrom(h, lk, position, exnext_gather_cb, b, &b->skip, true);
++    CursorClearConsumedStop(lk);
++    if (*err != BFS_OK) {
++        b->count = 0;
++        return NULL;
++    }
++    b->dir_root = h->fs.dir_tree.tree.root;
++    b->dir_generation = h->fs.dir_tree.tree.generation;
++    b->recovery_generation = h->fs.recovery_generation;
++    return b->count ? &b->entries[b->next++] : NULL;
++}
++
+ /* ── Fill FileInfoBlock ───────────────────────────────────── */
+ 
+ /* The DOS entry type of an inode type, as Examine, ExNext and ExAll report it. */
+@@ -2724,9 +2842,25 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+         ctx.name_out = namebuf;
+         ctx.got_entry = false;
+ 
+-        bfs_err_t err = ScanDirectoryFrom(h, lk, position, exam_next_pos_cb, &ctx,
+-                                          &ctx.skip_count, true);
+-        CursorClearConsumedStop(lk);
++        bool fallback;
++        bool consumed_stop = true;
++        bfs_err_t err;
++        const exnext_entry_t *entry = ExNextEntry(h, lk, position, &err, &fallback);
++        if (fallback) {
++            err = ScanDirectoryFrom(h, lk, position, exam_next_pos_cb, &ctx,
++                                    &ctx.skip_count, true);
++            CursorClearConsumedStop(lk);
++        } else if (entry) {
++            const exnext_batch_t *b = lk->cursor->batch;
++            ctx.got_entry = true;
++            ctx.name_len = entry->name_len;
++            memcpy(namebuf, entry->name,
++                   entry->name_len < EXNEXT_NAME_KEEP ? entry->name_len : EXNEXT_NAME_KEEP);
++            ctx.ino_out = entry->ino;
++            ctx.type_out = entry->type;
++            ctx.pos_out = entry->pos;
++            consumed_stop = b->next == b->count && b->stopped_at_last;
++        }
+         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+ 
+         if (!ctx.got_entry) {
+@@ -2747,7 +2881,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+ #endif
+         err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
+         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+-        CursorRemember(lk, position + 1, &ctx.pos_out, true);
++        CursorRemember(lk, position + 1, &ctx.pos_out, consumed_stop);
+         fib->fib_DiskKey = (LONG)(position + 1);
+ #ifdef BFS_AROS
+         if (wide_fib)
+@@ -3053,6 +3187,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+         };
+ 
+         CursorClearConsumedStop(lk);
++        ExNextBatchDrop(lk);
+         bfs_err_t err;
+         exall_batch_t *batch = (exall_batch_t *)AllocVec(sizeof(*batch), MEMF_ANY);
+         if (batch) {
+diff --git a/src/core/btree.c b/src/core/btree.c
+index 34a0d9a..ea37250 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -613,6 +613,7 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
+     tree->hint_generation = 0;
+     tree->hint_mutation_epoch = 0;
+     tree->key_hint_cache = NULL;
++    tree->inode_pending = NULL;
+ 
+     if (leaf_max_keys(tree) < 3 || internal_max_keys(tree) < 3)
+         return BFS_ERR_INVAL;
+@@ -2115,7 +2116,11 @@ insert_cleanup:
+ 
+ /* ── Update (single-traversal value modification with COW) ── */
+ 
+-bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val)
++/* path_headroom: check deferred-free headroom after the descent, for the
++ * path nodes of older transactions only, instead of for the tree height
++ * before any read. */
++static bfs_err_t btree_update(bfs_btree_t *tree, const void *key, const void *new_val,
++                              bool path_headroom)
+ {
+     if (!tree || !tree->bio || !tree->alloc || !key || !new_val)
+         return BFS_ERR_INVAL;
+@@ -2139,8 +2144,10 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
+         return BFS_OK;
+     }
+ 
+-    bfs_err_t preflight = mutation_headroom(tree, tree->height);
+-    if (preflight != BFS_OK) return preflight;
++    if (!path_headroom) {
++        bfs_err_t preflight = mutation_headroom(tree, tree->height);
++        if (preflight != BFS_OK) return preflight;
++    }
+ 
+     const uint32_t bs = tree->bio->block_size;
+     uint32_t depth = tree->height > 0 ? tree->height : 2;
+@@ -2182,6 +2189,16 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
+         free_buf(tree, node_bufs);
+         return BFS_OK;
+     }
++    if (path_headroom) {
++        /* An update never splits, so only path nodes of older transactions go
++         * to the deferred-free queue; nodes of this transaction are reused or
++         * freed at once. A path this transaction wrote needs no headroom. */
++        uint32_t retired = 0;
++        for (int i = 0; i <= d; i++)
++            if (bfs_be64(hdr_of(UBUF(i))->txn_id) < bfs_btree_txn_id(tree)) retired++;
++        bfs_err_t preflight = mutation_headroom(tree, retired);
++        if (preflight != BFS_OK) { free_buf(tree, node_bufs); return preflight; }
++    }
+     memcpy(leaf_val(tree, UBUF(d), idx), new_val, tree->ops->val_size);
+ 
+     /* COW back up */
+@@ -2208,6 +2225,17 @@ update_cleanup:
+     return cerr;
+ }
+ 
++bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val)
++{
++    return btree_update(tree, key, new_val, false);
++}
++
++bfs_err_t bfs_btree_update_path_headroom(bfs_btree_t *tree, const void *key,
++                                         const void *new_val)
++{
++    return btree_update(tree, key, new_val, true);
++}
++
+ /* Descend to the leaf that holds key, recording the path and, if bounds is
+  * not NULL, the separators that bound the leaf's keys. */
+ static bfs_err_t rekey_descend_to_leaf(const bfs_btree_t *tree, const void *key,
+diff --git a/src/core/dir.c b/src/core/dir.c
+index cd1ab80..62412a2 100644
+--- a/src/core/dir.c
++++ b/src/core/dir.c
+@@ -114,9 +114,7 @@ static bool all_zero(const uint8_t *bytes, uint32_t count)
+ {
+     uint32_t i = 0, any = 0;
+     for (; i + 4 <= count; i += 4) {
+-        uint32_t word;
+-        memcpy(&word, bytes + i, sizeof(word));
+-        any |= word;
++        any |= bfs_load_be32(bytes + i);
+     }
+     for (; i < count; i++) any |= bytes[i];
+     return any == 0;
+diff --git a/src/core/file.c b/src/core/file.c
+index 089bea8..9599079 100644
+--- a/src/core/file.c
++++ b/src/core/file.c
+@@ -226,9 +226,11 @@ static bfs_err_t file_update_inode(bfs_file_t *f,
+             inode->protection = bfs_be32(bfs_be32(inode->protection) &
+                                         ~metadata->protection_clear);
+     }
++    /* A linked inode of the live tree stays pending until the commit after
++     * its first publication in the transaction (bfs_inode_publish). */
+     bfs_err_t err = f->unlinked
+                         ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, inode)
+-                        : bfs_inode_write(f->inode_tree, f->inode_nr, inode);
++                        : bfs_inode_publish(f->inode_tree, f->inode_nr, inode);
+     if (err == BFS_OK)
+         file_inode_seed_store(seed, f, inode);
+     else if (seed)
+diff --git a/src/core/fs.c b/src/core/fs.c
+index b31df12..ce19b8d 100644
+--- a/src/core/fs.c
++++ b/src/core/fs.c
+@@ -258,6 +258,7 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
+      * locator before attaching the new inode-tree handle and its root. */
+     bfs_btree_key_hint_cache_reset(&fs->inode_key_hints);
+     fs->inode_tree.key_hint_cache = &fs->inode_key_hints;
++    bfs_inode_pending_attach(&fs->inode_tree, &fs->inode_pending);
+     err = fs_open_refcount_tree(fs);
+     if (err != BFS_OK) return err;
+     fs->next_ino = bfs_be32(sb->next_ino);
+@@ -619,6 +620,8 @@ bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs)
+ 
+     uint32_t pending_cap = fs->pending_frees_cap;
+     bfs_txn_t txn;
++    /* Its pending inodes belong to the discarded transaction as well. */
++    bfs_inode_pending_discard(&fs->inode_tree);
+     /* The discarded transaction's deferred nodes must never be written. */
+     bfs_bio_discard_deferred(fs->bio, BFS_BLK_NULL);
+     bfs_err_t err = bfs_bio_sync(fs->bio);
+diff --git a/src/core/fsck.c b/src/core/fsck.c
+index e116533..a7f833e 100644
+--- a/src/core/fsck.c
++++ b/src/core/fsck.c
+@@ -202,6 +202,10 @@ static bool inode_extent_cb(const void *key, const void *value, void *context)
+     check_context_t *check = (check_context_t *)context;
+     const bfs_inode_t *inode = (const bfs_inode_t *)value;
+     uint32_t ino = bfs_load_be32(key);
++    /* An inode published in the live transaction is checked as published:
++     * the blocks mapped since then are referenced only by the pending copy. */
++    const bfs_inode_t *pending = bfs_inode_pending_peek(check->inode_tree, ino);
++    if (pending) inode = pending;
+     if (!bfs_inode_valid(check->inode_tree, ino, inode)) check_error(check->state);
+     /* Every directory but the root has an entry; the namespace check has
+      * already matched those entries with the parent links. */
+diff --git a/src/core/inode.c b/src/core/inode.c
+index 359c376..fd1b214 100644
+--- a/src/core/inode.c
++++ b/src/core/inode.c
+@@ -87,6 +87,71 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
+     return bfs_btree_init(tree, bio, alloc, &bfs_inode_ops, root, txn_id);
+ }
+ 
++/* ── Pending inodes ────────────────────────────────────────── */
++
++static bfs_inode_pending_slot_t *pending_find(const bfs_btree_t *tree, uint32_t ino)
++{
++    if (!tree) return NULL;
++    bfs_inode_pending_t *pending = tree->inode_pending;
++    if (!pending || pending->used == 0) return NULL;
++    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++)
++        if (pending->slot[i].ino == ino) return &pending->slot[i];
++    return NULL;
++}
++
++/* Forget the pending copy of ino. */
++static void pending_drop(const bfs_btree_t *tree, uint32_t ino)
++{
++    bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot && tree) {
++        memset(slot, 0, sizeof(*slot));
++        tree->inode_pending->used--;
++    }
++}
++
++/* A free slot, else one whose copy equals the tree, else NULL. */
++static bfs_inode_pending_slot_t *pending_take(const bfs_btree_t *tree)
++{
++    bfs_inode_pending_t *pending = tree->inode_pending;
++    bfs_inode_pending_slot_t *clean = NULL;
++    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++) {
++        if (pending->slot[i].ino == 0) return &pending->slot[i];
++        if (!clean && !pending->slot[i].dirty) clean = &pending->slot[i];
++    }
++    return clean;
++}
++
++/* A write or delete through any other path supersedes the pending copy once
++ * the tree holds its result: after success, or when the change was applied
++ * but reclaiming its old nodes failed (free_sink_err). A failure that left
++ * the tree as it was keeps the copy, which is still the newest state. The
++ * second case needs nodes of an older transaction on the path, which a
++ * pending inode's path does not have; it is kept for the B+tree's contract. */
++static void pending_settle(const bfs_btree_t *tree, uint32_t ino, bfs_err_t err)
++{
++    if (tree && (err == BFS_OK || tree->free_sink_err != BFS_OK)) pending_drop(tree, ino);
++}
++
++const bfs_inode_t *bfs_inode_pending_peek(const bfs_btree_t *tree, uint32_t ino)
++{
++    if (!tree || ino == 0) return NULL;
++    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    return slot ? &slot->inode : NULL;
++}
++
++void bfs_inode_pending_attach(bfs_btree_t *tree, bfs_inode_pending_t *pending)
++{
++    if (!tree) return;
++    if (pending) memset(pending, 0, sizeof(*pending));
++    tree->inode_pending = pending;
++}
++
++void bfs_inode_pending_discard(bfs_btree_t *tree)
++{
++    if (tree && tree->inode_pending)
++        memset(tree->inode_pending, 0, sizeof(*tree->inode_pending));
++}
++
+ #ifdef BFS_PERF_PROBE
+ static bfs_err_t inode_read_body(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out);
+ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
+@@ -114,9 +179,14 @@ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
+ #endif
+     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+-    uint32_t key = bfs_be32(ino);
+-    bfs_err_t err = bfs_btree_search(tree, &key, out);
+-    if (err != BFS_OK) return err;
++    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot) {
++        *out = slot->inode;
++    } else {
++        uint32_t key = bfs_be32(ino);
++        bfs_err_t err = bfs_btree_search(tree, &key, out);
++        if (err != BFS_OK) return err;
++    }
+     if (validate_inode(tree, ino, out, false) != BFS_OK)
+         return BFS_ERR_CORRUPT;
+     return BFS_OK;
+@@ -147,9 +217,14 @@ static bfs_err_t sorted_read(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+     bfs_perf_probe_counters.inode_read_calls++;
+ #endif
+     if (ino == 0 || ino >= 0x80000000u) return BFS_ERR_INVAL;
+-    uint32_t key = bfs_be32(ino);
+-    bfs_err_t err = bfs_btree_sorted_search(tree, state, &key, out);
+-    if (err != BFS_OK) return err;
++    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot) {
++        *out = slot->inode;
++    } else {
++        uint32_t key = bfs_be32(ino);
++        bfs_err_t err = bfs_btree_sorted_search(tree, state, &key, out);
++        if (err != BFS_OK) return err;
++    }
+     if (validate_inode(tree, ino, out, false) != BFS_OK) return BFS_ERR_CORRUPT;
+     return BFS_OK;
+ }
+@@ -197,9 +272,14 @@ bfs_err_t bfs_inode_read_unlinked(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *
+ #endif
+     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+-    uint32_t key = bfs_be32(ino);
+-    bfs_err_t err = bfs_btree_search(tree, &key, out);
+-    if (err != BFS_OK) return err;
++    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot) {
++        *out = slot->inode;
++    } else {
++        uint32_t key = bfs_be32(ino);
++        bfs_err_t err = bfs_btree_search(tree, &key, out);
++        if (err != BFS_OK) return err;
++    }
+     return validate_inode(tree, ino, out, true) == BFS_OK ? BFS_OK : BFS_ERR_CORRUPT;
+ }
+ 
+@@ -226,7 +306,8 @@ bfs_err_t bfs_inode_write(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *in
+     /* Try update (single traversal for existing inodes) */
+     bfs_err_t err = bfs_btree_update(tree, &key, inode);
+     if (err == BFS_ERR_NOTFOUND)
+-        return bfs_btree_insert(tree, &key, inode);
++        err = bfs_btree_insert(tree, &key, inode);
++    pending_settle(tree, ino, err);
+     return err;
+ }
+ 
+@@ -252,7 +333,7 @@ bfs_err_t bfs_inode_write_unlinked(bfs_btree_t *tree, uint32_t ino,
+     if (validate_inode(tree, ino, inode, true) != BFS_OK) return BFS_ERR_INVAL;
+     uint32_t key = bfs_be32(ino);
+     bfs_err_t err = bfs_btree_update(tree, &key, inode);
+-    if (err == BFS_ERR_NOTFOUND) return BFS_ERR_NOTFOUND;
++    pending_settle(tree, ino, err);
+     return err;
+ }
+ 
+@@ -261,5 +342,60 @@ bfs_err_t bfs_inode_delete(bfs_btree_t *tree, uint32_t ino)
+     if (!tree || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+     uint32_t key = bfs_be32(ino);
+-    return bfs_btree_delete(tree, &key);
++    bfs_err_t err = bfs_btree_delete(tree, &key);
++    pending_settle(tree, ino, err);
++    return err;
++}
++
++bfs_err_t bfs_inode_publish(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *inode)
++{
++    if (!tree || !tree->inode_pending) return bfs_inode_write(tree, ino, inode);
++    if (!inode || validate_inode(tree, ino, inode, false) != BFS_OK) return BFS_ERR_INVAL;
++    uint64_t txn_id = bfs_btree_txn_id(tree);
++    bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot && slot->txn_id == txn_id) {
++        slot->inode = *inode;
++        slot->dirty = true;
++        return BFS_OK;
++    }
++    /* First publication in this transaction: write the tree, so that the leaf
++     * belongs to the transaction and later copies can be written in place. */
++    bfs_err_t err = bfs_inode_write(tree, ino, inode);
++    if (err != BFS_OK) return err;
++    slot = pending_take(tree);
++    if (slot) {
++        if (slot->ino == 0) tree->inode_pending->used++;
++        slot->ino = ino;
++        slot->dirty = false;
++        slot->txn_id = txn_id;
++        slot->inode = *inode;
++    }
++    return BFS_OK;
++}
++
++bfs_err_t bfs_inode_flush_pending(bfs_btree_t *tree)
++{
++    if (!tree || !tree->inode_pending) return BFS_OK;
++    bfs_err_t result = BFS_OK;
++    if (tree->inode_pending->used == 0) return BFS_OK;
++    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++) {
++        bfs_inode_pending_slot_t slot = tree->inode_pending->slot[i];
++        memset(&tree->inode_pending->slot[i], 0, sizeof(slot));
++        if (slot.ino != 0) tree->inode_pending->used--;
++        if (slot.ino == 0 || !slot.dirty || result != BFS_OK) continue;
++        /* The copy's path was written in this transaction, so the update
++         * needs no deferred-free headroom (bfs_btree_update_path_headroom). */
++        uint32_t key = bfs_be32(slot.ino);
++#ifdef BFS_PERF_WRITE_DETAIL
++        bfs_write_probe_sample_t sample = bfs_write_probe_begin(
++            BFS_WRITE_PROBE_INODE_WRITE);
++#endif
++        result = validate_inode(tree, slot.ino, &slot.inode, false) == BFS_OK
++                     ? bfs_btree_update_path_headroom(tree, &key, &slot.inode)
++                     : BFS_ERR_INVAL;
++#ifdef BFS_PERF_WRITE_DETAIL
++        bfs_write_probe_end(&sample);
++#endif
++    }
++    return result;
+ }
+diff --git a/src/core/namespace.c b/src/core/namespace.c
+index 00861bb..f1c6c8a 100644
+--- a/src/core/namespace.c
++++ b/src/core/namespace.c
+@@ -449,6 +449,7 @@ bfs_err_t bfs_fs_reap_unlinked_on_mount_unlocked(bfs_fs_t *fs)
+ {
+     if (!fs || !fs->mounted || fs->read_only) return BFS_ERR_INVAL;
+     fs_unlinked_scan_t scan = { .fs = fs };
++    /* The scan reads the inode tree directly; during mount no inode is pending. */
+     bfs_err_t err = bfs_btree_scan(&fs->inode_tree, NULL, fs_collect_unlinked_inode, &scan);
+     if (err == BFS_OK) err = scan.error;
+     for (size_t index = 0; err == BFS_OK && index < scan.count; index++)
+diff --git a/src/core/snapshot.c b/src/core/snapshot.c
+index 89c2140..b839b99 100644
+--- a/src/core/snapshot.c
++++ b/src/core/snapshot.c
+@@ -229,6 +229,8 @@ static bfs_err_t snapshot_ref_graph(bfs_fs_t *fs, bfs_btree_t *dir_tree,
+         .rollback = rollback,
+         .err = BFS_OK,
+     };
++    /* The walk and the scan read the inode tree directly. Its only caller,
++     * bfs_snapshot_create, commits first, which writes every pending inode. */
+ 
+     snapshot_ref_walk(dir_tree, &rc);
+     if (rc.err != BFS_OK) return rc.err;
+diff --git a/src/core/txn.c b/src/core/txn.c
+index 61ec17f..53f3a52 100644
+--- a/src/core/txn.c
++++ b/src/core/txn.c
+@@ -410,6 +410,13 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
+ #ifdef BFS_PERF_PROBE
+     bfs_perf_probe_counters.txn_commit_calls++;
+ #endif
++    /* Inodes published in this transaction belong to it. A failed write leaves
++     * the inode tree uncertain, so the transaction is never committed. */
++    bfs_err_t pending_err = bfs_inode_flush_pending(&fs->inode_tree);
++    if (pending_err != BFS_OK) {
++        fs->recovery_error = pending_err;
++        return pending_err;
++    }
+     /* An ordered-data flush has not modified commit state, so it can be retried. */
+     if (fs->options & BFS_OPT_DATA_ORDERED) {
+         bfs_err_t err = bfs_bio_sync(fs->bio);
+diff --git a/tools/core-workload.c b/tools/core-workload.c
+index 152cd2b..dd602b7 100644
+--- a/tools/core-workload.c
++++ b/tools/core-workload.c
+@@ -134,60 +134,67 @@ static void read_small_files(bfs_fs_t *fs, uint32_t dir)
+     }
+ }
+ 
+-/* One listed entry: the handler reads its inode for the FileInfoBlock or
+- * ExAllData and checks the comment flag. ExNext consumes one entry per call;
+- * ExAll stops without consuming the entry that no longer fits its buffer. */
++/* ExNext as the handler runs it: one entry per call, served from a batch that
++ * one scan gathered. The scan stops on the last entry it gathers, so the next
++ * one resumes after it; the batch doubles up to 32 while it is used up. */
++#define EXNEXT_BATCH_MAX 32u
++#define EXNEXT_BATCH_FIRST 8u
++
+ typedef struct {
+-    bfs_fs_t *fs;
+-    uint32_t count;
+-    uint32_t call_count;
+-    uint32_t call_limit;  /* ExAll: entries per call; 0 for ExNext */
+-    bool stop_after_one;  /* ExNext */
+-    bool overflow;
+-    bfs_dir_pos_t last;
+-} list_ctx_t;
+-
+-static bool list_entry(const char *name, uint8_t name_len, uint32_t ino,
+-                       uint32_t type, const bfs_dir_pos_t *pos, void *context)
++    uint32_t ino[EXNEXT_BATCH_MAX];
++    bfs_dir_pos_t pos[EXNEXT_BATCH_MAX];
++    uint32_t count, next, limit;
++    bool stopped_at_last;
++} exnext_batch_t;
++
++static bool exnext_gather(const char *name, uint8_t name_len, uint32_t ino,
++                          uint32_t type, const bfs_dir_pos_t *pos, void *context)
+ {
+     (void)name;
+     (void)name_len;
+     (void)type;
+-    list_ctx_t *list = context;
+-    if (list->call_limit && list->call_count == list->call_limit) {
+-        list->overflow = true;
++    exnext_batch_t *b = context;
++    b->ino[b->count] = ino;
++    b->pos[b->count] = *pos;
++    if (++b->count == b->limit) {
++        b->stopped_at_last = true;
+         return false;
+     }
+-    bfs_inode_t inode;
+-    require(bfs_inode_read(&list->fs->inode_tree, ino, &inode), "list-inode");
+-    if (bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT) require(BFS_ERR_CORRUPT, "list-comment");
+-    list->last = *pos;
+-    list->count++;
+-    list->call_count++;
+-    return !list->stop_after_one;
++    return true;
+ }
+ 
+-/* ExNext as the handler runs it: one entry per call. The lock's cursor
+- * resumes after the entry returned last; when it cannot, the scan starts
+- * after that entry's position. */
+ static void list_exnext(bfs_fs_t *fs, uint32_t dir, uint32_t expected_count)
+ {
+     bfs_btree_cursor_t cursor;
+     bfs_btree_cursor_init(&cursor);
+     for (unsigned pass = 0; pass < 10; pass++) {
+-        list_ctx_t list = { .fs = fs, .stop_after_one = true };
++        exnext_batch_t b = { .limit = EXNEXT_BATCH_FIRST };
++        bfs_dir_pos_t last = {0, 0};
++        bool consumed_stop = false;
++        uint32_t count = 0;
+         for (;;) {
+-            uint32_t before = list.count;
+-            bfs_err_t err = BFS_ERR_AGAIN;
+-            if (before)
+-                err = bfs_dir_scan_resume_pos(&fs->dir_tree, &cursor, dir, list_entry, &list);
+-            if (err == BFS_ERR_AGAIN)
+-                err = bfs_dir_scan_cursor_pos(&fs->dir_tree, &cursor, dir,
+-                                              before ? &list.last : NULL, list_entry, &list);
+-            require(err, "exnext");
+-            if (list.count == before) break;
++            if (b.next == b.count) {
++                if (b.count > 0 && b.limit < EXNEXT_BATCH_MAX) b.limit *= 2;
++                b.count = b.next = 0;
++                b.stopped_at_last = false;
++                bfs_err_t err = BFS_ERR_AGAIN;
++                if (count && consumed_stop)
++                    err = bfs_dir_scan_resume_pos(&fs->dir_tree, &cursor, dir, exnext_gather, &b);
++                if (err == BFS_ERR_AGAIN)
++                    err = bfs_dir_scan_cursor_pos(&fs->dir_tree, &cursor, dir,
++                                                  count ? &last : NULL, exnext_gather, &b);
++                require(err, "exnext");
++                if (b.count == 0) break;
++            }
++            uint32_t i = b.next++;
++            bfs_inode_t inode;
++            require(bfs_inode_read(&fs->inode_tree, b.ino[i], &inode), "list-inode");
++            if (bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT) require(BFS_ERR_CORRUPT, "list-comment");
++            last = b.pos[i];
++            consumed_stop = b.next == b.count && b.stopped_at_last;
++            count++;
+         }
+-        if (list.count != expected_count) require(BFS_ERR_CORRUPT, "exnext-count");
++        if (count != expected_count) require(BFS_ERR_CORRUPT, "exnext-count");
+     }
+     bfs_btree_cursor_release(&cursor);
+ }

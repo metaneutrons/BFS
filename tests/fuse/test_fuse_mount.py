@@ -44,10 +44,12 @@ def require(condition, message):
         raise RuntimeError(message)
 
 
-def mount(image, mountpoint, snapshot=None, read_write=False):
+def mount(image, mountpoint, snapshot=None, read_write=False, long_names=False):
     arguments = [str(BFS), "mount", str(image), str(mountpoint)]
     if read_write:
         arguments.append("--read-write")
+    if long_names:
+        arguments.append("--long-names")
     if snapshot:
         arguments.extend(["--snapshot", snapshot])
     process = subprocess.Popen(arguments, cwd=ROOT, stdout=subprocess.PIPE, stderr=subprocess.PIPE, text=True)  # nosec B603
@@ -175,6 +177,10 @@ def oracle_manifest(image):
     return sorted(expected, key=lambda item: item["path"])
 
 
+SHORT_NAME_MAX = 107
+LONG_NAME_MAX = 255
+
+
 def require_statfs(root, superblock):
     result = os.statvfs(root)
     require(result.f_bsize == superblock["block_size"], "statfs block size differs")
@@ -182,7 +188,9 @@ def require_statfs(root, superblock):
     require(result.f_blocks == superblock["block_count"], "statfs block count differs")
     require(result.f_bfree == superblock["free_blocks"], "statfs free block count differs")
     require(result.f_bavail == superblock["free_blocks"], "statfs available block count differs")
-    require(result.f_namemax == 255, "statfs name limit differs")
+    # NAME_MAX is the longest name a listing can return, also when new names
+    # are limited to SHORT_NAME_MAX.
+    require(result.f_namemax == LONG_NAME_MAX, "statfs name limit differs")
 
 
 def expect_erofs(operation):
@@ -465,14 +473,47 @@ def exercise_disk_pressure(work, block_size):
 
 
 def exercise_name_and_metadata_boundaries(work):
-    maximum_name = "n" * 255
-    boundary = work / maximum_name
+    # Without --long-names, new names are limited to what an AmigaDOS
+    # FileInfoBlock holds.
+    boundary = work / ("n" * SHORT_NAME_MAX)
     boundary.write_bytes(b"boundary")
-    require(boundary.read_bytes() == b"boundary", "255-byte name differs")
+    require(boundary.read_bytes() == b"boundary", "107-byte name differs")
     os.setxattr(boundary, "user.bfs.comment", b"c" * 79)
     require(os.getxattr(boundary, "user.bfs.comment") == b"c" * 79,
             "maximum comment differs")
+    too_long = "x" * (SHORT_NAME_MAX + 1)
+    expect_errno(errno.ENAMETOOLONG, lambda: (work / too_long).write_bytes(b"invalid"))
+    expect_errno(errno.ENAMETOOLONG, lambda: os.mkdir(work / too_long))
+    expect_errno(errno.ENAMETOOLONG, lambda: os.rename(boundary, work / too_long))
+    expect_errno(errno.ENAMETOOLONG, lambda: os.link(boundary, work / too_long))
+    expect_errno(errno.ENAMETOOLONG, lambda: os.symlink("target", work / too_long))
     expect_errno(errno.ENAMETOOLONG, lambda: (work / ("x" * 256)).write_bytes(b"invalid"))
+
+
+def exercise_long_names(image, mountpoint):
+    longest = "L" * LONG_NAME_MAX
+    process = mount(image, mountpoint, read_write=True, long_names=True)
+    try:
+        work = mountpoint / "long"
+        work.mkdir()
+        (work / longest).write_bytes(b"longest")
+        os.mkdir(work / ("D" * (SHORT_NAME_MAX + 1)))
+        expect_errno(errno.ENAMETOOLONG, lambda: (work / ("x" * 256)).write_bytes(b"invalid"))
+    finally:
+        unmount(process, mountpoint)
+    process = mount(image, mountpoint, read_write=True)
+    try:
+        work = mountpoint / "long"
+        # Existing long names stay reachable without the option.
+        require((work / longest).read_bytes() == b"longest", "255-byte name differs")
+        require(longest in os.listdir(work), "255-byte name is not listed")
+        expect_errno(errno.ENAMETOOLONG,
+                     lambda: os.rename(work / longest, work / ("M" * LONG_NAME_MAX)))
+        os.unlink(work / longest)
+        os.rmdir(work / ("D" * (SHORT_NAME_MAX + 1)))
+        os.rmdir(work)
+    finally:
+        unmount(process, mountpoint)
 
 
 def exercise_writable_fixture(image, mountpoint):
@@ -644,6 +685,7 @@ def main():
         mountpoint.mkdir()
         exercise_fixture(image, mountpoint)
         exercise_writable_fixture(image, mountpoint)
+        exercise_long_names(image, mountpoint)
         if args.disk_pressure:
             process = mount(image, mountpoint, read_write=True)
             try:

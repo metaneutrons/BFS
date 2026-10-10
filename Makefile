@@ -91,6 +91,10 @@ CONFORMANCE_FIXTURE = $(BUILD_HOST)/conformance-fixture-writer
 # ── Test binaries ───────────────────────────────────────────
 TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 AMIGA_ENDIAN_TEST_BIN = $(BUILD_HOST)/test_endian_amiga_profile
+# The write probe's sidecar oracles, built as the Amiga write-probe handler is.
+WRITE_PROBE_FLAGS = -DBFS_PERF_WRITE_DETAIL=1 -DBFS_PERF_CRC_SAMPLE_STRIDE=1
+WRITE_PROBE_TEST_BIN = $(BUILD_HOST)/test_perf_probe_write
+HOST_TEST_BINS = $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN) $(WRITE_PROBE_TEST_BIN)
 AROS_DOS_NAME_TEST_BIN = $(BUILD_HOST)/test_dos_name_aros_profile
 
 # ── Phony targets ───────────────────────────────────────────
@@ -128,7 +132,10 @@ fault-qualification-verify:
 	@test -n "$(OUTPUT)" || { echo "OUTPUT is required" >&2; exit 2; }
 	@python3 tests/qualification/verify_fault_campaign.py --output "$(OUTPUT)"
 
-linux-qualification-fast: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests
+# The host test binaries are built first: the qualification times running
+# them, and building every binary one after another no longer fits its limit.
+linux-qualification-fast: fuse conformance tools $(CONFORMANCE_FIXTURE) qualification-tests \
+		$(HOST_TEST_BINS)
 	@test -c /dev/fuse || { echo "/dev/fuse is required for M7 qualification" >&2; exit 1; }
 	@command -v fusermount3 >/dev/null 2>&1 || { echo "fusermount3 is required" >&2; exit 1; }
 	@python3 tests/qualification/linux_qualification.py \
@@ -198,10 +205,10 @@ analyze:
 		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L $(CORE_SRC) $(HOST_SRC) \
 		tools/bfs-conformance-core.c tools/bfs-conformance-posix.c $(EMU_SRC)
 
-host-test: $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN)
+host-test: $(HOST_TEST_BINS)
 	@echo "=== Running tests ==="
 	@fail=0; \
-	for t in $(notdir $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN)); do \
+	for t in $(notdir $(HOST_TEST_BINS)); do \
 		echo "--- $(BUILD_HOST)/$$t ---"; \
 		(cd $(BUILD_HOST) && ./$$t) || fail=1; \
 	done; \
@@ -264,6 +271,14 @@ $(BUILD_HOST)/test_perf_probe: tests/test_perf_probe.c src/amiga/perf_probe.c \
 		-Itests/perf_probe_stubs -iquote src/amiga -o $@ \
 		tests/test_perf_probe.c src/amiga/perf_probe.c $(CORE_SRC) $(EMU_SRC)
 
+$(WRITE_PROBE_TEST_BIN): tests/test_perf_probe.c src/amiga/perf_probe.c \
+		src/amiga/perf_probe.h $(CORE_SRC) $(EMU_SRC) $(CORE_HEADERS) \
+		src/amiga/write_probe.h $(PERF_PROBE_STUB_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -DBFS_PERF_PROBE=1 $(WRITE_PROBE_FLAGS) \
+		-Itests/perf_probe_stubs -iquote src/amiga -o $@ \
+		tests/test_perf_probe.c src/amiga/perf_probe.c $(CORE_SRC) $(EMU_SRC)
+
 $(HOST_POSIX_OBJ): src/host/posix_bio.c $(CORE_HEADERS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
@@ -318,7 +333,7 @@ amiga-perf-probe-handler:
 		$(AMIGA_SRCS) src/amiga/perf_probe.c \
 		-nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 
-amiga-write-perf-probe-handler: AMIGA_WRITE_PROBE_FLAGS = -DBFS_PERF_WRITE_DETAIL=1 -DBFS_PERF_CRC_SAMPLE_STRIDE=1
+amiga-write-perf-probe-handler: AMIGA_WRITE_PROBE_FLAGS = $(WRITE_PROBE_FLAGS)
 amiga-write-perf-probe-handler: AMIGA_PROBE_FILE = bfshandler-write-probe
 amiga-write-perf-probe-handler: amiga-perf-probe-handler
 
@@ -418,7 +433,9 @@ clean:
 AMIGA_ASM_SRCS = src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s
 AMIGA_SRCS = $(AMIGA_ASM_SRCS) src/amiga/handler.c src/amiga/amiga_bio.c $(CORE_SRC_AMIGA)
 AMIGA_LDFLAGS = -nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
-AMIGA_BASE_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -noixemul -fomit-frame-pointer \
+# Release handlers are built for speed: -Os was about 10 % slower on the 68040
+# in every measured workload (docs/qualification/bfs-release-flags-pilot-2026-10-10.md).
+AMIGA_BASE_FLAGS = -std=c99 $(AMIGA_WARNINGS) -O2 -noixemul -fomit-frame-pointer \
                    -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I$(AMIGA_PREFIX)/ndk-include
 AMIGA_RELEASE_CPUS = 020 030 040 060 080
 AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -Isrc/amiga \

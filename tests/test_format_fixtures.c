@@ -48,6 +48,13 @@ static uint32_t crc32_with_zeroed_range(const uint8_t *data, size_t len,
     return crc ^ UINT32_C(0xFFFFFFFF);
 }
 
+static int fixture_memcmp(const uint8_t *a, const uint8_t *b, size_t len)
+{
+    for (size_t i = 0; i < len; i++)
+        if (a[i] != b[i]) return a[i] < b[i] ? -1 : 1;
+    return 0;
+}
+
 static uint8_t fixture_fold(uint8_t byte)
 {
     if (byte >= 'a' && byte <= 'z') return (uint8_t)(byte - ('a' - 'A'));
@@ -121,15 +128,52 @@ static const uint8_t fixture_inode[56] = {
     [51] = 0x04,
 };
 
-static const uint8_t fixture_dir_key[264] = {
+/* Directory records: 12-byte key (owner, kind, hash, ordinal, part) and
+ * 40-byte value. */
+static const uint8_t fixture_dir_key[12] = {
     [3] = 0x01,
-    [4] = 0x32, [5] = 0x54, [6] = 0x3B, [7] = 0x0B,
-    [8] = 0x05,
-    [9] = 'H', [10] = 'e', [11] = 'l', [12] = 'l', [13] = 'o',
+    [5] = 0x32, [6] = 0x54, [7] = 0x3B, [8] = 0x0B,
 };
 
-static const uint8_t fixture_dir_value[8] = {
+static const uint8_t fixture_dir_value[40] = {
     [3] = 0x02,
+    [5] = 0x05,
+    [7] = 'H', [8] = 'e', [9] = 'l', [10] = 'l', [11] = 'o',
+};
+
+/* A 34-byte name "AAAA...A": 33 bytes inline, one byte in part 1. */
+static const uint8_t fixture_long_head_key[12] = {
+    [3] = 0x01,
+    [5] = 0x3D, [6] = 0x51, [7] = 0x87, [8] = 0x17,
+};
+
+static const uint8_t fixture_long_part_key[12] = {
+    [3] = 0x01,
+    [5] = 0x3D, [6] = 0x51, [7] = 0x87, [8] = 0x17,
+    [11] = 0x01,
+};
+
+static const uint8_t fixture_long_part_value[40] = {
+    [0] = 'A',
+};
+
+static const uint8_t fixture_parent_key[12] = {
+    [3] = 0x02,
+    [4] = 0x01,
+};
+
+static const uint8_t fixture_parent_value[40] = {
+    [3] = 0x01,
+};
+
+static const uint8_t fixture_comment_key[12] = {
+    [3] = 0x02,
+    [4] = 0x02,
+};
+
+static const uint8_t fixture_comment_value[40] = {
+    [0] = 0x04,
+    [1] = 'n', [2] = 'o', [3] = 't', [4] = 'e',
 };
 
 static const uint8_t fixture_extent[16] = {
@@ -208,11 +252,41 @@ static void test_record_fixtures(void)
     TEST_ASSERT_EQ(read_be32(fixture_inode + 52), 0);
 
     TEST_ASSERT_EQ(read_be32(fixture_dir_key), 1);
-    TEST_ASSERT_EQ(fixture_dir_key[8], 5);
-    TEST_ASSERT_EQ(fixture_fnv1a(fixture_dir_key + 9, fixture_dir_key[8]),
+    TEST_ASSERT_EQ(fixture_dir_key[4], 0);
+    TEST_ASSERT_EQ(fixture_dir_value[5], 5);
+    TEST_ASSERT_EQ(fixture_fnv1a(fixture_dir_value + 7, fixture_dir_value[5]),
                    UINT32_C(0x32543B0B));
-    TEST_ASSERT_EQ(read_be32(fixture_dir_key + 4), UINT32_C(0x32543B0B));
+    TEST_ASSERT_EQ(read_be32(fixture_dir_key + 5), UINT32_C(0x32543B0B));
+    TEST_ASSERT_EQ(read_be16(fixture_dir_key + 9), 0);
+    TEST_ASSERT_EQ(fixture_dir_key[11], 0);
     TEST_ASSERT_EQ(read_be32(fixture_dir_value), 2);
+    TEST_ASSERT_EQ(fixture_dir_value[4], 0);
+    for (size_t i = 12; i < sizeof(fixture_dir_value); i++)
+        TEST_ASSERT_EQ(fixture_dir_value[i], 0);
+
+    uint8_t long_name[34];
+    for (size_t i = 0; i < sizeof(long_name); i++) long_name[i] = 'A';
+    TEST_ASSERT_EQ(fixture_fnv1a(long_name, sizeof(long_name)), UINT32_C(0x3D518717));
+    TEST_ASSERT_EQ(read_be32(fixture_long_head_key + 5), UINT32_C(0x3D518717));
+    for (size_t i = 0; i < 11; i++)
+        TEST_ASSERT_EQ(fixture_long_part_key[i], fixture_long_head_key[i]);
+    TEST_ASSERT_EQ(fixture_long_part_key[11], 1);
+    TEST_ASSERT_EQ(fixture_long_part_value[0], 'A');
+    for (size_t i = 1; i < sizeof(fixture_long_part_value); i++)
+        TEST_ASSERT_EQ(fixture_long_part_value[i], 0);
+
+    TEST_ASSERT_EQ(read_be32(fixture_parent_key), 2);
+    TEST_ASSERT_EQ(fixture_parent_key[4], 1);
+    TEST_ASSERT_EQ(read_be32(fixture_parent_value), 1);
+    TEST_ASSERT_EQ(read_be32(fixture_comment_key), 2);
+    TEST_ASSERT_EQ(fixture_comment_key[4], 2);
+    TEST_ASSERT_EQ(fixture_comment_value[0], 4);
+
+    /* Byte order of the 12-byte keys is the record order: an entry's head
+     * precedes its part, entries precede the parent link and the comment. */
+    TEST_ASSERT(fixture_memcmp(fixture_long_head_key, fixture_long_part_key, 12) < 0);
+    TEST_ASSERT(fixture_memcmp(fixture_dir_key, fixture_long_head_key, 12) < 0);
+    TEST_ASSERT(fixture_memcmp(fixture_parent_key, fixture_comment_key, 12) < 0);
 
     TEST_ASSERT_EQ(read_be32(fixture_extent), 3);
     TEST_ASSERT_EQ(read_be32(fixture_extent + 4), 32);

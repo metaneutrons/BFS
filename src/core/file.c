@@ -226,9 +226,11 @@ static bfs_err_t file_update_inode(bfs_file_t *f,
             inode->protection = bfs_be32(bfs_be32(inode->protection) &
                                         ~metadata->protection_clear);
     }
+    /* A linked inode of the live tree stays pending until the commit after
+     * its first publication in the transaction (bfs_inode_publish). */
     bfs_err_t err = f->unlinked
                         ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, inode)
-                        : bfs_inode_write(f->inode_tree, f->inode_nr, inode);
+                        : bfs_inode_publish(f->inode_tree, f->inode_nr, inode);
     if (err == BFS_OK)
         file_inode_seed_store(seed, f, inode);
     else if (seed)

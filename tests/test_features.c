@@ -136,17 +136,6 @@ static void test_softlink_create_read(void)
 
 /* ── File comments ─────────────────────────────────────────── */
 
-static bool count_entries_cb(const char *name, uint8_t name_len,
-                             uint32_t inode_nr, uint32_t entry_type, void *ctx)
-{
-    (void)name;
-    (void)name_len;
-    (void)inode_nr;
-    (void)entry_type;
-    (*(uint32_t *)ctx)++;
-    return true;
-}
-
 static void test_comment_set_get(void)
 {
     bfs_fs_t *fs = setup();
@@ -166,10 +155,10 @@ static void test_comment_set_get(void)
     TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, "Updated", 7), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_get_comment(fs, ino, buf, 80), BFS_OK);
     TEST_ASSERT_MEM_EQ(buf, "Updated", 7);
-    uint32_t comment_count = 0;
-    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, ino | 0x80000000u,
-                                count_entries_cb, &comment_count), BFS_OK);
-    TEST_ASSERT_EQ(comment_count, 1);
+    char stored[BFS_DIR_COMMENT_MAX];
+    uint8_t stored_len = 0;
+    TEST_ASSERT_EQ(bfs_dir_comment_get(&fs->dir_tree, ino, stored, &stored_len), BFS_OK);
+    TEST_ASSERT_EQ(stored_len, 7);
 
     TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, NULL, 1), BFS_ERR_INVAL);
     TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino,
@@ -180,18 +169,14 @@ static void test_comment_set_get(void)
 
     TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, NULL, 0), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_get_comment(fs, ino, buf, 80), BFS_ERR_NOTFOUND);
-    comment_count = 0;
-    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, ino | 0x80000000u,
-                                count_entries_cb, &comment_count), BFS_OK);
-    TEST_ASSERT_EQ(comment_count, 0);
+    TEST_ASSERT_EQ(bfs_dir_comment_get(&fs->dir_tree, ino, stored, &stored_len),
+                   BFS_ERR_NOTFOUND);
 
     TEST_ASSERT_EQ(bfs_fs_set_comment(fs, ino, "delete me", 9), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_delete_file(fs, BFS_ROOT_INO, "noted.txt", 9),
                    BFS_OK);
-    comment_count = 0;
-    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, ino | 0x80000000u,
-                                count_entries_cb, &comment_count), BFS_OK);
-    TEST_ASSERT_EQ(comment_count, 0);
+    TEST_ASSERT_EQ(bfs_dir_comment_get(&fs->dir_tree, ino, stored, &stored_len),
+                   BFS_ERR_NOTFOUND);
 
     teardown(fs);
 }
@@ -224,12 +209,12 @@ static void test_parent_tracking(void)
     TEST_ASSERT_EQ(bfs_fs_mkdir(fs, a_ino, "b", 1, &b_ino), BFS_OK);
 
     /* Verify '..' in 'b' points to 'a' */
-    uint32_t parent_ino, type;
-    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, b_ino, "..", 2, &parent_ino, &type), BFS_OK);
+    uint32_t parent_ino;
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs->dir_tree, b_ino, &parent_ino), BFS_OK);
     TEST_ASSERT_EQ(parent_ino, a_ino);
 
     /* Verify '..' in 'a' points to root */
-    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, a_ino, "..", 2, &parent_ino, &type), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs->dir_tree, a_ino, &parent_ino), BFS_OK);
     TEST_ASSERT_EQ(parent_ino, BFS_ROOT_INO);
 
     teardown(fs);
@@ -245,8 +230,8 @@ static void test_rmdir_removes_inode_and_parent_entry(void)
 
     bfs_inode_t inode;
     TEST_ASSERT_EQ(bfs_inode_read(&fs->inode_tree, dir_ino, &inode), BFS_ERR_NOTFOUND);
-    uint32_t parent, type;
-    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, dir_ino, "..", 2, &parent, &type), BFS_ERR_NOTFOUND);
+    uint32_t parent;
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs->dir_tree, dir_ino, &parent), BFS_ERR_NOTFOUND);
 
     teardown(fs);
 }
@@ -260,8 +245,8 @@ static void test_rename_directory_updates_parent(void)
     TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "b", 1, &b_ino), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_rename(fs, BFS_ROOT_INO, "b", 1, a_ino, "b", 1), BFS_OK);
 
-    uint32_t parent, type;
-    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, b_ino, "..", 2, &parent, &type), BFS_OK);
+    uint32_t parent;
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs->dir_tree, b_ino, &parent), BFS_OK);
     TEST_ASSERT_EQ(parent, a_ino);
 
     teardown(fs);
@@ -343,7 +328,7 @@ static void test_features_persist(void)
     TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, dir_ino, "inner.txt", 9, &found_ino, &type), BFS_OK);
 
     /* '..' in sub should point to root */
-    TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, dir_ino, "..", 2, &found_ino, &type), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs.dir_tree, dir_ino, &found_ino), BFS_OK);
     TEST_ASSERT_EQ(found_ino, BFS_ROOT_INO);
 
     bfs_fs_unmount(&fs);

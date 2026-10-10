@@ -28,8 +28,12 @@ All groups are big-endian hexadecimal bytes.
 | Record | Bytes |
 | --- | --- |
 | Inode, 56 bytes | `00000002 00000000 00000001 23456789 00000010 00000002 0000000F 0123 0456 000A 0014 001E 0028 0032 003C 00000003 00000004 00000000` |
-| Directory key, 264 bytes | `00000001 32543B0B 05 48656C6C6F 00 x 250` |
-| Directory value, 8 bytes | `00000002 00000000` |
+| Directory entry key, 12 bytes | `00000001 00 32543B0B 0000 00` |
+| Directory entry value, 40 bytes | `00000002 00 05 00 48656C6C6F 00 x 28` |
+| Long-name head key, 12 bytes | `00000001 00 3D518717 0000 00` |
+| Long-name part key/value, 52 bytes | `00000001 00 3D518717 0000 01 41 00 x 39` |
+| Parent link key/value, 52 bytes | `00000002 01 00000000 0000 00 00000001 00 x 36` |
+| Comment key/value, 52 bytes | `00000002 02 00000000 0000 00 04 6E6F7465 00 x 35` |
 | Extent key/value, 16 bytes | `00000003 00000020 00000002 CAFEBABE` |
 | Free-space key/value, 8 bytes | `00000020 00000002` |
 | Refcount key/value, 8 bytes | `00000020 00000003` |
@@ -38,8 +42,13 @@ All groups are big-endian hexadecimal bytes.
 The inode fixture sets `INLINE_EXTENT` and `HAS_COMMENT`; its inline extent
 covers four blocks starting at block `0x10`.
 
-The directory fixture is parent 1 and original spelling `Hello`. Its folded
-byte sequence is `HELLO`, whose required FNV-1a hash is `32543B0B`.
+The directory entry fixture is an entry of directory 1 for inode 2, a file,
+with original spelling `Hello`. Its folded byte sequence is `HELLO`, whose
+required FNV-1a hash is `32543B0B`. The long-name fixture is a 34-byte name of
+`A` bytes in directory 1, hash `3D518717`: its head holds the first 33 bytes and
+part 1 the last one. The parent link says that directory 2 lies in directory 1,
+and the comment fixture gives inode 2 the comment `note`. In byte order the
+head key precedes its part, and the parent link precedes the comment.
 
 The snapshot table's final row is a four-byte key followed by its 52-byte
 value: directory root `0x10`, inode root `0x20`, captured transaction ID

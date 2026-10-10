@@ -1,0 +1,80 @@
+--- /Volumes/Dev/Source/Amiga/BFS/include/bfs_file.h	2026-10-10 01:26:29
++++ include/bfs_file.h	2026-10-10 13:11:05
+@@ -27,8 +27,12 @@
+     uint64_t            recovery_generation;
+     // cppcheck-suppress unusedStructMember
+     bool                unlinked;  /* retained POSIX orphan; see mark_unlinked */
++    bool                proto_dirty;
++    bfs_inode_t         proto_inode;
+ } bfs_file_t;
+ 
++bfs_err_t bfs_file_proto_flush(bfs_file_t *f);
++
+ /* Open a file by inode number. Reads its extent mapping and size from the inode. */
+ bfs_err_t bfs_file_open(bfs_file_t *f, bfs_fs_t *fs, uint32_t inode_nr);
+ 
+--- /Volumes/Dev/Source/Amiga/BFS/src/core/file.c	2026-10-10 01:26:29
++++ src/core/file.c	2026-10-10 13:11:05
+@@ -226,9 +226,16 @@
+             inode->protection = bfs_be32(bfs_be32(inode->protection) &
+                                         ~metadata->protection_clear);
+     }
++    if (metadata && metadata->stamp_fn && !f->unlinked) {
++        f->proto_inode = *inode;
++        f->proto_dirty = true;
++        file_inode_seed_store(seed, f, inode);
++        return BFS_OK;
++    }
+     bfs_err_t err = f->unlinked
+                         ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, inode)
+                         : bfs_inode_write(f->inode_tree, f->inode_nr, inode);
++    if (err == BFS_OK) f->proto_dirty = false;
+     if (err == BFS_OK)
+         file_inode_seed_store(seed, f, inode);
+     else if (seed)
+@@ -903,7 +910,13 @@
+         write_metadata.stamp_context = metadata->stamp_context;
+         write_metadata.protection_clear = metadata->protection_clear;
+     }
+-    int32_t err = file_refresh_unlocked(f, &seed);
++    int32_t err;
++    if (f->proto_dirty && file_handle_error(f) == BFS_OK) {
++        file_inode_seed_store(&seed, f, &f->proto_inode);
++        err = BFS_OK;
++    } else {
++        err = file_refresh_unlocked(f, &seed);
++    }
+     /* The refreshed inode is the one this operation writes, so the check and
+      * the write see the same state. Without a refreshed inode, deny. */
+     if (err == BFS_OK && metadata && metadata->protection_deny != 0 &&
+@@ -929,6 +942,18 @@
+ }
+ #endif
+ 
++bfs_err_t bfs_file_proto_flush(bfs_file_t *f)
++{
++    bfs_lock_write(&f->fs->lock);
++    bfs_err_t err = BFS_OK;
++    if (f->proto_dirty) {
++        err = bfs_inode_write(f->inode_tree, f->inode_nr, &f->proto_inode);
++        if (err == BFS_OK) f->proto_dirty = false;
++    }
++    bfs_lock_unlock(&f->fs->lock);
++    return err;
++}
++
+ int32_t bfs_file_write(bfs_file_t *f, const void *buf, uint32_t len)
+ {
+     return file_write_operation(f, buf, len, NULL);
+--- /Volumes/Dev/Source/Amiga/BFS/src/amiga/handler.c	2026-10-10 11:02:35
++++ src/amiga/handler.c	2026-10-10 13:11:05
+@@ -2545,7 +2545,8 @@
+         bfs_file_t *f = (bfs_file_t *)pkt->dp_Arg1;
+         if (!FindOpenFile(h, f)) { res2 = ERROR_INVALID_LOCK; break; }
+         /* Delayed commits leave the change to the commit timer. */
+-        bfs_err_t err = h->sync_commits ? CommitDirty(h) : BFS_OK;
++        bfs_err_t err = f->proto_dirty ? bfs_file_proto_flush(f) : BFS_OK;
++        if (err == BFS_OK && h->sync_commits) err = CommitDirty(h);
+         if (err == BFS_OK) SendPendingNotifications(h);
+         FreeOpenFile(h, f);
+         res1 = (err == BFS_OK) ? DOSTRUE : DOSFALSE;

@@ -80,7 +80,7 @@ def verify_metadata(files, tag, commit):
     require(type(metadata.get("source_date_epoch")) is int and metadata["source_date_epoch"] >= 0,
             "invalid source timestamp")
     require(isinstance(metadata.get("toolchain"), str) and metadata["toolchain"], "missing toolchain identity")
-    expected_targets = [{"file": f"bfshandler.{cpu}", "flags": [f"-m68{cpu}", "-Os"]} for cpu in CPUS]
+    expected_targets = [{"file": f"bfshandler.{cpu}", "flags": [f"-m68{cpu}", "-O2"]} for cpu in CPUS]
     require(metadata.get("targets") == expected_targets, "CPU targets or flags differ")
     hashes = {name: digest(data) for name, data in files.items() if name != "BUILD-METADATA.json"}
     require(metadata.get("files") == hashes, "archive file digest inventory differs")

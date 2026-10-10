@@ -697,7 +697,20 @@ static void test_node_write_raw_bio_fallback(void)
     TEST_ASSERT(!bfs_bio_node_crc_valid(&memory.bio, 2));
 }
 
+/* A mount gets at least 64 nodes, but the floor stays within 256 KiB. */
+static void test_mount_slots_floor(void)
+{
+    TEST_ASSERT_EQ(bfs_cache_mount_slots(30, 4096), 64);
+    TEST_ASSERT_EQ(bfs_cache_mount_slots(100, 4096), 100);
+    TEST_ASSERT_EQ(bfs_cache_mount_slots(0, 1024), 64);
+    TEST_ASSERT_EQ(bfs_cache_mount_slots(30, 8192), 32);
+    TEST_ASSERT_EQ(bfs_cache_mount_slots(30, 65536), 30);
+    TEST_ASSERT_EQ(bfs_cache_mount_slots(2, 65536), 4);
+    TEST_ASSERT_EQ(bfs_cache_mount_slots(500, 4096), BFS_CACHE_SLOTS_MAX);
+}
+
 TEST_SUITE_BEGIN("Block Cache")
+    TEST_RUN(test_mount_slots_floor);
     TEST_RUN(test_raw_bio_buffer_fallback);
     TEST_RUN(test_partial_buffer_hooks_are_ignored);
     TEST_RUN(test_complete_buffer_hooks_and_failed_allocation);

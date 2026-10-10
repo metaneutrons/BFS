@@ -4,10 +4,13 @@ Status: normative for format version 3. This document defines the bytes a
 reader or writer must understand. It does not qualify a particular device,
 operating system, driver release, or maximum volume size.
 
-Version 3 differs from version 2 only in the inode record, which gained a
-flags word, an inline extent and a comment flag, and in the version number.
-The superblock envelope, the node format and every other record are
-unchanged. Version 2 was reconciled against the v0.1.3 source baseline
+Version 3 differs from version 2 in the inode record, which gained a flags
+word, an inline extent and a comment flag; in the directory tree, which stores
+entries, parent links and comments as compact 12-byte keys with 40-byte values;
+and in the version number. The superblock envelope, the node format and every
+other record are unchanged. Development images that carry version 3 with the
+version 2 directory tree predate the first v3 release and are not v3 volumes;
+a v3 reader rejects their directory tree as corrupt. Version 2 was reconciled against the v0.1.3 source baseline
 `431ead6159e5d4217f029ac2b6dd02a51db7d8a2`. Where an implementation has a
 known limitation, it is stated as a limitation rather than being promoted to a
 format guarantee.

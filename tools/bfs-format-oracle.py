@@ -19,13 +19,17 @@ FORMAT_VERSION = 3
 SUPPORTED_OPTIONS = 0x7
 INODE_INLINE_EXTENT = 0x1
 INODE_HAS_COMMENT = 0x2
-COMMENT_PARENT = 0x80000000
+INODE_LIMIT = 0x80000000
+DIR_ENTRY, DIR_PARENT, DIR_COMMENT = 0, 1, 2
+DIR_INLINE_NAME = 33
+DIR_PART_BYTES = 40
+DIR_COMMENT_INLINE = 39
 MIN_BLOCK = 1024
 MAX_BLOCK = 65536
 MAX_WALK_NODES = 1_000_000
 ZERO_CHUNK = b"\0" * 65536
 LAYOUTS = {
-    "directory": (264, 8),
+    "directory": (12, 40),
     "inode": (4, 56),
     "extent": (4, 12),
     "free": (4, 4),
@@ -137,19 +141,21 @@ def fnv1a(name):
 
 
 def validate_key(kind, key):
-    if kind == "directory":
-        name_length = key[8]
-        if name_length == 0 or any(key[9 + name_length:]):
-            raise OracleError("invalid directory key name encoding")
-        if be32(key, 4) != fnv1a(key[9:9 + name_length]):
-            raise OracleError("directory key hash mismatch")
+    if kind != "directory":
+        return
+    owner, record, part = be32(key, 0), key[4], key[11]
+    if owner >= INODE_LIMIT or record > DIR_COMMENT:
+        raise OracleError("invalid directory key")
+    if record == DIR_ENTRY and part > 6 or \
+            record != DIR_ENTRY and (be32(key, 5) or be16(key, 9)) or \
+            record == DIR_PARENT and part or record == DIR_COMMENT and part > 1:
+        raise OracleError("invalid directory key")
 
 
 def key_sort_key(kind, key):
-    if kind != "directory":
-        return key
-    name_length = key[8]
-    return (be32(key, 0), be32(key, 4), fold_name(key[9:9 + name_length]), name_length)
+    # Every key field is big-endian, so byte order is the comparator of every
+    # tree, the directory tree included.
+    return key
 
 
 def walk_tree(image, superblock, root, kind):
@@ -249,33 +255,133 @@ def digest_file(image, superblock, inode):
     return digest.hexdigest()
 
 
+def take_parts(records, index, head_key, count):
+    """Return the values of the count continuation parts after records[index]."""
+    values = []
+    for part in range(1, count + 1):
+        if index + part >= len(records):
+            raise OracleError("directory record part missing")
+        key, value = records[index + part]
+        if key[:11] != head_key[:11] or key[11] != part:
+            raise OracleError("directory record part missing")
+        values.append(value)
+    following = index + count + 1
+    if following < len(records) and records[following][0][:11] == head_key[:11]:
+        raise OracleError("directory record has an extra part")
+    return values
+
+
+def parse_dir_entry(records, index, key, value):
+    """Return the name, inode and type of the entry at index and its part count."""
+    owner, name_hash, ordinal = be32(key, 0), be32(key, 5), be16(key, 9)
+    inode, entry_type, name_length, flags = be32(value, 0), value[4], value[5], value[6]
+    if not 0 < inode < INODE_LIMIT or entry_type > 3 or name_length == 0 or flags:
+        raise OracleError("invalid directory entry")
+    inline = min(name_length, DIR_INLINE_NAME)
+    name = bytearray(value[7:7 + inline])
+    if any(value[7 + inline:]):
+        raise OracleError("directory entry padding is not zero")
+    count = 0 if name_length <= DIR_INLINE_NAME else \
+        -(-(name_length - DIR_INLINE_NAME) // DIR_PART_BYTES)
+    for part_value in take_parts(records, index, key, count):
+        used = min(DIR_PART_BYTES, name_length - len(name))
+        name += part_value[:used]
+        if any(part_value[used:]):
+            raise OracleError("directory entry padding is not zero")
+    name = bytes(name)
+    if fnv1a(name) != name_hash:
+        raise OracleError("directory entry hash mismatch")
+    if name in (b".", b".."):
+        raise OracleError("directory entry has a dot name")
+    if owner == 0 and (name != b"/" or inode != 1 or entry_type != 1 or ordinal):
+        raise OracleError("invalid root record")
+    return (name, inode, entry_type), count
+
+
+def parse_comment(records, index, key, value):
+    """Return the text of the comment at index and its part count."""
+    length = value[0]
+    if not 1 <= length <= 79:
+        raise OracleError("invalid comment record")
+    inline = min(length, DIR_COMMENT_INLINE)
+    text = bytearray(value[1:1 + inline])
+    if any(value[1 + inline:]):
+        raise OracleError("comment padding is not zero")
+    count = 1 if length > DIR_COMMENT_INLINE else 0
+    for part_value in take_parts(records, index, key, count):
+        used = length - len(text)
+        text += part_value[:used]
+        if any(part_value[used:]):
+            raise OracleError("comment padding is not zero")
+    return bytes(text), count
+
+
+def directory_parents(entries, parents):
+    """Check the root record, case aliases and parent links against the
+    entries; return each directory's parent as its entry names it."""
+    if entries.get(0) != [(b"/", 1, 1)]:
+        raise OracleError("root record missing")
+    named = {}
+    for owner, items in entries.items():
+        if len({fold_name(name) for name, _, _ in items}) != len(items):
+            raise OracleError("directory holds case aliases")
+        for _, inode, entry_type in items:
+            if entry_type == 1 and owner != 0:
+                if inode in named:
+                    raise OracleError("directory has two names")
+                named[inode] = owner
+    if named != parents:
+        raise OracleError("parent links disagree with directory entries")
+    return named
+
+
+def parse_directory(records):
+    """Return entries by directory, comments and parent links of a directory tree."""
+    entries, parents, comments = {}, {}, {}
+    index = 0
+    while index < len(records):
+        key, value = records[index]
+        owner, record, part = be32(key, 0), key[4], key[11]
+        if part != 0:
+            raise OracleError("directory record part without its head")
+        count = 0
+        if record == DIR_ENTRY:
+            item, count = parse_dir_entry(records, index, key, value)
+            entries.setdefault(owner, []).append(item)
+        elif owner == 0 or record == DIR_PARENT and owner == 1:
+            raise OracleError("invalid parent link or comment owner")
+        elif record == DIR_PARENT:
+            parent = be32(value, 0)
+            if not 0 < parent < INODE_LIMIT or any(value[4:]):
+                raise OracleError("invalid parent link")
+            parents[owner] = parent
+        else:
+            comments[owner], count = parse_comment(records, index, key, value)
+        index += count + 1
+    return entries, comments, directory_parents(entries, parents)
+
+
 def build_manifest(image, superblock):
     inode_values = {be32(key, 0): value for key, value in
                     walk_tree(image, superblock, superblock["inode_root"], "inode")}
     directory = walk_tree(image, superblock, superblock["directory_root"], "directory")
-    entries = {}
-    commented = set()
-    for key, value in directory:
-        parent, name_length = be32(key, 0), key[8]
-        name = key[9:9 + name_length]
-        if parent & COMMENT_PARENT:
-            owner = parent & ~COMMENT_PARENT
-            if owner in commented or be32(value, 0) != owner or not 1 <= name_length <= 79:
-                raise OracleError("invalid comment entry")
-            commented.add(owner)
-            continue
-        if name == b"..":
-            continue
-        entries.setdefault(parent, []).append((name, be32(value, 0), be32(value, 4)))
+    entries, comments, named = parse_directory(directory)
+    commented = set(comments)
     if 1 not in inode_values:
         raise OracleError("root inode missing")
     flagged = {number for number, inode in inode_values.items()
                if be32(inode, 44) & INODE_HAS_COMMENT}
     if flagged != commented:
-        raise OracleError("comment flag disagrees with comment entries")
+        raise OracleError("comment flag disagrees with comment records")
     for inode in inode_values.values():
         if be32(inode, 4) == 1 and (be32(inode, 16) or be32(inode, 44) & INODE_INLINE_EXTENT):
             raise OracleError("directory inode with extents")
+    for owner, items in entries.items():
+        if owner != 0 and (owner not in inode_values or be32(inode_values[owner], 4) != 1):
+            raise OracleError("directory entry owned by a non-directory")
+        for _, inode, entry_type in items:
+            if inode not in inode_values or be32(inode_values[inode], 4) != entry_type:
+                raise OracleError("directory entry type disagrees with its inode")
     manifest = []
     directory_ancestors = set()
 
@@ -300,6 +406,8 @@ def build_manifest(image, superblock):
             directory_ancestors.remove(inode_number)
 
     visit(1, "/")
+    if set(named) - {item["inode"] for item in manifest if item["type"] == 1}:
+        raise OracleError("directory unreachable from the root")
     snapshots = []
     for key, value in walk_tree(image, superblock, superblock["snapshot_root"], "snapshot"):
         name = value[20:].split(b"\0", 1)[0]

@@ -258,6 +258,7 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
      * locator before attaching the new inode-tree handle and its root. */
     bfs_btree_key_hint_cache_reset(&fs->inode_key_hints);
     fs->inode_tree.key_hint_cache = &fs->inode_key_hints;
+    bfs_inode_pending_attach(&fs->inode_tree, &fs->inode_pending);
     err = fs_open_refcount_tree(fs);
     if (err != BFS_OK) return err;
     fs->next_ino = bfs_be32(sb->next_ino);
@@ -271,6 +272,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
     if (!fs || !fs_bio_valid(bio, read_only)) return BFS_ERR_INVAL;
     memset(fs, 0, sizeof(*fs));
     fs->pending_frees_cap = BFS_PENDING_FREES_MAX;
+    fs->name_max = BFS_NAME_MAX;
     bfs_lock_init(&fs->lock);
     fs->bio = bio;
     bfs_err_t err = read_only ? bfs_txn_begin_readonly(&fs->txn, bio)
@@ -618,6 +620,8 @@ bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs)
 
     uint32_t pending_cap = fs->pending_frees_cap;
     bfs_txn_t txn;
+    /* Its pending inodes belong to the discarded transaction as well. */
+    bfs_inode_pending_discard(&fs->inode_tree);
     /* The discarded transaction's deferred nodes must never be written. */
     bfs_bio_discard_deferred(fs->bio, BFS_BLK_NULL);
     bfs_err_t err = bfs_bio_sync(fs->bio);
@@ -680,3 +684,12 @@ bfs_err_t bfs_fs_reserve(bfs_fs_t *fs, uint32_t items)
 }
 
 void bfs_fs_unreserve(bfs_fs_t *fs, uint32_t items) { (void)fs; (void)items; }
+
+bfs_err_t bfs_fs_set_name_limit(bfs_fs_t *fs, uint8_t name_max)
+{
+    if (!fs || !fs->mounted || name_max == 0) return BFS_ERR_INVAL;
+    bfs_lock_write(&fs->lock);
+    fs->name_max = name_max;
+    bfs_lock_unlock(&fs->lock);
+    return BFS_OK;
+}

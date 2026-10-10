@@ -12,8 +12,9 @@
  * superblock or snapshot references stay dirty until the transaction commit
  * flushes them, so a crash can only lose state that was never published.
  *
- * Slot count is configurable via the AmigaOS "Buffers" mount option
- * (de_NumBuffers in DosEnvec). Default: 8. Recommended: 16-32.
+ * Slot count follows the AmigaOS "Buffers" mount option (de_NumBuffers in
+ * DosEnvec), raised to bfs_cache_mount_slots' floor so that a directory of
+ * about 1,000 entries and its inodes stay resident.
  *
  * Not thread-safe: even reads mutate slots and LRU state. Serialize complete
  * B-tree operations (read, validate and mark), not just individual BIO calls.
@@ -34,6 +35,9 @@
 
 #define BFS_CACHE_SLOTS_DEFAULT 8
 #define BFS_CACHE_SLOTS_MAX     128
+/* Floor for a mount's slots: 64 nodes, but no more than 256 KiB of them. */
+#define BFS_CACHE_MOUNT_SLOTS   64
+#define BFS_CACHE_MOUNT_BYTES   (256u * 1024u)
 #define BFS_CACHE_SCRATCH_SLOTS 4
 
 typedef struct bfs_cache_slot {
@@ -79,6 +83,11 @@ typedef struct bfs_cache {
 
 /* Initialize cache with num_slots buffers. Use 0 for default (8). */
 bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots);
+
+/* Slots for a mount that asks for buffers slots: at least
+ * BFS_CACHE_MOUNT_SLOTS, but the floor never exceeds BFS_CACHE_MOUNT_BYTES of
+ * block_size nodes; at most BFS_CACHE_SLOTS_MAX. */
+uint32_t bfs_cache_mount_slots(uint32_t buffers, uint32_t block_size);
 
 /* Optionally retain B-tree nodes after successful node writes. Disabled by
  * default so ordinary write-through cache behavior remains unchanged. */

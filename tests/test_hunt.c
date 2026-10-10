@@ -69,13 +69,13 @@ static void test_scan_empty_tree(void) {
     bfs_fs_t fs; bfs_bio_t *bio;
     mount_fresh(&fs, &bio);
 
-    /* Create a subdir, scan it — should be empty (only ..) */
+    /* Create a subdir, scan it — should be empty */
     uint32_t dir_ino;
     TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "empty", 5, &dir_ino), BFS_OK);
 
     scan_count_t sc = {0};
-    bfs_dir_scan(&fs.dir_tree, dir_ino, count_cb, &sc);
-    TEST_ASSERT_EQ(sc.count, 1); /* just '..' */
+    TEST_ASSERT_EQ(bfs_dir_scan(&fs.dir_tree, dir_ino, count_cb, &sc), BFS_OK);
+    TEST_ASSERT_EQ(sc.count, 0); /* the parent link is not an entry */
 
     cleanup(&fs, bio);
 }
@@ -980,14 +980,14 @@ static void test_multiple_dirs_scan(void) {
         TEST_ASSERT_EQ(bfs_fs_create_file(&fs, dir3, name, (uint8_t)len, &ino), BFS_OK);
     }
 
-    /* Scan each directory — should get 10 files + '..' = 11 each */
+    /* Scan each directory — should get 10 files each */
     scan_count_t sc1 = {0}, sc2 = {0}, sc3 = {0};
     bfs_dir_scan(&fs.dir_tree, dir1, count_cb, &sc1);
     bfs_dir_scan(&fs.dir_tree, dir2, count_cb, &sc2);
     bfs_dir_scan(&fs.dir_tree, dir3, count_cb, &sc3);
-    TEST_ASSERT_EQ(sc1.count, 11); /* 10 files + '..' */
-    TEST_ASSERT_EQ(sc2.count, 11);
-    TEST_ASSERT_EQ(sc3.count, 11);
+    TEST_ASSERT_EQ(sc1.count, 10);
+    TEST_ASSERT_EQ(sc2.count, 10);
+    TEST_ASSERT_EQ(sc3.count, 10);
 
     /* Root should have 3 dirs */
     scan_count_t sc_root = {0};

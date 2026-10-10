@@ -1,0 +1,998 @@
+{
+ "clock_hz": 709379,
+ "phases": {
+  "LIST_EXALL_1000_ENTRIES_FIRST_PASS": [
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 255.6226408356229,
+     "EXALL_FILL": 84.60491380847526,
+     "INODE_READ": 72.65844193492607,
+     "NODE_STRUCTURE": 100.08754135659498
+    },
+    "candidate_over_reference": 1.1501040255805186,
+    "candidate_pfs3_us": 6656,
+    "candidate_run": "dirvalid-pilot-1-bfs-first",
+    "candidate_us": 82367,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 192.1868751870768,
+     "EXALL_FILL": 83.41026662112034,
+     "INODE_READ": 72.68233487867317,
+     "NODE_STRUCTURE": 47.92924515667929
+    },
+    "reference_pfs3_us": 6785,
+    "reference_run": "dirlayout-pilot-1-bfs-first",
+    "reference_us": 71617
+   },
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 234.47738561944087,
+     "EXALL_FILL": 74.64155626593525,
+     "INODE_READ": 64.48705517341845,
+     "NODE_STRUCTURE": 64.14060748908553
+    },
+    "candidate_over_reference": 1.021355617455896,
+    "candidate_pfs3_us": 6400,
+    "candidate_run": "dirvalid-pilot-2-pfs3-first",
+    "candidate_us": 70400,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 192.1868751870768,
+     "EXALL_FILL": 77.72374600931094,
+     "INODE_READ": 69.6479310227917,
+     "NODE_STRUCTURE": 63.788186568815824
+    },
+    "reference_pfs3_us": 6273,
+    "reference_run": "dirlayout-pilot-2-pfs3-first",
+    "reference_us": 68928
+   }
+  ],
+  "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 5.3254716840754766,
+     "DIR_NODE_VIEW": 189.621504884573,
+     "EXALL_FILL": 63.516454613456354,
+     "INODE_READ": 50.48044037075289,
+     "NODE_STRUCTURE": 77.40444939741789
+    },
+    "candidate_over_reference": 0.9469023669441206,
+    "candidate_pfs3_us": 49471,
+    "candidate_run": "dirvalid-pilot-1-bfs-first",
+    "candidate_us": 698492,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 14.331784090967826,
+     "DIR_NODE_VIEW": 233.74079414644473,
+     "EXALL_FILL": 66.27174544465583,
+     "INODE_READ": 51.15205734338807,
+     "NODE_STRUCTURE": 84.32471474089566
+    },
+    "reference_pfs3_us": 49855,
+    "reference_run": "dirlayout-pilot-1-bfs-first",
+    "reference_us": 737660
+   },
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 11.825679769049955,
+     "DIR_NODE_VIEW": 206.23291258593403,
+     "EXALL_FILL": 63.62799524142051,
+     "INODE_READ": 50.933722497160375,
+     "NODE_STRUCTURE": 79.39082185711985
+    },
+    "candidate_over_reference": 1.009182772405573,
+    "candidate_pfs3_us": 49920,
+    "candidate_run": "dirvalid-pilot-2-pfs3-first",
+    "candidate_us": 695994,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 14.175152570847962,
+     "DIR_NODE_VIEW": 190.30729694563837,
+     "EXALL_FILL": 61.72705815632939,
+     "INODE_READ": 47.77736004626003,
+     "NODE_STRUCTURE": 83.94025555514689
+    },
+    "reference_pfs3_us": 49471,
+    "reference_run": "dirlayout-pilot-2-pfs3-first",
+    "reference_us": 689661
+   }
+  ],
+  "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 24.140833038474497,
+     "DIR_NODE_VIEW": 8.01757593613569,
+     "EXALL_FILL": 43.58123346525058,
+     "INODE_READ": 30.858392141083666,
+     "NODE_STRUCTURE": null
+    },
+    "candidate_over_reference": 0.9293675738820082,
+    "candidate_pfs3_us": 20160,
+    "candidate_run": "dirvalid-pilot-1-bfs-first",
+    "candidate_us": 143999,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 7.929470706068266,
+     "DIR_NODE_VIEW": 10.484522378023595,
+     "EXALL_FILL": 49.38056506462541,
+     "INODE_READ": 34.980378600947,
+     "NODE_STRUCTURE": null
+    },
+    "reference_pfs3_us": 20032,
+    "reference_run": "dirlayout-pilot-1-bfs-first",
+    "reference_us": 154943
+   },
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 13.920626350653176,
+     "DIR_NODE_VIEW": 19.999887225305514,
+     "EXALL_FILL": 42.20723797862947,
+     "INODE_READ": 28.229361816033745,
+     "NODE_STRUCTURE": null
+    },
+    "candidate_over_reference": 1.0183257856831078,
+    "candidate_pfs3_us": 20160,
+    "candidate_run": "dirvalid-pilot-2-pfs3-first",
+    "candidate_us": 149311,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 1.7621046013485033,
+     "DIR_NODE_VIEW": 16.82809894287821,
+     "EXALL_FILL": 40.791606265141056,
+     "INODE_READ": 27.462065635193383,
+     "NODE_STRUCTURE": null
+    },
+    "reference_pfs3_us": 20735,
+    "reference_run": "dirlayout-pilot-2-pfs3-first",
+    "reference_us": 146624
+   }
+  ],
+  "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 30.400135035438527,
+     "INODE_READ": 26.783989940497253,
+     "NODE_STRUCTURE": null
+    },
+    "candidate_over_reference": 1.0299960738123282,
+    "candidate_pfs3_us": 2497,
+    "candidate_run": "dirvalid-pilot-1-bfs-first",
+    "candidate_us": 13117,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 33.21950239759614,
+     "INODE_READ": 21.758161164477173,
+     "NODE_STRUCTURE": null
+    },
+    "reference_pfs3_us": 2560,
+    "reference_run": "dirlayout-pilot-1-bfs-first",
+    "reference_us": 12735
+   },
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 41.98405745821652,
+     "INODE_READ": 30.03239146646145,
+     "NODE_STRUCTURE": null
+    },
+    "candidate_over_reference": 0.995102231205784,
+    "candidate_pfs3_us": 2496,
+    "candidate_run": "dirvalid-pilot-2-pfs3-first",
+    "candidate_us": 12800,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 39.103399501229404,
+     "INODE_READ": 22.983973061067434,
+     "NODE_STRUCTURE": null
+    },
+    "reference_pfs3_us": 2945,
+    "reference_run": "dirlayout-pilot-2-pfs3-first",
+    "reference_us": 12863
+   }
+  ],
+  "LIST_EXNEXT_1000_ENTRIES_FIRST_PASS": [
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 127.92879405790136,
+     "EXALL_FILL": null,
+     "INODE_READ": 61.442764582193334,
+     "NODE_STRUCTURE": 47.92924515667929
+    },
+    "candidate_over_reference": 0.9932766922828447,
+    "candidate_pfs3_us": 31745,
+    "candidate_run": "dirvalid-pilot-1-bfs-first",
+    "candidate_us": 132224,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 143.7877354700379,
+     "EXALL_FILL": null,
+     "INODE_READ": 61.7830330569365,
+     "NODE_STRUCTURE": 79.64712798095235
+    },
+    "reference_pfs3_us": 30592,
+    "reference_run": "dirlayout-pilot-1-bfs-first",
+    "reference_us": 133119
+   },
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 31.717882824273065,
+     "DIR_NODE_VIEW": 127.92879405790136,
+     "EXALL_FILL": null,
+     "INODE_READ": 54.953358671020226,
+     "NODE_STRUCTURE": 44.405035953982285
+    },
+    "candidate_over_reference": 0.9238531983178397,
+    "candidate_pfs3_us": 29953,
+    "candidate_run": "dirvalid-pilot-2-pfs3-first",
+    "candidate_us": 133567,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 0.0,
+     "DIR_NODE_VIEW": 138.14900074572267,
+     "EXALL_FILL": null,
+     "INODE_READ": 78.7235421209352,
+     "NODE_STRUCTURE": 79.99954890122206
+    },
+    "reference_pfs3_us": 31871,
+    "reference_run": "dirlayout-pilot-2-pfs3-first",
+    "reference_us": 144576
+   }
+  ],
+  "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 8.349664880235986,
+     "DIR_NODE_VIEW": 168.2989700879795,
+     "EXALL_FILL": null,
+     "INODE_READ": 62.83880776319132,
+     "NODE_STRUCTURE": 75.62169791387177
+    },
+    "candidate_over_reference": 1.0366388662281083,
+    "candidate_pfs3_us": 285548,
+    "candidate_run": "dirvalid-pilot-1-bfs-first",
+    "candidate_us": 1433373,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 14.096836810788027,
+     "DIR_NODE_VIEW": 160.47378720525637,
+     "EXALL_FILL": null,
+     "INODE_READ": 61.93977480331964,
+     "NODE_STRUCTURE": 81.85563241464249
+    },
+    "reference_pfs3_us": 276413,
+    "reference_run": "dirlayout-pilot-1-bfs-first",
+    "reference_us": 1382712
+   },
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 2.8735859652760207,
+     "DIR_NODE_VIEW": 152.10199228293123,
+     "EXALL_FILL": null,
+     "INODE_READ": 56.375360137020486,
+     "NODE_STRUCTURE": 63.21648152037831
+    },
+    "candidate_over_reference": 0.9614329809087414,
+    "candidate_pfs3_us": 291519,
+    "candidate_run": "dirvalid-pilot-2-pfs3-first",
+    "candidate_us": 1357752,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 12.199185701643485,
+     "DIR_NODE_VIEW": 155.72689317713386,
+     "EXALL_FILL": null,
+     "INODE_READ": 59.54954584067412,
+     "NODE_STRUCTURE": 65.59728062620029
+    },
+    "reference_pfs3_us": 321983,
+    "reference_run": "dirlayout-pilot-2-pfs3-first",
+    "reference_us": 1412217
+   }
+  ],
+  "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 4.9881114868942245,
+     "DIR_NODE_VIEW": 9.071008034767948,
+     "EXALL_FILL": null,
+     "INODE_READ": 30.521151358846588,
+     "NODE_STRUCTURE": null
+    },
+    "candidate_over_reference": 0.9951315773346244,
+    "candidate_pfs3_us": 111871,
+    "candidate_run": "dirvalid-pilot-1-bfs-first",
+    "candidate_us": 405949,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 14.639022841972183,
+     "DIR_NODE_VIEW": 8.396811491643302,
+     "EXALL_FILL": null,
+     "INODE_READ": 32.24276504595134,
+     "NODE_STRUCTURE": null
+    },
+    "reference_pfs3_us": 122558,
+    "reference_run": "dirlayout-pilot-1-bfs-first",
+    "reference_us": 407935
+   },
+   {
+    "candidate_means_us": {
+     "DIR_BINARY_SEARCH": 9.867785767551618,
+     "DIR_NODE_VIEW": 4.474213422554461,
+     "EXALL_FILL": null,
+     "INODE_READ": 31.486934646734618,
+     "NODE_STRUCTURE": null
+    },
+    "candidate_over_reference": 0.9598280810529796,
+    "candidate_pfs3_us": 111614,
+    "candidate_run": "dirvalid-pilot-2-pfs3-first",
+    "candidate_us": 400638,
+    "reference_means_us": {
+     "DIR_BINARY_SEARCH": 5.2049858993678875,
+     "DIR_NODE_VIEW": 10.174238741699185,
+     "EXALL_FILL": null,
+     "INODE_READ": 36.21387396882013,
+     "NODE_STRUCTURE": null
+    },
+    "reference_pfs3_us": 114688,
+    "reference_run": "dirlayout-pilot-2-pfs3-first",
+    "reference_us": 417406
+   }
+  ]
+ },
+ "retention": {
+  "compared_count_fields": 1665,
+  "count_mismatches": [],
+  "regressed_listing_phases": [],
+  "retained": true,
+  "unstable_reference_fields": [
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_BIO_READS",
+    "reference": [
+     "66",
+     "64"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_BIO_UPDATES",
+    "reference": [
+     "3",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "256",
+    "field": "APPEND_1K_256K_BIO_WRITES",
+    "reference": [
+     "261",
+     "256"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "2",
+    "field": "APPEND_1K_256K_BTREE_FREE_CALLS",
+    "reference": [
+     "3",
+     "2"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_BTREE_MALLOC_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "192",
+    "field": "APPEND_1K_256K_CACHE_READ_CALLS",
+    "reference": [
+     "201",
+     "192"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "128",
+    "field": "APPEND_1K_256K_CACHE_READ_HITS",
+    "reference": [
+     "135",
+     "128"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_CACHE_READ_MISSES",
+    "reference": [
+     "66",
+     "64"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_CORE_SYNC_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_DEFERRED_NODE_WRITES",
+    "reference": [
+     "4",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "324",
+    "field": "APPEND_1K_256K_DETAIL_BUFFER_ALLOC_CALLS",
+    "reference": [
+     "330",
+     "324"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "324",
+    "field": "APPEND_1K_256K_DETAIL_BUFFER_FREE_CALLS",
+    "reference": [
+     "332",
+     "324"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "326",
+    "field": "APPEND_1K_256K_DETAIL_CACHE_PEEK_CALLS",
+    "reference": [
+     "329",
+     "326"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_DETAIL_NODE_STRUCTURE_CALLS",
+    "reference": [
+     "5",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_DIR_TREE_NODE_WRITES",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_FREESPACE_ALLOCS",
+    "reference": [
+     "65",
+     "64"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_FREE_TREE_NODE_VIEWS",
+    "reference": [
+     "67",
+     "64"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_FREE_TREE_NODE_WRITES",
+    "reference": [
+     "2",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_FREE_TREE_OTHER_NODE_WRITES",
+    "reference": [
+     "2",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_FREE_TREE_RESIDENT_VIEWS",
+    "reference": [
+     "66",
+     "64"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_IFACE_ALLOC_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "257",
+    "field": "APPEND_1K_256K_INODE_TREE_LEAF_RESIDENT_VIEWS",
+    "reference": [
+     "256",
+     "257"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_INODE_TREE_NODE_WRITES",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "257",
+    "field": "APPEND_1K_256K_INODE_TREE_RESIDENT_VIEWS",
+    "reference": [
+     "256",
+     "257"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_NODE_CRC_WRITE_CALLS",
+    "reference": [
+     "4",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_NODE_WRITES",
+    "reference": [
+     "4",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_SEALED_COMMITS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_SEAL_COMMIT_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_TXN_COMMITS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "50",
+    "field": "APPEND_READ_1280K_BIO_READS",
+    "reference": [
+     "51",
+     "50"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "32",
+    "field": "APPEND_READ_1280K_CACHE_READ_CALLS",
+    "reference": [
+     "33",
+     "32"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "32",
+    "field": "APPEND_READ_1280K_CACHE_READ_MISSES",
+    "reference": [
+     "33",
+     "32"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_READ_1280K_DETAIL_NODE_STRUCTURE_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "1",
+    "field": "APPEND_READ_1280K_DIR_TREE_LEAF_RESIDENT_VIEWS",
+    "reference": [
+     "0",
+     "1"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "1",
+    "field": "APPEND_READ_1280K_DIR_TREE_RESIDENT_VIEWS",
+    "reference": [
+     "0",
+     "1"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_READ_1280K_NODE_CRC_READ_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-1-bfs-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_BIO_READS",
+    "reference": [
+     "66",
+     "64"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_BIO_UPDATES",
+    "reference": [
+     "3",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "256",
+    "field": "APPEND_1K_256K_BIO_WRITES",
+    "reference": [
+     "261",
+     "256"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "2",
+    "field": "APPEND_1K_256K_BTREE_FREE_CALLS",
+    "reference": [
+     "3",
+     "2"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_BTREE_MALLOC_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "192",
+    "field": "APPEND_1K_256K_CACHE_READ_CALLS",
+    "reference": [
+     "201",
+     "192"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "128",
+    "field": "APPEND_1K_256K_CACHE_READ_HITS",
+    "reference": [
+     "135",
+     "128"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_CACHE_READ_MISSES",
+    "reference": [
+     "66",
+     "64"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_CORE_SYNC_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_DEFERRED_NODE_WRITES",
+    "reference": [
+     "4",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "324",
+    "field": "APPEND_1K_256K_DETAIL_BUFFER_ALLOC_CALLS",
+    "reference": [
+     "330",
+     "324"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "324",
+    "field": "APPEND_1K_256K_DETAIL_BUFFER_FREE_CALLS",
+    "reference": [
+     "332",
+     "324"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "326",
+    "field": "APPEND_1K_256K_DETAIL_CACHE_PEEK_CALLS",
+    "reference": [
+     "329",
+     "326"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_DETAIL_NODE_STRUCTURE_CALLS",
+    "reference": [
+     "5",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_DIR_TREE_NODE_WRITES",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_FREESPACE_ALLOCS",
+    "reference": [
+     "65",
+     "64"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_FREE_TREE_NODE_VIEWS",
+    "reference": [
+     "67",
+     "64"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_FREE_TREE_NODE_WRITES",
+    "reference": [
+     "2",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_FREE_TREE_OTHER_NODE_WRITES",
+    "reference": [
+     "2",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "64",
+    "field": "APPEND_1K_256K_FREE_TREE_RESIDENT_VIEWS",
+    "reference": [
+     "66",
+     "64"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_IFACE_ALLOC_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "257",
+    "field": "APPEND_1K_256K_INODE_TREE_LEAF_RESIDENT_VIEWS",
+    "reference": [
+     "256",
+     "257"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_INODE_TREE_NODE_WRITES",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "257",
+    "field": "APPEND_1K_256K_INODE_TREE_RESIDENT_VIEWS",
+    "reference": [
+     "256",
+     "257"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_NODE_CRC_WRITE_CALLS",
+    "reference": [
+     "4",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_NODE_WRITES",
+    "reference": [
+     "4",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_SEALED_COMMITS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_SEAL_COMMIT_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_1K_256K_TXN_COMMITS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "50",
+    "field": "APPEND_READ_1280K_BIO_READS",
+    "reference": [
+     "51",
+     "50"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "32",
+    "field": "APPEND_READ_1280K_CACHE_READ_CALLS",
+    "reference": [
+     "33",
+     "32"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "32",
+    "field": "APPEND_READ_1280K_CACHE_READ_MISSES",
+    "reference": [
+     "33",
+     "32"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_READ_1280K_DETAIL_NODE_STRUCTURE_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "1",
+    "field": "APPEND_READ_1280K_DIR_TREE_LEAF_RESIDENT_VIEWS",
+    "reference": [
+     "0",
+     "1"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "1",
+    "field": "APPEND_READ_1280K_DIR_TREE_RESIDENT_VIEWS",
+    "reference": [
+     "0",
+     "1"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   },
+   {
+    "candidate": "0",
+    "field": "APPEND_READ_1280K_NODE_CRC_READ_CALLS",
+    "reference": [
+     "1",
+     "0"
+    ],
+    "run": "dirvalid-pilot-2-pfs3-first"
+   }
+  ],
+  "verifier": "passed"
+ }
+}

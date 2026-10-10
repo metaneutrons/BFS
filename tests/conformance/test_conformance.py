@@ -82,7 +82,7 @@ class ConformanceTests(unittest.TestCase):
         catalog = json.loads((ROOT / "tests/conformance/scenarios.json").read_text(encoding="utf-8"))
         test_ids = set(re.findall(r"BFS_TEST\(([^,]+),", (ROOT / "tools/bfs-test-cases.def").read_text(
             encoding="utf-8")))
-        self.assertEqual(len(test_ids), 52)
+        self.assertEqual(len(test_ids), 55)
         mapped = {test_id for scenario in catalog["scenarios"]
                   for test_id in scenario.get("amiga_test_ids", [])}
         self.assertIn("fill_08", mapped)
@@ -250,7 +250,72 @@ class ConformanceTests(unittest.TestCase):
                 future.write_bytes(incompatible)
                 self.assertEqual(run(str(ORACLE), str(future)).returncode, 3)
 
-    def test_oracle_rejects_a_comment_flag_without_entry(self):
+    def test_oracle_reads_long_names_and_comments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            image = Path(temporary) / "long.bfs"
+            self.assertEqual(run(str(FIXTURE_WRITER), str(image), "--long-names").returncode, 0)
+            completed = run(str(ORACLE), str(image))
+        self.assertEqual(completed.returncode, 0, completed.stdout)
+        paths = {item["path"] for item in json.loads(completed.stdout)["namespace"]}
+        for index, length in enumerate((33, 34, 73, 74, 255)):
+            self.assertIn("/" + chr(ord("a") + index) * length, paths)
+        self.assertIn("/" + "D" * 100 + "/" + "f" * 40, paths)
+
+    def test_oracle_rejects_damaged_directory_records(self):
+        def name_part(node, records):
+            key, value = next((key, value) for key, value in records
+                              if node[key + 4] == 0 and node[key + 11] == 1)
+            node[value] ^= 1
+
+        def part_gap(node, records):
+            key = next(key for key, _ in records if node[key + 4] == 0 and node[key + 11] == 2
+                       and all(node[other + 11] != 3 or node[other:other + 11] != node[key:key + 11]
+                               for other, _ in records))
+            node[key + 11] = 3
+
+        def parent_link(node, records):
+            value = next(value for key, value in records if node[key + 4] == 1)
+            put_be32(node, value, be32(node, value) + 1000)
+
+        def entry_type(node, records):
+            value = next(value for key, value in records
+                         if be32(node, key) == 1 and node[key + 4] == 0 and node[key + 11] == 0
+                         and node[value + 4] == 0)
+            node[value + 4] = 2
+
+        def comment_length(node, records):
+            value = next(value for key, value in records
+                         if node[key + 4] == 2 and node[key + 11] == 0 and node[value] == 79)
+            node[value] = 39
+
+        cases = (
+            (name_part, "directory entry hash mismatch"),
+            (part_gap, "directory record part missing"),
+            (parent_link, "parent links disagree with directory entries"),
+            (comment_length, "directory record has an extra part"),
+            (entry_type, "directory entry type disagrees with its inode"),
+        )
+        for mutate, code in cases:
+            with self.subTest(code=code), tempfile.TemporaryDirectory() as temporary:
+                image = Path(temporary) / "damaged.bfs"
+                self.assertEqual(run(str(FIXTURE_WRITER), str(image), "--long-names").returncode, 0)
+                data = bytearray(image.read_bytes())
+                block_size, root = be32(data, 8), be32(data, 24)
+                node_start = root * block_size
+                node = data[node_start:node_start + block_size]
+                self.assertEqual(int.from_bytes(node[20:22], "big"), 0)
+                capacity = (block_size - 28) // (12 + 40)
+                records = [(28 + index * 12, 28 + capacity * 12 + index * 40)
+                           for index in range(be32(node, 16))]
+                mutate(node, records)
+                update_node_crc(node)
+                data[node_start:node_start + block_size] = node
+                image.write_bytes(data)
+                completed = run(str(ORACLE), str(image))
+                self.assertEqual(completed.returncode, 3)
+                self.assertEqual(json.loads(completed.stdout)["code"], code)
+
+    def test_oracle_rejects_a_comment_flag_without_comment(self):
         with tempfile.TemporaryDirectory() as temporary:
             image = Path(temporary) / "flag.bfs"
             self.assertEqual(run(str(FIXTURE_WRITER), str(image)).returncode, 0)
@@ -268,19 +333,22 @@ class ConformanceTests(unittest.TestCase):
             completed = run(str(ORACLE), str(image))
         self.assertEqual(completed.returncode, 3)
         self.assertEqual(json.loads(completed.stdout)["code"],
-                         "comment flag disagrees with comment entries")
+                         "comment flag disagrees with comment records")
 
     def test_oracle_rejects_a_cycle_with_a_valid_node_crc(self):
         with tempfile.TemporaryDirectory() as temporary:
             image = Path(temporary) / "cycle.bfs"
-            self.assertEqual(run(str(FIXTURE_WRITER), str(image), "--directory-scale").returncode, 0)
+            # 1 KiB blocks hold 19 directory records per leaf, so the scaled
+            # fixture needs an internal node.
+            self.assertEqual(run(str(FIXTURE_WRITER), str(image), "--directory-scale",
+                                 "--block-size", "1024").returncode, 0)
             data = bytearray(image.read_bytes())
             block_size, root = be32(data, 8), be32(data, 24)
             node_start = root * block_size
             node = data[node_start:node_start + block_size]
             self.assertGreater(int.from_bytes(node[20:22], "big"), 0)
-            capacity = (block_size - 32) // (264 + 4)
-            put_be32(node, 28 + capacity * 264, root)
+            capacity = (block_size - 32) // (12 + 4)
+            put_be32(node, 28 + capacity * 12, root)
             update_node_crc(node)
             data[node_start:node_start + block_size] = node
             image.write_bytes(data)
@@ -309,16 +377,25 @@ class ConformanceTests(unittest.TestCase):
 
     def test_oracle_uses_documented_directory_key_order_for_hash_collisions(self):
         oracle = load_oracle_module()
-        first = bytearray(264)
-        second = bytearray(264)
-        put_be32(first, 0, 1)
-        put_be32(second, 0, 1)
-        put_be32(first, 4, 42)
-        put_be32(second, 4, 42)
-        first[8:10] = b"\x01a"
-        second[8:10] = b"\x01B"
-        self.assertLess(oracle.key_sort_key("directory", first),
-                        oracle.key_sort_key("directory", second))
+
+        def key(owner, kind, name_hash, ordinal, part):
+            data = bytearray(12)
+            put_be32(data, 0, owner)
+            data[4] = kind
+            put_be32(data, 5, name_hash)
+            data[9:11] = ordinal.to_bytes(2, "big")
+            data[11] = part
+            return bytes(data)
+
+        # Colliding names follow their ordinals; parts follow their head; a
+        # directory's entries precede its parent link, which precedes its
+        # comment; and ordinal 256 sorts after ordinal 255 (big-endian).
+        ordered = [key(1, 0, 42, 0, 0), key(1, 0, 42, 0, 1), key(1, 0, 42, 1, 0),
+                   key(1, 0, 42, 255, 0), key(1, 0, 42, 256, 0),
+                   key(1, 0, 0x80000000, 0, 0), key(1, 1, 0, 0, 0), key(1, 2, 0, 0, 0),
+                   key(2, 0, 0, 0, 0)]
+        self.assertEqual(sorted(ordered, key=lambda item: oracle.key_sort_key("directory", item)),
+                         ordered)
 
     def test_persistence_model_separates_acknowledgement_from_media_state(self):
         with tempfile.TemporaryDirectory() as temporary:

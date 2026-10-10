@@ -1,0 +1,36 @@
+snapdog-runner
+START 1 exnext-1-bfs-first-reference 2026-10-10T12:28:17Z
+PASS 1 exnext-1-bfs-first-reference 2026-10-10T12:28:52Z
+START 2 exnext-1-bfs-first-candidate 2026-10-10T12:28:52Z
+PASS 2 exnext-1-bfs-first-candidate 2026-10-10T12:29:29Z
+START 3 exnext-2-pfs3-first-candidate 2026-10-10T12:29:29Z
+PASS 3 exnext-2-pfs3-first-candidate 2026-10-10T12:30:05Z
+START 4 exnext-2-pfs3-first-reference 2026-10-10T12:30:05Z
+PASS 4 exnext-2-pfs3-first-reference 2026-10-10T12:30:41Z
+START 5 exnext-3-bfs-first-reference 2026-10-10T12:30:41Z
+PASS 5 exnext-3-bfs-first-reference 2026-10-10T12:31:17Z
+START 6 exnext-3-bfs-first-candidate 2026-10-10T12:31:17Z
+PASS 6 exnext-3-bfs-first-candidate 2026-10-10T12:31:53Z
+START 7 exnext-4-pfs3-first-candidate 2026-10-10T12:31:53Z
+PASS 7 exnext-4-pfs3-first-candidate 2026-10-10T12:32:29Z
+START 8 exnext-4-pfs3-first-reference 2026-10-10T12:32:29Z
+PASS 8 exnext-4-pfs3-first-reference 2026-10-10T12:33:04Z
+START 9 exnext-5-bfs-first-reference 2026-10-10T12:33:05Z
+PASS 9 exnext-5-bfs-first-reference 2026-10-10T12:33:40Z
+START 10 exnext-5-bfs-first-candidate 2026-10-10T12:33:40Z
+PASS 10 exnext-5-bfs-first-candidate 2026-10-10T12:34:16Z
+START 11 exnext-6-pfs3-first-candidate 2026-10-10T12:34:16Z
+PASS 11 exnext-6-pfs3-first-candidate 2026-10-10T12:34:52Z
+START 12 exnext-6-pfs3-first-reference 2026-10-10T12:34:52Z
+PASS 12 exnext-6-pfs3-first-reference 2026-10-10T12:35:28Z
+START 13 exnext-7-bfs-first-reference 2026-10-10T12:35:28Z
+PASS 13 exnext-7-bfs-first-reference 2026-10-10T12:36:04Z
+START 14 exnext-7-bfs-first-candidate 2026-10-10T12:36:04Z
+PASS 14 exnext-7-bfs-first-candidate 2026-10-10T12:36:40Z
+START 15 exnext-8-pfs3-first-candidate 2026-10-10T12:36:40Z
+PASS 15 exnext-8-pfs3-first-candidate 2026-10-10T12:37:16Z
+START 16 exnext-8-pfs3-first-reference 2026-10-10T12:37:16Z
+PASS 16 exnext-8-pfs3-first-reference 2026-10-10T12:37:51Z
+EXNEXT_PILOT_COMPLETE 16 2026-10-10T12:37:51Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-10T12:37:54Z

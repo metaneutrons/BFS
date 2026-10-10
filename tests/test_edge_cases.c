@@ -175,9 +175,12 @@ static void test_empty_directory_scan(void)
     TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "empty", 5, &dir_ino), BFS_OK);
 
     int count = 0;
-    bfs_dir_scan(&fs->dir_tree, dir_ino, empty_scan_cb, &count);
-    /* Should only find '..' (count=1), no real entries */
-    TEST_ASSERT_EQ(count, 1);
+    TEST_ASSERT_EQ(bfs_dir_scan(&fs->dir_tree, dir_ino, empty_scan_cb, &count), BFS_OK);
+    /* The parent link is not an entry, so a new directory lists nothing. */
+    TEST_ASSERT_EQ(count, 0);
+    uint32_t parent;
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs->dir_tree, dir_ino, &parent), BFS_OK);
+    TEST_ASSERT_EQ(parent, BFS_ROOT_INO);
 
     teardown(fs);
 }
@@ -210,12 +213,15 @@ static void test_rmdir_with_dotdot_only(void)
     uint32_t dir_ino;
     TEST_ASSERT_EQ(bfs_fs_mkdir(fs, BFS_ROOT_INO, "sub", 3, &dir_ino), BFS_OK);
 
-    /* Verify '..' exists */
+    /* The parent link exists and is not an entry */
     uint32_t parent, type;
-    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, dir_ino, "..", 2, &parent, &type), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs->dir_tree, dir_ino, &parent), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, dir_ino, "..", 2, &parent, &type),
+                   BFS_ERR_NOTFOUND);
 
-    /* rmdir should succeed — '..' is not a real child */
+    /* rmdir should succeed and remove the parent link */
     TEST_ASSERT_EQ(bfs_fs_rmdir(fs, BFS_ROOT_INO, "sub", 3), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs->dir_tree, dir_ino, &parent), BFS_ERR_NOTFOUND);
 
     /* Directory should be gone from parent */
     TEST_ASSERT_EQ(bfs_dir_lookup(&fs->dir_tree, BFS_ROOT_INO, "sub", 3, &parent, &type), BFS_ERR_NOTFOUND);

@@ -1,0 +1,8 @@
+snapdog-runner
+START 1 dirlayout-pilot-1-bfs-first 2026-10-10T01:38:26Z
+PASS 1 dirlayout-pilot-1-bfs-first 2026-10-10T01:39:06Z
+START 2 dirlayout-pilot-2-pfs3-first 2026-10-10T01:39:06Z
+PASS 2 dirlayout-pilot-2-pfs3-first 2026-10-10T01:39:45Z
+DIRLAYOUT_PILOT_COMPLETE 2 2026-10-10T01:39:45Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-10T01:39:47Z

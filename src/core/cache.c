@@ -522,6 +522,14 @@ void bfs_bio_free_buffer(bfs_bio_t *bio, void *buffer)
 
 /* ── Public API ────────────────────────────────────────────── */
 
+uint32_t bfs_cache_mount_slots(uint32_t buffers, uint32_t block_size)
+{
+    uint32_t floor = block_size ? BFS_CACHE_MOUNT_BYTES / block_size : 0;
+    if (floor > BFS_CACHE_MOUNT_SLOTS) floor = BFS_CACHE_MOUNT_SLOTS;
+    uint32_t slots = buffers > floor ? buffers : floor;
+    return slots > BFS_CACHE_SLOTS_MAX ? BFS_CACHE_SLOTS_MAX : slots;
+}
+
 bfs_err_t bfs_cache_init(bfs_cache_t *cache, bfs_bio_t *dev, uint32_t num_slots)
 {
     if (!cache || !dev || !dev->ops || !dev->ops->read_block ||

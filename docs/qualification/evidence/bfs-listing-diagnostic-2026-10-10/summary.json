@@ -1,0 +1,1685 @@
+{
+ "clock_hz": 709379,
+ "variants": {
+  "m5": [
+   {
+    "phases": {
+     "LIST_EXALL_1000_ENTRIES_FIRST_PASS": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 175,
+        "BTREE_INDEX_HINT_HITS": 10,
+        "BTREE_LEAF_HINT_HITS": 941,
+        "BTREE_SEARCH_CALLS": 1011,
+        "DETAIL_CACHE_PEEK_CALLS": 1442,
+        "DETAIL_EXALL_FILL_CALLS": 1011,
+        "DIR_TREE_LEAF_NODE_VIEWS": 118,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 15,
+        "DIR_TREE_NODE_VIEWS": 283,
+        "DIR_TREE_RESIDENT_VIEWS": 167,
+        "INODE_READ_CALLS": 1010,
+        "INODE_TREE_NODE_VIEWS": 118,
+        "INODE_TREE_RESIDENT_VIEWS": 59,
+        "NODE_CRC_READ_CALLS": 175
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 1442,
+         "mean_us_per_sampled_call": 5.9240278502478265,
+         "samples": 84
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 54,
+         "mean_us_per_sampled_call": 0.0,
+         "samples": 3
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 283,
+         "mean_us_per_sampled_call": 151.9815218663084,
+         "samples": 16
+        },
+        "EXALL_FILL": {
+         "calls": 1011,
+         "mean_us_per_sampled_call": 74.30705505347588,
+         "samples": 59
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 118,
+         "mean_us_per_sampled_call": 170.10183085017553,
+         "samples": 6
+        },
+        "INODE_READ": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 75.14330808462432,
+         "samples": 59
+        },
+        "INODE_SEARCH": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 61.189828936318875,
+         "samples": 59
+        },
+        "INODE_VALIDATE": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 3.321119180846671,
+         "samples": 59
+        },
+        "NODE_STRUCTURE": {
+         "calls": 175,
+         "mean_us_per_sampled_call": 11.700374552954063,
+         "samples": 10
+        }
+       },
+       "us": 110336
+      },
+      "pfs3_us": 6464
+     },
+     "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 1713,
+        "BTREE_INDEX_HINT_HITS": 100,
+        "BTREE_LEAF_HINT_HITS": 9440,
+        "BTREE_SEARCH_CALLS": 10101,
+        "DETAIL_CACHE_PEEK_CALLS": 14575,
+        "DETAIL_EXALL_FILL_CALLS": 10110,
+        "DIR_TREE_LEAF_NODE_VIEWS": 1171,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 140,
+        "DIR_TREE_NODE_VIEWS": 2794,
+        "DIR_TREE_RESIDENT_VIEWS": 1641,
+        "INODE_READ_CALLS": 10100,
+        "INODE_TREE_NODE_VIEWS": 1120,
+        "INODE_TREE_RESIDENT_VIEWS": 560,
+        "NODE_CRC_READ_CALLS": 1713
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 14575,
+         "mean_us_per_sampled_call": 5.4084480086197235,
+         "samples": 857
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 504,
+         "mean_us_per_sampled_call": 8.409492304366651,
+         "samples": 29
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 2794,
+         "mean_us_per_sampled_call": 160.12803228546963,
+         "samples": 164
+        },
+        "EXALL_FILL": {
+         "calls": 10110,
+         "mean_us_per_sampled_call": 55.074964960935645,
+         "samples": 594
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 1120,
+         "mean_us_per_sampled_call": 158.36169598826797,
+         "samples": 65
+        },
+        "INODE_READ": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 52.42884155285002,
+         "samples": 594
+        },
+        "INODE_SEARCH": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 36.86061773487536,
+         "samples": 594
+        },
+        "INODE_VALIDATE": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 3.5977785530563384,
+         "samples": 594
+        },
+        "NODE_STRUCTURE": {
+         "calls": 1713,
+         "mean_us_per_sampled_call": 22.58313257088242,
+         "samples": 100
+        }
+       },
+       "us": 1069433
+      },
+      "pfs3_us": 49792
+     },
+     "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 692,
+        "BTREE_INDEX_HINT_HITS": 40,
+        "BTREE_LEAF_HINT_HITS": 3810,
+        "BTREE_SEARCH_CALLS": 4041,
+        "DETAIL_CACHE_PEEK_CALLS": 5795,
+        "DETAIL_EXALL_FILL_CALLS": 4050,
+        "DIR_TREE_LEAF_NODE_VIEWS": 491,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 50,
+        "DIR_TREE_NODE_VIEWS": 1184,
+        "DIR_TREE_RESIDENT_VIEWS": 682,
+        "INODE_READ_CALLS": 4040,
+        "INODE_TREE_NODE_VIEWS": 380,
+        "INODE_TREE_RESIDENT_VIEWS": 190,
+        "NODE_CRC_READ_CALLS": 692
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 5795,
+         "mean_us_per_sampled_call": 4.975354168513421,
+         "samples": 340
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 234,
+         "mean_us_per_sampled_call": 4.771237074420562,
+         "samples": 13
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 1184,
+         "mean_us_per_sampled_call": 158.33403664290898,
+         "samples": 69
+        },
+        "EXALL_FILL": {
+         "calls": 4050,
+         "mean_us_per_sampled_call": 50.843381169665726,
+         "samples": 238
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 380,
+         "mean_us_per_sampled_call": 163.0106947574761,
+         "samples": 22
+        },
+        "INODE_READ": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 53.52039562171758,
+         "samples": 237
+        },
+        "INODE_SEARCH": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 37.75216170382768,
+         "samples": 237
+        },
+        "INODE_VALIDATE": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 2.7955752325191447,
+         "samples": 237
+        },
+        "NODE_STRUCTURE": {
+         "calls": 692,
+         "mean_us_per_sampled_call": 19.41839270686051,
+         "samples": 40
+        }
+       },
+       "us": 444707
+      },
+      "pfs3_us": 20416
+     },
+     "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 0,
+        "BTREE_INDEX_HINT_HITS": 400,
+        "BTREE_LEAF_HINT_HITS": 1,
+        "BTREE_SEARCH_CALLS": 401,
+        "DETAIL_CACHE_PEEK_CALLS": 561,
+        "DETAIL_EXALL_FILL_CALLS": 410,
+        "DIR_TREE_LEAF_NODE_VIEWS": 60,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 60,
+        "DIR_TREE_NODE_VIEWS": 160,
+        "DIR_TREE_RESIDENT_VIEWS": 160,
+        "INODE_READ_CALLS": 400,
+        "INODE_TREE_NODE_VIEWS": 0,
+        "INODE_TREE_RESIDENT_VIEWS": 0,
+        "NODE_CRC_READ_CALLS": 0
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 561,
+         "mean_us_per_sampled_call": 1.9222959287438217,
+         "samples": 33
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 41,
+         "mean_us_per_sampled_call": 0.0,
+         "samples": 2
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 160,
+         "mean_us_per_sampled_call": 7.048418405394013,
+         "samples": 9
+        },
+        "EXALL_FILL": {
+         "calls": 410,
+         "mean_us_per_sampled_call": 27.547568601081608,
+         "samples": 24
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_READ": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 24.57752852663478,
+         "samples": 23
+        },
+        "INODE_SEARCH": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 8.580683276131843,
+         "samples": 23
+        },
+        "INODE_VALIDATE": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 2.758076767328092,
+         "samples": 23
+        },
+        "NODE_STRUCTURE": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        }
+       },
+       "us": 15295
+      },
+      "pfs3_us": 2560
+     },
+     "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 1840,
+        "BTREE_INDEX_HINT_HITS": 0,
+        "BTREE_LEAF_HINT_HITS": 9410,
+        "BTREE_SEARCH_CALLS": 10011,
+        "DETAIL_CACHE_PEEK_CALLS": 18495,
+        "DETAIL_EXALL_FILL_CALLS": 0,
+        "DIR_TREE_LEAF_NODE_VIEWS": 2151,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 1061,
+        "DIR_TREE_NODE_VIEWS": 6684,
+        "DIR_TREE_RESIDENT_VIEWS": 5444,
+        "INODE_READ_CALLS": 10010,
+        "INODE_TREE_NODE_VIEWS": 1200,
+        "INODE_TREE_RESIDENT_VIEWS": 600,
+        "NODE_CRC_READ_CALLS": 1840
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 18495,
+         "mean_us_per_sampled_call": 4.900823027411955,
+         "samples": 1087
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 4324,
+         "mean_us_per_sampled_call": 5.794132925379016,
+         "samples": 254
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 6684,
+         "mean_us_per_sampled_call": 81.55719556409349,
+         "samples": 393
+        },
+        "EXALL_FILL": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 1200,
+         "mean_us_per_sampled_call": 191.45518222880253,
+         "samples": 70
+        },
+        "INODE_READ": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 62.651808907538005,
+         "samples": 588
+        },
+        "INODE_SEARCH": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 47.6942978764995,
+         "samples": 588
+        },
+        "INODE_VALIDATE": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 3.9701295507933625,
+         "samples": 588
+        },
+        "NODE_STRUCTURE": {
+         "calls": 1840,
+         "mean_us_per_sampled_call": 27.41051602097672,
+         "samples": 108
+        }
+       },
+       "us": 1919414
+      },
+      "pfs3_us": 284735
+     },
+     "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 680,
+        "BTREE_INDEX_HINT_HITS": 0,
+        "BTREE_LEAF_HINT_HITS": 3830,
+        "BTREE_SEARCH_CALLS": 4011,
+        "DETAIL_CACHE_PEEK_CALLS": 7195,
+        "DETAIL_EXALL_FILL_CALLS": 0,
+        "DIR_TREE_LEAF_NODE_VIEWS": 851,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 411,
+        "DIR_TREE_NODE_VIEWS": 2644,
+        "DIR_TREE_RESIDENT_VIEWS": 2144,
+        "INODE_READ_CALLS": 4010,
+        "INODE_TREE_NODE_VIEWS": 360,
+        "INODE_TREE_RESIDENT_VIEWS": 180,
+        "NODE_CRC_READ_CALLS": 680
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 7195,
+         "mean_us_per_sampled_call": 4.63562647844117,
+         "samples": 423
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 1724,
+         "mean_us_per_sampled_call": 5.876008215189861,
+         "samples": 101
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 2644,
+         "mean_us_per_sampled_call": 98.75971027635303,
+         "samples": 155
+        },
+        "EXALL_FILL": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 360,
+         "mean_us_per_sampled_call": 259.18041393548845,
+         "samples": 21
+        },
+        "INODE_READ": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 51.19851156598971,
+         "samples": 235
+        },
+        "INODE_SEARCH": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 35.80596549940159,
+         "samples": 235
+        },
+        "INODE_VALIDATE": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 3.215278523652078,
+         "samples": 235
+        },
+        "NODE_STRUCTURE": {
+         "calls": 680,
+         "mean_us_per_sampled_call": 15.929425596190471,
+         "samples": 40
+        }
+       },
+       "us": 767100
+      },
+      "pfs3_us": 113088
+     }
+    },
+    "run": "admission-deep-20261009-m5-1-bfs-first"
+   },
+   {
+    "phases": {
+     "LIST_EXALL_1000_ENTRIES_FIRST_PASS": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 175,
+        "BTREE_INDEX_HINT_HITS": 10,
+        "BTREE_LEAF_HINT_HITS": 941,
+        "BTREE_SEARCH_CALLS": 1011,
+        "DETAIL_CACHE_PEEK_CALLS": 1442,
+        "DETAIL_EXALL_FILL_CALLS": 1011,
+        "DIR_TREE_LEAF_NODE_VIEWS": 118,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 15,
+        "DIR_TREE_NODE_VIEWS": 283,
+        "DIR_TREE_RESIDENT_VIEWS": 167,
+        "INODE_READ_CALLS": 1010,
+        "INODE_TREE_NODE_VIEWS": 118,
+        "INODE_TREE_RESIDENT_VIEWS": 59,
+        "NODE_CRC_READ_CALLS": 175
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 1442,
+         "mean_us_per_sampled_call": 2.3159089046294614,
+         "samples": 84
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 54,
+         "mean_us_per_sampled_call": 0.0,
+         "samples": 3
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 283,
+         "mean_us_per_sampled_call": 164.66867499601764,
+         "samples": 16
+        },
+        "EXALL_FILL": {
+         "calls": 1011,
+         "mean_us_per_sampled_call": 65.08437876709591,
+         "samples": 59
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 118,
+         "mean_us_per_sampled_call": 224.13970529152962,
+         "samples": 6
+        },
+        "INODE_READ": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 78.46442726547099,
+         "samples": 59
+        },
+        "INODE_SEARCH": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 61.50043720503116,
+         "samples": 59
+        },
+        "INODE_VALIDATE": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 3.249440349605376,
+         "samples": 59
+        },
+        "NODE_STRUCTURE": {
+         "calls": 175,
+         "mean_us_per_sampled_call": 19.312666430779597,
+         "samples": 10
+        }
+       },
+       "us": 105664
+      },
+      "pfs3_us": 6977
+     },
+     "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 1713,
+        "BTREE_INDEX_HINT_HITS": 100,
+        "BTREE_LEAF_HINT_HITS": 9440,
+        "BTREE_SEARCH_CALLS": 10101,
+        "DETAIL_CACHE_PEEK_CALLS": 14575,
+        "DETAIL_EXALL_FILL_CALLS": 10110,
+        "DIR_TREE_LEAF_NODE_VIEWS": 1171,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 140,
+        "DIR_TREE_NODE_VIEWS": 2794,
+        "DIR_TREE_RESIDENT_VIEWS": 1641,
+        "INODE_READ_CALLS": 10100,
+        "INODE_TREE_NODE_VIEWS": 1120,
+        "INODE_TREE_RESIDENT_VIEWS": 560,
+        "NODE_CRC_READ_CALLS": 1713
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 14575,
+         "mean_us_per_sampled_call": 4.470852094716669,
+         "samples": 857
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 504,
+         "mean_us_per_sampled_call": 2.2846597589897835,
+         "samples": 29
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 2794,
+         "mean_us_per_sampled_call": 177.92958657519034,
+         "samples": 164
+        },
+        "EXALL_FILL": {
+         "calls": 10110,
+         "mean_us_per_sampled_call": 56.47040941291265,
+         "samples": 594
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 1120,
+         "mean_us_per_sampled_call": 176.70927128353975,
+         "samples": 65
+        },
+        "INODE_READ": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 55.18887879375009,
+         "samples": 594
+        },
+        "INODE_SEARCH": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 39.92679840146427,
+         "samples": 594
+        },
+        "INODE_VALIDATE": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 3.3035011516190123,
+         "samples": 594
+        },
+        "NODE_STRUCTURE": {
+         "calls": 1713,
+         "mean_us_per_sampled_call": 30.519651695356078,
+         "samples": 100
+        }
+       },
+       "us": 1073338
+      },
+      "pfs3_us": 71359
+     },
+     "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 692,
+        "BTREE_INDEX_HINT_HITS": 40,
+        "BTREE_LEAF_HINT_HITS": 3810,
+        "BTREE_SEARCH_CALLS": 4041,
+        "DETAIL_CACHE_PEEK_CALLS": 5795,
+        "DETAIL_EXALL_FILL_CALLS": 4050,
+        "DIR_TREE_LEAF_NODE_VIEWS": 491,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 50,
+        "DIR_TREE_NODE_VIEWS": 1184,
+        "DIR_TREE_RESIDENT_VIEWS": 682,
+        "INODE_READ_CALLS": 4040,
+        "INODE_TREE_NODE_VIEWS": 380,
+        "INODE_TREE_RESIDENT_VIEWS": 190,
+        "NODE_CRC_READ_CALLS": 692
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 5795,
+         "mean_us_per_sampled_call": 4.428065209976945,
+         "samples": 340
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 234,
+         "mean_us_per_sampled_call": 0.0,
+         "samples": 13
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 1184,
+         "mean_us_per_sampled_call": 183.32016913507385,
+         "samples": 69
+        },
+        "EXALL_FILL": {
+         "calls": 4050,
+         "mean_us_per_sampled_call": 52.691369860827855,
+         "samples": 238
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 380,
+         "mean_us_per_sampled_call": 148.33716916806492,
+         "samples": 22
+        },
+        "INODE_READ": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 49.69581078233501,
+         "samples": 237
+        },
+        "INODE_SEARCH": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 30.566938553012523,
+         "samples": 237
+        },
+        "INODE_VALIDATE": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 3.7651045152864224,
+         "samples": 237
+        },
+        "NODE_STRUCTURE": {
+         "calls": 692,
+         "mean_us_per_sampled_call": 23.929380486312677,
+         "samples": 40
+        }
+       },
+       "us": 415549
+      },
+      "pfs3_us": 20544
+     },
+     "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 0,
+        "BTREE_INDEX_HINT_HITS": 400,
+        "BTREE_LEAF_HINT_HITS": 1,
+        "BTREE_SEARCH_CALLS": 401,
+        "DETAIL_CACHE_PEEK_CALLS": 561,
+        "DETAIL_EXALL_FILL_CALLS": 410,
+        "DIR_TREE_LEAF_NODE_VIEWS": 60,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 60,
+        "DIR_TREE_NODE_VIEWS": 160,
+        "DIR_TREE_RESIDENT_VIEWS": 160,
+        "INODE_READ_CALLS": 400,
+        "INODE_TREE_NODE_VIEWS": 0,
+        "INODE_TREE_RESIDENT_VIEWS": 0,
+        "NODE_CRC_READ_CALLS": 0
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 561,
+         "mean_us_per_sampled_call": 3.8445918574876434,
+         "samples": 33
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 41,
+         "mean_us_per_sampled_call": 0.0,
+         "samples": 2
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 160,
+         "mean_us_per_sampled_call": 18.63915089426417,
+         "samples": 9
+        },
+        "EXALL_FILL": {
+         "calls": 410,
+         "mean_us_per_sampled_call": 37.18040708845342,
+         "samples": 24
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_READ": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 29.66464789748437,
+         "samples": 23
+        },
+        "INODE_SEARCH": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 15.506520491866832,
+         "samples": 23
+        },
+        "INODE_VALIDATE": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 4.596794612213487,
+         "samples": 23
+        },
+        "NODE_STRUCTURE": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        }
+       },
+       "us": 18432
+      },
+      "pfs3_us": 2560
+     },
+     "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 1840,
+        "BTREE_INDEX_HINT_HITS": 0,
+        "BTREE_LEAF_HINT_HITS": 9410,
+        "BTREE_SEARCH_CALLS": 10011,
+        "DETAIL_CACHE_PEEK_CALLS": 18495,
+        "DETAIL_EXALL_FILL_CALLS": 0,
+        "DIR_TREE_LEAF_NODE_VIEWS": 2151,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 1061,
+        "DIR_TREE_NODE_VIEWS": 6684,
+        "DIR_TREE_RESIDENT_VIEWS": 5444,
+        "INODE_READ_CALLS": 10010,
+        "INODE_TREE_NODE_VIEWS": 1200,
+        "INODE_TREE_RESIDENT_VIEWS": 600,
+        "NODE_CRC_READ_CALLS": 1840
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 18495,
+         "mean_us_per_sampled_call": 4.5597496068749495,
+         "samples": 1087
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 4324,
+         "mean_us_per_sampled_call": 7.814309539208481,
+         "samples": 254
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 6684,
+         "mean_us_per_sampled_call": 83.95329912378978,
+         "samples": 393
+        },
+        "EXALL_FILL": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 1200,
+         "mean_us_per_sampled_call": 197.01336359991325,
+         "samples": 70
+        },
+        "INODE_READ": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 67.64563732197193,
+         "samples": 588
+        },
+        "INODE_SEARCH": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 50.619151772615375,
+         "samples": 588
+        },
+        "INODE_VALIDATE": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 4.010885711640879,
+         "samples": 588
+        },
+        "NODE_STRUCTURE": {
+         "calls": 1840,
+         "mean_us_per_sampled_call": 27.423568647653372,
+         "samples": 108
+        }
+       },
+       "us": 1958964
+      },
+      "pfs3_us": 335978
+     },
+     "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 680,
+        "BTREE_INDEX_HINT_HITS": 0,
+        "BTREE_LEAF_HINT_HITS": 3830,
+        "BTREE_SEARCH_CALLS": 4011,
+        "DETAIL_CACHE_PEEK_CALLS": 7195,
+        "DETAIL_EXALL_FILL_CALLS": 0,
+        "DIR_TREE_LEAF_NODE_VIEWS": 851,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 411,
+        "DIR_TREE_NODE_VIEWS": 2644,
+        "DIR_TREE_RESIDENT_VIEWS": 2144,
+        "INODE_READ_CALLS": 4010,
+        "INODE_TREE_NODE_VIEWS": 360,
+        "INODE_TREE_RESIDENT_VIEWS": 180,
+        "NODE_CRC_READ_CALLS": 680
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 7195,
+         "mean_us_per_sampled_call": 5.285480657661894,
+         "samples": 423
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 1724,
+         "mean_us_per_sampled_call": 5.750392837667987,
+         "samples": 101
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 2644,
+         "mean_us_per_sampled_call": 78.14194959889724,
+         "samples": 155
+        },
+        "EXALL_FILL": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 360,
+         "mean_us_per_sampled_call": 146.20433606617294,
+         "samples": 21
+        },
+        "INODE_READ": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 50.10075789093685,
+         "samples": 235
+        },
+        "INODE_SEARCH": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 34.61823201491817,
+         "samples": 235
+        },
+        "INODE_VALIDATE": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 3.581196415336362,
+         "samples": 235
+        },
+        "NODE_STRUCTURE": {
+         "calls": 680,
+         "mean_us_per_sampled_call": 25.550516719553297,
+         "samples": 40
+        }
+       },
+       "us": 733500
+      },
+      "pfs3_us": 120639
+     }
+    },
+    "run": "admission-deep-20261009-m5-2-pfs3-first"
+   }
+  ],
+  "main": [
+   {
+    "phases": {
+     "LIST_EXALL_1000_ENTRIES_FIRST_PASS": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 175,
+        "BTREE_INDEX_HINT_HITS": 10,
+        "BTREE_LEAF_HINT_HITS": 941,
+        "BTREE_SEARCH_CALLS": 1011,
+        "DETAIL_CACHE_PEEK_CALLS": 1442,
+        "DETAIL_EXALL_FILL_CALLS": 1011,
+        "DIR_TREE_LEAF_NODE_VIEWS": 118,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 15,
+        "DIR_TREE_NODE_VIEWS": 283,
+        "DIR_TREE_RESIDENT_VIEWS": 167,
+        "INODE_READ_CALLS": 1010,
+        "INODE_TREE_NODE_VIEWS": 118,
+        "INODE_TREE_RESIDENT_VIEWS": 59,
+        "NODE_CRC_READ_CALLS": 175
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 1442,
+         "mean_us_per_sampled_call": 6.226102924764713,
+         "samples": 84
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 54,
+         "mean_us_per_sampled_call": 21.615149776541642,
+         "samples": 3
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 283,
+         "mean_us_per_sampled_call": 111.71743172549512,
+         "samples": 16
+        },
+        "EXALL_FILL": {
+         "calls": 1011,
+         "mean_us_per_sampled_call": 77.15031535938058,
+         "samples": 59
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 118,
+         "mean_us_per_sampled_call": 181.37930029880593,
+         "samples": 6
+        },
+        "INODE_READ": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 67.40199431056443,
+         "samples": 59
+        },
+        "INODE_SEARCH": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 47.977031044173486,
+         "samples": 59
+        },
+        "INODE_VALIDATE": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 2.5565449809395235,
+         "samples": 59
+        },
+        "NODE_STRUCTURE": {
+         "calls": 175,
+         "mean_us_per_sampled_call": 38.202427757235554,
+         "samples": 10
+        }
+       },
+       "us": 97573
+      },
+      "pfs3_us": 6655
+     },
+     "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 1713,
+        "BTREE_INDEX_HINT_HITS": 100,
+        "BTREE_LEAF_HINT_HITS": 9440,
+        "BTREE_SEARCH_CALLS": 10101,
+        "DETAIL_CACHE_PEEK_CALLS": 14575,
+        "DETAIL_EXALL_FILL_CALLS": 10110,
+        "DIR_TREE_LEAF_NODE_VIEWS": 1171,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 140,
+        "DIR_TREE_NODE_VIEWS": 2794,
+        "DIR_TREE_RESIDENT_VIEWS": 1641,
+        "INODE_READ_CALLS": 10100,
+        "INODE_TREE_NODE_VIEWS": 1120,
+        "INODE_TREE_RESIDENT_VIEWS": 560,
+        "NODE_CRC_READ_CALLS": 1713
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 14575,
+         "mean_us_per_sampled_call": 4.194508035882086,
+         "samples": 857
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 504,
+         "mean_us_per_sampled_call": 6.659540148544689,
+         "samples": 29
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 2794,
+         "mean_us_per_sampled_call": 111.08135494256932,
+         "samples": 164
+        },
+        "EXALL_FILL": {
+         "calls": 10110,
+         "mean_us_per_sampled_call": 52.3932434800955,
+         "samples": 594
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 1120,
+         "mean_us_per_sampled_call": 149.01440881065312,
+         "samples": 65
+        },
+        "INODE_READ": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 48.62696738266779,
+         "samples": 594
+        },
+        "INODE_SEARCH": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 33.89411167199909,
+         "samples": 594
+        },
+        "INODE_VALIDATE": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 2.496611502516667,
+         "samples": 594
+        },
+        "NODE_STRUCTURE": {
+         "calls": 1713,
+         "mean_us_per_sampled_call": 34.32579763426885,
+         "samples": 100
+        }
+       },
+       "us": 898235
+      },
+      "pfs3_us": 49601
+     },
+     "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 692,
+        "BTREE_INDEX_HINT_HITS": 40,
+        "BTREE_LEAF_HINT_HITS": 3810,
+        "BTREE_SEARCH_CALLS": 4041,
+        "DETAIL_CACHE_PEEK_CALLS": 5795,
+        "DETAIL_EXALL_FILL_CALLS": 4050,
+        "DIR_TREE_LEAF_NODE_VIEWS": 491,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 50,
+        "DIR_TREE_NODE_VIEWS": 1184,
+        "DIR_TREE_RESIDENT_VIEWS": 682,
+        "INODE_READ_CALLS": 4040,
+        "INODE_TREE_NODE_VIEWS": 380,
+        "INODE_TREE_RESIDENT_VIEWS": 190,
+        "NODE_CRC_READ_CALLS": 692
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 5795,
+         "mean_us_per_sampled_call": 3.2878798796926194,
+         "samples": 340
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 234,
+         "mean_us_per_sampled_call": 8.024353261525492,
+         "samples": 13
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 1184,
+         "mean_us_per_sampled_call": 130.4059555989275,
+         "samples": 69
+        },
+        "EXALL_FILL": {
+         "calls": 4050,
+         "mean_us_per_sampled_call": 50.08523196303511,
+         "samples": 238
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 380,
+         "mean_us_per_sampled_call": 156.73119472357962,
+         "samples": 22
+        },
+        "INODE_READ": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 49.61848636101001,
+         "samples": 237
+        },
+        "INODE_SEARCH": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 33.74318785974704,
+         "samples": 237
+        },
+        "INODE_VALIDATE": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 3.961389584803724,
+         "samples": 237
+        },
+        "NODE_STRUCTURE": {
+         "calls": 692,
+         "mean_us_per_sampled_call": 36.12314432764432,
+         "samples": 40
+        }
+       },
+       "us": 364415
+      },
+      "pfs3_us": 20992
+     },
+     "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 0,
+        "BTREE_INDEX_HINT_HITS": 400,
+        "BTREE_LEAF_HINT_HITS": 1,
+        "BTREE_SEARCH_CALLS": 401,
+        "DETAIL_CACHE_PEEK_CALLS": 561,
+        "DETAIL_EXALL_FILL_CALLS": 410,
+        "DIR_TREE_LEAF_NODE_VIEWS": 60,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 60,
+        "DIR_TREE_NODE_VIEWS": 160,
+        "DIR_TREE_RESIDENT_VIEWS": 160,
+        "INODE_READ_CALLS": 400,
+        "INODE_TREE_NODE_VIEWS": 0,
+        "INODE_TREE_RESIDENT_VIEWS": 0,
+        "NODE_CRC_READ_CALLS": 0
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 561,
+         "mean_us_per_sampled_call": 4.784380978206846,
+         "samples": 33
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 41,
+         "mean_us_per_sampled_call": 0.0,
+         "samples": 2
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 160,
+         "mean_us_per_sampled_call": 21.301886736301906,
+         "samples": 9
+        },
+        "EXALL_FILL": {
+         "calls": 410,
+         "mean_us_per_sampled_call": 37.47409118867817,
+         "samples": 24
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_READ": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 29.603357302654857,
+         "samples": 23
+        },
+        "INODE_SEARCH": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 16.67104179362758,
+         "samples": 23
+        },
+        "INODE_VALIDATE": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 8.274230301984277,
+         "samples": 23
+        },
+        "NODE_STRUCTURE": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        }
+       },
+       "us": 16769
+      },
+      "pfs3_us": 2560
+     },
+     "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 1840,
+        "BTREE_INDEX_HINT_HITS": 0,
+        "BTREE_LEAF_HINT_HITS": 9410,
+        "BTREE_SEARCH_CALLS": 10011,
+        "DETAIL_CACHE_PEEK_CALLS": 18495,
+        "DETAIL_EXALL_FILL_CALLS": 0,
+        "DIR_TREE_LEAF_NODE_VIEWS": 2151,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 1061,
+        "DIR_TREE_NODE_VIEWS": 6684,
+        "DIR_TREE_RESIDENT_VIEWS": 5444,
+        "INODE_READ_CALLS": 10010,
+        "INODE_TREE_NODE_VIEWS": 1200,
+        "INODE_TREE_RESIDENT_VIEWS": 600,
+        "NODE_CRC_READ_CALLS": 1840
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 18495,
+         "mean_us_per_sampled_call": 4.161614473396392,
+         "samples": 1087
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 4324,
+         "mean_us_per_sampled_call": 4.61754654589592,
+         "samples": 254
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 6684,
+         "mean_us_per_sampled_call": 60.3473746831292,
+         "samples": 393
+        },
+        "EXALL_FILL": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 1200,
+         "mean_us_per_sampled_call": 171.15573722126777,
+         "samples": 70
+        },
+        "INODE_READ": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 59.33377793030491,
+         "samples": 588
+        },
+        "INODE_SEARCH": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 43.036108433751,
+         "samples": 588
+        },
+        "INODE_VALIDATE": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 4.708535288501307,
+         "samples": 588
+        },
+        "NODE_STRUCTURE": {
+         "calls": 1840,
+         "mean_us_per_sampled_call": 31.26104089059012,
+         "samples": 108
+        }
+       },
+       "us": 1741816
+      },
+      "pfs3_us": 276862
+     },
+     "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 680,
+        "BTREE_INDEX_HINT_HITS": 0,
+        "BTREE_LEAF_HINT_HITS": 3830,
+        "BTREE_SEARCH_CALLS": 4011,
+        "DETAIL_CACHE_PEEK_CALLS": 7195,
+        "DETAIL_EXALL_FILL_CALLS": 0,
+        "DIR_TREE_LEAF_NODE_VIEWS": 851,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 411,
+        "DIR_TREE_NODE_VIEWS": 2644,
+        "DIR_TREE_RESIDENT_VIEWS": 2144,
+        "INODE_READ_CALLS": 4010,
+        "INODE_TREE_NODE_VIEWS": 360,
+        "INODE_TREE_RESIDENT_VIEWS": 180,
+        "NODE_CRC_READ_CALLS": 680
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 7195,
+         "mean_us_per_sampled_call": 4.429006175304324,
+         "samples": 423
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 1724,
+         "mean_us_per_sampled_call": 5.052529629213135,
+         "samples": 101
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 2644,
+         "mean_us_per_sampled_call": 63.44486038197244,
+         "samples": 155
+        },
+        "EXALL_FILL": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 360,
+         "mean_us_per_sampled_call": 147.07699739255509,
+         "samples": 21
+        },
+        "INODE_READ": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 50.20873366225353,
+         "samples": 235
+        },
+        "INODE_SEARCH": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 36.63377974616276,
+         "samples": 235
+        },
+        "INODE_VALIDATE": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 2.5734225497140697,
+         "samples": 235
+        },
+        "NODE_STRUCTURE": {
+         "calls": 680,
+         "mean_us_per_sampled_call": 25.76196927171512,
+         "samples": 40
+        }
+       },
+       "us": 655293
+      },
+      "pfs3_us": 114496
+     }
+    },
+    "run": "listing-diag-1-bfs-first"
+   },
+   {
+    "phases": {
+     "LIST_EXALL_1000_ENTRIES_FIRST_PASS": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 175,
+        "BTREE_INDEX_HINT_HITS": 10,
+        "BTREE_LEAF_HINT_HITS": 941,
+        "BTREE_SEARCH_CALLS": 1011,
+        "DETAIL_CACHE_PEEK_CALLS": 1442,
+        "DETAIL_EXALL_FILL_CALLS": 1011,
+        "DIR_TREE_LEAF_NODE_VIEWS": 118,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 15,
+        "DIR_TREE_NODE_VIEWS": 283,
+        "DIR_TREE_RESIDENT_VIEWS": 167,
+        "INODE_READ_CALLS": 1010,
+        "INODE_TREE_NODE_VIEWS": 118,
+        "INODE_TREE_RESIDENT_VIEWS": 59,
+        "NODE_CRC_READ_CALLS": 175
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 1442,
+         "mean_us_per_sampled_call": 3.91019402013525,
+         "samples": 84
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 54,
+         "mean_us_per_sampled_call": 19.735571535103237,
+         "samples": 3
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 283,
+         "mean_us_per_sampled_call": 99.99943612652757,
+         "samples": 16
+        },
+        "EXALL_FILL": {
+         "calls": 1011,
+         "mean_us_per_sampled_call": 83.67308900233843,
+         "samples": 59
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 118,
+         "mean_us_per_sampled_call": 149.4264701943531,
+         "samples": 6
+        },
+        "INODE_READ": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 71.27265119759439,
+         "samples": 59
+        },
+        "INODE_SEARCH": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 50.03182420642395,
+         "samples": 59
+        },
+        "INODE_VALIDATE": {
+         "calls": 1010,
+         "mean_us_per_sampled_call": 4.659124030684178,
+         "samples": 59
+        },
+        "NODE_STRUCTURE": {
+         "calls": 175,
+         "mean_us_per_sampled_call": 38.34339612534343,
+         "samples": 10
+        }
+       },
+       "us": 98176
+      },
+      "pfs3_us": 6337
+     },
+     "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 1713,
+        "BTREE_INDEX_HINT_HITS": 100,
+        "BTREE_LEAF_HINT_HITS": 9440,
+        "BTREE_SEARCH_CALLS": 10101,
+        "DETAIL_CACHE_PEEK_CALLS": 14575,
+        "DETAIL_EXALL_FILL_CALLS": 10110,
+        "DIR_TREE_LEAF_NODE_VIEWS": 1171,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 140,
+        "DIR_TREE_NODE_VIEWS": 2794,
+        "DIR_TREE_RESIDENT_VIEWS": 1641,
+        "INODE_READ_CALLS": 10100,
+        "INODE_TREE_NODE_VIEWS": 1120,
+        "INODE_TREE_RESIDENT_VIEWS": 560,
+        "NODE_CRC_READ_CALLS": 1713
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 14575,
+         "mean_us_per_sampled_call": 4.757065584223918,
+         "samples": 857
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 504,
+         "mean_us_per_sampled_call": 4.472099953767237,
+         "samples": 29
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 2794,
+         "mean_us_per_sampled_call": 120.52795473223763,
+         "samples": 164
+        },
+        "EXALL_FILL": {
+         "calls": 10110,
+         "mean_us_per_sampled_call": 53.47542489183276,
+         "samples": 594
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 1120,
+         "mean_us_per_sampled_call": 159.20750619691523,
+         "samples": 65
+        },
+        "INODE_READ": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 53.16690826129363,
+         "samples": 594
+        },
+        "INODE_SEARCH": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 36.83688568637235,
+         "samples": 594
+        },
+        "INODE_VALIDATE": {
+         "calls": 10100,
+         "mean_us_per_sampled_call": 3.8089937847331283,
+         "samples": 594
+        },
+        "NODE_STRUCTURE": {
+         "calls": 1713,
+         "mean_us_per_sampled_call": 29.772519344384317,
+         "samples": 100
+        }
+       },
+       "us": 931068
+      },
+      "pfs3_us": 50625
+     },
+     "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 692,
+        "BTREE_INDEX_HINT_HITS": 40,
+        "BTREE_LEAF_HINT_HITS": 3810,
+        "BTREE_SEARCH_CALLS": 4041,
+        "DETAIL_CACHE_PEEK_CALLS": 5795,
+        "DETAIL_EXALL_FILL_CALLS": 4050,
+        "DIR_TREE_LEAF_NODE_VIEWS": 491,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 50,
+        "DIR_TREE_NODE_VIEWS": 1184,
+        "DIR_TREE_RESIDENT_VIEWS": 682,
+        "INODE_READ_CALLS": 4040,
+        "INODE_TREE_NODE_VIEWS": 380,
+        "INODE_TREE_RESIDENT_VIEWS": 190,
+        "NODE_CRC_READ_CALLS": 692
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 5795,
+         "mean_us_per_sampled_call": 4.179297501551274,
+         "samples": 340
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 234,
+         "mean_us_per_sampled_call": 0.0,
+         "samples": 13
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 1184,
+         "mean_us_per_sampled_call": 133.2048927628086,
+         "samples": 69
+        },
+        "EXALL_FILL": {
+         "calls": 4050,
+         "mean_us_per_sampled_call": 49.90161770205425,
+         "samples": 238
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 380,
+         "mean_us_per_sampled_call": 156.41081206878897,
+         "samples": 22
+        },
+        "INODE_READ": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 52.009595389675326,
+         "samples": 237
+        },
+        "INODE_SEARCH": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 37.8354341575623,
+         "samples": 237
+        },
+        "INODE_VALIDATE": {
+         "calls": 4040,
+         "mean_us_per_sampled_call": 3.967337617213339,
+         "samples": 237
+        },
+        "NODE_STRUCTURE": {
+         "calls": 692,
+         "mean_us_per_sampled_call": 26.88971621657816,
+         "samples": 40
+        }
+       },
+       "us": 375486
+      },
+      "pfs3_us": 20654
+     },
+     "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 0,
+        "BTREE_INDEX_HINT_HITS": 400,
+        "BTREE_LEAF_HINT_HITS": 1,
+        "BTREE_SEARCH_CALLS": 401,
+        "DETAIL_CACHE_PEEK_CALLS": 561,
+        "DETAIL_EXALL_FILL_CALLS": 410,
+        "DIR_TREE_LEAF_NODE_VIEWS": 60,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 60,
+        "DIR_TREE_NODE_VIEWS": 160,
+        "DIR_TREE_RESIDENT_VIEWS": 160,
+        "INODE_READ_CALLS": 400,
+        "INODE_TREE_NODE_VIEWS": 0,
+        "INODE_TREE_RESIDENT_VIEWS": 0,
+        "NODE_CRC_READ_CALLS": 0
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 561,
+         "mean_us_per_sampled_call": 1.6659898049113124,
+         "samples": 33
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 41,
+         "mean_us_per_sampled_call": 0.0,
+         "samples": 2
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 160,
+         "mean_us_per_sampled_call": 7.048418405394013,
+         "samples": 9
+        },
+        "EXALL_FILL": {
+         "calls": 410,
+         "mean_us_per_sampled_call": 42.64293135263379,
+         "samples": 24
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_READ": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 33.70982715623224,
+         "samples": 23
+        },
+        "INODE_SEARCH": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 11.154888258971395,
+         "samples": 23
+        },
+        "INODE_VALIDATE": {
+         "calls": 400,
+         "mean_us_per_sampled_call": 6.00647829329229,
+         "samples": 23
+        },
+        "NODE_STRUCTURE": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        }
+       },
+       "us": 15360
+      },
+      "pfs3_us": 2623
+     },
+     "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 1840,
+        "BTREE_INDEX_HINT_HITS": 0,
+        "BTREE_LEAF_HINT_HITS": 9410,
+        "BTREE_SEARCH_CALLS": 10011,
+        "DETAIL_CACHE_PEEK_CALLS": 18495,
+        "DETAIL_EXALL_FILL_CALLS": 0,
+        "DIR_TREE_LEAF_NODE_VIEWS": 2151,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 1061,
+        "DIR_TREE_NODE_VIEWS": 6684,
+        "DIR_TREE_RESIDENT_VIEWS": 5444,
+        "INODE_READ_CALLS": 10010,
+        "INODE_TREE_NODE_VIEWS": 1200,
+        "INODE_TREE_RESIDENT_VIEWS": 600,
+        "NODE_CRC_READ_CALLS": 1840
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 18495,
+         "mean_us_per_sampled_call": 3.7271673407732098,
+         "samples": 1087
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 4324,
+         "mean_us_per_sampled_call": 6.182628428038529,
+         "samples": 254
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 6684,
+         "mean_us_per_sampled_call": 63.539788108473054,
+         "samples": 393
+        },
+        "EXALL_FILL": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 1200,
+         "mean_us_per_sampled_call": 176.59308856257172,
+         "samples": 70
+        },
+        "INODE_READ": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 61.97094127926186,
+         "samples": 588
+        },
+        "INODE_SEARCH": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 45.44551676620712,
+         "samples": 588
+        },
+        "INODE_VALIDATE": {
+         "calls": 10010,
+         "mean_us_per_sampled_call": 3.377966507891213,
+         "samples": 588
+        },
+        "NODE_STRUCTURE": {
+         "calls": 1840,
+         "mean_us_per_sampled_call": 23.91241207163302,
+         "samples": 108
+        }
+       },
+       "us": 1736950
+      },
+      "pfs3_us": 297022
+     },
+     "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL": {
+      "bfs": {
+       "counts": {
+        "BIO_READS": 680,
+        "BTREE_INDEX_HINT_HITS": 0,
+        "BTREE_LEAF_HINT_HITS": 3830,
+        "BTREE_SEARCH_CALLS": 4011,
+        "DETAIL_CACHE_PEEK_CALLS": 7195,
+        "DETAIL_EXALL_FILL_CALLS": 0,
+        "DIR_TREE_LEAF_NODE_VIEWS": 851,
+        "DIR_TREE_LEAF_RESIDENT_VIEWS": 411,
+        "DIR_TREE_NODE_VIEWS": 2644,
+        "DIR_TREE_RESIDENT_VIEWS": 2144,
+        "INODE_READ_CALLS": 4010,
+        "INODE_TREE_NODE_VIEWS": 360,
+        "INODE_TREE_RESIDENT_VIEWS": 180,
+        "NODE_CRC_READ_CALLS": 680
+       },
+       "scopes": {
+        "CACHE_PEEK": {
+         "calls": 7195,
+         "mean_us_per_sampled_call": 3.8258081935661123,
+         "samples": 423
+        },
+        "DIR_BINARY_SEARCH": {
+         "calls": 1724,
+         "mean_us_per_sampled_call": 4.508196326618349,
+         "samples": 101
+        },
+        "DIR_NODE_VIEW": {
+         "calls": 2644,
+         "mean_us_per_sampled_call": 72.83062527792937,
+         "samples": 155
+        },
+        "EXALL_FILL": {
+         "calls": 0,
+         "mean_us_per_sampled_call": null,
+         "samples": 0
+        },
+        "INODE_NODE_VIEW": {
+         "calls": 360,
+         "mean_us_per_sampled_call": 164.73160730320868,
+         "samples": 21
+        },
+        "INODE_READ": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 47.725290921970014,
+         "samples": 235
+        },
+        "INODE_SEARCH": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 34.000370656828316,
+         "samples": 235
+        },
+        "INODE_VALIDATE": {
+         "calls": 4010,
+         "mean_us_per_sampled_call": 3.7251641104252617,
+         "samples": 235
+        },
+        "NODE_STRUCTURE": {
+         "calls": 680,
+         "mean_us_per_sampled_call": 20.546139651723546,
+         "samples": 40
+        }
+       },
+       "us": 684668
+      },
+      "pfs3_us": 114814
+     }
+    },
+    "run": "listing-diag-2-pfs3-first"
+   }
+  ]
+ }
+}

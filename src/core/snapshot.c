@@ -229,6 +229,8 @@ static bfs_err_t snapshot_ref_graph(bfs_fs_t *fs, bfs_btree_t *dir_tree,
         .rollback = rollback,
         .err = BFS_OK,
     };
+    /* The walk and the scan read the inode tree directly. Its only caller,
+     * bfs_snapshot_create, commits first, which writes every pending inode. */
 
     snapshot_ref_walk(dir_tree, &rc);
     if (rc.err != BFS_OK) return rc.err;
