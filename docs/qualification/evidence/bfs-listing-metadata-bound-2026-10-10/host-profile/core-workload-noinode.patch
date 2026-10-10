@@ -1,0 +1,33 @@
+--- tools/core-workload.c	2026-10-10 11:03:11
++++ docs/qualification/evidence/bfs-listing-metadata-bound-2026-10-10/host-profile/core-workload-noinode.c	2026-10-10 12:26:09
+@@ -158,9 +158,7 @@
+         list->overflow = true;
+         return false;
+     }
+-    bfs_inode_t inode;
+-    require(bfs_inode_read(&list->fs->inode_tree, ino, &inode), "list-inode");
+-    if (bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT) require(BFS_ERR_CORRUPT, "list-comment");
++    (void)ino; /* prototype: metadata comes with the entry */
+     list->last = *pos;
+     list->count++;
+     list->call_count++;
+@@ -246,18 +244,7 @@
+                 require(bfs_dir_scan_cursor_pos(&fs->dir_tree, &cursor, dir,
+                                                 count ? &last : NULL, gather_entry, &gather),
+                         "exall");
+-                uint32_t sorted[EXALL_BATCH];
+-                bfs_inode_t inodes[EXALL_BATCH];
+-                bfs_err_t results[EXALL_BATCH];
+-                memcpy(sorted, gather.inos, gather.count * sizeof(sorted[0]));
+-                qsort(sorted, gather.count, sizeof(sorted[0]), compare_ino);
+-                require(bfs_inode_read_sorted(&fs->inode_tree, sorted, gather.count,
+-                                              inodes, results), "exall-inodes");
+-                for (uint32_t i = 0; i < gather.count; i++) {
+-                    require(results[i], "list-inode");
+-                    if (bfs_be32(inodes[i].flags) & BFS_INODE_FLAG_HAS_COMMENT)
+-                        require(BFS_ERR_CORRUPT, "list-comment");
+-                }
++                (void)compare_ino; /* prototype: metadata comes with the entry */
+                 if (gather.count) last = gather.pos[gather.count - 1];
+                 count += gather.count;
+                 room -= gather.count;

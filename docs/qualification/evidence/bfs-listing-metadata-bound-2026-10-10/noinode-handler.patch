@@ -1,0 +1,34 @@
+--- /Volumes/Dev/Source/Amiga/BFS/src/amiga/handler.c	2026-10-10 11:02:35
++++ src/amiga/handler.c	2026-10-10 12:09:15
+@@ -1963,6 +1963,21 @@
+ /* Read the inodes of the gathered entries that the fields need, in
+  * ascending inode order. */
+ static bfs_err_t ExAllReadInodes(struct bfs_handler *h, exall_batch_t *b)
++{
++    (void)h;
++    uint32_t taken = 0;
++    for (uint32_t i = 0; i < b->count; i++) {
++        if (!b->entries[i].matched) continue;
++        b->entries[i].read_index = (uint8_t)taken;
++        memset(&b->inodes[taken], 0, sizeof(b->inodes[taken]));
++        b->results[taken] = BFS_OK;
++        taken++;
++    }
++    return BFS_OK;
++}
++
++static bfs_err_t ExAllReadInodesUnused(struct bfs_handler *h, exall_batch_t *b) __attribute__((unused));
++static bfs_err_t ExAllReadInodesUnused(struct bfs_handler *h, exall_batch_t *b)
+ {
+     uint8_t order[EXALL_BATCH];
+     uint32_t count = 0;
+@@ -2737,8 +2752,7 @@
+         /* Read inode for size, protection, dates */
+         bfs_inode_t en_inode;
+         uint64_t en_size = 0; uint32_t en_prot = 0;
+-        err = bfs_inode_read(&h->fs.inode_tree, ctx.ino_out, &en_inode);
+-        if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
++        memset(&en_inode, 0, sizeof(en_inode));
+         en_size = ((uint64_t)bfs_be32(en_inode.size_hi) << 32) | bfs_be32(en_inode.size_lo);
+         en_prot = bfs_be32(en_inode.protection);
+         FillFib(fib, namebuf, ctx.name_len, ctx.ino_out, ctx.type_out, en_size, en_prot, &en_inode);
