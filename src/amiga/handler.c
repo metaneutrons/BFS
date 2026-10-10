@@ -178,6 +178,9 @@ struct bfs_handler {
      * quiescent state. Sync: also commit at every close and standalone
      * metadata packet. */
     bool sync_commits;
+    /* Mountlist Control word LONGNAMES: allow new names of up to 255 bytes.
+     * Otherwise new names must fit fib_FileName (107 bytes). */
+    bool long_names;
     bool reset_pending;       /* reset warning seen: commit before every reply */
     bool commit_failed;      /* after a failure, retry only every max period */
     bool commit_activity;    /* a packet arrived since the timer was armed */
@@ -203,16 +206,16 @@ struct bfs_handler {
 void EntryPoint(void);
 
 /* Lock structure — stored as BPTR in FileLock */
-/* Resume point of a directory enumeration on a lock: the name consumed last
- * and how many entries had been consumed. ExNext and ExAll carry that count
- * in fib_DiskKey and eac_LastKey; when it matches, the next call continues
- * after the name in key order instead of counting from the first entry. That
- * keeps a listing linear and keeps its place when entries are deleted while
- * it runs. The leaf copy in tree lets most calls skip the descent. */
+/* Resume point of a directory enumeration on a lock: the key position of the
+ * entry consumed last and how many entries had been consumed. ExNext and ExAll
+ * carry that count in fib_DiskKey and eac_LastKey; when it matches, the next
+ * call continues after the position in key order instead of counting from the
+ * first entry. That keeps a listing linear and keeps its place when entries
+ * are deleted while it runs. The leaf copy in tree lets most calls skip the
+ * descent. */
 typedef struct {
     uint32_t position;
-    uint8_t name_len;
-    char name[BFS_NAME_MAX];
+    bfs_dir_pos_t last;
     bool consumed_stop; /* tree stop is the entry ExNext returned to DOS */
     bfs_btree_cursor_t tree;
 } bfs_scan_cursor_t;
@@ -688,16 +691,27 @@ static void ReportFormatError(struct bfs_handler *h, struct MsgPort *reply_port)
     CloseLibrary((struct Library *)IntuitionBase);
 }
 
+/* At least 64 nodes (bfs_cache_mount_slots), or the Mountlist's Buffers if
+ * memory is too short for them. */
 static bfs_err_t InitNodeCache(struct bfs_handler *h, amiga_bio_t *ab)
 {
+    uint32_t buffers = h->dosenvec->de_NumBuffers;
     bfs_err_t err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab,
-                                   h->dosenvec->de_NumBuffers);
+                                   bfs_cache_mount_slots(buffers, ab->base.block_size));
+    if (err == BFS_ERR_NOMEM)
+        err = bfs_cache_init(&h->cache, (bfs_bio_t *)ab, buffers);
     if (err == BFS_OK) {
         bfs_cache_set_node_write_retention(&h->cache, true);
         /* Nodes of the live transaction stay dirty until its commit. */
         bfs_cache_set_deferred_node_limit(&h->cache, h->cache.num_slots / 2);
     }
     return err;
+}
+
+/* Set the mount's limit for new names; it cannot fail on a mounted volume. */
+static void ApplyNameLimit(struct bfs_handler *h)
+{
+    (void)bfs_fs_set_name_limit(&h->fs, h->long_names ? BFS_NAME_MAX : BFS_SHORT_NAME_MAX);
 }
 
 static bool TryRemountMedia(struct bfs_handler *h)
@@ -724,6 +738,7 @@ static bool TryRemountMedia(struct bfs_handler *h)
     err = bfs_fs_mount(&h->fs, &h->cache.bio);
     SetMountError(h, err, &h->fs.txn.sb);
     if (err != BFS_OK) return false;
+    ApplyNameLimit(h);
 
     h->volnode = RegisterVolumeNode(h, (const char *)h->fs.txn.sb.volname);
     if (!h->volnode) {
@@ -1008,12 +1023,18 @@ static bfs_err_t ResolveDirectories(struct bfs_handler *h, uint32_t *parent,
         if (component && (remaining == 0 || remaining == 1)) break;
 
         uint32_t ino, type;
+        bool dot_dot = component == 2 && (*name)[0] == '.' && (*name)[1] == '.';
         if (component == 0 && *parent == BFS_ROOT_INO) {
             ino = BFS_ROOT_INO;
+        } else if (component == 0 || dot_dot) {
+            /* A leading '/' names the parent directory, and so does a '..'
+             * component between others; the root has no parent. */
+            if (*parent == BFS_ROOT_INO) return BFS_ERR_NOTFOUND;
+            bfs_err_t err = bfs_dir_parent_get(&h->fs.dir_tree, *parent, &ino);
+            if (err != BFS_OK) return err;
         } else {
-            const char *key = component ? *name : "..";
-            bfs_err_t err = bfs_dir_lookup(&h->fs.dir_tree, *parent, key,
-                                           component ? component : 2, &ino, &type);
+            bfs_err_t err = bfs_dir_lookup(&h->fs.dir_tree, *parent, *name,
+                                           component, &ino, &type);
             if (err != BFS_OK) return err;
             if (type == BFS_INODE_SOFTLINK) return HANDLER_ERR_IS_SOFT_LINK;
             if (type != BFS_INODE_DIR) return BFS_ERR_INVAL;
@@ -1120,6 +1141,7 @@ static LONG Pfs4ToDosError(bfs_err_t err)
     case BFS_ERR_NOMEM:    return ERROR_NO_FREE_STORE;
     case BFS_ERR_INVAL:    return ERROR_BAD_NUMBER;
     case BFS_ERR_OVERFLOW: return ERROR_BAD_NUMBER;
+    case BFS_ERR_NAME_TOO_LONG: return ERROR_INVALID_COMPONENT_NAME;
     /* Only the FIBF_WRITE check of bfs_file_write_checked returns it. */
     case BFS_ERR_PROTECTED: return ERROR_WRITE_PROTECTED;
     case BFS_ERR_UNSUPPORTED: return ERROR_NOT_IMPLEMENTED;
@@ -1244,12 +1266,6 @@ static void HandleDosPacket64(bfs_dos_packet64_t *packet, struct bfs_handler *h)
 
 /* ── Directory enumeration ────────────────────────────────── */
 
-/* The internal parent entry of a subdirectory is no directory member. */
-static bool IsParentEntry(const char *name, uint8_t name_len)
-{
-    return name_len == 2 && name[0] == '.' && name[1] == '.';
-}
-
 /* Cleared memory is an initialized, empty tree cursor. */
 static bfs_scan_cursor_t *CursorFor(bfs_lock_t *lk)
 {
@@ -1258,13 +1274,11 @@ static bfs_scan_cursor_t *CursorFor(bfs_lock_t *lk)
 }
 
 static void CursorRemember(bfs_lock_t *lk, uint32_t position,
-                           const char *name, uint8_t name_len,
-                           bool consumed_stop)
+                           const bfs_dir_pos_t *last, bool consumed_stop)
 {
     if (!CursorFor(lk)) return; /* the next call counts from the start */
     lk->cursor->position = position;
-    lk->cursor->name_len = name_len;
-    memcpy(lk->cursor->name, name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    lk->cursor->last = *last;
     lk->cursor->consumed_stop = consumed_stop;
 }
 
@@ -1276,7 +1290,7 @@ static void CursorClearConsumedStop(bfs_lock_t *lk)
 /* Scan the directory of lk from the entry after position. *skip tells the
  * callback how many entries to pass over first. */
 static bfs_err_t ScanDirectoryFrom(struct bfs_handler *h, bfs_lock_t *lk,
-                                   uint32_t position, bfs_dir_scan_cb cb,
+                                   uint32_t position, bfs_dir_scan_pos_cb cb,
                                    void *ctx, uint32_t *skip,
                                    bool allow_exclusive_resume)
 {
@@ -1285,20 +1299,15 @@ static bfs_err_t ScanDirectoryFrom(struct bfs_handler *h, bfs_lock_t *lk,
     if (position > 0 && cursor && cursor->position == position) {
         *skip = 0;
         if (allow_exclusive_resume && cursor->consumed_stop) {
-            bfs_err_t err = bfs_dir_scan_resume(&h->fs.dir_tree, tree_cursor,
-                                                lk->ino, cb, ctx);
+            bfs_err_t err = bfs_dir_scan_resume_pos(&h->fs.dir_tree, tree_cursor,
+                                                    lk->ino, cb, ctx);
             if (err != BFS_ERR_AGAIN) return err;
         }
-        if (cursor->name_len == 0) {
-            *skip = position;
-            return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino,
-                                      NULL, 0, cb, ctx);
-        }
-        return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino, cursor->name,
-                                   cursor->name_len, cb, ctx);
+        return bfs_dir_scan_cursor_pos(&h->fs.dir_tree, tree_cursor, lk->ino,
+                                       &cursor->last, cb, ctx);
     }
     *skip = position;
-    return bfs_dir_scan_cursor(&h->fs.dir_tree, tree_cursor, lk->ino, NULL, 0, cb, ctx);
+    return bfs_dir_scan_cursor_pos(&h->fs.dir_tree, tree_cursor, lk->ino, NULL, cb, ctx);
 }
 
 /* ── Directory scan context for EXAMINE_NEXT ──────────────── */
@@ -1310,6 +1319,7 @@ typedef struct {
     uint8_t name_len;
     uint32_t ino_out;
     uint32_t type_out;
+    bfs_dir_pos_t pos_out;
     bool got_entry;
 } exam_next_ctx_t;
 
@@ -1318,7 +1328,6 @@ static bool exam_next_cb(const char *name, uint8_t name_len,
 {
     exam_next_ctx_t *ec = (exam_next_ctx_t *)ctx;
 
-    if (IsParentEntry(name, name_len)) return true;
     if (ec->seen < ec->skip_count) {
         ec->seen++;
         return true; /* skip */
@@ -1332,6 +1341,13 @@ static bool exam_next_cb(const char *name, uint8_t name_len,
     ec->type_out = entry_type;
     ec->got_entry = true;
     return false; /* stop */
+}
+
+static bool exam_next_pos_cb(const char *name, uint8_t name_len, uint32_t inode_nr,
+                             uint32_t entry_type, const bfs_dir_pos_t *pos, void *ctx)
+{
+    ((exam_next_ctx_t *)ctx)->pos_out = *pos;
+    return exam_next_cb(name, name_len, inode_nr, entry_type, ctx);
 }
 
 /* ── Fill FileInfoBlock ───────────────────────────────────── */
@@ -1470,11 +1486,18 @@ static bfs_err_t CommitDirty(struct bfs_handler *h)
     return BFS_OK;
 }
 
+/* Control words are separated by blanks, commas or quotes. */
+static bool ControlSeparator(UBYTE c)
+{
+    return c == ' ' || c == '\t' || c == ',' || c == '"' || c == 0;
+}
+
 static bool ControlWordMatches(const UBYTE *text, LONG length, const char *word)
 {
     /* word is a string literal of the caller. */
     LONG word_length = (LONG)strlen(word); /* Flawfinder: ignore */
     for (LONG start = 0; start + word_length <= length; start++) {
+        if (start > 0 && !ControlSeparator(text[start - 1])) continue;
         LONG i = 0;
         while (i < word_length) {
             UBYTE c = text[start + i];
@@ -1482,7 +1505,9 @@ static bool ControlWordMatches(const UBYTE *text, LONG length, const char *word)
             if (c != (UBYTE)word[i]) break;
             i++;
         }
-        if (i == word_length) return true;
+        if (i == word_length &&
+            (start + i == length || ControlSeparator(text[start + i])))
+            return true;
     }
     return false;
 }
@@ -1496,6 +1521,16 @@ static bool ControlRequestsSyncCommits(const struct DosEnvec *env)
     const UBYTE *control = (const UBYTE *)BADDR(env->de_Control);
     return ControlWordMatches(BstrText(control), (LONG)BstrLength(control, 255),
                               "COMMIT=SYNC");
+}
+
+/* Mountlist: Control = "LONGNAMES" allows new names of up to 255 bytes. Examine
+ * and ExNext still truncate such names to 107 bytes in fib_FileName. */
+static bool ControlAllowsLongNames(const struct DosEnvec *env)
+{
+    if (!env || env->de_TableSize < DE_CONTROL || !env->de_Control) return false;
+    const UBYTE *control = (const UBYTE *)BADDR(env->de_Control);
+    return ControlWordMatches(BstrText(control), (LONG)BstrLength(control, 255),
+                              "LONGNAMES");
 }
 
 static void OpenCommitTimer(struct bfs_handler *h)
@@ -1670,11 +1705,10 @@ typedef struct {
     struct ExAllData *last_ead;
     bool overflow;
     bfs_err_t err;
-    /* The entry consumed last, for the lock's resume point: its name in the
-     * caller's buffer, or in skipped for an entry the pattern rejected. */
-    const char *last_name;
-    uint8_t last_len;
-    char skipped[BFS_NAME_MAX + 1];
+    /* The entry consumed last, for the lock's resume point. */
+    bool have_last;
+    bfs_dir_pos_t last;
+    char skipped[BFS_NAME_MAX + 1]; /* NUL-terminated name for the pattern */
 } exall_optimized_ctx_t;
 
 /* Size of the fixed part of an ExAllData entry for each type. */
@@ -1691,17 +1725,45 @@ static LONG ExAllFixedSize(LONG type)
     }
 }
 
+/* Bytes an entry takes without its comment; a comment only adds to it. */
+static LONG ExAllMinimumSize(LONG type, uint8_t name_len)
+{
+    LONG size = ExAllFixedSize(type) + name_len + 1;
+    if (type >= ED_COMMENT) size += 1;
+    /* Entries hold pointers: align to their width (4 on m68k, 8 on 64-bit
+     * AROS). */
+    return (size + (LONG)sizeof(APTR) - 1) & ~((LONG)sizeof(APTR) - 1);
+}
+
+/* The enumeration has consumed the entry at pos: written, or rejected by the
+ * pattern. */
+static void ExAllConsume(exall_optimized_ctx_t *ec, const bfs_dir_pos_t *pos)
+{
+    ec->position++;
+    ec->eac->eac_LastKey = (ULONG)ec->position;
+    ec->have_last = true;
+    ec->last = *pos;
+}
+
+static bool exall_write_entry(exall_optimized_ctx_t *ec, const char *name,
+                              uint8_t name_len, uint32_t inode_nr,
+                              uint32_t entry_type, const bfs_dir_pos_t *entry_pos,
+                              const bfs_inode_t *inode);
+
 /* Stateful callback for single-pass linear directory scanning.
  * Manages skip_count, pattern matching, and user buffer overflow. */
 #ifdef BFS_PERF_PROBE
 static bool exall_optimized_cb_body(const char *name, uint8_t name_len,
-                                    uint32_t inode_nr, uint32_t entry_type, void *ctx);
+                                    uint32_t inode_nr, uint32_t entry_type,
+                                    const bfs_dir_pos_t *entry_pos, void *ctx);
 static bool exall_optimized_cb(const char *name, uint8_t name_len,
-                               uint32_t inode_nr, uint32_t entry_type, void *ctx)
+                               uint32_t inode_nr, uint32_t entry_type,
+                               const bfs_dir_pos_t *entry_pos, void *ctx)
 {
     bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
         BFS_PERF_DETAIL_SCOPE_DETAIL_EXALL_FILL);
-    bool result = exall_optimized_cb_body(name, name_len, inode_nr, entry_type, ctx);
+    bool result = exall_optimized_cb_body(name, name_len, inode_nr, entry_type,
+                                          entry_pos, ctx);
     bfs_perf_probe_detail_end(&sample);
     return result;
 }
@@ -1709,11 +1771,11 @@ static bool exall_optimized_cb_body(const char *name, uint8_t name_len,
 #else
 static bool exall_optimized_cb(const char *name, uint8_t name_len,
 #endif
-                               uint32_t inode_nr, uint32_t entry_type, void *ctx)
+                               uint32_t inode_nr, uint32_t entry_type,
+                               const bfs_dir_pos_t *entry_pos, void *ctx)
 {
     exall_optimized_ctx_t *ec = (exall_optimized_ctx_t *)ctx;
 
-    if (IsParentEntry(name, name_len)) return true;
     if (ec->seen < ec->skip_count) {
         ec->seen++;
         return true;
@@ -1724,43 +1786,48 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
         /* name_len <= BFS_NAME_MAX, and skipped holds BFS_NAME_MAX + 1. */
         memcpy(ec->skipped, name, name_len); ec->skipped[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         if (!MatchPatternNoCase(ec->eac->eac_MatchString, ec->skipped)) {
-            ec->position++;
-            ec->eac->eac_LastKey = (ULONG)ec->position;
-            ec->last_name = ec->skipped;
-            ec->last_len = name_len;
+            ExAllConsume(ec, entry_pos);
             return true;
         }
     }
 
     /* Read inode for metadata fields */
     bfs_inode_t inode;
-    uint64_t fsize = 0; uint32_t prot = 0;
-    bool have_inode = false;
     if (ec->type >= ED_SIZE) {
         ec->err = bfs_inode_read(&ec->h->fs.inode_tree, inode_nr, &inode);
         if (ec->err != BFS_OK) return false;
-        have_inode = true;
     }
-    if (have_inode) {
-        fsize = ((uint64_t)bfs_be32(inode.size_hi) << 32) | bfs_be32(inode.size_lo);
-        prot = bfs_be32(inode.protection);
+    return exall_write_entry(ec, name, name_len, inode_nr, entry_type, entry_pos,
+                             ec->type >= ED_SIZE ? &inode : NULL);
+}
+
+/* Write one entry, whose inode the caller has read when the requested fields
+ * need it (inode is NULL otherwise). An entry that does not fit sets overflow
+ * and is left for the next call. Returns false when the listing must stop. */
+static bool exall_write_entry(exall_optimized_ctx_t *ec, const char *name,
+                              uint8_t name_len, uint32_t inode_nr,
+                              uint32_t entry_type, const bfs_dir_pos_t *entry_pos,
+                              const bfs_inode_t *inode)
+{
+    uint64_t fsize = 0; uint32_t prot = 0;
+    if (inode) {
+        fsize = ((uint64_t)bfs_be32(inode->size_hi) << 32) | bfs_be32(inode->size_lo);
+        prot = bfs_be32(inode->protection);
     }
     char cbuf[BFS_COMMENT_BUFFER];
     int cl = 0;
     if (ec->type >= ED_COMMENT) {
         /* ED_COMMENT implies ED_SIZE, so the inode has been read. */
-        ec->err = ReadComment(ec->h, inode_nr, &inode, cbuf, &cl);
+        ec->err = ReadComment(ec->h, inode_nr, inode, cbuf, &cl);
         if (ec->err != BFS_OK) return false;
     }
 
     /* Only the fields up to the requested type, then the strings, as
-     * dos.library lays out ExAllData. An entry that does not fit is left for
-     * the next call. */
+     * dos.library lays out ExAllData. */
     LONG fixed_size = ExAllFixedSize(ec->type);
     LONG entry_size = fixed_size + name_len + 1;
     if (ec->type >= ED_COMMENT) entry_size += cl + 1;
-    /* Entries hold pointers: align to their width (4 on m68k, 8 on 64-bit
-     * AROS). */
+    /* The same alignment as ExAllMinimumSize, which this never undercuts. */
     entry_size = (entry_size + (LONG)sizeof(APTR) - 1) & ~((LONG)sizeof(APTR) - 1);
     if ((size_t)(ec->end - ec->pos) < (size_t)entry_size) {
         ec->overflow = true;
@@ -1776,10 +1843,10 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     if (ec->type >= ED_TYPE) ead->ed_Type = DosEntryType(entry_type);
     if (ec->type >= ED_SIZE) ead->ed_Size = fsize > INT32_MAX ? INT32_MAX : (ULONG)fsize;
     if (ec->type >= ED_PROTECTION) ead->ed_Prot = prot;
-    if (ec->type >= ED_DATE && have_inode) {
-        ead->ed_Days = bfs_be16(inode.modify_days);
-        ead->ed_Mins = bfs_be16(inode.modify_mins);
-        ead->ed_Ticks = bfs_be16(inode.modify_ticks);
+    if (ec->type >= ED_DATE && inode) {
+        ead->ed_Days = bfs_be16(inode->modify_days);
+        ead->ed_Mins = bfs_be16(inode->modify_mins);
+        ead->ed_Ticks = bfs_be16(inode->modify_ticks);
     }
     if (ec->type >= ED_COMMENT) {
         memcpy(str, cbuf, cl); str[cl] = 0;
@@ -1791,12 +1858,160 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     ec->last_ead = ead;
     ec->pos += entry_size;
     ec->eac->eac_Entries++;
-    ec->position++;
-    ec->eac->eac_LastKey = (ULONG)ec->position;
-    ec->last_name = (const char *)ead->ed_Name;
-    ec->last_len = name_len;
-
+    ExAllConsume(ec, entry_pos);
     return true;
+}
+
+/* ── Batched EXAMINE_ALL ──────────────────────────────────── */
+
+/* ExAll gathers entries in directory order, as many as their smallest size
+ * lets fit, reads the inodes the requested fields need in one ascending
+ * batch, and then writes the entries in order. Neighbouring inodes share one
+ * view of their leaf instead of one search each. */
+#define EXALL_BATCH 64u
+
+typedef struct {
+    uint32_t ino;
+    uint32_t type;
+    bfs_dir_pos_t pos;
+    uint16_t name_offset;
+    uint8_t name_len;
+    uint8_t read_index;  /* into inodes and results, when the inode is read */
+    bool matched;        /* passes eac_MatchString */
+} exall_pending_t;
+
+typedef struct {
+    exall_optimized_ctx_t *ec;
+    uint32_t count;
+    uint32_t names_used;
+    LONG space;          /* bytes left once the gathered entries are written */
+    bool full;           /* the next entry does not fit, comment or not */
+    exall_pending_t entries[EXALL_BATCH];
+    char names[EXALL_BATCH * (BFS_NAME_MAX + 1)];
+    uint32_t inos[EXALL_BATCH];
+    bfs_inode_t inodes[EXALL_BATCH];
+    bfs_err_t results[EXALL_BATCH];
+} exall_batch_t;
+
+static bool exall_gather_cb(const char *name, uint8_t name_len, uint32_t inode_nr,
+                            uint32_t entry_type, const bfs_dir_pos_t *entry_pos,
+                            void *ctx)
+{
+    exall_batch_t *b = (exall_batch_t *)ctx;
+    exall_optimized_ctx_t *ec = b->ec;
+    if (ec->seen < ec->skip_count) {
+        ec->seen++;
+        return true;
+    }
+    if (b->count == EXALL_BATCH) return false;
+    exall_pending_t *pending = &b->entries[b->count];
+    char *stored = b->names + b->names_used;
+    /* names holds BFS_NAME_MAX + 1 bytes per entry. */
+    memcpy(stored, name, name_len); stored[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    pending->matched = !ec->eac->eac_MatchString ||
+                       MatchPatternNoCase(ec->eac->eac_MatchString, stored);
+    if (pending->matched) {
+        LONG size = ExAllMinimumSize(ec->type, name_len);
+        if (size > b->space) {
+            b->full = true;
+            return false;
+        }
+        b->space -= size;
+    }
+    pending->ino = inode_nr;
+    pending->type = entry_type;
+    pending->pos = *entry_pos;
+    pending->name_offset = (uint16_t)b->names_used;
+    pending->name_len = name_len;
+    b->names_used += (uint32_t)name_len + 1u;
+    b->count++;
+    return true;
+}
+
+/* Write gathered entry index; false when the listing must stop. */
+#ifdef BFS_PERF_PROBE
+static bool exall_fill_gathered_body(exall_batch_t *b, uint32_t index);
+static bool exall_fill_gathered(exall_batch_t *b, uint32_t index)
+{
+    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
+        BFS_PERF_DETAIL_SCOPE_DETAIL_EXALL_FILL);
+    bool result = exall_fill_gathered_body(b, index);
+    bfs_perf_probe_detail_end(&sample);
+    return result;
+}
+static bool exall_fill_gathered_body(exall_batch_t *b, uint32_t index)
+#else
+static bool exall_fill_gathered(exall_batch_t *b, uint32_t index)
+#endif
+{
+    exall_optimized_ctx_t *ec = b->ec;
+    const exall_pending_t *pending = &b->entries[index];
+    if (!pending->matched) {
+        ExAllConsume(ec, &pending->pos);
+        return true;
+    }
+    const bfs_inode_t *inode = NULL;
+    if (ec->type >= ED_SIZE) {
+        ec->err = b->results[pending->read_index];
+        if (ec->err != BFS_OK) return false;
+        inode = &b->inodes[pending->read_index];
+    }
+    return exall_write_entry(ec, b->names + pending->name_offset, pending->name_len,
+                             pending->ino, pending->type, &pending->pos, inode);
+}
+
+/* Read the inodes of the gathered entries that the fields need, in
+ * ascending inode order. */
+static bfs_err_t ExAllReadInodes(struct bfs_handler *h, exall_batch_t *b)
+{
+    uint8_t order[EXALL_BATCH];
+    uint32_t count = 0;
+    for (uint32_t i = 0; i < b->count; i++) {
+        if (!b->entries[i].matched) continue;
+        /* Insertion sort by inode number; batches are small. */
+        uint32_t at = count++;
+        while (at > 0 && b->entries[order[at - 1]].ino > b->entries[i].ino) {
+            order[at] = order[at - 1];
+            at--;
+        }
+        order[at] = (uint8_t)i;
+    }
+    for (uint32_t k = 0; k < count; k++) {
+        b->inos[k] = b->entries[order[k]].ino;
+        b->entries[order[k]].read_index = (uint8_t)k;
+    }
+    return bfs_inode_read_sorted(&h->fs.inode_tree, b->inos, count, b->inodes, b->results);
+}
+
+/* Fill the caller's buffer from the lock's resume point, a batch at a time. */
+static bfs_err_t ExAllBatched(struct bfs_handler *h, bfs_lock_t *lk,
+                              exall_optimized_ctx_t *ec, exall_batch_t *b)
+{
+    for (;;) {
+        b->ec = ec;
+        b->count = 0;
+        b->names_used = 0;
+        b->full = false;
+        b->space = (LONG)(ec->end - ec->pos);
+        ec->seen = 0;
+        bfs_err_t err = ScanDirectoryFrom(h, lk, ec->position, exall_gather_cb, b,
+                                          &ec->skip_count, false);
+        if (err != BFS_OK) return err;
+        bool more = b->full || b->count == EXALL_BATCH;
+        if (ec->type >= ED_SIZE) {
+            err = ExAllReadInodes(h, b);
+            if (err != BFS_OK) return err;
+        }
+        for (uint32_t i = 0; i < b->count; i++)
+            if (!exall_fill_gathered(b, i)) return ec->err;
+        if (b->full) {
+            ec->overflow = true;
+            return BFS_OK;
+        }
+        if (!more) return BFS_OK;
+        /* The next batch resumes after the entry consumed last. */
+        CursorRemember(lk, ec->position, &ec->last, false);
+    }
 }
 
 /* A ReadLink path split around its soft link: the text before the link and
@@ -2097,8 +2312,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
                 type = BFS_INODE_DIR;
                 lock_parent = BFS_ROOT_INO;
                 if (ino != BFS_ROOT_INO) {
-                    err = bfs_dir_lookup(&h->fs.dir_tree, ino, "..", 2,
-                                          &lock_parent, NULL);
+                    err = bfs_dir_parent_get(&h->fs.dir_tree, ino,
+                                          &lock_parent);
                     if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
                 }
             }
@@ -2509,7 +2724,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         ctx.name_out = namebuf;
         ctx.got_entry = false;
 
-        bfs_err_t err = ScanDirectoryFrom(h, lk, position, exam_next_cb, &ctx,
+        bfs_err_t err = ScanDirectoryFrom(h, lk, position, exam_next_pos_cb, &ctx,
                                           &ctx.skip_count, true);
         CursorClearConsumedStop(lk);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
@@ -2532,7 +2747,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 #endif
         err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
-        CursorRemember(lk, position + 1, namebuf, ctx.name_len, true);
+        CursorRemember(lk, position + 1, &ctx.pos_out, true);
         fib->fib_DiskKey = (LONG)(position + 1);
 #ifdef BFS_AROS
         if (wide_fib)
@@ -2637,8 +2852,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         uint32_t par = src ? src->parent_ino : BFS_ROOT_INO;
         uint32_t grandparent = BFS_ROOT_INO;
         if (par != BFS_ROOT_INO) {
-            bfs_err_t err = bfs_dir_lookup(&h->fs.dir_tree, par, "..", 2,
-                                           &grandparent, NULL);
+            bfs_err_t err = bfs_dir_parent_get(&h->fs.dir_tree, par,
+                                           &grandparent);
             if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         }
         bfs_lock_t *lk = MakeLock(h, par, BFS_INODE_DIR, SHARED_LOCK, grandparent);
@@ -2833,14 +3048,23 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
             .h = h, .eac = eac, .buffer = buffer, .pos = buffer,
             .end = buffer + bufsize, .type = type, .lock = lk,
             .seen = 0, .position = (uint32_t)eac->eac_LastKey,
-            .last_ead = NULL, .overflow = false, .err = BFS_OK
+            .last_ead = NULL, .overflow = false, .err = BFS_OK,
+            .have_last = false
         };
 
         CursorClearConsumedStop(lk);
-        bfs_err_t err = ScanDirectoryFrom(h, lk, ectx.position, exall_optimized_cb,
-                                          &ectx, &ectx.skip_count, false);
-        if (ectx.last_name)
-            CursorRemember(lk, ectx.position, ectx.last_name, ectx.last_len, false);
+        bfs_err_t err;
+        exall_batch_t *batch = (exall_batch_t *)AllocVec(sizeof(*batch), MEMF_ANY);
+        if (batch) {
+            err = ExAllBatched(h, lk, &ectx, batch);
+            FreeVec(batch);
+        } else {
+            /* Without the batch memory, entry by entry as before. */
+            err = ScanDirectoryFrom(h, lk, ectx.position, exall_optimized_cb,
+                                    &ectx, &ectx.skip_count, false);
+        }
+        if (ectx.have_last)
+            CursorRemember(lk, ectx.position, &ectx.last, false);
         if (err == BFS_OK) err = ectx.err;
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
@@ -3247,6 +3471,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         err = bfs_fs_mount(&h->fs, &h->cache.bio);
         SetMountError(h, err, &h->fs.txn.sb);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
+        ApplyNameLimit(h);
         h->volnode = RegisterVolumeNode(h, volname);
         if (!h->volnode) {
             res2 = IoErr() ? IoErr() : ERROR_NO_FREE_STORE;
@@ -3304,8 +3529,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         uint32_t par_ino = open_file->parent_ino;
         uint32_t grandparent = BFS_ROOT_INO;
         if (par_ino != BFS_ROOT_INO) {
-            bfs_err_t err = bfs_dir_lookup(&h->fs.dir_tree, par_ino, "..", 2,
-                                           &grandparent, NULL);
+            bfs_err_t err = bfs_dir_parent_get(&h->fs.dir_tree, par_ino,
+                                           &grandparent);
             if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
         }
 
@@ -3689,6 +3914,7 @@ void EntryPoint(void)
     }
     h->startup = fssm;
     h->dosenvec = (struct DosEnvec *)BADDR(fssm->fssm_Environ);
+    h->long_names = ControlAllowsLongNames(h->dosenvec);
 
     /* Open device */
     h->devport = CreateMsgPort();
@@ -3745,6 +3971,7 @@ void EntryPoint(void)
             mount_err = snapshot_startup ? bfs_fs_mount_readonly(&h->fs, &h->cache.bio)
                                          : bfs_fs_mount(&h->fs, &h->cache.bio);
             if (mount_err == BFS_ERR_UNSUPPORTED) sb = h->fs.txn.sb;
+            if (mount_err == BFS_OK) ApplyNameLimit(h);
             if (mount_err == BFS_OK && snapshot_startup) {
                 mount_err = OpenSnapshotNamespace(h, &snapshot_startup->record);
                 if (mount_err != BFS_OK) (void)bfs_fs_unmount(&h->fs);

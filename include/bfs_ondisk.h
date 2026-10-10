@@ -140,7 +140,7 @@ _Static_assert(sizeof(bfs_btnode_hdr_t) == 28, "btnode header size");
 /* Inode flags. An unknown bit makes the inode corrupt.
  * INLINE_EXTENT: logical blocks [0, inline_length) live at physical blocks
  * [extent_root, extent_root + inline_length); there is no extent tree.
- * HAS_COMMENT: the hidden comment directory entry of this inode exists. */
+ * HAS_COMMENT: the inode owns a comment record in the directory tree. */
 #define BFS_INODE_FLAG_INLINE_EXTENT (1u << 0)
 #define BFS_INODE_FLAG_HAS_COMMENT   (1u << 1)
 #define BFS_INODE_FLAGS_KNOWN (BFS_INODE_FLAG_INLINE_EXTENT | BFS_INODE_FLAG_HAS_COMMENT)
@@ -177,25 +177,51 @@ _Static_assert(sizeof(bfs_inode_t) == 56, "inode size");
 _Static_assert(offsetof(bfs_inode_t, flags) == 44, "inode flags offset");
 _Static_assert(offsetof(bfs_inode_t, inline_crc32) == 52, "inline CRC offset");
 
-/*
- * Directory entry key — used in the directory B+tree.
- * Key ordering: parent_id, then name_hash, then name bytes.
- */
 #define BFS_NAME_MAX 255
+#define BFS_ROOT_INO 1  /* root directory inode number */
 
 /* Directory name hash (FNV-1a). These constants define on-disk key ordering —
  * changing them makes existing volumes' directory trees unsearchable. Frozen. */
 #define BFS_DIR_HASH_FNV_OFFSET 0x811C9DC5u
 #define BFS_DIR_HASH_FNV_PRIME  0x01000193u
 
-BFS_PACKED_BEGIN
-typedef struct BFS_PACKED {
-    uint32_t parent_id;       /* inode number of parent directory */
-    uint32_t name_hash;       /* FNV-1a hash of case-folded name */
-    uint8_t  name_len;        /* length of name in bytes */
-    uint8_t  name[BFS_NAME_MAX]; /* filename bytes (not null-terminated on disk) */
-} bfs_dirkey_t;
-BFS_PACKED_END
+/*
+ * Directory tree records. A 12-byte key, ordered as plain bytes:
+ *   owner u32 | kind u8 | name_hash u32 | ordinal u16 | part u8
+ * and a 40-byte value. All fields are big-endian and accessed by byte offset,
+ * because the hash and ordinal are not naturally aligned.
+ *
+ * An entry is a head record (part 0) followed by up to six name continuation
+ * parts. Its owner is the parent directory; the hash is that of the folded
+ * name, and the ordinal tells entries with equal hashes apart. A directory's
+ * parent link and an inode's comment are owned by that inode itself.
+ */
+#define BFS_DIR_KEY_SIZE        12u
+#define BFS_DIR_KEY_OWNER       0u
+#define BFS_DIR_KEY_KIND        4u
+#define BFS_DIR_KEY_HASH        5u
+#define BFS_DIR_KEY_ORDINAL     9u
+#define BFS_DIR_KEY_PART        11u
+
+#define BFS_DIR_KIND_ENTRY      0u
+#define BFS_DIR_KIND_PARENT     1u
+#define BFS_DIR_KIND_COMMENT    2u
+
+#define BFS_DIR_VAL_SIZE        40u
+/* Entry head value: inode u32 | type u8 | name_len u8 | flags u8 | name. */
+#define BFS_DIR_HEAD_INODE      0u
+#define BFS_DIR_HEAD_TYPE       4u
+#define BFS_DIR_HEAD_NAME_LEN   5u
+#define BFS_DIR_HEAD_FLAGS      6u
+#define BFS_DIR_HEAD_NAME       7u
+#define BFS_DIR_INLINE_NAME     33u  /* name bytes in the head */
+#define BFS_DIR_PART_BYTES      40u  /* name bytes in each continuation part */
+#define BFS_DIR_MAX_PARTS       6u
+/* Parent link value: the parent directory's inode u32. */
+#define BFS_DIR_PARENT_INODE    0u
+/* Comment: part 0 holds the length and 39 bytes, part 1 the next 40. */
+#define BFS_DIR_COMMENT_MAX     79u
+#define BFS_DIR_COMMENT_INLINE  39u
 
 /*
  * Logical extent record used in a per-file extent B+tree. The fixed-size tree

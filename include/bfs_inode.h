@@ -33,6 +33,14 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
 
 bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out);
 
+/* Read count inodes whose numbers do not descend. Neighbours in one leaf
+ * share a single view of it instead of one search each. results[i] is what
+ * bfs_inode_read
+ * would return for inos[i]. Returns BFS_ERR_INVAL for descending numbers and
+ * an error only if the batch cannot start; otherwise BFS_OK. */
+bfs_err_t bfs_inode_read_sorted(bfs_btree_t *tree, const uint32_t *inos, uint32_t count,
+                                bfs_inode_t *out, bfs_err_t *results);
+
 /* Structural checks shared by every reader: identity, type, flags, and the
  * extent fields. The link-count state is checked by the read functions. */
 bool bfs_inode_valid(const bfs_btree_t *tree, uint32_t ino,

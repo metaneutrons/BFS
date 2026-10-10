@@ -45,6 +45,7 @@ typedef enum {
     BFS_ERR_UNSUPPORTED = -10, /* intact, but incompatible on-disk format */
     BFS_ERR_OVERFLOW = -11, /* geometry exceeds the block address range */
     BFS_ERR_PROTECTED = -12, /* denied by a caller-supplied protection mask */
+    BFS_ERR_NAME_TOO_LONG = -13, /* longer than the mount's name limit */
 } bfs_err_t;
 
 /* On-disk structures use big-endian byte order. Native AROS may run on a
@@ -143,7 +144,7 @@ static inline int bfs_cmp_be32(const void *a, const void *b)
     return 0;
 }
 
-/* Min block size 1024 (264-byte dir keys need at least 3 entries per node) */
+/* Min block size 1024: every tree then holds at least 16 records per leaf. */
 #define BFS_MIN_BLOCK_SIZE  1024
 #define BFS_MAX_BLOCK_SIZE  65536
 

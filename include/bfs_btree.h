@@ -3,7 +3,7 @@
  * BFS — B+tree engine
  *
  * Generic B+tree stored in disk blocks. Used for:
- *   - Directory index (key=dirkey, value=inode_nr)
+ *   - Directory index (12-byte keys, 40-byte records; see bfs_ondisk.h)
  *   - Extent tree (key=file_block, value=extent)
  *   - Free space tree (key=block_nr, value=length)
  *
@@ -43,7 +43,7 @@ typedef struct bfs_allocator {
 
 /* ── B+tree operations vtable ──────────────────────────────── */
 
-#define BFS_MAX_KEY_SIZE 512  /* Must accommodate largest key (DIR_KEY_SIZE=264) */
+#define BFS_MAX_KEY_SIZE 512  /* Upper bound for any tree's fixed key size */
 
 typedef struct bfs_btree_ops {
     /* Compare two keys. Returns <0, 0, >0. */
@@ -245,6 +245,24 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
 /* Search for a key. Returns BFS_OK and copies value to val_out,
  * or BFS_ERR_NOTFOUND. */
 bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out);
+
+/* Searches for keys in ascending (non-decreasing) order: keys of one leaf
+ * share a single view of it, found through the leaf hints or one descent.
+ * Between begin and end the caller makes no other call on the tree, its BIO
+ * or its cache; the view would not survive one. */
+typedef struct {
+    uint8_t *buf;          /* descent buffer */
+    uint8_t *leaf;         /* current leaf view */
+    bfs_blk_t blk;
+    bool epoch_valid;
+    uint64_t mutation_epoch;
+} bfs_btree_sorted_t;
+
+bfs_err_t bfs_btree_sorted_begin(bfs_btree_t *tree, bfs_btree_sorted_t *state);
+/* As bfs_btree_search; key must not be smaller than the previous key. */
+bfs_err_t bfs_btree_sorted_search(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                                  const void *key, void *val_out);
+void bfs_btree_sorted_end(bfs_btree_t *tree, bfs_btree_sorted_t *state);
 
 /* Insert a key/value pair. Returns BFS_OK, BFS_ERR_EXISTS, or error.
  * Updates tree->root if the root splits. */

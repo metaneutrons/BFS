@@ -32,6 +32,7 @@ static bool parse_u32(const char *text, uint32_t *value)
 int main(int argc, char **argv)
 {
     bool directory_scale = false;
+    bool long_names = false;
     bool hard_link = false;
     bool leaked_allocation = false;
     uint32_t block_size = DEFAULT_BLOCK_SIZE;
@@ -40,6 +41,7 @@ int main(int argc, char **argv)
     if (argc < 2) return 2;
     for (int index = 2; index < argc; index++) {
         if (strcmp(argv[index], "--directory-scale") == 0) directory_scale = true;
+        else if (strcmp(argv[index], "--long-names") == 0) long_names = true;
         else if (strcmp(argv[index], "--hard-link") == 0) hard_link = true;
         else if (strcmp(argv[index], "--leak") == 0) leaked_allocation = true;
         else if (strcmp(argv[index], "--block-size") == 0 && index + 1 < argc &&
@@ -103,6 +105,27 @@ int main(int argc, char **argv)
             else
                 error = bfs_fs_create_file(&fs, BFS_ROOT_INO, name, (uint8_t)length, &inode);
         }
+    }
+    if (error == BFS_OK && long_names) {
+        /* Names at the bounds of the inline bytes and of continuation parts,
+         * and comments that fill one and both comment records. */
+        static const uint8_t lengths[] = { 33, 34, 73, 74, BFS_NAME_MAX };
+        char name[BFS_NAME_MAX];
+        char comment[79];
+        memset(comment, 'c', sizeof(comment));
+        for (unsigned index = 0; index < sizeof(lengths) && error == BFS_OK; index++) {
+            memset(name, 'a' + (int)index, lengths[index]);
+            error = bfs_fs_create_file(&fs, BFS_ROOT_INO, name, lengths[index], &inode);
+            if (error == BFS_OK && lengths[index] == 74)
+                error = bfs_fs_set_comment(&fs, inode, comment, 79);
+        }
+        uint32_t directory = 0;
+        memset(name, 'D', 100);
+        if (error == BFS_OK) error = bfs_fs_mkdir(&fs, BFS_ROOT_INO, name, 100, &directory);
+        if (error == BFS_OK) error = bfs_fs_set_comment(&fs, directory, comment, 40);
+        memset(name, 'f', 40);
+        if (error == BFS_OK) error = bfs_fs_create_file(&fs, directory, name, 40, &inode);
+        if (error == BFS_OK) error = bfs_fs_set_comment(&fs, BFS_ROOT_INO, "volume note", 11);
     }
     if (error == BFS_OK) error = bfs_snapshot_create(&fs, "oracle-snapshot");
     if (error == BFS_OK) error = bfs_file_open(&file, &fs, oracle_inode);

@@ -56,6 +56,8 @@ static int tests_run, tests_pass, tests_fail;
 static BPTR logfh; /* log file handle (0 = no log) */
 static BOOL serial_log; /* mirror the log to the debug console (AROS) */
 static BOOL quick_mode;
+/* The volume is mounted with Control = "LONGNAMES". */
+static BOOL long_names_mode;
 static BOOL io_failed, log_failed;
 static char logpath[480];
 
@@ -1449,6 +1451,26 @@ static void test_empty_file(void)
     pass(T);
 }
 
+/* Without LONGNAMES the handler refuses a new name longer than the 107 bytes
+ * fib_FileName holds. */
+static BOOL refuses_long_name(const char *name)
+{
+    BPTR fh = Open(vpath(name), MODE_NEWFILE);
+    if (fh) {
+        Close(fh);
+        DeleteFile(vpath(name));
+        return FALSE;
+    }
+    if (IoErr() != ERROR_INVALID_COMPONENT_NAME) return FALSE;
+    BPTR lock = CreateDir(vpath(name));
+    if (lock) {
+        UnLock(lock);
+        DeleteFile(vpath(name));
+        return FALSE;
+    }
+    return IoErr() == ERROR_INVALID_COMPONENT_NAME;
+}
+
 static void test_max_name(void)
 {
     const char *T = "maxname_27";
@@ -1457,6 +1479,13 @@ static void test_max_name(void)
     char name[256];
     int i; for (i = 0; i < 251; i++) name[i] = 'a' + (i % 26);
     name[251] = 0;
+    if (!long_names_mode) {
+        if (!refuses_long_name(name)) { fail(T, "251-byte name accepted"); return; }
+        name[108] = 0;
+        if (!refuses_long_name(name)) { fail(T, "108-byte name accepted"); return; }
+        pass(T);
+        return;
+    }
     fill(databuf, 10, 0x2727);
     BPTR fh = Open(vpath(name), MODE_NEWFILE);
     if (!fh) { fail(T, "write"); return; }
@@ -2308,19 +2337,20 @@ int main(void)
     me->pr_WindowPtr = (APTR)-1;
 
     struct RDArgs *rdargs;
-    test_word_t args[5] = {0, 0, 0, 0, 0};
+    test_word_t args[6] = {0, 0, 0, 0, 0, 0};
 #ifdef BFS_AROS
-    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S,SERIAL/S", args, NULL);
+    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S,LONGNAMES/S,SERIAL/S", args, NULL);
 #else
-    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S", args, NULL);
+    rdargs = ReadArgs("VOLUME/A,LOG/K,FILTER,QUICK/S,LONGNAMES/S", args, NULL);
 #endif
     if (!rdargs) {
-        put("Usage: bfs-test VOLUME [LOG=path] [filter] [QUICK]\n");
+        put("Usage: bfs-test VOLUME [LOG=path] [filter] [QUICK] [LONGNAMES]\n");
         put("  bfs-test DH1:                   (run all)\n");
         put("  bfs-test DH1: large             (run matching)\n");
         put("  bfs-test DH1: a+b               (run matching filters)\n");
         put("  bfs-test DH1: LOG=SYS:test.log  (CI mode)\n");
         put("  bfs-test DH1: LOG=SYS:x large   (both)\n");
+        put("  bfs-test DH1: LONGNAMES         (DH1: mounted with LONGNAMES)\n");
 #ifdef BFS_AROS
         put("  bfs-test DH1: SERIAL            (log to the debug console)\n");
 #endif
@@ -2329,7 +2359,8 @@ int main(void)
     }
 
     quick_mode = args[3] != 0;
-    serial_log = args[4] != 0;
+    long_names_mode = args[4] != 0;
+    serial_log = args[5] != 0;
 
     /* Validate and copy all ReadArgs-backed strings before FreeArgs. */
     const char *volume_arg = (const char *)args[0];

@@ -195,9 +195,8 @@ static bool collect_raw_value(const void *key, const void *value, void *ctx)
 {
     (void)key;
     raw_value_log_t *log = (raw_value_log_t *)ctx;
-    const bfs_dir_val_t *dir_value = (const bfs_dir_val_t *)value;
     log->calls++;
-    log->inode_nr = bfs_be32(dir_value->inode_nr);
+    log->inode_nr = bfs_load_be32((const uint8_t *)value + BFS_DIR_HEAD_INODE);
     return false;
 }
 

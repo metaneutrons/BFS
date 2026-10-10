@@ -65,7 +65,7 @@ At the minimum 1024-byte block size, capacities are:
 
 | Tree | K | V | Leaf capacity | Internal capacity |
 | --- | ---: | ---: | ---: | ---: |
-| Directory | 264 | 8 | 3 | 3 |
+| Directory | 12 | 40 | 19 | 62 |
 | Inode | 4 | 56 | 16 | 124 |
 | File extent | 4 | 12 | 62 | 124 |
 | Free-space | 4 | 4 | 124 | 124 |
@@ -77,30 +77,71 @@ sizes. All leaf keys are strictly ordered under that tree's comparator.
 
 ## Directory tree
 
-The superblock's `dir_tree_root` names one global tree. Its key is a fixed
-264-byte directory key and its value is eight bytes.
+The superblock's `dir_tree_root` names one global tree. Its key is 12 bytes and
+its value 40 bytes. The comparator is plain byte order over the 12 key bytes;
+because every key field is big-endian, that is numeric order field by field.
 
 | Key offset | Width | Field |
 | ---: | ---: | --- |
-| 0 | 4 | `parent_id` |
-| 4 | 4 | `name_hash` |
-| 8 | 1 | `name_len` |
-| 9 | 255 | `name` bytes; bytes after `name_len` are zero when written |
+| 0 | 4 | `owner`: the parent directory for an entry; the inode itself for its parent link and its comment |
+| 4 | 1 | `kind`: 0 entry, 1 parent link, 2 comment |
+| 5 | 4 | `name_hash`: for an entry, the hash of its folded name; otherwise zero |
+| 9 | 2 | `ordinal`: for an entry, its place among the entries of the same owner and hash; otherwise zero |
+| 11 | 1 | `part`: 0 for a head record, 1 through 6 for name continuations, 0 or 1 for comments |
+
+`owner` is below `0x80000000`. Within one owner the order is: the entries, each
+head record followed by its continuation parts; then the parent link; then the
+comment. Owner 0 holds only the root record defined in the namespace chapter.
 
 `name_hash` is 32-bit FNV-1a over the case-folded name, with offset basis
 `0x811C9DC5` and prime `0x01000193`. Folding maps ASCII `a` through `z` to
 uppercase and maps bytes `0xE0` through `0xFE`, excluding `0xF7`, down by
-`0x20`. All other bytes are unchanged.
+`0x20`. All other bytes are unchanged. The listing order of a directory is
+therefore hash order, not lexical order.
 
-The comparator orders `parent_id`, then numeric `name_hash`, then folded name
-bytes, then length. It does not order names lexically before hashing. A reader
-MUST recompute the hash and reject a mismatch. Case aliases compare equal, so a
-directory cannot contain two entries that differ only under this folding.
+Every value byte not listed below is zero, and a reader MUST reject a record
+with a nonzero unused byte.
 
-| Value offset | Width | Field |
+### Entries
+
+An entry is a head record followed by its continuation parts. All its records
+share `owner`, `kind` 0, `name_hash` and `ordinal`.
+
+| Head value offset | Width | Field |
 | ---: | ---: | --- |
 | 0 | 4 | `inode_nr`, nonzero and below `0x80000000` |
-| 4 | 4 | `entry_type`, one of the inode type codes below |
+| 4 | 1 | `entry_type`, one of the inode type codes below |
+| 5 | 1 | `name_len`, 1 through 255 |
+| 6 | 1 | `flags`, zero |
+| 7 | 33 | the first `min(name_len, 33)` name bytes |
+
+A name of more than 33 bytes continues in parts 1, 2, and so on, without gaps:
+part `p` holds name bytes `33 + 40 * (p - 1)` up to 40 bytes further, at value
+offset 0. A name of length `L` has exactly `ceil((L - 33) / 40)` continuation
+parts when `L > 33` and none otherwise, so at most six. A head with a missing
+part, a part without its head, or a part beyond the last required one is
+corrupt.
+
+A reader MUST assemble the full name, recompute `name_hash` from it, and reject
+a mismatch. Two entries of one owner whose names are equal under the folding
+are corrupt: a directory cannot hold case aliases. Entries of one owner and
+hash differ in `ordinal`. A writer gives a new entry the lowest ordinal not
+taken in its hash group and keeps the ordinal of an existing entry; a reader
+MUST NOT assume that the ordinals of a group are contiguous.
+
+### Parent links
+
+A directory other than the root owns one parent link: `kind` 1, `name_hash`,
+`ordinal` and `part` zero. Value bytes 0 through 3 hold the inode of the
+directory that contains it, nonzero and below `0x80000000`.
+
+### Comments
+
+An inode with a comment owns one or two comment records: `kind` 2, `name_hash`
+and `ordinal` zero. Part 0 holds the comment length (1 through 79) in value
+byte 0 and the first `min(length, 39)` comment bytes from value byte 1. Part 1
+exists exactly when the length exceeds 39 and holds the remaining bytes from
+value byte 0.
 
 ## Inode tree
 

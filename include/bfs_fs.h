@@ -24,7 +24,6 @@
 #include "bfs_refcount.h"
 #include "bfs_lock.h"
 
-#define BFS_ROOT_INO 1  /* root directory inode number */
 
 /* Inline capacity of the per-transaction deferred-free queue. Large atomic
  * reclaim units reserve a heap buffer before mutation. Old
@@ -35,11 +34,26 @@
  * NOT reclaimed automatically. */
 #define BFS_PENDING_FREES_MAX 16384
 
-/* Worst-case deferred frees one top-level metadata op can produce: at most ~5
- * trees touched (dir, inode, freespace, refcount, plus rename's second dir
- * subtree), each bounded by BFS_BTREE_MAX_OP_FREES. Reserved up front so the
- * op's in-COW defers never overflow the queue. */
-#define BFS_FS_OP_FREE_RESERVE (5u * BFS_BTREE_MAX_OP_FREES)
+/* Directory records one namespace operation changes in the worst case,
+ * counting the undo of failed steps. An entry has up to 1 + BFS_DIR_MAX_PARTS
+ * records, and a change that fails at its k-th record undoes k - 1. The worst
+ * case is a directory rename that fails to remove its source and then fails to
+ * remove the destination it had inserted: insert the destination (7), move the
+ * parent link (1), fail removing the source (7 + 6 undone), restore the parent
+ * link (1), fail removing the destination (7 + 6 undone). */
+#define BFS_DIR_ENTRY_RECORDS (1u + BFS_DIR_MAX_PARTS)
+#define BFS_FS_OP_DIR_RECORD_CHANGES \
+    (BFS_DIR_ENTRY_RECORDS + 1u + 2u * (2u * BFS_DIR_ENTRY_RECORDS - 1u) + 1u)
+
+/* Worst-case deferred frees one top-level metadata op can produce. Each
+ * B+tree insert, delete or update defers at most BFS_BTREE_MAX_OP_FREES old
+ * nodes, so each directory record change counts in full. The inode, free-space
+ * and reference-count trees keep one such bound each, as before. Reserved up
+ * front so the op's in-COW defers never overflow the queue; an overflow would
+ * still fail the operation through the tree's free_sink_err, which a
+ * multi-record directory change keeps in the directory tree's sticky_err. */
+#define BFS_FS_OP_FREE_RESERVE \
+    ((BFS_FS_OP_DIR_RECORD_CHANGES + 3u) * BFS_BTREE_MAX_OP_FREES)
 
 typedef struct bfs_fs {
     bfs_bio_t        *bio;
@@ -55,6 +69,9 @@ typedef struct bfs_fs {
     // cppcheck-suppress unusedStructMember
     bool               read_only;  /* lifecycle forbids recovery and commits */
     bfs_err_t          recovery_error; /* nonzero: abandon/remount required */
+    /* Longest name a call may create. Mount sets BFS_NAME_MAX; adapters lower
+     * it to what their platform can list (BFS_SHORT_NAME_MAX). */
+    uint8_t            name_max;
     /* Shared between fs.c recovery and file.c handle validation. */
     // cppcheck-suppress unusedStructMember
     uint64_t           recovery_generation; /* invalidates open handles on reload */
@@ -101,6 +118,13 @@ bfs_err_t bfs_fs_mount(bfs_fs_t *fs, bfs_bio_t *bio);
  * commit. Close it with bfs_fs_unmount(), which only releases resources for a
  * read-only filesystem. */
 bfs_err_t bfs_fs_mount_readonly(bfs_fs_t *fs, bfs_bio_t *bio);
+
+/* The longest name a FileInfoBlock holds: 108 bytes with the terminator. */
+#define BFS_SHORT_NAME_MAX 107
+
+/* Set the longest name that create, mkdir, rename, link and soft link may
+ * create, from 1 to BFS_NAME_MAX. Longer existing names stay reachable. */
+bfs_err_t bfs_fs_set_name_limit(bfs_fs_t *fs, uint8_t name_max);
 
 /* Sync: commit all pending changes to disk (the full transaction commit lives in
  * txn.c as bfs_txn_commit(fs); this is just the public, lock-taking wrapper). */

@@ -19,17 +19,24 @@ The LOCK_SAME/LOCK_SAME_VOLUME codes belong to the dos.library function, not
 the packet. Empty final path components retain the resolved directory after
 parent traversal or a volume-prefix reset, rather than reusing the base lock.
 
-ExNext and ExAll list the members of a directory in key order and never the
-internal parent entry. `fib_DiskKey` and `eac_LastKey` carry the number of
-entries the enumeration has consumed, and the lock remembers the name consumed
-last. When the number matches, the next call continues after that name. A
-listing therefore takes linear time, and deleting entries while it runs, as a
-recursive delete does, does not skip any of the rest. The lock also keeps a
+ExNext and ExAll list the members of a directory in key order (the order of
+the name hashes). `fib_DiskKey` and `eac_LastKey` carry the number of entries
+the enumeration has consumed, and the lock remembers the key position (hash
+and ordinal) of the entry consumed last. When the number matches, the next
+call continues after that position. A listing therefore takes linear time, and
+deleting entries while it runs, as a recursive delete does, does not skip any
+of the rest. Inside a group of names with equal hash, a name deleted and a new
+one created during a paused listing can take the freed ordinal, so the new
+name can be listed twice or not at all; this needs a hash collision within one
+directory. The lock also keeps a
 copy of the directory leaf it read last; while the directory tree is
 unchanged, the next entries come from that copy without a descent from the
 root. An ExAll entry holds the fields up to the requested type, as
 dos.library lays them out, then the name and the actual comment; an entry
-that does not fit the buffer is returned by the next call. An entry created during a
+that does not fit the buffer is returned by the next call. ExAll gathers up
+to 64 entries at a time, as many as their smallest size lets fit, reads their
+inodes in ascending order, and then writes them in directory order; without
+memory for that batch it reads entry by entry. An entry created during a
 listing may or may not appear. If the number does not match (a second
 enumeration on the same lock) or the memory for the resume point is missing,
 the handler counts entries from the start. ExamineFH reports the file name: an

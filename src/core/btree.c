@@ -882,17 +882,21 @@ static uint32_t leaf_hint_lower_bound(const bfs_btree_key_hint_cache_t *cache,
     return lo;
 }
 
-static bool leaf_hint_read(bfs_btree_t *tree, const void *key, void *val_out,
-                           uint64_t mutation_epoch)
+/* The resident leaf whose remembered key range holds key, or NULL. The view
+ * is valid until the next BIO call. Forced inline: single searches must keep
+ * the specialized path they had before the sorted searches shared it. */
+static inline __attribute__((always_inline)) uint8_t *
+leaf_hint_view(bfs_btree_t *tree, const void *key, uint64_t mutation_epoch,
+               bfs_blk_t *blk_out)
 {
-    if (!key_hint_cache_eligible(tree)) return false;
+    if (!key_hint_cache_eligible(tree)) return NULL;
     bfs_btree_key_hint_cache_t *cache = tree->key_hint_cache;
     if (cache->leaf_owner != tree || cache->leaf_root != tree->root ||
         cache->leaf_bio != tree->bio || cache->leaf_ops != tree->ops ||
         cache->leaf_generation != tree->generation ||
         cache->leaf_mutation_epoch != mutation_epoch || cache->leaf_count == 0 ||
         cache->leaf_count > BFS_BTREE_LEAF_HINT_SLOTS)
-        return false;
+        return NULL;
 
     uint32_t wanted = bfs_load_be32(key);
     uint32_t lo = 0;
@@ -905,37 +909,58 @@ static bool leaf_hint_read(bfs_btree_t *tree, const void *key, void *val_out,
         else
             hi = mid;
     }
-    if (lo == 0) return false;
+    if (lo == 0) return NULL;
     const bfs_btree_leaf_hint_t *hint = &cache->leaf_slots[lo - 1];
     if (hint->leaf == BFS_BLK_NULL || wanted > hint->last_key ||
         hint->leaf >= tree->bio->block_count)
-        return false;
+        return NULL;
 
     bfs_node_validation_t validation = node_validation_context(tree);
     uint8_t *leaf = (uint8_t *)bfs_bio_peek_valid_node(tree->bio, hint->leaf,
                                                        &validation);
-    if (!leaf || node_level(leaf) != BFS_BTNODE_LEAF) return false;
+    if (!leaf || node_level(leaf) != BFS_BTNODE_LEAF) return NULL;
 
     uint32_t n = num_keys(leaf);
-    if (n == 0) return false;
+    if (n == 0) return NULL;
     uint32_t first = bfs_load_be32(node_key(tree, leaf, 0));
     uint32_t last = bfs_load_be32(node_key(tree, leaf, n - 1));
     if (first != hint->first_key || last != hint->last_key ||
         wanted < first || wanted > last)
-        return false;
+        return NULL;
+    *blk_out = hint->leaf;
+    return leaf;
+}
 
-    /* Dense IDs are only an index candidate. Sparse keys fall through to the
-     * ordinary in-leaf search after the stored key is checked. */
-    uint32_t index = wanted - first;
-    bool found = index < n &&
-                 tree->ops->key_compare(node_key(tree, leaf, index), key) == 0;
-    if (!found) index = node_search(tree, leaf, key, &found);
+/* Index of key in a leaf of a dense-ID tree: the key's distance from the
+ * first key is only a candidate, checked before the ordinary search. */
+static inline __attribute__((always_inline)) uint32_t
+leaf_index(const bfs_btree_t *tree, uint8_t *leaf, const void *key, bool *found)
+{
+    uint32_t n = num_keys(leaf);
+    if (tree->ops->key_compare == bfs_btree_key_compare_be32) {
+        uint32_t index = bfs_load_be32(key) - bfs_load_be32(node_key(tree, leaf, 0));
+        if (index < n && bfs_cmp_be32(node_key(tree, leaf, index), key) == 0) {
+            *found = true;
+            return index;
+        }
+    }
+    return node_search(tree, leaf, key, found);
+}
+
+static bool leaf_hint_read(bfs_btree_t *tree, const void *key, void *val_out,
+                           uint64_t mutation_epoch)
+{
+    bfs_blk_t blk;
+    uint8_t *leaf = leaf_hint_view(tree, key, mutation_epoch, &blk);
+    if (!leaf) return false;
+    bool found;
+    uint32_t index = leaf_index(tree, leaf, key, &found);
     if (!found) return false;
 
     /* The resident view expires at the next BIO call. Copy the value now;
      * the range table stores only block/key metadata. */
     memcpy(val_out, leaf_val(tree, leaf, index), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
-    key_hint_remember(tree, key, hint->leaf, index, mutation_epoch);
+    key_hint_remember(tree, key, blk, index, mutation_epoch);
     return true;
 }
 
@@ -1097,6 +1122,120 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out)
         blk = get_child(tree, node, child);
         expected_level--;
     }
+}
+
+/* ── Searches in ascending key order ───────────────────────── */
+
+/* The leaf that holds or would hold key: a remembered key range, or a
+ * descent from the root through buf. The view is valid until the next BIO
+ * call. */
+static bfs_err_t locate_leaf(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                             const void *key, uint8_t **leaf_out, bfs_blk_t *blk_out)
+{
+    if (state->epoch_valid) {
+        uint8_t *leaf = leaf_hint_view(tree, key, state->mutation_epoch, blk_out);
+        if (leaf) {
+#ifdef BFS_PERF_PROBE
+            bfs_perf_probe_counters.btree_leaf_hint_hits++;
+#endif
+            *leaf_out = leaf;
+            return BFS_OK;
+        }
+    }
+    bfs_blk_t blk = tree->root;
+    uint16_t expected_level = (uint16_t)(tree->height - 1);
+    node_bounds_t bounds = {0};
+    for (uint32_t depth = 0; depth < MAX_TREE_DEPTH; depth++) {
+        uint8_t *node;
+        bfs_err_t err = node_view(tree, blk, state->buf, expected_level, &bounds, &node);
+        if (err != BFS_OK) return err;
+        if (is_leaf(node)) {
+            if (state->epoch_valid) {
+                tree->hint_leaf = blk;
+                tree->hint_root = tree->root;
+                tree->hint_generation = tree->generation;
+                tree->hint_mutation_epoch = state->mutation_epoch;
+                leaf_hint_remember(tree, blk, node, state->mutation_epoch);
+            }
+            *leaf_out = node;
+            *blk_out = blk;
+            return BFS_OK;
+        }
+        if (expected_level == 0) return BFS_ERR_CORRUPT;
+        bool found;
+        uint32_t idx = node_search(tree, node, key, &found);
+        uint32_t child = found ? idx + 1 : idx;
+        child_bounds(tree, node, child, &bounds);
+        blk = get_child(tree, node, child);
+        expected_level--;
+    }
+    return BFS_ERR_CORRUPT;
+}
+
+bfs_err_t bfs_btree_sorted_begin(bfs_btree_t *tree, bfs_btree_sorted_t *state)
+{
+    if (!tree || !tree->bio || !tree->ops || !state) return BFS_ERR_INVAL;
+    memset(state, 0, sizeof(*state));
+    if (tree->root == BFS_BLK_NULL) return BFS_OK;
+    if (!tree_shape_valid(tree)) return BFS_ERR_CORRUPT;
+    state->epoch_valid = bfs_bio_get_mutation_epoch(tree->bio, &state->mutation_epoch);
+    if (!state->epoch_valid) {
+        tree->hint_leaf = BFS_BLK_NULL;
+        tree->hint_root = BFS_BLK_NULL;
+        tree->hint_generation = 0;
+        tree->hint_mutation_epoch = 0;
+    }
+    leaf_hint_prepare(tree, state->epoch_valid, state->mutation_epoch);
+    state->buf = alloc_buf(tree);
+    return state->buf ? BFS_OK : BFS_ERR_NOMEM;
+}
+
+#ifdef BFS_PERF_PROBE
+static bfs_err_t sorted_search_body(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                                    const void *key, void *val_out);
+bfs_err_t bfs_btree_sorted_search(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                                  const void *key, void *val_out)
+{
+    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_tree_begin(
+        tree, BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_SEARCH,
+        BFS_PERF_DETAIL_SCOPE_DISABLED);
+    bfs_err_t result = sorted_search_body(tree, state, key, val_out);
+    bfs_perf_probe_detail_end(&sample);
+    return result;
+}
+static bfs_err_t sorted_search_body(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                                    const void *key, void *val_out)
+#else
+bfs_err_t bfs_btree_sorted_search(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                                  const void *key, void *val_out)
+#endif
+{
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.btree_search_calls++;
+#endif
+    if (!tree || !state || !key || !val_out) return BFS_ERR_INVAL;
+    if (tree->root == BFS_BLK_NULL) return BFS_ERR_NOTFOUND;
+    if (!state->buf) return BFS_ERR_INVAL;
+    /* Keys ascend, so a key up to the current leaf's last key lies in it. */
+    if (!state->leaf ||
+        tree->ops->key_compare(key, node_key(tree, state->leaf,
+                                             num_keys(state->leaf) - 1)) > 0) {
+        state->leaf = NULL;
+        bfs_err_t err = locate_leaf(tree, state, key, &state->leaf, &state->blk);
+        if (err != BFS_OK) return err;
+    }
+    bool found;
+    uint32_t index = leaf_index(tree, state->leaf, key, &found);
+    if (!found) return BFS_ERR_NOTFOUND;
+    memcpy(val_out, leaf_val(tree, state->leaf, index), tree->ops->val_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    return BFS_OK;
+}
+
+void bfs_btree_sorted_end(bfs_btree_t *tree, bfs_btree_sorted_t *state)
+{
+    if (!tree || !state) return;
+    if (state->buf) free_buf(tree, state->buf);
+    memset(state, 0, sizeof(*state));
 }
 
 /* ── Live-transaction node ownership ───────────────────────── */

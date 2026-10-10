@@ -4,10 +4,12 @@
 #include "bfs_file.h"
 #include "bfs_snapshot.h"
 #include "bfs_crc32.h"
+#include "bfs_fsck.h"
 #include "block_device_emu.h"
 #include <unistd.h>
 #include <sys/wait.h>
 #include <fcntl.h>
+#include <string.h>
 
 #define IMAGE "test_fsck.img"
 
@@ -201,10 +203,109 @@ static void test_data_checksum_corruption_is_not_clean(void)
     unlink("test_fsck.log");
 }
 
+/* Damage the namespace through the directory API and expect the checker to
+ * report it; each step is undone before the next. */
+static uint32_t namespace_errors(bfs_fs_t *fs)
+{
+    bfs_fsck_report_t report;
+    memset(&report, 0, sizeof(report));
+    if (bfs_fs_sync(fs) != BFS_OK) return UINT32_MAX;
+    (void)bfs_fs_check(fs, false, &report);
+    return report.errors;
+}
+
+static void test_namespace_damage_is_reported(void)
+{
+    unlink(IMAGE);
+    bfs_bio_t *bio = bio_emu_create(IMAGE, 1024, 4096);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "Names", 0), BFS_OK);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    char name[BFS_NAME_MAX];
+    memset(name, 'n', sizeof(name));
+    uint32_t dir, sub, file;
+    TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "dir", 3, &dir), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, dir, name, 200, &sub), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_create_file(&fs, sub, name, BFS_NAME_MAX, &file), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, file, name, 79), BFS_OK);
+    TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, sub, name, 40), BFS_OK);
+    TEST_ASSERT_EQ(namespace_errors(&fs), 0);
+
+    /* A directory inode without an entry or parent link. */
+    TEST_ASSERT_EQ(bfs_dir_remove(&fs.dir_tree, dir, name, 200), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_remove(&fs.dir_tree, sub), BFS_OK);
+    TEST_ASSERT(namespace_errors(&fs) > 0);
+    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, dir, name, 200, sub, BFS_INODE_DIR), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_insert(&fs.dir_tree, sub, dir), BFS_OK);
+    TEST_ASSERT_EQ(namespace_errors(&fs), 0);
+
+    /* A parent link that names another directory. */
+    TEST_ASSERT_EQ(bfs_dir_parent_replace(&fs.dir_tree, sub, BFS_ROOT_INO, NULL), BFS_OK);
+    TEST_ASSERT(namespace_errors(&fs) > 0);
+    TEST_ASSERT_EQ(bfs_dir_parent_replace(&fs.dir_tree, sub, dir, NULL), BFS_OK);
+
+    /* An entry under a file, and an entry whose type is not its inode's. */
+    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, file, "x", 1, file, BFS_INODE_FILE), BFS_OK);
+    TEST_ASSERT(namespace_errors(&fs) > 0);
+    TEST_ASSERT_EQ(bfs_dir_remove(&fs.dir_tree, file, "x", 1), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_replace(&fs.dir_tree, sub, name, BFS_NAME_MAX, file,
+                                   BFS_INODE_SOFTLINK, NULL, NULL), BFS_OK);
+    TEST_ASSERT(namespace_errors(&fs) > 0);
+    TEST_ASSERT_EQ(bfs_dir_replace(&fs.dir_tree, sub, name, BFS_NAME_MAX, file,
+                                   BFS_INODE_FILE, NULL, NULL), BFS_OK);
+
+    /* An inode flag without its comment records. */
+    TEST_ASSERT_EQ(bfs_dir_comment_remove(&fs.dir_tree, sub), BFS_OK);
+    TEST_ASSERT(namespace_errors(&fs) > 0);
+    TEST_ASSERT_EQ(bfs_dir_comment_insert(&fs.dir_tree, sub, name, 40), BFS_OK);
+    TEST_ASSERT_EQ(namespace_errors(&fs), 0);
+
+    TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);
+    bfs_bio_close(bio);
+    unlink(IMAGE);
+}
+
+/* The only directory losing its entry and link, and two directories that
+ * hold each other but not the root's path. */
+static void test_unreachable_directories_are_reported(void)
+{
+    unlink(IMAGE);
+    bfs_bio_t *bio = bio_emu_create(IMAGE, 4096, 1024);
+    TEST_ASSERT(bio != NULL);
+    TEST_ASSERT_EQ(bfs_fs_format(bio, "Reach", 0), BFS_OK);
+    bfs_fs_t fs;
+    TEST_ASSERT_EQ(bfs_fs_mount(&fs, bio), BFS_OK);
+    uint32_t a, b;
+    TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "a", 1, &a), BFS_OK);
+    TEST_ASSERT_EQ(namespace_errors(&fs), 0);
+    TEST_ASSERT_EQ(bfs_dir_remove(&fs.dir_tree, BFS_ROOT_INO, "a", 1), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_remove(&fs.dir_tree, a), BFS_OK);
+    TEST_ASSERT(namespace_errors(&fs) > 0);
+    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, BFS_ROOT_INO, "a", 1, a, BFS_INODE_DIR), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_insert(&fs.dir_tree, a, BFS_ROOT_INO), BFS_OK);
+    TEST_ASSERT_EQ(namespace_errors(&fs), 0);
+
+    TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "b", 1, &b), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_remove(&fs.dir_tree, BFS_ROOT_INO, "a", 1), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_remove(&fs.dir_tree, BFS_ROOT_INO, "b", 1), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, b, "a", 1, a, BFS_INODE_DIR), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, a, "b", 1, b, BFS_INODE_DIR), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_replace(&fs.dir_tree, a, b, NULL), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_parent_replace(&fs.dir_tree, b, a, NULL), BFS_OK);
+    TEST_ASSERT(namespace_errors(&fs) > 0);
+
+    bfs_fs_abandon(&fs);
+    bfs_bio_close(bio);
+    unlink(IMAGE);
+}
+
 TEST_SUITE_BEGIN("Filesystem Checker")
     TEST_RUN(test_clean_snapshot_and_readonly_check);
     TEST_RUN(test_unsupported_format_never_repaired);
     TEST_RUN(test_retained_open_inode_is_checker_visible_until_recovery);
     TEST_RUN(test_canonical_repair_reclaims_only_leaks);
     TEST_RUN(test_data_checksum_corruption_is_not_clean);
+    TEST_RUN(test_namespace_damage_is_reported);
+    TEST_RUN(test_unreachable_directories_are_reported);
 TEST_SUITE_END()

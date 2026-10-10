@@ -45,6 +45,7 @@ static void fault_free(void *pointer)
 #define bfs_bio_alloc_buffer isolated_bio_alloc_buffer
 #define bfs_bio_free_buffer isolated_bio_free_buffer
 #define bfs_cache_init isolated_cache_init
+#define bfs_cache_mount_slots isolated_cache_mount_slots
 #define bfs_cache_destroy isolated_cache_destroy
 #define bfs_cache_invalidate isolated_cache_invalidate
 #define bfs_cache_set_node_write_retention isolated_cache_set_node_write_retention
@@ -54,6 +55,7 @@ static void fault_free(void *pointer)
 #undef bfs_cache_set_node_write_retention
 #undef bfs_cache_invalidate
 #undef bfs_cache_destroy
+#undef bfs_cache_mount_slots
 #undef bfs_cache_init
 #undef bfs_bio_free_buffer
 #undef bfs_bio_alloc_buffer

@@ -9,23 +9,28 @@ path syntax and permission translation remain adapter policy.
 The root inode is always 1. A formatted volume creates exactly this root entry:
 
 ```text
-directory key: parent_id = 0, name = "/"
-directory value: inode_nr = 1, entry_type = BFS_INODE_DIR
+directory key: owner = 0, kind = 0, name_hash = hash of "/", ordinal = 0, part = 0
+directory value: inode_nr = 1, entry_type = BFS_INODE_DIR, name_len = 1, name = "/"
 inode key: 1
 inode value: inode_nr = 1, type = BFS_INODE_DIR, link_count = 1
 ```
 
-Every non-root directory has one internal `..` directory entry whose
-`parent_id` is the directory's inode and whose value identifies its parent.
-Root has no required `..` entry. `.` has no persisted entry. Public namespace
-operations reject `.` and `..`, but a reader must recognize the internal `..`
-record to walk parent relationships and to determine whether a directory is
-empty.
+Owner 0 holds no other record. Every directory other than the root has exactly
+one directory entry and exactly one parent link, and the link names the
+directory that holds the entry. Following parent links from any directory
+reaches the root. Entries are owned by directories only, and an entry's
+`entry_type` equals the type of the inode it names. The root has neither a parent link nor an
+entry other than the root record. No entry is named `.` or `..`; neither has a
+persisted record. A directory is empty when it owns no entry; its parent link
+and its comment do not count.
 
 ## Names
 
-A directory-key name is length-delimited, not NUL-delimited. Its maximum is
-255 bytes. The public core rejects empty names and names containing `/` or `:`;
+A directory-entry name is length-delimited, not NUL-delimited. Its maximum is
+255 bytes. An adapter may refuse new names below that maximum; the current
+adapters refuse names above 107 bytes, which is what an AmigaDOS
+`FileInfoBlock` holds, unless the mount allows long names. Existing names of
+any valid length stay readable. The public core rejects empty names and names containing `/` or `:`;
 it also reserves `.` and `..`. The formatting path applies the same `/` and `:`
 restriction to the volume label.
 
@@ -63,29 +68,19 @@ left by a crashed adapter. Readers must neither expose it nor treat it as an
 ordinary positive-link inode, but checkers must include its extents in
 ownership accounting until recovery runs.
 
-Each inode can have at most one current Amiga file comment. A comment is stored
-as a hidden directory-tree entry:
+Each inode can have at most one current Amiga file comment of 1 through 79
+bytes. It is stored in the comment records the inode owns in the directory
+tree (B+tree chapter). A zero-length comment removes them. Comments are
+namespace metadata rather than bytes in the inode value.
 
-```text
-parent_id = inode_nr | 0x80000000
-name      = comment bytes, 1 through 79 bytes
-value     = inode_nr, entry_type = 0
-```
-
-No public inode number sets bit 31, so this parent ID is distinct from a real
-directory. A zero-length comment removes the hidden entry. A reader should not
-display this internal parent as a filesystem directory. Comments are namespace
-metadata rather than bytes in the inode value.
-
-The inode flag `HAS_COMMENT` is set exactly when this entry exists. A writer
-changes the entry and the flag in the same committed state. Readers treat the
-flag as authoritative: without it they report no comment and do not search
-the directory tree, and deleting the inode leaves no entry behind. A set flag
-without an entry, an entry without the flag, a second entry for one inode, or
-an entry whose inode does not exist is corruption, which a checker reports.
-Setting a comment is the exception on the writer side: the current writer
-looks up the entry itself and replaces a single stray entry or clears a stray
-flag instead of failing.
+The inode flag `HAS_COMMENT` is set exactly when the inode owns a comment. A
+writer changes the records and the flag in the same committed state. Readers
+treat the flag as authoritative: without it they report no comment and do not
+search the directory tree, and deleting the inode leaves no comment behind. A
+set flag without a comment, a comment without the flag, or a comment whose
+inode does not exist is corruption, which a checker reports. Setting a comment
+is the exception on the writer side: the current writer looks up the records
+itself and replaces a stray comment or clears a stray flag instead of failing.
 
 ## Metadata interpretation
 

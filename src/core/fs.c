@@ -271,6 +271,7 @@ static bfs_err_t fs_mount(bfs_fs_t *fs, bfs_bio_t *bio, bool read_only)
     if (!fs || !fs_bio_valid(bio, read_only)) return BFS_ERR_INVAL;
     memset(fs, 0, sizeof(*fs));
     fs->pending_frees_cap = BFS_PENDING_FREES_MAX;
+    fs->name_max = BFS_NAME_MAX;
     bfs_lock_init(&fs->lock);
     fs->bio = bio;
     bfs_err_t err = read_only ? bfs_txn_begin_readonly(&fs->txn, bio)
@@ -680,3 +681,12 @@ bfs_err_t bfs_fs_reserve(bfs_fs_t *fs, uint32_t items)
 }
 
 void bfs_fs_unreserve(bfs_fs_t *fs, uint32_t items) { (void)fs; (void)items; }
+
+bfs_err_t bfs_fs_set_name_limit(bfs_fs_t *fs, uint8_t name_max)
+{
+    if (!fs || !fs->mounted || name_max == 0) return BFS_ERR_INVAL;
+    bfs_lock_write(&fs->lock);
+    fs->name_max = name_max;
+    bfs_lock_unlock(&fs->lock);
+    return BFS_OK;
+}

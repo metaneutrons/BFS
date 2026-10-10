@@ -658,7 +658,7 @@ static void test_comment_flag_follows_entry(void)
     TEST_ASSERT(!(bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT));
     TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, ino, comment, sizeof(comment)), BFS_ERR_NOTFOUND);
 
-    /* Deleting a commented file and directory leaves no hidden entry. */
+    /* Deleting a commented file and directory leaves no comment record. */
     TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, "gone", 4), BFS_OK);
     uint32_t dir_ino;
     TEST_ASSERT_EQ(bfs_fs_mkdir(&fs, BFS_ROOT_INO, "dir", 3, &dir_ino), BFS_OK);
@@ -667,9 +667,14 @@ static void test_comment_flag_follows_entry(void)
     TEST_ASSERT_EQ(bfs_fs_rmdir(&fs, BFS_ROOT_INO, "dir", 3), BFS_OK);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
     TEST_ASSERT(check_clean());
-    bool any = true;
-    TEST_ASSERT_EQ(bfs_dir_may_have_entries(&fs.dir_tree, ino | 0x80000000u, &any), BFS_OK);
-    TEST_ASSERT(!any);
+    char stored[BFS_DIR_COMMENT_MAX];
+    uint8_t stored_len;
+    TEST_ASSERT_EQ(bfs_dir_comment_get(&fs.dir_tree, ino, stored, &stored_len),
+                   BFS_ERR_NOTFOUND);
+    TEST_ASSERT_EQ(bfs_dir_comment_get(&fs.dir_tree, dir_ino, stored, &stored_len),
+                   BFS_ERR_NOTFOUND);
+    uint32_t parent;
+    TEST_ASSERT_EQ(bfs_dir_parent_get(&fs.dir_tree, dir_ino, &parent), BFS_ERR_NOTFOUND);
     teardown(true);
 }
 
@@ -684,29 +689,29 @@ static void test_checker_verifies_comment_flag(void)
     bfs_inode_t inode;
     TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_OK);
 
-    /* Entry without flag. */
+    /* Comment record without flag. */
     bfs_inode_t cleared = inode;
     cleared.flags = 0;
     TEST_ASSERT_EQ(bfs_inode_write(&fs.inode_tree, ino, &cleared), BFS_OK);
     TEST_ASSERT(check_has_errors());
 
-    /* Flag without entry: also refused by readers. */
+    /* Flag without comment record: also refused by readers. */
     TEST_ASSERT_EQ(bfs_inode_write(&fs.inode_tree, ino, &inode), BFS_OK);
     TEST_ASSERT(check_no_errors());
-    TEST_ASSERT_EQ(bfs_dir_remove(&fs.dir_tree, ino | 0x80000000u, "note", 4), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_comment_remove(&fs.dir_tree, ino), BFS_OK);
     TEST_ASSERT(check_has_errors());
     char comment[80];
     TEST_ASSERT_EQ(bfs_fs_get_comment(&fs, ino, comment, sizeof(comment)), BFS_ERR_CORRUPT);
 
-    /* An entry whose inode does not exist. */
-    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, ino | 0x80000000u, "note", 4, ino, 0), BFS_OK);
+    /* A comment record whose inode does not exist. */
+    TEST_ASSERT_EQ(bfs_dir_comment_insert(&fs.dir_tree, ino, "note", 4), BFS_OK);
     TEST_ASSERT(check_no_errors());
-    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, 999u | 0x80000000u, "stray", 5, 999, 0), BFS_OK);
+    TEST_ASSERT_EQ(bfs_dir_comment_insert(&fs.dir_tree, 999u, "stray", 5), BFS_OK);
     TEST_ASSERT(check_has_errors());
     teardown(false);
 }
 
-/* Setting a comment repairs a stray entry or a stray flag instead of failing. */
+/* Setting a comment repairs a stray record or a stray flag instead of failing. */
 static void test_set_comment_repairs_stray_state(void)
 {
     TEST_ASSERT(setup(0));
@@ -716,8 +721,8 @@ static void test_set_comment_repairs_stray_state(void)
     char comment[80];
     bfs_inode_t inode;
 
-    /* An entry without the flag, with the name about to be set. */
-    TEST_ASSERT_EQ(bfs_dir_insert(&fs.dir_tree, ino | 0x80000000u, "same", 4, ino, 0), BFS_OK);
+    /* A record without the flag, with the text about to be set. */
+    TEST_ASSERT_EQ(bfs_dir_comment_insert(&fs.dir_tree, ino, "same", 4), BFS_OK);
     TEST_ASSERT(check_has_errors());
     TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, "same", 4), BFS_OK);
     TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_OK);
@@ -726,8 +731,8 @@ static void test_set_comment_repairs_stray_state(void)
     TEST_ASSERT_MEM_EQ(comment, "same", 5);
     TEST_ASSERT(check_no_errors());
 
-    /* A flag without the entry: clearing and setting both succeed. */
-    TEST_ASSERT_EQ(bfs_dir_remove(&fs.dir_tree, ino | 0x80000000u, "same", 4), BFS_OK);
+    /* A flag without the record: clearing and setting both succeed. */
+    TEST_ASSERT_EQ(bfs_dir_comment_remove(&fs.dir_tree, ino), BFS_OK);
     TEST_ASSERT(check_has_errors());
     TEST_ASSERT_EQ(bfs_fs_set_comment(&fs, ino, NULL, 0), BFS_OK);
     TEST_ASSERT_EQ(bfs_inode_read(&fs.inode_tree, ino, &inode), BFS_OK);

@@ -74,6 +74,7 @@ static int fuse_error(bfs_err_t error)
     case BFS_ERR_NOMEM: return ENOMEM;
     case BFS_ERR_AGAIN: return EAGAIN;
     case BFS_ERR_UNSUPPORTED: return EOPNOTSUPP;
+    case BFS_ERR_NAME_TOO_LONG: return ENAMETOOLONG;
     case BFS_ERR_CORRUPT:
     case BFS_ERR_IO:
     default: return EIO;
@@ -310,48 +311,19 @@ static bfs_err_t lookup_child(const bfs_fuse_ctx_t *ctx, fuse_ino_t parent,
     return bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, raw, length, child_out, NULL);
 }
 
-typedef struct {
-    char *buffer;
-    size_t capacity;
-    size_t length;
-    bool found;
-    bool corrupt;
-} comment_view_t;
-
-static bool comment_scan(const char *name, uint8_t name_length, uint32_t inode,
-                         uint32_t entry_type, void *opaque)
-{
-    (void)inode;
-    (void)entry_type;
-    comment_view_t *result = opaque;
-    if (!result) return false;
-    if (result->found || name_length > result->capacity) {
-        result->corrupt = true;
-        return false;
-    }
-    size_t copied = 0;
-    if (!copy_bytes(result->buffer, result->capacity, &copied, name, name_length)) {
-        result->corrupt = true;
-        return false;
-    }
-    result->length = name_length;
-    result->found = true;
-    return false;
-}
-
 /* The comment of inode, whose record the caller has already read. */
 static bfs_err_t inode_comment(const bfs_fuse_ctx_t *ctx, uint32_t inode,
                                const bfs_inode_t *node,
                                char buffer[BFS_FUSE_COMMENT_MAX], size_t *length)
 {
     if (!ctx || !node || !buffer || !length || inode >= 0x80000000u) return BFS_ERR_INVAL;
-    /* The inode flag says whether the hidden comment entry exists. */
+    /* The inode flag says whether the comment record exists. */
     if (!(bfs_be32(node->flags) & BFS_INODE_FLAG_HAS_COMMENT)) return BFS_ERR_NOTFOUND;
-    comment_view_t result = { buffer, BFS_FUSE_COMMENT_MAX, 0, false, false };
-    bfs_err_t error = bfs_dir_scan(ctx->dir_tree, inode | 0x80000000u, comment_scan, &result);
+    uint8_t stored = 0;
+    bfs_err_t error = bfs_dir_comment_get(ctx->dir_tree, inode, buffer, &stored);
+    if (error == BFS_ERR_NOTFOUND) return BFS_ERR_CORRUPT;
     if (error != BFS_OK) return error;
-    if (result.corrupt || !result.found) return BFS_ERR_CORRUPT;
-    *length = result.length;
+    *length = stored;
     return BFS_OK;
 }
 
@@ -415,8 +387,8 @@ static void bfs_fuse_lookup(fuse_req_t request, fuse_ino_t parent, const char *n
     if (strcmp(name, "..") == 0) {
         uint32_t parent_inode = BFS_ROOT_INO;
         if (parent != BFS_ROOT_INO) {
-            error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)parent, "..", 2,
-                                   &parent_inode, NULL);
+            error = bfs_dir_parent_get(ctx->dir_tree, (uint32_t)parent, &parent_inode);
+            if (error == BFS_ERR_NOTFOUND) error = BFS_ERR_CORRUPT;
             if (error != BFS_OK) {
                 fuse_reply_err(request, fuse_error(error));
                 return;
@@ -485,7 +457,6 @@ static bool readdir_scan(const char *name, uint8_t name_length, uint32_t inode,
     (void)entry_type;
     readdir_request_t *request = opaque;
     readdir_ctx_t *ctx = &request->state;
-    if (name_length == 2 && name[0] == '.' && name[1] == '.') return true;
     char encoded[2u * BFS_NAME_MAX + BFS_FUSE_ESCAPE_PREFIX_LEN + 1u];
     bfs_err_t error = encode_name(name, name_length, encoded);
     if (error != BFS_OK) {
@@ -543,7 +514,8 @@ static void bfs_fuse_readdir(fuse_req_t request, fuse_ino_t inode, size_t size,
     };
     uint32_t parent = BFS_ROOT_INO;
     if (inode != BFS_ROOT_INO) {
-        error = bfs_dir_lookup(ctx->dir_tree, (uint32_t)inode, "..", 2, &parent, NULL);
+        error = bfs_dir_parent_get(ctx->dir_tree, (uint32_t)inode, &parent);
+        if (error == BFS_ERR_NOTFOUND) error = BFS_ERR_CORRUPT;
         if (error != BFS_OK) scan.state.error = error;
     }
     if (scan.state.error == BFS_OK && scan.state.index++ >= scan.state.offset) {
@@ -754,7 +726,9 @@ static void bfs_fuse_statfs(fuse_req_t request, fuse_ino_t inode)
     st.f_bavail = ctx->fs.freespace.total_free;
     st.f_files = ctx->fs.next_ino - 1u;
     st.f_ffree = 0;
-    st.f_namemax = 255;
+    /* The longest name a directory can list; the mount may refuse shorter
+     * new names (--long-names). */
+    st.f_namemax = BFS_NAME_MAX;
     fuse_reply_statfs(request, &st);
 }
 
@@ -1540,7 +1514,8 @@ static bool parse_u64(const char *text, uint64_t *out)
 static void usage(const char *program)
 {
     fprintf(stderr, "Usage: %s mount IMAGE MOUNTPOINT [--offset BYTES] [--length BYTES] "
-                    "[--read-write] [--snapshot NAME | --snapshot-id ID]\n", program);
+                    "[--read-write] [--long-names] [--snapshot NAME | --snapshot-id ID]\n",
+            program);
 }
 
 static bfs_err_t free_open_handles(bfs_fuse_ctx_t *ctx)
@@ -1560,6 +1535,7 @@ int bfs_fuse_mount_main(int argc, char **argv)
     uint64_t offset = 0, length = 0;
     snapshot_selector_t selector = {0};
     bool read_write = false;
+    bool long_names = false;
     if (argc < 4) {
         usage(argv[0]);
         return 2;
@@ -1570,6 +1546,8 @@ int bfs_fuse_mount_main(int argc, char **argv)
         const char *arg = argv[index];
         if (strcmp(arg, "--read-write") == 0) {
             read_write = true;
+        } else if (strcmp(arg, "--long-names") == 0) {
+            long_names = true;
         } else if ((strcmp(arg, "--offset") == 0 || strcmp(arg, "--length") == 0 ||
              strcmp(arg, "--snapshot") == 0 ||
              strcmp(arg, "--snapshot-id") == 0) && ++index < argc) {
@@ -1629,6 +1607,15 @@ int bfs_fuse_mount_main(int argc, char **argv)
             bfs_sb_describe_unsupported(&superblock, diagnostic);
         fprintf(stderr, "bfs mount: cannot mount %s: %s%sBFS error %d\n", image,
                 diagnostic, diagnostic[0] ? "; " : "", error);
+        bfs_bio_close(ctx.bio);
+        return 1;
+    }
+    /* New names longer than an AmigaDOS FileInfoBlock holds are refused
+     * unless --long-names allows the format's full 255 bytes. */
+    error = bfs_fs_set_name_limit(&ctx.fs, long_names ? BFS_NAME_MAX : BFS_SHORT_NAME_MAX);
+    if (error != BFS_OK) {
+        fprintf(stderr, "bfs mount: cannot set the name limit: BFS error %d\n", error);
+        bfs_fs_unmount(&ctx.fs);
         bfs_bio_close(ctx.bio);
         return 1;
     }

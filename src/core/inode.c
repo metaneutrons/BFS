@@ -122,6 +122,53 @@ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
     return BFS_OK;
 }
 
+/* One element of bfs_inode_read_sorted: the same checks and result as
+ * bfs_inode_read, searched through the shared leaf view. */
+#ifdef BFS_PERF_PROBE
+static bfs_err_t sorted_read_body(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                                  uint32_t ino, bfs_inode_t *out);
+static bfs_err_t sorted_read(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                             uint32_t ino, bfs_inode_t *out)
+{
+    bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
+        BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_READ);
+    bfs_err_t result = sorted_read_body(tree, state, ino, out);
+    bfs_perf_probe_detail_end(&sample);
+    return result;
+}
+static bfs_err_t sorted_read_body(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                                  uint32_t ino, bfs_inode_t *out)
+#else
+static bfs_err_t sorted_read(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+                             uint32_t ino, bfs_inode_t *out)
+#endif
+{
+#ifdef BFS_PERF_PROBE
+    bfs_perf_probe_counters.inode_read_calls++;
+#endif
+    if (ino == 0 || ino >= 0x80000000u) return BFS_ERR_INVAL;
+    uint32_t key = bfs_be32(ino);
+    bfs_err_t err = bfs_btree_sorted_search(tree, state, &key, out);
+    if (err != BFS_OK) return err;
+    if (validate_inode(tree, ino, out, false) != BFS_OK) return BFS_ERR_CORRUPT;
+    return BFS_OK;
+}
+
+bfs_err_t bfs_inode_read_sorted(bfs_btree_t *tree, const uint32_t *inos, uint32_t count,
+                                bfs_inode_t *out, bfs_err_t *results)
+{
+    if (!tree || (count && (!inos || !out || !results))) return BFS_ERR_INVAL;
+    for (uint32_t i = 1; i < count; i++)
+        if (inos[i] < inos[i - 1]) return BFS_ERR_INVAL;
+    bfs_btree_sorted_t state;
+    bfs_err_t err = bfs_btree_sorted_begin(tree, &state);
+    if (err != BFS_OK) return err;
+    for (uint32_t i = 0; i < count; i++)
+        results[i] = sorted_read(tree, &state, inos[i], &out[i]);
+    bfs_btree_sorted_end(tree, &state);
+    return BFS_OK;
+}
+
 #ifdef BFS_PERF_PROBE
 static bfs_err_t inode_read_unlinked_body(bfs_btree_t *tree, uint32_t ino,
                                          bfs_inode_t *out);

@@ -86,11 +86,12 @@ static void test_dir_forged_hash_rejects_leaf(void)
     TEST_ASSERT_EQ(bfs_bio_read(bio, root, block), BFS_OK);
     uint32_t n = num_keys(block), forged = n;
     for (uint32_t i = 0; i < n; i++) {
-        uint8_t *key = node_key(&dt.tree, block, i);
-        if (key[8] == 4 && memcmp(key + 9, "beta", 4) == 0) forged = i;
+        const uint8_t *val = leaf_val(&dt.tree, block, i);
+        if (val[BFS_DIR_HEAD_NAME_LEN] == 4 &&
+            memcmp(val + BFS_DIR_HEAD_NAME, "beta", 4) == 0) forged = i;
     }
     TEST_ASSERT(forged < n);
-    ((uint8_t *)node_key(&dt.tree, block, forged))[7] ^= 1;
+    ((uint8_t *)node_key(&dt.tree, block, forged))[BFS_DIR_KEY_HASH + 3] ^= 1;
     hdr_of(block)->crc32 = bfs_be32(node_compute_crc(&dt.tree, block));
     TEST_ASSERT_EQ(bfs_bio_write(bio, root, block), BFS_OK);
 

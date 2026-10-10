@@ -1166,8 +1166,8 @@ static void run_rename_write_failures(uint32_t format_options,
             TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, dst,
                                           "moved", 5, NULL, NULL), BFS_ERR_NOTFOUND);
             uint32_t parent = 0;
-            TEST_ASSERT_EQ(bfs_dir_lookup(&fs.dir_tree, child, "..", 2,
-                                          &parent, NULL), BFS_OK);
+            TEST_ASSERT_EQ(bfs_dir_parent_get(&fs.dir_tree, child,
+                                          &parent), BFS_OK);
             TEST_ASSERT_EQ(parent, src);
         }
         TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);

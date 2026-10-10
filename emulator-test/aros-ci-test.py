@@ -38,6 +38,7 @@ HighCyl   = {DISK_MIB * 2048 // SECTORS_PER_TRACK - 1}
 Buffers   = 50
 BufMemType = 0
 DosType   = 0x42465300
+Control   = "LONGNAMES"
 Activate  = 1
 """
 
@@ -53,7 +54,8 @@ def digest(path):
 
 
 def user_startup(profile, filter_name):
-    arguments = ["BFS0:", "SERIAL"]
+    # BFS0: is mounted with LONGNAMES; the FS-UAE suite covers the default.
+    arguments = ["BFS0:", "SERIAL", "LONGNAMES"]
     if filter_name:
         arguments.append(filter_name)
     if profile == "quick":
