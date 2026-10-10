@@ -1,0 +1,357 @@
+diff --git a/include/bfs_btree.h b/include/bfs_btree.h
+index b762c25..dc0be4b 100644
+--- a/include/bfs_btree.h
++++ b/include/bfs_btree.h
+@@ -223,6 +223,10 @@ typedef struct bfs_btree {
+     /* Optional owner-provided u32-key location cache. It is never owned by
+      * the tree and is cleared on every bfs_btree_init(). */
+     bfs_btree_key_hint_cache_t *key_hint_cache;
++
++    /* Inode trees only: pending inodes of the live transaction (bfs_inode.h).
++     * Owned by the filesystem and cleared on every bfs_btree_init(). */
++    struct bfs_inode_pending *inode_pending;
+ } bfs_btree_t;
+ 
+ static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
+diff --git a/include/bfs_fs.h b/include/bfs_fs.h
+index 6707cc6..74cedba 100644
+--- a/include/bfs_fs.h
++++ b/include/bfs_fs.h
+@@ -61,6 +61,8 @@ typedef struct bfs_fs {
+     bfs_freespace_t   freespace;
+     bfs_dir_tree_t    dir_tree;
+     bfs_btree_key_hint_cache_t inode_key_hints; /* validated leaf/index hints */
++    /* Inodes published in the live transaction; written at its commit. */
++    bfs_inode_pending_t inode_pending;
+     bfs_btree_t       inode_tree;  /* inode B+tree: key=inode_nr(u32), value=bfs_inode_t */
+     bfs_refcount_t    refcount;    /* block refcount tree (for snapshots) */
+     uint32_t           next_ino;   /* next inode number to allocate */
+diff --git a/include/bfs_inode.h b/include/bfs_inode.h
+index f624e67..b168255 100644
+--- a/include/bfs_inode.h
++++ b/include/bfs_inode.h
+@@ -58,4 +58,44 @@ bfs_err_t bfs_inode_write_unlinked(bfs_btree_t *tree, uint32_t ino,
+ 
+ bfs_err_t bfs_inode_delete(bfs_btree_t *tree, uint32_t ino);
+ 
++/*
++ * Inode write-back within a transaction (docs/plans/bfs-inode-write-back-v1.md).
++ *
++ * A tree with an attached table holds published inodes until the next
++ * commit. The first publication of an inode in a transaction writes the tree,
++ * which leaves the leaf owned by the transaction; later publications of that
++ * inode in the same transaction only replace the pending copy. Every read
++ * returns the pending copy, every other write or delete of the inode replaces
++ * it in the tree and drops it, and bfs_inode_flush_pending writes the pending
++ * copies before the transaction commits. Snapshot views have no table.
++ */
++#define BFS_INODE_PENDING_SLOTS 8
++
++typedef struct {
++    uint32_t    ino;     /* 0: free */
++    bool        dirty;   /* newer than the tree */
++    uint64_t    txn_id;  /* transaction of the tree write that made it writable */
++    bfs_inode_t inode;
++} bfs_inode_pending_slot_t;
++
++typedef struct bfs_inode_pending {
++    bfs_inode_pending_slot_t slot[BFS_INODE_PENDING_SLOTS];
++} bfs_inode_pending_t;
++
++/* Attach an emptied table to a live inode tree. */
++void bfs_inode_pending_attach(bfs_btree_t *tree, bfs_inode_pending_t *pending);
++
++/* Drop every pending copy without writing it, as uncommitted tree changes
++ * are dropped when the committed state is reloaded. */
++void bfs_inode_pending_discard(bfs_btree_t *tree);
++
++/* Publish a linked inode. Without a table, or when the inode was not yet
++ * written in this transaction, this is bfs_inode_write. */
++bfs_err_t bfs_inode_publish(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *inode);
++
++/* Write every pending copy into the tree and empty the table. Required
++ * before the tree's root is committed or its nodes are walked directly. On
++ * error the table is emptied too; the transaction must not be committed. */
++bfs_err_t bfs_inode_flush_pending(bfs_btree_t *tree);
++
+ #endif /* BFS_INODE_H */
+diff --git a/src/core/btree.c b/src/core/btree.c
+index 34a0d9a..0e7e29c 100644
+--- a/src/core/btree.c
++++ b/src/core/btree.c
+@@ -613,6 +613,7 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
+     tree->hint_generation = 0;
+     tree->hint_mutation_epoch = 0;
+     tree->key_hint_cache = NULL;
++    tree->inode_pending = NULL;
+ 
+     if (leaf_max_keys(tree) < 3 || internal_max_keys(tree) < 3)
+         return BFS_ERR_INVAL;
+diff --git a/src/core/file.c b/src/core/file.c
+index 089bea8..9599079 100644
+--- a/src/core/file.c
++++ b/src/core/file.c
+@@ -226,9 +226,11 @@ static bfs_err_t file_update_inode(bfs_file_t *f,
+             inode->protection = bfs_be32(bfs_be32(inode->protection) &
+                                         ~metadata->protection_clear);
+     }
++    /* A linked inode of the live tree stays pending until the commit after
++     * its first publication in the transaction (bfs_inode_publish). */
+     bfs_err_t err = f->unlinked
+                         ? bfs_inode_write_unlinked(f->inode_tree, f->inode_nr, inode)
+-                        : bfs_inode_write(f->inode_tree, f->inode_nr, inode);
++                        : bfs_inode_publish(f->inode_tree, f->inode_nr, inode);
+     if (err == BFS_OK)
+         file_inode_seed_store(seed, f, inode);
+     else if (seed)
+diff --git a/src/core/fs.c b/src/core/fs.c
+index b31df12..ce19b8d 100644
+--- a/src/core/fs.c
++++ b/src/core/fs.c
+@@ -258,6 +258,7 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
+      * locator before attaching the new inode-tree handle and its root. */
+     bfs_btree_key_hint_cache_reset(&fs->inode_key_hints);
+     fs->inode_tree.key_hint_cache = &fs->inode_key_hints;
++    bfs_inode_pending_attach(&fs->inode_tree, &fs->inode_pending);
+     err = fs_open_refcount_tree(fs);
+     if (err != BFS_OK) return err;
+     fs->next_ino = bfs_be32(sb->next_ino);
+@@ -619,6 +620,8 @@ bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs)
+ 
+     uint32_t pending_cap = fs->pending_frees_cap;
+     bfs_txn_t txn;
++    /* Its pending inodes belong to the discarded transaction as well. */
++    bfs_inode_pending_discard(&fs->inode_tree);
+     /* The discarded transaction's deferred nodes must never be written. */
+     bfs_bio_discard_deferred(fs->bio, BFS_BLK_NULL);
+     bfs_err_t err = bfs_bio_sync(fs->bio);
+diff --git a/src/core/fsck.c b/src/core/fsck.c
+index e116533..a838fe5 100644
+--- a/src/core/fsck.c
++++ b/src/core/fsck.c
+@@ -577,6 +577,12 @@ bfs_err_t bfs_fs_check(bfs_fs_t *fs, bool repair, bfs_fsck_report_t *report)
+     memset(&state, 0, sizeof(state));
+     if (!fs || !fs->mounted || !fs->bio || !report) return BFS_ERR_INVAL;
+     if (repair && fs->read_only) return BFS_ERR_UNSUPPORTED;
++    /* The walk reads the inode tree's nodes directly. */
++    bfs_err_t pending_err = bfs_inode_flush_pending(&fs->inode_tree);
++    if (pending_err != BFS_OK) {
++        fs->recovery_error = pending_err;
++        return pending_err;
++    }
+ 
+     state.fs = fs;
+     state.block_count = fs->bio->block_count;
+diff --git a/src/core/inode.c b/src/core/inode.c
+index 359c376..08c07b5 100644
+--- a/src/core/inode.c
++++ b/src/core/inode.c
+@@ -87,6 +87,49 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
+     return bfs_btree_init(tree, bio, alloc, &bfs_inode_ops, root, txn_id);
+ }
+ 
++/* ── Pending inodes ────────────────────────────────────────── */
++
++static bfs_inode_pending_slot_t *pending_find(const bfs_btree_t *tree, uint32_t ino)
++{
++    bfs_inode_pending_t *pending = tree->inode_pending;
++    if (!pending) return NULL;
++    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++)
++        if (pending->slot[i].ino == ino) return &pending->slot[i];
++    return NULL;
++}
++
++/* A write or delete through any other path supersedes the pending copy. */
++static void pending_drop(const bfs_btree_t *tree, uint32_t ino)
++{
++    bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot) memset(slot, 0, sizeof(*slot));
++}
++
++/* A free slot, else one whose copy equals the tree, else NULL. */
++static bfs_inode_pending_slot_t *pending_take(const bfs_btree_t *tree)
++{
++    bfs_inode_pending_t *pending = tree->inode_pending;
++    bfs_inode_pending_slot_t *clean = NULL;
++    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++) {
++        if (pending->slot[i].ino == 0) return &pending->slot[i];
++        if (!clean && !pending->slot[i].dirty) clean = &pending->slot[i];
++    }
++    return clean;
++}
++
++void bfs_inode_pending_attach(bfs_btree_t *tree, bfs_inode_pending_t *pending)
++{
++    if (!tree) return;
++    if (pending) memset(pending, 0, sizeof(*pending));
++    tree->inode_pending = pending;
++}
++
++void bfs_inode_pending_discard(bfs_btree_t *tree)
++{
++    if (tree && tree->inode_pending)
++        memset(tree->inode_pending, 0, sizeof(*tree->inode_pending));
++}
++
+ #ifdef BFS_PERF_PROBE
+ static bfs_err_t inode_read_body(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out);
+ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
+@@ -114,9 +157,14 @@ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
+ #endif
+     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+-    uint32_t key = bfs_be32(ino);
+-    bfs_err_t err = bfs_btree_search(tree, &key, out);
+-    if (err != BFS_OK) return err;
++    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot) {
++        *out = slot->inode;
++    } else {
++        uint32_t key = bfs_be32(ino);
++        bfs_err_t err = bfs_btree_search(tree, &key, out);
++        if (err != BFS_OK) return err;
++    }
+     if (validate_inode(tree, ino, out, false) != BFS_OK)
+         return BFS_ERR_CORRUPT;
+     return BFS_OK;
+@@ -147,9 +195,14 @@ static bfs_err_t sorted_read(bfs_btree_t *tree, bfs_btree_sorted_t *state,
+     bfs_perf_probe_counters.inode_read_calls++;
+ #endif
+     if (ino == 0 || ino >= 0x80000000u) return BFS_ERR_INVAL;
+-    uint32_t key = bfs_be32(ino);
+-    bfs_err_t err = bfs_btree_sorted_search(tree, state, &key, out);
+-    if (err != BFS_OK) return err;
++    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot) {
++        *out = slot->inode;
++    } else {
++        uint32_t key = bfs_be32(ino);
++        bfs_err_t err = bfs_btree_sorted_search(tree, state, &key, out);
++        if (err != BFS_OK) return err;
++    }
+     if (validate_inode(tree, ino, out, false) != BFS_OK) return BFS_ERR_CORRUPT;
+     return BFS_OK;
+ }
+@@ -197,9 +250,14 @@ bfs_err_t bfs_inode_read_unlinked(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *
+ #endif
+     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
+-    uint32_t key = bfs_be32(ino);
+-    bfs_err_t err = bfs_btree_search(tree, &key, out);
+-    if (err != BFS_OK) return err;
++    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot) {
++        *out = slot->inode;
++    } else {
++        uint32_t key = bfs_be32(ino);
++        bfs_err_t err = bfs_btree_search(tree, &key, out);
++        if (err != BFS_OK) return err;
++    }
+     return validate_inode(tree, ino, out, true) == BFS_OK ? BFS_OK : BFS_ERR_CORRUPT;
+ }
+ 
+@@ -221,6 +279,7 @@ bfs_err_t bfs_inode_write(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *in
+ #endif
+ {
+     if (validate_inode(tree, ino, inode, false) != BFS_OK) return BFS_ERR_INVAL;
++    pending_drop(tree, ino);
+     uint32_t key = bfs_be32(ino);
+ 
+     /* Try update (single traversal for existing inodes) */
+@@ -250,6 +309,7 @@ bfs_err_t bfs_inode_write_unlinked(bfs_btree_t *tree, uint32_t ino,
+ #endif
+ {
+     if (validate_inode(tree, ino, inode, true) != BFS_OK) return BFS_ERR_INVAL;
++    pending_drop(tree, ino);
+     uint32_t key = bfs_be32(ino);
+     bfs_err_t err = bfs_btree_update(tree, &key, inode);
+     if (err == BFS_ERR_NOTFOUND) return BFS_ERR_NOTFOUND;
+@@ -260,6 +320,45 @@ bfs_err_t bfs_inode_delete(bfs_btree_t *tree, uint32_t ino)
+ {
+     if (!tree || ino == 0 || ino >= 0x80000000u)
+         return BFS_ERR_INVAL;
++    pending_drop(tree, ino);
+     uint32_t key = bfs_be32(ino);
+     return bfs_btree_delete(tree, &key);
+ }
++
++bfs_err_t bfs_inode_publish(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *inode)
++{
++    if (!tree || !tree->inode_pending) return bfs_inode_write(tree, ino, inode);
++    if (!inode || validate_inode(tree, ino, inode, false) != BFS_OK) return BFS_ERR_INVAL;
++    uint64_t txn_id = bfs_btree_txn_id(tree);
++    bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
++    if (slot && slot->txn_id == txn_id) {
++        slot->inode = *inode;
++        slot->dirty = true;
++        return BFS_OK;
++    }
++    /* First publication in this transaction: write the tree, so that the leaf
++     * belongs to the transaction and later copies can be written in place. */
++    bfs_err_t err = bfs_inode_write(tree, ino, inode);
++    if (err != BFS_OK) return err;
++    slot = pending_take(tree);
++    if (slot) {
++        slot->ino = ino;
++        slot->dirty = false;
++        slot->txn_id = txn_id;
++        slot->inode = *inode;
++    }
++    return BFS_OK;
++}
++
++bfs_err_t bfs_inode_flush_pending(bfs_btree_t *tree)
++{
++    if (!tree || !tree->inode_pending) return BFS_OK;
++    bfs_err_t result = BFS_OK;
++    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++) {
++        bfs_inode_pending_slot_t slot = tree->inode_pending->slot[i];
++        memset(&tree->inode_pending->slot[i], 0, sizeof(slot));
++        if (slot.ino != 0 && slot.dirty && result == BFS_OK)
++            result = bfs_inode_write(tree, slot.ino, &slot.inode);
++    }
++    return result;
++}
+diff --git a/src/core/namespace.c b/src/core/namespace.c
+index 00861bb..f1c6c8a 100644
+--- a/src/core/namespace.c
++++ b/src/core/namespace.c
+@@ -449,6 +449,7 @@ bfs_err_t bfs_fs_reap_unlinked_on_mount_unlocked(bfs_fs_t *fs)
+ {
+     if (!fs || !fs->mounted || fs->read_only) return BFS_ERR_INVAL;
+     fs_unlinked_scan_t scan = { .fs = fs };
++    /* The scan reads the inode tree directly; during mount no inode is pending. */
+     bfs_err_t err = bfs_btree_scan(&fs->inode_tree, NULL, fs_collect_unlinked_inode, &scan);
+     if (err == BFS_OK) err = scan.error;
+     for (size_t index = 0; err == BFS_OK && index < scan.count; index++)
+diff --git a/src/core/snapshot.c b/src/core/snapshot.c
+index 89c2140..b839b99 100644
+--- a/src/core/snapshot.c
++++ b/src/core/snapshot.c
+@@ -229,6 +229,8 @@ static bfs_err_t snapshot_ref_graph(bfs_fs_t *fs, bfs_btree_t *dir_tree,
+         .rollback = rollback,
+         .err = BFS_OK,
+     };
++    /* The walk and the scan read the inode tree directly. Its only caller,
++     * bfs_snapshot_create, commits first, which writes every pending inode. */
+ 
+     snapshot_ref_walk(dir_tree, &rc);
+     if (rc.err != BFS_OK) return rc.err;
+diff --git a/src/core/txn.c b/src/core/txn.c
+index 61ec17f..53f3a52 100644
+--- a/src/core/txn.c
++++ b/src/core/txn.c
+@@ -410,6 +410,13 @@ bfs_err_t bfs_txn_commit(bfs_fs_t *fs)
+ #ifdef BFS_PERF_PROBE
+     bfs_perf_probe_counters.txn_commit_calls++;
+ #endif
++    /* Inodes published in this transaction belong to it. A failed write leaves
++     * the inode tree uncertain, so the transaction is never committed. */
++    bfs_err_t pending_err = bfs_inode_flush_pending(&fs->inode_tree);
++    if (pending_err != BFS_OK) {
++        fs->recovery_error = pending_err;
++        return pending_err;
++    }
+     /* An ordered-data flush has not modified commit state, so it can be retried. */
+     if (fs->options & BFS_OPT_DATA_ORDERED) {
+         bfs_err_t err = bfs_bio_sync(fs->bio);

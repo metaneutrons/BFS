@@ -449,6 +449,7 @@ bfs_err_t bfs_fs_reap_unlinked_on_mount_unlocked(bfs_fs_t *fs)
 {
     if (!fs || !fs->mounted || fs->read_only) return BFS_ERR_INVAL;
     fs_unlinked_scan_t scan = { .fs = fs };
+    /* The scan reads the inode tree directly; during mount no inode is pending. */
     bfs_err_t err = bfs_btree_scan(&fs->inode_tree, NULL, fs_collect_unlinked_inode, &scan);
     if (err == BFS_OK) err = scan.error;
     for (size_t index = 0; err == BFS_OK && index < scan.count; index++)

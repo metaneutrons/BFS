@@ -1,0 +1,17 @@
+sequence	round	order	variant	run_name
+1	1	bfs-first	reference	writeback-1-bfs-first-reference
+2	1	bfs-first	candidate	writeback-1-bfs-first-candidate
+3	2	pfs3-first	candidate	writeback-2-pfs3-first-candidate
+4	2	pfs3-first	reference	writeback-2-pfs3-first-reference
+5	3	bfs-first	reference	writeback-3-bfs-first-reference
+6	3	bfs-first	candidate	writeback-3-bfs-first-candidate
+7	4	pfs3-first	candidate	writeback-4-pfs3-first-candidate
+8	4	pfs3-first	reference	writeback-4-pfs3-first-reference
+9	5	bfs-first	reference	writeback-5-bfs-first-reference
+10	5	bfs-first	candidate	writeback-5-bfs-first-candidate
+11	6	pfs3-first	candidate	writeback-6-pfs3-first-candidate
+12	6	pfs3-first	reference	writeback-6-pfs3-first-reference
+13	7	bfs-first	reference	writeback-7-bfs-first-reference
+14	7	bfs-first	candidate	writeback-7-bfs-first-candidate
+15	8	pfs3-first	candidate	writeback-8-pfs3-first-candidate
+16	8	pfs3-first	reference	writeback-8-pfs3-first-reference

@@ -223,6 +223,10 @@ typedef struct bfs_btree {
     /* Optional owner-provided u32-key location cache. It is never owned by
      * the tree and is cleared on every bfs_btree_init(). */
     bfs_btree_key_hint_cache_t *key_hint_cache;
+
+    /* Inode trees only: pending inodes of the live transaction (bfs_inode.h).
+     * Owned by the filesystem and cleared on every bfs_btree_init(). */
+    struct bfs_inode_pending *inode_pending;
 } bfs_btree_t;
 
 static inline uint64_t bfs_btree_txn_id(const bfs_btree_t *tree)
@@ -305,6 +309,13 @@ bfs_err_t bfs_btree_delete(bfs_btree_t *tree, const void *key);
 /* Update a key's value in-place with COW. Single traversal.
  * Returns BFS_OK or BFS_ERR_NOTFOUND. */
 bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val);
+
+/* bfs_btree_update, but the deferred-free headroom is checked after the
+ * descent and only for path nodes of older transactions. Updating a key whose
+ * path this transaction already wrote then needs no headroom, which a commit
+ * relies on when it writes pending inodes into a nearly full free queue. */
+bfs_err_t bfs_btree_update_path_headroom(bfs_btree_t *tree, const void *key,
+                                         const void *new_val);
 
 /* Replace a stored key with a byte-distinct key that compares equal. This is
  * used for case-only directory renames: ordering is unchanged, but the stored

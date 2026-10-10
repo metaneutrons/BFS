@@ -87,6 +87,71 @@ bfs_err_t bfs_inode_init(bfs_btree_t *tree, bfs_bio_t *bio,
     return bfs_btree_init(tree, bio, alloc, &bfs_inode_ops, root, txn_id);
 }
 
+/* ── Pending inodes ────────────────────────────────────────── */
+
+static bfs_inode_pending_slot_t *pending_find(const bfs_btree_t *tree, uint32_t ino)
+{
+    if (!tree) return NULL;
+    bfs_inode_pending_t *pending = tree->inode_pending;
+    if (!pending || pending->used == 0) return NULL;
+    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++)
+        if (pending->slot[i].ino == ino) return &pending->slot[i];
+    return NULL;
+}
+
+/* Forget the pending copy of ino. */
+static void pending_drop(const bfs_btree_t *tree, uint32_t ino)
+{
+    bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
+    if (slot && tree) {
+        memset(slot, 0, sizeof(*slot));
+        tree->inode_pending->used--;
+    }
+}
+
+/* A free slot, else one whose copy equals the tree, else NULL. */
+static bfs_inode_pending_slot_t *pending_take(const bfs_btree_t *tree)
+{
+    bfs_inode_pending_t *pending = tree->inode_pending;
+    bfs_inode_pending_slot_t *clean = NULL;
+    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++) {
+        if (pending->slot[i].ino == 0) return &pending->slot[i];
+        if (!clean && !pending->slot[i].dirty) clean = &pending->slot[i];
+    }
+    return clean;
+}
+
+/* A write or delete through any other path supersedes the pending copy once
+ * the tree holds its result: after success, or when the change was applied
+ * but reclaiming its old nodes failed (free_sink_err). A failure that left
+ * the tree as it was keeps the copy, which is still the newest state. The
+ * second case needs nodes of an older transaction on the path, which a
+ * pending inode's path does not have; it is kept for the B+tree's contract. */
+static void pending_settle(const bfs_btree_t *tree, uint32_t ino, bfs_err_t err)
+{
+    if (tree && (err == BFS_OK || tree->free_sink_err != BFS_OK)) pending_drop(tree, ino);
+}
+
+const bfs_inode_t *bfs_inode_pending_peek(const bfs_btree_t *tree, uint32_t ino)
+{
+    if (!tree || ino == 0) return NULL;
+    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
+    return slot ? &slot->inode : NULL;
+}
+
+void bfs_inode_pending_attach(bfs_btree_t *tree, bfs_inode_pending_t *pending)
+{
+    if (!tree) return;
+    if (pending) memset(pending, 0, sizeof(*pending));
+    tree->inode_pending = pending;
+}
+
+void bfs_inode_pending_discard(bfs_btree_t *tree)
+{
+    if (tree && tree->inode_pending)
+        memset(tree->inode_pending, 0, sizeof(*tree->inode_pending));
+}
+
 #ifdef BFS_PERF_PROBE
 static bfs_err_t inode_read_body(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out);
 bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
@@ -114,9 +179,14 @@ bfs_err_t bfs_inode_read(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *out)
 #endif
     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
         return BFS_ERR_INVAL;
-    uint32_t key = bfs_be32(ino);
-    bfs_err_t err = bfs_btree_search(tree, &key, out);
-    if (err != BFS_OK) return err;
+    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
+    if (slot) {
+        *out = slot->inode;
+    } else {
+        uint32_t key = bfs_be32(ino);
+        bfs_err_t err = bfs_btree_search(tree, &key, out);
+        if (err != BFS_OK) return err;
+    }
     if (validate_inode(tree, ino, out, false) != BFS_OK)
         return BFS_ERR_CORRUPT;
     return BFS_OK;
@@ -147,9 +217,14 @@ static bfs_err_t sorted_read(bfs_btree_t *tree, bfs_btree_sorted_t *state,
     bfs_perf_probe_counters.inode_read_calls++;
 #endif
     if (ino == 0 || ino >= 0x80000000u) return BFS_ERR_INVAL;
-    uint32_t key = bfs_be32(ino);
-    bfs_err_t err = bfs_btree_sorted_search(tree, state, &key, out);
-    if (err != BFS_OK) return err;
+    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
+    if (slot) {
+        *out = slot->inode;
+    } else {
+        uint32_t key = bfs_be32(ino);
+        bfs_err_t err = bfs_btree_sorted_search(tree, state, &key, out);
+        if (err != BFS_OK) return err;
+    }
     if (validate_inode(tree, ino, out, false) != BFS_OK) return BFS_ERR_CORRUPT;
     return BFS_OK;
 }
@@ -197,9 +272,14 @@ bfs_err_t bfs_inode_read_unlinked(bfs_btree_t *tree, uint32_t ino, bfs_inode_t *
 #endif
     if (!tree || !out || ino == 0 || ino >= 0x80000000u)
         return BFS_ERR_INVAL;
-    uint32_t key = bfs_be32(ino);
-    bfs_err_t err = bfs_btree_search(tree, &key, out);
-    if (err != BFS_OK) return err;
+    const bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
+    if (slot) {
+        *out = slot->inode;
+    } else {
+        uint32_t key = bfs_be32(ino);
+        bfs_err_t err = bfs_btree_search(tree, &key, out);
+        if (err != BFS_OK) return err;
+    }
     return validate_inode(tree, ino, out, true) == BFS_OK ? BFS_OK : BFS_ERR_CORRUPT;
 }
 
@@ -226,7 +306,8 @@ bfs_err_t bfs_inode_write(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *in
     /* Try update (single traversal for existing inodes) */
     bfs_err_t err = bfs_btree_update(tree, &key, inode);
     if (err == BFS_ERR_NOTFOUND)
-        return bfs_btree_insert(tree, &key, inode);
+        err = bfs_btree_insert(tree, &key, inode);
+    pending_settle(tree, ino, err);
     return err;
 }
 
@@ -252,7 +333,7 @@ bfs_err_t bfs_inode_write_unlinked(bfs_btree_t *tree, uint32_t ino,
     if (validate_inode(tree, ino, inode, true) != BFS_OK) return BFS_ERR_INVAL;
     uint32_t key = bfs_be32(ino);
     bfs_err_t err = bfs_btree_update(tree, &key, inode);
-    if (err == BFS_ERR_NOTFOUND) return BFS_ERR_NOTFOUND;
+    pending_settle(tree, ino, err);
     return err;
 }
 
@@ -261,5 +342,60 @@ bfs_err_t bfs_inode_delete(bfs_btree_t *tree, uint32_t ino)
     if (!tree || ino == 0 || ino >= 0x80000000u)
         return BFS_ERR_INVAL;
     uint32_t key = bfs_be32(ino);
-    return bfs_btree_delete(tree, &key);
+    bfs_err_t err = bfs_btree_delete(tree, &key);
+    pending_settle(tree, ino, err);
+    return err;
+}
+
+bfs_err_t bfs_inode_publish(bfs_btree_t *tree, uint32_t ino, const bfs_inode_t *inode)
+{
+    if (!tree || !tree->inode_pending) return bfs_inode_write(tree, ino, inode);
+    if (!inode || validate_inode(tree, ino, inode, false) != BFS_OK) return BFS_ERR_INVAL;
+    uint64_t txn_id = bfs_btree_txn_id(tree);
+    bfs_inode_pending_slot_t *slot = pending_find(tree, ino);
+    if (slot && slot->txn_id == txn_id) {
+        slot->inode = *inode;
+        slot->dirty = true;
+        return BFS_OK;
+    }
+    /* First publication in this transaction: write the tree, so that the leaf
+     * belongs to the transaction and later copies can be written in place. */
+    bfs_err_t err = bfs_inode_write(tree, ino, inode);
+    if (err != BFS_OK) return err;
+    slot = pending_take(tree);
+    if (slot) {
+        if (slot->ino == 0) tree->inode_pending->used++;
+        slot->ino = ino;
+        slot->dirty = false;
+        slot->txn_id = txn_id;
+        slot->inode = *inode;
+    }
+    return BFS_OK;
+}
+
+bfs_err_t bfs_inode_flush_pending(bfs_btree_t *tree)
+{
+    if (!tree || !tree->inode_pending) return BFS_OK;
+    bfs_err_t result = BFS_OK;
+    if (tree->inode_pending->used == 0) return BFS_OK;
+    for (uint32_t i = 0; i < BFS_INODE_PENDING_SLOTS; i++) {
+        bfs_inode_pending_slot_t slot = tree->inode_pending->slot[i];
+        memset(&tree->inode_pending->slot[i], 0, sizeof(slot));
+        if (slot.ino != 0) tree->inode_pending->used--;
+        if (slot.ino == 0 || !slot.dirty || result != BFS_OK) continue;
+        /* The copy's path was written in this transaction, so the update
+         * needs no deferred-free headroom (bfs_btree_update_path_headroom). */
+        uint32_t key = bfs_be32(slot.ino);
+#ifdef BFS_PERF_WRITE_DETAIL
+        bfs_write_probe_sample_t sample = bfs_write_probe_begin(
+            BFS_WRITE_PROBE_INODE_WRITE);
+#endif
+        result = validate_inode(tree, slot.ino, &slot.inode, false) == BFS_OK
+                     ? bfs_btree_update_path_headroom(tree, &key, &slot.inode)
+                     : BFS_ERR_INVAL;
+#ifdef BFS_PERF_WRITE_DETAIL
+        bfs_write_probe_end(&sample);
+#endif
+    }
+    return result;
 }

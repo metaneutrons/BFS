@@ -202,6 +202,10 @@ static bool inode_extent_cb(const void *key, const void *value, void *context)
     check_context_t *check = (check_context_t *)context;
     const bfs_inode_t *inode = (const bfs_inode_t *)value;
     uint32_t ino = bfs_load_be32(key);
+    /* An inode published in the live transaction is checked as published:
+     * the blocks mapped since then are referenced only by the pending copy. */
+    const bfs_inode_t *pending = bfs_inode_pending_peek(check->inode_tree, ino);
+    if (pending) inode = pending;
     if (!bfs_inode_valid(check->inode_tree, ino, inode)) check_error(check->state);
     /* Every directory but the root has an entry; the namespace check has
      * already matched those entries with the parent links. */

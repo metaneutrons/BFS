@@ -258,6 +258,7 @@ static bfs_err_t fs_load_working_state(bfs_fs_t *fs)
      * locator before attaching the new inode-tree handle and its root. */
     bfs_btree_key_hint_cache_reset(&fs->inode_key_hints);
     fs->inode_tree.key_hint_cache = &fs->inode_key_hints;
+    bfs_inode_pending_attach(&fs->inode_tree, &fs->inode_pending);
     err = fs_open_refcount_tree(fs);
     if (err != BFS_OK) return err;
     fs->next_ino = bfs_be32(sb->next_ino);
@@ -619,6 +620,8 @@ bfs_err_t bfs_fs_reload_committed_unlocked(bfs_fs_t *fs)
 
     uint32_t pending_cap = fs->pending_frees_cap;
     bfs_txn_t txn;
+    /* Its pending inodes belong to the discarded transaction as well. */
+    bfs_inode_pending_discard(&fs->inode_tree);
     /* The discarded transaction's deferred nodes must never be written. */
     bfs_bio_discard_deferred(fs->bio, BFS_BLK_NULL);
     bfs_err_t err = bfs_bio_sync(fs->bio);

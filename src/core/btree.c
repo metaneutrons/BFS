@@ -613,6 +613,7 @@ bfs_err_t bfs_btree_init(bfs_btree_t *tree, bfs_bio_t *bio,
     tree->hint_generation = 0;
     tree->hint_mutation_epoch = 0;
     tree->key_hint_cache = NULL;
+    tree->inode_pending = NULL;
 
     if (leaf_max_keys(tree) < 3 || internal_max_keys(tree) < 3)
         return BFS_ERR_INVAL;
@@ -2115,7 +2116,11 @@ insert_cleanup:
 
 /* ── Update (single-traversal value modification with COW) ── */
 
-bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val)
+/* path_headroom: check deferred-free headroom after the descent, for the
+ * path nodes of older transactions only, instead of for the tree height
+ * before any read. */
+static bfs_err_t btree_update(bfs_btree_t *tree, const void *key, const void *new_val,
+                              bool path_headroom)
 {
     if (!tree || !tree->bio || !tree->alloc || !key || !new_val)
         return BFS_ERR_INVAL;
@@ -2139,8 +2144,10 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
         return BFS_OK;
     }
 
-    bfs_err_t preflight = mutation_headroom(tree, tree->height);
-    if (preflight != BFS_OK) return preflight;
+    if (!path_headroom) {
+        bfs_err_t preflight = mutation_headroom(tree, tree->height);
+        if (preflight != BFS_OK) return preflight;
+    }
 
     const uint32_t bs = tree->bio->block_size;
     uint32_t depth = tree->height > 0 ? tree->height : 2;
@@ -2182,6 +2189,16 @@ bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_v
         free_buf(tree, node_bufs);
         return BFS_OK;
     }
+    if (path_headroom) {
+        /* An update never splits, so only path nodes of older transactions go
+         * to the deferred-free queue; nodes of this transaction are reused or
+         * freed at once. A path this transaction wrote needs no headroom. */
+        uint32_t retired = 0;
+        for (int i = 0; i <= d; i++)
+            if (bfs_be64(hdr_of(UBUF(i))->txn_id) < bfs_btree_txn_id(tree)) retired++;
+        bfs_err_t preflight = mutation_headroom(tree, retired);
+        if (preflight != BFS_OK) { free_buf(tree, node_bufs); return preflight; }
+    }
     memcpy(leaf_val(tree, UBUF(d), idx), new_val, tree->ops->val_size);
 
     /* COW back up */
@@ -2206,6 +2223,17 @@ update_cleanup:
     if (cerr == BFS_OK && tree->free_sink_err != BFS_OK)
         cerr = tree->free_sink_err;
     return cerr;
+}
+
+bfs_err_t bfs_btree_update(bfs_btree_t *tree, const void *key, const void *new_val)
+{
+    return btree_update(tree, key, new_val, false);
+}
+
+bfs_err_t bfs_btree_update_path_headroom(bfs_btree_t *tree, const void *key,
+                                         const void *new_val)
+{
+    return btree_update(tree, key, new_val, true);
 }
 
 /* Descend to the leaf that holds key, recording the path and, if bounds is

@@ -61,6 +61,8 @@ typedef struct bfs_fs {
     bfs_freespace_t   freespace;
     bfs_dir_tree_t    dir_tree;
     bfs_btree_key_hint_cache_t inode_key_hints; /* validated leaf/index hints */
+    /* Inodes published in the live transaction; written at its commit. */
+    bfs_inode_pending_t inode_pending;
     bfs_btree_t       inode_tree;  /* inode B+tree: key=inode_nr(u32), value=bfs_inode_t */
     bfs_refcount_t    refcount;    /* block refcount tree (for snapshots) */
     uint32_t           next_ino;   /* next inode number to allocate */
