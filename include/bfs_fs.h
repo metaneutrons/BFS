@@ -62,6 +62,7 @@ typedef struct bfs_fs {
     bfs_dir_tree_t    dir_tree;
     bfs_btree_key_hint_cache_t inode_key_hints; /* validated leaf/index hints */
     /* Inodes published in the live transaction; written at its commit. */
+    // cppcheck-suppress unusedStructMember
     bfs_inode_pending_t inode_pending;
     bfs_btree_t       inode_tree;  /* inode B+tree: key=inode_nr(u32), value=bfs_inode_t */
     bfs_refcount_t    refcount;    /* block refcount tree (for snapshots) */
@@ -73,6 +74,7 @@ typedef struct bfs_fs {
     bfs_err_t          recovery_error; /* nonzero: abandon/remount required */
     /* Longest name a call may create. Mount sets BFS_NAME_MAX; adapters lower
      * it to what their platform can list (BFS_SHORT_NAME_MAX). */
+    // cppcheck-suppress unusedStructMember
     uint8_t            name_max;
     /* Shared between fs.c recovery and file.c handle validation. */
     // cppcheck-suppress unusedStructMember

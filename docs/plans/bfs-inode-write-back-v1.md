@@ -69,8 +69,9 @@ The safeguard is structural: every access to an inode goes through
 (`tests/quality/test_inode_tree_access.py`) fails when code outside it calls a
 raw B+tree function on an inode tree beyond the three reviewed walks.
 Permission checks keep reading the current inode under the operation's lock;
-they now get the pending copy, which is the newest state. Fifteen tests in
-`tests/test_inode_write_back.c` cover readers, sorted reads, other writers
+they now get the pending copy, which is the newest state. Sixteen tests in
+`tests/test_inode_write_back.c` and `tests/test_inode_write_back_recovery.c`
+cover readers, sorted reads, other writers
 and their failures, reload, crash, fsck, a full table and a full free queue,
 snapshots, a failed flush and unlinked handles. An independent review found
 that an early drop of the copy lost it when another write failed; that and

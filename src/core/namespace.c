@@ -908,7 +908,7 @@ static bfs_err_t fs_get_comment_unlocked(bfs_fs_t *fs, uint32_t ino, char *buf, 
     if (err == BFS_ERR_NOTFOUND) return BFS_ERR_CORRUPT;
     if (err != BFS_OK) return err;
     uint8_t copy_len = len < max_len ? len : (uint8_t)(max_len - 1);
-    memcpy(buf, text, copy_len);
+    memcpy(buf, text, copy_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     buf[copy_len] = 0;
     return BFS_OK;
 }

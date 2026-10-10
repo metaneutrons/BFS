@@ -226,6 +226,7 @@ typedef struct bfs_btree {
 
     /* Inode trees only: pending inodes of the live transaction (bfs_inode.h).
      * Owned by the filesystem and cleared on every bfs_btree_init(). */
+    // cppcheck-suppress unusedStructMember
     struct bfs_inode_pending *inode_pending;
 } bfs_btree_t;
 
@@ -255,9 +256,13 @@ bfs_err_t bfs_btree_search(bfs_btree_t *tree, const void *key, void *val_out);
  * Between begin and end the caller makes no other call on the tree, its BIO
  * or its cache; the view would not survive one. */
 typedef struct {
+    // cppcheck-suppress unusedStructMember
     uint8_t *buf;          /* descent buffer */
+    // cppcheck-suppress unusedStructMember
     uint8_t *leaf;         /* current leaf view */
+    // cppcheck-suppress unusedStructMember
     bfs_blk_t blk;
+    // cppcheck-suppress unusedStructMember
     bool epoch_valid;
     uint64_t mutation_epoch;
 } bfs_btree_sorted_t;

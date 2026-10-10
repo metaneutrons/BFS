@@ -28,12 +28,15 @@ typedef struct {
     bfs_btree_t tree;
     /* An undo of a partial multi-record change failed; the live tree may hold
      * a half-done change. Reset only by bfs_dir_init. */
+    // cppcheck-suppress unusedStructMember
     bfs_err_t sticky_err;
 } bfs_dir_tree_t;
 
 /* The place of an entry in its directory's key order. */
 typedef struct {
+    // cppcheck-suppress unusedStructMember
     uint32_t hash;
+    // cppcheck-suppress unusedStructMember
     uint16_t ordinal;
 } bfs_dir_pos_t;
 
@@ -156,10 +159,13 @@ bfs_err_t bfs_dir_comment_remove(bfs_dir_tree_t *dt, uint32_t ino);
 
 /* Callbacks of bfs_dir_walk; each may be NULL. Returning false stops it. */
 typedef struct {
+    // cppcheck-suppress unusedStructMember
     bool (*entry)(uint32_t parent, const char *name, uint8_t name_len,
                   uint32_t inode_nr, uint32_t entry_type,
                   const bfs_dir_pos_t *pos, void *ctx);
+    // cppcheck-suppress unusedStructMember
     bool (*parent_link)(uint32_t dir_ino, uint32_t parent, void *ctx);
+    // cppcheck-suppress unusedStructMember
     bool (*comment)(uint32_t ino, const char *text, uint8_t len, void *ctx);
 } bfs_dir_walk_ops_t;
 

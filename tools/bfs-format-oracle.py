@@ -271,65 +271,54 @@ def take_parts(records, index, head_key, count):
     return values
 
 
-def parse_directory(records):
-    """Return entries by directory, parent links and comments of a directory tree."""
-    entries, parents, comments = {}, {}, {}
-    index = 0
-    while index < len(records):
-        key, value = records[index]
-        owner, record, name_hash, ordinal, part = \
-            be32(key, 0), key[4], be32(key, 5), be16(key, 9), key[11]
-        if part != 0:
-            raise OracleError("directory record part without its head")
-        if record == DIR_ENTRY:
-            inode, entry_type, name_length, flags = be32(value, 0), value[4], value[5], value[6]
-            if not 0 < inode < INODE_LIMIT or entry_type > 3 or name_length == 0 or flags:
-                raise OracleError("invalid directory entry")
-            inline = min(name_length, DIR_INLINE_NAME)
-            name = bytearray(value[7:7 + inline])
-            if any(value[7 + inline:]):
-                raise OracleError("directory entry padding is not zero")
-            count = 0 if name_length <= DIR_INLINE_NAME else \
-                -(-(name_length - DIR_INLINE_NAME) // DIR_PART_BYTES)
-            for part_value in take_parts(records, index, key, count):
-                used = min(DIR_PART_BYTES, name_length - len(name))
-                name += part_value[:used]
-                if any(part_value[used:]):
-                    raise OracleError("directory entry padding is not zero")
-            name = bytes(name)
-            if fnv1a(name) != name_hash:
-                raise OracleError("directory entry hash mismatch")
-            if name in (b".", b".."):
-                raise OracleError("directory entry has a dot name")
-            if owner == 0 and (name != b"/" or inode != 1 or entry_type != 1 or ordinal):
-                raise OracleError("invalid root record")
-            entries.setdefault(owner, []).append((name, inode, entry_type))
-            index += count + 1
-            continue
-        if owner == 0 or record == DIR_PARENT and owner == 1:
-            raise OracleError("invalid parent link or comment owner")
-        if record == DIR_PARENT:
-            parent = be32(value, 0)
-            if not 0 < parent < INODE_LIMIT or any(value[4:]):
-                raise OracleError("invalid parent link")
-            parents[owner] = parent
-            index += 1
-            continue
-        length = value[0]
-        if not 1 <= length <= 79:
-            raise OracleError("invalid comment record")
-        inline = min(length, DIR_COMMENT_INLINE)
-        text = bytearray(value[1:1 + inline])
-        if any(value[1 + inline:]):
+def parse_dir_entry(records, index, key, value):
+    """Return the name, inode and type of the entry at index and its part count."""
+    owner, name_hash, ordinal = be32(key, 0), be32(key, 5), be16(key, 9)
+    inode, entry_type, name_length, flags = be32(value, 0), value[4], value[5], value[6]
+    if not 0 < inode < INODE_LIMIT or entry_type > 3 or name_length == 0 or flags:
+        raise OracleError("invalid directory entry")
+    inline = min(name_length, DIR_INLINE_NAME)
+    name = bytearray(value[7:7 + inline])
+    if any(value[7 + inline:]):
+        raise OracleError("directory entry padding is not zero")
+    count = 0 if name_length <= DIR_INLINE_NAME else \
+        -(-(name_length - DIR_INLINE_NAME) // DIR_PART_BYTES)
+    for part_value in take_parts(records, index, key, count):
+        used = min(DIR_PART_BYTES, name_length - len(name))
+        name += part_value[:used]
+        if any(part_value[used:]):
+            raise OracleError("directory entry padding is not zero")
+    name = bytes(name)
+    if fnv1a(name) != name_hash:
+        raise OracleError("directory entry hash mismatch")
+    if name in (b".", b".."):
+        raise OracleError("directory entry has a dot name")
+    if owner == 0 and (name != b"/" or inode != 1 or entry_type != 1 or ordinal):
+        raise OracleError("invalid root record")
+    return (name, inode, entry_type), count
+
+
+def parse_comment(records, index, key, value):
+    """Return the text of the comment at index and its part count."""
+    length = value[0]
+    if not 1 <= length <= 79:
+        raise OracleError("invalid comment record")
+    inline = min(length, DIR_COMMENT_INLINE)
+    text = bytearray(value[1:1 + inline])
+    if any(value[1 + inline:]):
+        raise OracleError("comment padding is not zero")
+    count = 1 if length > DIR_COMMENT_INLINE else 0
+    for part_value in take_parts(records, index, key, count):
+        used = length - len(text)
+        text += part_value[:used]
+        if any(part_value[used:]):
             raise OracleError("comment padding is not zero")
-        count = 1 if length > DIR_COMMENT_INLINE else 0
-        for part_value in take_parts(records, index, key, count):
-            used = length - len(text)
-            text += part_value[:used]
-            if any(part_value[used:]):
-                raise OracleError("comment padding is not zero")
-        comments[owner] = bytes(text)
-        index += count + 1
+    return bytes(text), count
+
+
+def directory_parents(entries, parents):
+    """Check the root record, case aliases and parent links against the
+    entries; return each directory's parent as its entry names it."""
     if entries.get(0) != [(b"/", 1, 1)]:
         raise OracleError("root record missing")
     named = {}
@@ -343,7 +332,33 @@ def parse_directory(records):
                 named[inode] = owner
     if named != parents:
         raise OracleError("parent links disagree with directory entries")
-    return entries, comments, named
+    return named
+
+
+def parse_directory(records):
+    """Return entries by directory, comments and parent links of a directory tree."""
+    entries, parents, comments = {}, {}, {}
+    index = 0
+    while index < len(records):
+        key, value = records[index]
+        owner, record, part = be32(key, 0), key[4], key[11]
+        if part != 0:
+            raise OracleError("directory record part without its head")
+        count = 0
+        if record == DIR_ENTRY:
+            item, count = parse_dir_entry(records, index, key, value)
+            entries.setdefault(owner, []).append(item)
+        elif owner == 0 or record == DIR_PARENT and owner == 1:
+            raise OracleError("invalid parent link or comment owner")
+        elif record == DIR_PARENT:
+            parent = be32(value, 0)
+            if not 0 < parent < INODE_LIMIT or any(value[4:]):
+                raise OracleError("invalid parent link")
+            parents[owner] = parent
+        else:
+            comments[owner], count = parse_comment(records, index, key, value)
+        index += count + 1
+    return entries, comments, directory_parents(entries, parents)
 
 
 def build_manifest(image, superblock):

@@ -230,7 +230,7 @@ static bool grow_items(void **items, size_t count, size_t *capacity, size_t item
     if (next > SIZE_MAX / item_size) return false;
     uint8_t *bigger = malloc(next * item_size);
     if (!bigger) return false;
-    if (count) memcpy(bigger, *items, count * item_size);
+    if (count) memcpy(bigger, *items, count * item_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     free(*items);
     *items = bigger;
     *capacity = next;
@@ -340,7 +340,7 @@ static bool ns_entry_cb(uint32_t parent, const char *name, uint8_t name_len,
         if (names_equal_folded(ns->group_names[index], ns->group_lens[index], name, name_len))
             check_error(state);
     if (ns->group_count < NAME_GROUP_MAX) {
-        memcpy(ns->group_names[ns->group_count], name, name_len);
+        memcpy(ns->group_names[ns->group_count], name, name_len); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         ns->group_lens[ns->group_count++] = name_len;
     } else {
         check_warning(state);

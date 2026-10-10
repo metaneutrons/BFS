@@ -1928,7 +1928,6 @@ static void test_exnext_fresh(void)
 {
     const char *T = "exnextfresh_55";
     enum { COUNT = 20, GROWN = 300 };
-    static UBYTE data[GROWN];
     UBYTE seen[COUNT] = {0};
     if (!make_items("exfresh", COUNT)) { fail(T, "setup"); return; }
     BPTR lock = Lock(vpath("exfresh"), SHARED_LOCK);
@@ -1941,6 +1940,7 @@ static void test_exnext_fresh(void)
     int grown = first == 0 ? 1 : 0;
     BPTR fh = 0;
     if (ok) {
+        static UBYTE data[GROWN];
         step = "change the others";
         for (int i = 0; ok && i < COUNT; i++)
             if (i != first) ok = SetProtection(item_path("exfresh", i), FIBF_SCRIPT);

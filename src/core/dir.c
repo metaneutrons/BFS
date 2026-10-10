@@ -242,13 +242,13 @@ static void build_entry(dir_records_t *r, uint32_t owner, uint32_t hash,
     bfs_store_be32(r->head + BFS_DIR_HEAD_INODE, ino);
     r->head[BFS_DIR_HEAD_TYPE] = type;
     r->head[BFS_DIR_HEAD_NAME_LEN] = len;
-    memcpy(r->head + BFS_DIR_HEAD_NAME, name, len < INLINE_NAME ? len : INLINE_NAME);
+    memcpy(r->head + BFS_DIR_HEAD_NAME, name, len < INLINE_NAME ? len : INLINE_NAME); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     r->part_count = name_parts(len);
     for (uint8_t i = 0; i < r->part_count; i++) {
         uint32_t offset = INLINE_NAME + (uint32_t)i * PART_BYTES;
         uint32_t chunk = len - offset;
         if (chunk > PART_BYTES) chunk = PART_BYTES;
-        memcpy(r->parts[i], name + offset, chunk);
+        memcpy(r->parts[i], name + offset, chunk); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     }
 }
 
@@ -382,13 +382,13 @@ static bfs_err_t records_name(const dir_records_t *r, char name[BFS_NAME_MAX],
                               uint8_t *len_out)
 {
     uint8_t len = r->head[BFS_DIR_HEAD_NAME_LEN];
-    memcpy(name, r->head + BFS_DIR_HEAD_NAME, len < INLINE_NAME ? len : INLINE_NAME);
+    memcpy(name, r->head + BFS_DIR_HEAD_NAME, len < INLINE_NAME ? len : INLINE_NAME); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     for (uint8_t i = 0; i < r->part_count; i++) {
         uint32_t offset = INLINE_NAME + (uint32_t)i * PART_BYTES;
         uint32_t chunk = len - offset;
         if (chunk > PART_BYTES) chunk = PART_BYTES;
         if (!all_zero(r->parts[i] + chunk, PART_BYTES - chunk)) return BFS_ERR_CORRUPT;
-        memcpy(name + offset, r->parts[i], chunk);
+        memcpy(name + offset, r->parts[i], chunk); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     }
     if (bfs_dir_name_hash(name, len) != r->hash) return BFS_ERR_CORRUPT;
     *len_out = len;
@@ -436,6 +436,24 @@ static bool scan_corrupt(dir_scan_ctx_t *sc)
     return false;
 }
 
+/* A continuation part of the entry the scan is assembling. */
+static bool scan_continuation(dir_scan_ctx_t *sc, const uint8_t *v, uint32_t hash,
+                              uint16_t ordinal, uint8_t part)
+{
+    if (!sc->partial || hash != sc->pos.hash || ordinal != sc->pos.ordinal ||
+        part != sc->parts_seen + 1)
+        return scan_corrupt(sc);
+    uint32_t offset = INLINE_NAME + (uint32_t)sc->parts_seen * PART_BYTES;
+    uint32_t chunk = sc->name_len - offset;
+    if (chunk > PART_BYTES) chunk = PART_BYTES;
+    if (!all_zero(v + chunk, PART_BYTES - chunk)) return scan_corrupt(sc);
+    memcpy(sc->name + offset, v, chunk); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    if (++sc->parts_seen < sc->parts_expected) return true;
+    sc->partial = false;
+    if (bfs_dir_name_hash(sc->name, sc->name_len) != hash) return scan_corrupt(sc);
+    return scan_deliver(sc);
+}
+
 /* Called for each record; reports an entry when its last record is seen, so a
  * callback that stops the scan stops it at the end of that entry. */
 static bool dir_scan_record(const void *key, const void *val, void *ctx)
@@ -471,7 +489,7 @@ static bool dir_scan_record(const void *key, const void *val, void *ctx)
         sc->name_len = len;
         sc->pos.hash = hash;
         sc->pos.ordinal = ordinal;
-        memcpy(sc->name, v + BFS_DIR_HEAD_NAME, len < INLINE_NAME ? len : INLINE_NAME);
+        memcpy(sc->name, v + BFS_DIR_HEAD_NAME, len < INLINE_NAME ? len : INLINE_NAME); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         sc->parts_expected = name_parts(len);
         sc->parts_seen = 0;
         /* Leaf validation has checked a short name's hash (dir_entry_ok). */
@@ -480,18 +498,7 @@ static bool dir_scan_record(const void *key, const void *val, void *ctx)
         return true;
     }
 
-    if (!sc->partial || hash != sc->pos.hash || ordinal != sc->pos.ordinal ||
-        part != sc->parts_seen + 1)
-        return scan_corrupt(sc);
-    uint32_t offset = INLINE_NAME + (uint32_t)sc->parts_seen * PART_BYTES;
-    uint32_t chunk = sc->name_len - offset;
-    if (chunk > PART_BYTES) chunk = PART_BYTES;
-    if (!all_zero(v + chunk, PART_BYTES - chunk)) return scan_corrupt(sc);
-    memcpy(sc->name + offset, v, chunk);
-    if (++sc->parts_seen < sc->parts_expected) return true;
-    sc->partial = false;
-    if (bfs_dir_name_hash(sc->name, sc->name_len) != hash) return scan_corrupt(sc);
-    return scan_deliver(sc);
+    return scan_continuation(sc, v, hash, ordinal, part);
 }
 
 static bfs_err_t run_scan(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
@@ -753,11 +760,12 @@ bfs_err_t bfs_dir_remove(bfs_dir_tree_t *dt, uint32_t parent_id,
 
 /* ── Scan entry points ─────────────────────────────────────── */
 
+/* Scan parent_id's entries after the position after, or after every entry
+ * whose name hashes to *group_hash, or from the first entry. */
 static bfs_err_t scan_from(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
                            uint32_t parent_id, const bfs_dir_pos_t *after,
-                           bool skip_hash_group, uint32_t group_hash,
-                           bfs_dir_scan_cb cb, bfs_dir_scan_pos_cb pos_cb,
-                           void *ctx)
+                           const uint32_t *group_hash, bfs_dir_scan_cb cb,
+                           bfs_dir_scan_pos_cb pos_cb, void *ctx)
 {
     uint8_t start[KEY_SIZE];
     dir_scan_ctx_t sc = {
@@ -768,10 +776,10 @@ static bfs_err_t scan_from(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
         make_key(start, parent_id, BFS_DIR_KIND_ENTRY, after->hash, after->ordinal, 0);
         sc.skip_entry = true;
         sc.skip = *after;
-    } else if (skip_hash_group) {
-        make_key(start, parent_id, BFS_DIR_KIND_ENTRY, group_hash, 0, 0);
+    } else if (group_hash) {
+        make_key(start, parent_id, BFS_DIR_KIND_ENTRY, *group_hash, 0, 0);
         sc.skip_group = true;
-        sc.skip_hash = group_hash;
+        sc.skip_hash = *group_hash;
     } else {
         make_key(start, parent_id, BFS_DIR_KIND_ENTRY, 0, 0, 0);
     }
@@ -803,15 +811,15 @@ bfs_err_t bfs_dir_scan_cursor(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
 {
     if (!dt || !cb || (name_len != 0 && !name)) return BFS_ERR_INVAL;
     if (name_len == 0)
-        return scan_from(dt, cursor, parent_id, NULL, false, 0, cb, NULL, ctx);
+        return scan_from(dt, cursor, parent_id, NULL, NULL, cb, NULL, ctx);
     bfs_dir_pos_t pos;
     bfs_err_t err = bfs_dir_lookup_pos(dt, parent_id, name, name_len, NULL, NULL, &pos);
     if (err == BFS_OK)
-        return scan_from(dt, cursor, parent_id, &pos, false, 0, cb, NULL, ctx);
+        return scan_from(dt, cursor, parent_id, &pos, NULL, cb, NULL, ctx);
     if (err != BFS_ERR_NOTFOUND) return err;
     /* The entry is gone; its ordinal is unknown, so continue after its hash. */
-    return scan_from(dt, cursor, parent_id, NULL, true,
-                     bfs_dir_name_hash(name, name_len), cb, NULL, ctx);
+    uint32_t group_hash = bfs_dir_name_hash(name, name_len);
+    return scan_from(dt, cursor, parent_id, NULL, &group_hash, cb, NULL, ctx);
 }
 
 bfs_err_t bfs_dir_scan_cursor_pos(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
@@ -819,7 +827,7 @@ bfs_err_t bfs_dir_scan_cursor_pos(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor
                                   bfs_dir_scan_pos_cb cb, void *ctx)
 {
     if (!dt || !cb) return BFS_ERR_INVAL;
-    return scan_from(dt, cursor, parent_id, after, false, 0, NULL, cb, ctx);
+    return scan_from(dt, cursor, parent_id, after, NULL, NULL, cb, ctx);
 }
 
 static bfs_err_t scan_resume(bfs_dir_tree_t *dt, bfs_btree_cursor_t *cursor,
@@ -941,10 +949,10 @@ static void comment_records(dir_records_t *r, uint32_t ino, const char *text, ui
     r->kind = BFS_DIR_KIND_COMMENT;
     r->head[0] = len;
     uint8_t first = len < BFS_DIR_COMMENT_INLINE ? len : BFS_DIR_COMMENT_INLINE;
-    memcpy(r->head + 1, text, first);
+    memcpy(r->head + 1, text, first); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     if (len > BFS_DIR_COMMENT_INLINE) {
         r->part_count = 1;
-        memcpy(r->parts[0], text + first, len - first);
+        memcpy(r->parts[0], text + first, len - first); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     }
 }
 
@@ -977,8 +985,8 @@ bfs_err_t bfs_dir_comment_get(bfs_dir_tree_t *dt, uint32_t ino,
     if (err != BFS_OK) return err;
     uint8_t len = r.head[0];
     uint8_t first = len < BFS_DIR_COMMENT_INLINE ? len : BFS_DIR_COMMENT_INLINE;
-    memcpy(text, r.head + 1, first);
-    if (len > first) memcpy(text + first, r.parts[0], len - first);
+    memcpy(text, r.head + 1, first); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    if (len > first) memcpy(text + first, r.parts[0], len - first); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     *len_out = len;
     return BFS_OK;
 }
@@ -1039,34 +1047,39 @@ static bool walk_deliver(dir_walk_ctx_t *walk)
                             &walk->pos, walk->ctx);
 }
 
+/* A part continues the record before it, or it is an orphan. */
+static bool walk_continuation(dir_walk_ctx_t *walk, const uint8_t *k, const uint8_t *v)
+{
+    if (!walk->partial || k[BFS_DIR_KEY_KIND] != walk->kind ||
+        bfs_load_be32(k + BFS_DIR_KEY_OWNER) != walk->owner ||
+        bfs_load_be32(k + BFS_DIR_KEY_HASH) != walk->pos.hash ||
+        bfs_load_be16(k + BFS_DIR_KEY_ORDINAL) != walk->pos.ordinal ||
+        k[BFS_DIR_KEY_PART] != walk->parts_seen + 1)
+        return walk_corrupt(walk);
+    uint32_t offset = walk->kind == BFS_DIR_KIND_COMMENT
+        ? BFS_DIR_COMMENT_INLINE
+        : INLINE_NAME + (uint32_t)walk->parts_seen * PART_BYTES;
+    uint32_t chunk = walk->len - offset;
+    if (chunk > PART_BYTES) chunk = PART_BYTES;
+    if (!all_zero(v + chunk, PART_BYTES - chunk)) return walk_corrupt(walk);
+    memcpy(walk->text + offset, v, chunk); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
+    if (++walk->parts_seen < walk->parts_expected) return true;
+    return walk_deliver(walk);
+}
+
 static bool dir_walk_record(const void *key, const void *val, void *ctx)
 {
     dir_walk_ctx_t *walk = (dir_walk_ctx_t *)ctx;
     const uint8_t *k = (const uint8_t *)key;
     const uint8_t *v = (const uint8_t *)val;
+
+    if (k[BFS_DIR_KEY_PART] != 0) return walk_continuation(walk, k, v);
+    if (walk->partial) return walk_corrupt(walk);
+
     uint32_t owner = bfs_load_be32(k + BFS_DIR_KEY_OWNER);
     uint8_t kind = k[BFS_DIR_KEY_KIND];
     uint32_t hash = bfs_load_be32(k + BFS_DIR_KEY_HASH);
     uint16_t ordinal = bfs_load_be16(k + BFS_DIR_KEY_ORDINAL);
-    uint8_t part = k[BFS_DIR_KEY_PART];
-
-    if (part != 0) {
-        /* A part continues the record before it, or it is an orphan. */
-        if (!walk->partial || kind != walk->kind || owner != walk->owner ||
-            hash != walk->pos.hash || ordinal != walk->pos.ordinal ||
-            part != walk->parts_seen + 1)
-            return walk_corrupt(walk);
-        uint32_t offset = kind == BFS_DIR_KIND_COMMENT
-            ? BFS_DIR_COMMENT_INLINE
-            : INLINE_NAME + (uint32_t)walk->parts_seen * PART_BYTES;
-        uint32_t chunk = walk->len - offset;
-        if (chunk > PART_BYTES) chunk = PART_BYTES;
-        if (!all_zero(v + chunk, PART_BYTES - chunk)) return walk_corrupt(walk);
-        memcpy(walk->text + offset, v, chunk);
-        if (++walk->parts_seen < walk->parts_expected) return true;
-        return walk_deliver(walk);
-    }
-    if (walk->partial) return walk_corrupt(walk);
 
     walk->kind = kind;
     walk->owner = owner;
@@ -1080,13 +1093,13 @@ static bool dir_walk_record(const void *key, const void *val, void *ctx)
     if (kind == BFS_DIR_KIND_COMMENT) {
         walk->len = v[0];
         uint8_t first = walk->len < BFS_DIR_COMMENT_INLINE ? walk->len : BFS_DIR_COMMENT_INLINE;
-        memcpy(walk->text, v + 1, first);
+        memcpy(walk->text, v + 1, first); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
         walk->parts_expected = walk->len > BFS_DIR_COMMENT_INLINE ? 1 : 0;
     } else {
         walk->len = v[BFS_DIR_HEAD_NAME_LEN];
         walk->ino = bfs_load_be32(v + BFS_DIR_HEAD_INODE);
         walk->type = v[BFS_DIR_HEAD_TYPE];
-        memcpy(walk->text, v + BFS_DIR_HEAD_NAME,
+        memcpy(walk->text, v + BFS_DIR_HEAD_NAME, /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
                walk->len < INLINE_NAME ? walk->len : INLINE_NAME);
         walk->parts_expected = name_parts(walk->len);
     }

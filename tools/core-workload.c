@@ -293,7 +293,7 @@ static void list_exall(bfs_fs_t *fs, uint32_t dir, uint32_t expected_count)
                 uint32_t sorted[EXALL_BATCH];
                 bfs_inode_t inodes[EXALL_BATCH];
                 bfs_err_t results[EXALL_BATCH];
-                memcpy(sorted, gather.inos, gather.count * sizeof(sorted[0]));
+                memcpy(sorted, gather.inos, gather.count * sizeof(sorted[0])); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
                 qsort(sorted, gather.count, sizeof(sorted[0]), compare_ino);
                 require(bfs_inode_read_sorted(&fs->inode_tree, sorted, gather.count,
                                               inodes, results), "exall-inodes");

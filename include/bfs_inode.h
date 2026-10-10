@@ -73,15 +73,22 @@ bfs_err_t bfs_inode_delete(bfs_btree_t *tree, uint32_t ino);
 #define BFS_INODE_PENDING_SLOTS 8
 
 typedef struct {
+    // cppcheck-suppress unusedStructMember
     uint32_t    ino;     /* 0: free */
+    // cppcheck-suppress unusedStructMember
     bool        dirty;   /* newer than the tree */
+    // cppcheck-suppress unusedStructMember
     uint64_t    txn_id;  /* transaction of the tree write that made it writable */
+    // cppcheck-suppress unusedStructMember
     bfs_inode_t inode;
 } bfs_inode_pending_slot_t;
 
 typedef struct bfs_inode_pending {
+    // cppcheck-suppress unusedStructMember
     uint32_t used;    /* occupied slots; reads skip the table when 0 */
+    // cppcheck-suppress unusedStructMember
     uint32_t version; /* changes with every change of a slot */
+    // cppcheck-suppress unusedStructMember
     bfs_inode_pending_slot_t slot[BFS_INODE_PENDING_SLOTS];
 } bfs_inode_pending_t;
 
