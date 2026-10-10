@@ -1,0 +1,83 @@
+{
+    "blkdev": {
+        "block_bytes": 512,
+        "cylinders": 16384,
+        "heads": 1,
+        "sectors": 32
+    },
+    "img_file": "/home/fabian/.cache/bfs-performance/prodcodegen-pilot-2026-10-10.rjXGlO/results/prodcodegen-5-bfs-first-base/bench-bfs.hdf",
+    "rdb": {
+        "filesystems": [
+            {
+                "dev_node": {
+                    "global_vec": 4294967295,
+                    "handler": 0,
+                    "lock": 0,
+                    "priority": 0,
+                    "seg_list_blk": 3,
+                    "stack_size": 0,
+                    "startup": 0,
+                    "task": 0,
+                    "type": 0
+                },
+                "dostype": 1111905024,
+                "dostype_str": "BFS0",
+                "num": 0,
+                "size": 172656,
+                "version": "1.0"
+            }
+        ],
+        "logical_drive": {
+            "auto_park_secs": 0,
+            "cyl_blks": 512,
+            "hi_cyl": 1023,
+            "high_rdsk_blk": 353,
+            "lo_cyl": 1,
+            "rdb_blk_hi": 511,
+            "rdb_blk_lo": 0
+        },
+        "partitions": [
+            {
+                "automount": true,
+                "bootable": false,
+                "dev_flags": 0,
+                "dos_env": {
+                    "baud": 0,
+                    "blk_per_trk": 32,
+                    "block_size": 128,
+                    "boot_blocks": 0,
+                    "boot_pri": 0,
+                    "buf_mem_type": 0,
+                    "control": 0,
+                    "dos_type": 1111905024,
+                    "dos_type_str": "BFS0",
+                    "high_cyl": 1023,
+                    "interleave": 0,
+                    "low_cyl": 2,
+                    "mask": 2147483646,
+                    "max_transfer": 16777215,
+                    "num_buffer": 30,
+                    "pre_alloc": 0,
+                    "reserved": 2,
+                    "sec_org": 0,
+                    "sec_per_blk": 1,
+                    "size": 16,
+                    "surfaces": 16
+                },
+                "flags": 0,
+                "name": "DH1",
+                "num": 0
+            }
+        ],
+        "physical_drive": {
+            "cyls": 1024,
+            "heads": 16,
+            "interleave": 1,
+            "parking_zone": 1024,
+            "reduced_write": 1024,
+            "secs": 32,
+            "step_rate": 3,
+            "write_pre_comp": 1024
+        }
+    }
+}

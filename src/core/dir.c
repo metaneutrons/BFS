@@ -114,9 +114,7 @@ static bool all_zero(const uint8_t *bytes, uint32_t count)
 {
     uint32_t i = 0, any = 0;
     for (; i + 4 <= count; i += 4) {
-        uint32_t word;
-        memcpy(&word, bytes + i, sizeof(word));
-        any |= word;
+        any |= bfs_load_be32(bytes + i);
     }
     for (; i < count; i++) any |= bytes[i];
     return any == 0;
