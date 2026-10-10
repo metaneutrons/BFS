@@ -1,0 +1,36 @@
+snapdog-runner
+START 1 confirm-1-bfs-first-candidate 2026-10-10T12:52:55Z
+PASS 1 confirm-1-bfs-first-candidate 2026-10-10T12:53:30Z
+START 2 confirm-1-bfs-first-reference 2026-10-10T12:53:30Z
+PASS 2 confirm-1-bfs-first-reference 2026-10-10T12:54:06Z
+START 3 confirm-2-pfs3-first-reference 2026-10-10T12:54:06Z
+PASS 3 confirm-2-pfs3-first-reference 2026-10-10T12:54:42Z
+START 4 confirm-2-pfs3-first-candidate 2026-10-10T12:54:42Z
+PASS 4 confirm-2-pfs3-first-candidate 2026-10-10T12:55:18Z
+START 5 confirm-3-bfs-first-candidate 2026-10-10T12:55:18Z
+PASS 5 confirm-3-bfs-first-candidate 2026-10-10T12:55:53Z
+START 6 confirm-3-bfs-first-reference 2026-10-10T12:55:53Z
+PASS 6 confirm-3-bfs-first-reference 2026-10-10T12:56:29Z
+START 7 confirm-4-pfs3-first-reference 2026-10-10T12:56:29Z
+PASS 7 confirm-4-pfs3-first-reference 2026-10-10T12:57:04Z
+START 8 confirm-4-pfs3-first-candidate 2026-10-10T12:57:05Z
+PASS 8 confirm-4-pfs3-first-candidate 2026-10-10T12:57:40Z
+START 9 confirm-5-bfs-first-candidate 2026-10-10T12:57:41Z
+PASS 9 confirm-5-bfs-first-candidate 2026-10-10T12:58:16Z
+START 10 confirm-5-bfs-first-reference 2026-10-10T12:58:17Z
+PASS 10 confirm-5-bfs-first-reference 2026-10-10T12:58:52Z
+START 11 confirm-6-pfs3-first-reference 2026-10-10T12:58:53Z
+PASS 11 confirm-6-pfs3-first-reference 2026-10-10T12:59:28Z
+START 12 confirm-6-pfs3-first-candidate 2026-10-10T12:59:29Z
+PASS 12 confirm-6-pfs3-first-candidate 2026-10-10T13:00:04Z
+START 13 confirm-7-bfs-first-candidate 2026-10-10T13:00:05Z
+PASS 13 confirm-7-bfs-first-candidate 2026-10-10T13:00:40Z
+START 14 confirm-7-bfs-first-reference 2026-10-10T13:00:40Z
+PASS 14 confirm-7-bfs-first-reference 2026-10-10T13:01:16Z
+START 15 confirm-8-pfs3-first-reference 2026-10-10T13:01:16Z
+PASS 15 confirm-8-pfs3-first-reference 2026-10-10T13:01:51Z
+START 16 confirm-8-pfs3-first-candidate 2026-10-10T13:01:52Z
+PASS 16 confirm-8-pfs3-first-candidate 2026-10-10T13:02:27Z
+CONFIRM_PILOT_COMPLETE 16 2026-10-10T13:02:27Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-10T13:02:30Z

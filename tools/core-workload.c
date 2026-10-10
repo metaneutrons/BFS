@@ -134,60 +134,67 @@ static void read_small_files(bfs_fs_t *fs, uint32_t dir)
     }
 }
 
-/* One listed entry: the handler reads its inode for the FileInfoBlock or
- * ExAllData and checks the comment flag. ExNext consumes one entry per call;
- * ExAll stops without consuming the entry that no longer fits its buffer. */
-typedef struct {
-    bfs_fs_t *fs;
-    uint32_t count;
-    uint32_t call_count;
-    uint32_t call_limit;  /* ExAll: entries per call; 0 for ExNext */
-    bool stop_after_one;  /* ExNext */
-    bool overflow;
-    bfs_dir_pos_t last;
-} list_ctx_t;
+/* ExNext as the handler runs it: one entry per call, served from a batch that
+ * one scan gathered. The scan stops on the last entry it gathers, so the next
+ * one resumes after it; the batch doubles up to 32 while it is used up. */
+#define EXNEXT_BATCH_MAX 32u
+#define EXNEXT_BATCH_FIRST 8u
 
-static bool list_entry(const char *name, uint8_t name_len, uint32_t ino,
-                       uint32_t type, const bfs_dir_pos_t *pos, void *context)
+typedef struct {
+    uint32_t ino[EXNEXT_BATCH_MAX];
+    bfs_dir_pos_t pos[EXNEXT_BATCH_MAX];
+    uint32_t count, next, limit;
+    bool stopped_at_last;
+} exnext_batch_t;
+
+static bool exnext_gather(const char *name, uint8_t name_len, uint32_t ino,
+                          uint32_t type, const bfs_dir_pos_t *pos, void *context)
 {
     (void)name;
     (void)name_len;
     (void)type;
-    list_ctx_t *list = context;
-    if (list->call_limit && list->call_count == list->call_limit) {
-        list->overflow = true;
+    exnext_batch_t *b = context;
+    b->ino[b->count] = ino;
+    b->pos[b->count] = *pos;
+    if (++b->count == b->limit) {
+        b->stopped_at_last = true;
         return false;
     }
-    bfs_inode_t inode;
-    require(bfs_inode_read(&list->fs->inode_tree, ino, &inode), "list-inode");
-    if (bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT) require(BFS_ERR_CORRUPT, "list-comment");
-    list->last = *pos;
-    list->count++;
-    list->call_count++;
-    return !list->stop_after_one;
+    return true;
 }
 
-/* ExNext as the handler runs it: one entry per call. The lock's cursor
- * resumes after the entry returned last; when it cannot, the scan starts
- * after that entry's position. */
 static void list_exnext(bfs_fs_t *fs, uint32_t dir, uint32_t expected_count)
 {
     bfs_btree_cursor_t cursor;
     bfs_btree_cursor_init(&cursor);
     for (unsigned pass = 0; pass < 10; pass++) {
-        list_ctx_t list = { .fs = fs, .stop_after_one = true };
+        exnext_batch_t b = { .limit = EXNEXT_BATCH_FIRST };
+        bfs_dir_pos_t last = {0, 0};
+        bool consumed_stop = false;
+        uint32_t count = 0;
         for (;;) {
-            uint32_t before = list.count;
-            bfs_err_t err = BFS_ERR_AGAIN;
-            if (before)
-                err = bfs_dir_scan_resume_pos(&fs->dir_tree, &cursor, dir, list_entry, &list);
-            if (err == BFS_ERR_AGAIN)
-                err = bfs_dir_scan_cursor_pos(&fs->dir_tree, &cursor, dir,
-                                              before ? &list.last : NULL, list_entry, &list);
-            require(err, "exnext");
-            if (list.count == before) break;
+            if (b.next == b.count) {
+                if (b.count > 0 && b.limit < EXNEXT_BATCH_MAX) b.limit *= 2;
+                b.count = b.next = 0;
+                b.stopped_at_last = false;
+                bfs_err_t err = BFS_ERR_AGAIN;
+                if (count && consumed_stop)
+                    err = bfs_dir_scan_resume_pos(&fs->dir_tree, &cursor, dir, exnext_gather, &b);
+                if (err == BFS_ERR_AGAIN)
+                    err = bfs_dir_scan_cursor_pos(&fs->dir_tree, &cursor, dir,
+                                                  count ? &last : NULL, exnext_gather, &b);
+                require(err, "exnext");
+                if (b.count == 0) break;
+            }
+            uint32_t i = b.next++;
+            bfs_inode_t inode;
+            require(bfs_inode_read(&fs->inode_tree, b.ino[i], &inode), "list-inode");
+            if (bfs_be32(inode.flags) & BFS_INODE_FLAG_HAS_COMMENT) require(BFS_ERR_CORRUPT, "list-comment");
+            last = b.pos[i];
+            consumed_stop = b.next == b.count && b.stopped_at_last;
+            count++;
         }
-        if (list.count != expected_count) require(BFS_ERR_CORRUPT, "exnext-count");
+        if (count != expected_count) require(BFS_ERR_CORRUPT, "exnext-count");
     }
     bfs_btree_cursor_release(&cursor);
 }

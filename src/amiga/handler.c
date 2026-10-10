@@ -213,11 +213,14 @@ void EntryPoint(void);
  * first entry. That keeps a listing linear and keeps its place when entries
  * are deleted while it runs. The leaf copy in tree lets most calls skip the
  * descent. */
+struct exnext_batch;
+
 typedef struct {
     uint32_t position;
     bfs_dir_pos_t last;
     bool consumed_stop; /* tree stop is the entry ExNext returned to DOS */
     bfs_btree_cursor_t tree;
+    struct exnext_batch *batch; /* ExNext read-ahead, allocated on first use */
 } bfs_scan_cursor_t;
 
 typedef struct {
@@ -847,6 +850,7 @@ static void DisposeLock(bfs_lock_t *lock)
 {
     if (lock->cursor) {
         bfs_btree_cursor_release(&lock->cursor->tree);
+        if (lock->cursor->batch) FreeVec(lock->cursor->batch);
         FreeVec(lock->cursor);
     }
     FreeVec(lock);
@@ -1348,6 +1352,120 @@ static bool exam_next_pos_cb(const char *name, uint8_t name_len, uint32_t inode_
 {
     ((exam_next_ctx_t *)ctx)->pos_out = *pos;
     return exam_next_cb(name, name_len, inode_nr, entry_type, ctx);
+}
+
+/* ── ExNext read-ahead ────────────────────────────────────── */
+
+/* One scan gathers the entries that the following ExNext calls return, so
+ * that most calls need no scan. An entry is served only while the directory
+ * tree is the one it was gathered from; its inode is read when it is served,
+ * so size, protection and date are current. The batch grows while it is used
+ * up and shrinks when a change discards it, so that a loop deleting each entry
+ * it lists scans little more than before. */
+#define EXNEXT_BATCH_MAX 32
+#define EXNEXT_BATCH_FIRST 8
+#define EXNEXT_NAME_KEEP 107 /* FillFib shows at most 107 name bytes */
+
+typedef struct {
+    uint32_t ino;
+    uint32_t type;
+    bfs_dir_pos_t pos;
+    uint8_t name_len;
+    char name[EXNEXT_NAME_KEEP];
+} exnext_entry_t;
+
+typedef struct exnext_batch {
+    uint32_t first_position; /* fib_DiskKey that serves entries[0] */
+    uint32_t count;
+    uint32_t next;
+    uint32_t limit;          /* entries the next scan gathers */
+    bool stopped_at_last;    /* the tree cursor stopped on entries[count - 1] */
+    bfs_blk_t dir_root;
+    uint32_t dir_generation;
+    uint64_t recovery_generation;
+    uint32_t skip;
+    uint32_t seen;
+    exnext_entry_t entries[EXNEXT_BATCH_MAX];
+} exnext_batch_t;
+
+static bool exnext_gather_cb(const char *name, uint8_t name_len, uint32_t inode_nr,
+                             uint32_t entry_type, const bfs_dir_pos_t *pos, void *ctx)
+{
+    exnext_batch_t *b = (exnext_batch_t *)ctx;
+    if (b->seen < b->skip) {
+        b->seen++;
+        return true;
+    }
+    exnext_entry_t *e = &b->entries[b->count++];
+    e->ino = inode_nr;
+    e->type = entry_type;
+    e->pos = *pos;
+    e->name_len = name_len;
+    memcpy(e->name, name, name_len < EXNEXT_NAME_KEEP ? name_len : EXNEXT_NAME_KEEP);
+    /* Stop on the last entry gathered: the tree cursor then rests on it and
+     * the next scan resumes after it without a search. */
+    if (b->count == b->limit) {
+        b->stopped_at_last = true;
+        return false;
+    }
+    return true;
+}
+
+static bool ExNextBatchCurrent(const struct bfs_handler *h, const exnext_batch_t *b)
+{
+    return b->dir_root == h->fs.dir_tree.tree.root &&
+           b->dir_generation == h->fs.dir_tree.tree.generation &&
+           b->recovery_generation == h->fs.recovery_generation;
+}
+
+/* Forget the read-ahead, for example when ExAll moves the cursor. */
+static void ExNextBatchDrop(bfs_lock_t *lk)
+{
+    if (lk->cursor && lk->cursor->batch) lk->cursor->batch->count = 0;
+}
+
+/* The entry ExNext returns at position, NULL when the directory has no more
+ * entries. Without memory for the batch, *fallback is set and nothing read. */
+static const exnext_entry_t *ExNextEntry(struct bfs_handler *h, bfs_lock_t *lk,
+                                         uint32_t position, bfs_err_t *err,
+                                         bool *fallback)
+{
+    *err = BFS_OK;
+    *fallback = false;
+    bfs_scan_cursor_t *cursor = CursorFor(lk);
+    if (cursor && !cursor->batch) {
+        cursor->batch = AllocVec(sizeof(exnext_batch_t), MEMF_ANY | MEMF_CLEAR);
+        if (cursor->batch) cursor->batch->limit = EXNEXT_BATCH_FIRST;
+    }
+    if (!cursor || !cursor->batch) {
+        *fallback = true;
+        return NULL;
+    }
+    exnext_batch_t *b = cursor->batch;
+    bool current = ExNextBatchCurrent(h, b);
+    if (b->next < b->count && current && position == b->first_position + b->next)
+        return &b->entries[b->next++];
+
+    /* Scan again: grow after a batch was used up, shrink after a change. */
+    if (b->next < b->count && !current)
+        b->limit = b->limit > 2 ? b->limit / 2 : 1;
+    else if (b->count > 0 && b->next == b->count && b->limit < EXNEXT_BATCH_MAX)
+        b->limit *= 2;
+    b->first_position = position;
+    b->count = 0;
+    b->next = 0;
+    b->seen = 0;
+    b->stopped_at_last = false;
+    *err = ScanDirectoryFrom(h, lk, position, exnext_gather_cb, b, &b->skip, true);
+    CursorClearConsumedStop(lk);
+    if (*err != BFS_OK) {
+        b->count = 0;
+        return NULL;
+    }
+    b->dir_root = h->fs.dir_tree.tree.root;
+    b->dir_generation = h->fs.dir_tree.tree.generation;
+    b->recovery_generation = h->fs.recovery_generation;
+    return b->count ? &b->entries[b->next++] : NULL;
 }
 
 /* ── Fill FileInfoBlock ───────────────────────────────────── */
@@ -2724,9 +2842,25 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         ctx.name_out = namebuf;
         ctx.got_entry = false;
 
-        bfs_err_t err = ScanDirectoryFrom(h, lk, position, exam_next_pos_cb, &ctx,
-                                          &ctx.skip_count, true);
-        CursorClearConsumedStop(lk);
+        bool fallback;
+        bool consumed_stop = true;
+        bfs_err_t err;
+        const exnext_entry_t *entry = ExNextEntry(h, lk, position, &err, &fallback);
+        if (fallback) {
+            err = ScanDirectoryFrom(h, lk, position, exam_next_pos_cb, &ctx,
+                                    &ctx.skip_count, true);
+            CursorClearConsumedStop(lk);
+        } else if (entry) {
+            const exnext_batch_t *b = lk->cursor->batch;
+            ctx.got_entry = true;
+            ctx.name_len = entry->name_len;
+            memcpy(namebuf, entry->name,
+                   entry->name_len < EXNEXT_NAME_KEEP ? entry->name_len : EXNEXT_NAME_KEEP);
+            ctx.ino_out = entry->ino;
+            ctx.type_out = entry->type;
+            ctx.pos_out = entry->pos;
+            consumed_stop = b->next == b->count && b->stopped_at_last;
+        }
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
 
         if (!ctx.got_entry) {
@@ -2747,7 +2881,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
 #endif
         err = FillFibComment(h, fib, ctx.ino_out, &en_inode);
         if (err != BFS_OK) { res2 = Pfs4ToDosError(err); break; }
-        CursorRemember(lk, position + 1, &ctx.pos_out, true);
+        CursorRemember(lk, position + 1, &ctx.pos_out, consumed_stop);
         fib->fib_DiskKey = (LONG)(position + 1);
 #ifdef BFS_AROS
         if (wide_fib)
@@ -3053,6 +3187,7 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
         };
 
         CursorClearConsumedStop(lk);
+        ExNextBatchDrop(lk);
         bfs_err_t err;
         exall_batch_t *batch = (exall_batch_t *)AllocVec(sizeof(*batch), MEMF_ANY);
         if (batch) {
