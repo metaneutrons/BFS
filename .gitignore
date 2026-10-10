@@ -46,6 +46,10 @@ aros/
 !docs/qualification/evidence/bfs-scan-admission-performance-2026-10-09/**/*.fs-uae
 !docs/qualification/evidence/bfs-sparse-key-crc-performance-2026-10-09/**/*.fs-uae
 !docs/qualification/evidence/bfs-sparse-crc-append-confirmation-2026-10-09/**/*.fs-uae
+!docs/qualification/evidence/bfs-listing-diagnostic-2026-10-10/**/*.fs-uae
+!docs/qualification/evidence/bfs-directory-layout-pilot-2026-10-10/**/*.fs-uae
+!docs/qualification/evidence/bfs-directory-validation-pilot-2026-10-10/**/*.fs-uae
+!docs/qualification/evidence/bfs-listing-cache-batch-pilot-2026-10-10/**/*.fs-uae
 !docs/qualification/evidence/bfs-read-flush-profile-2026-10-09/**/*.fs-uae
 !docs/qualification/evidence/bfs-read-flush-cachy-2026-10-09/**/*.fs-uae
 !docs/qualification/evidence/bfs-write-path-profile-2026-10-09/**/*.fs-uae

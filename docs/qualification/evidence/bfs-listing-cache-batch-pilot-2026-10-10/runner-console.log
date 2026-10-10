@@ -1,0 +1,8 @@
+snapdog-runner
+START 1 cachebatch-pilot-1-bfs-first 2026-10-10T09:07:55Z
+PASS 1 cachebatch-pilot-1-bfs-first 2026-10-10T09:08:34Z
+START 2 cachebatch-pilot-2-pfs3-first 2026-10-10T09:08:34Z
+PASS 2 cachebatch-pilot-2-pfs3-first 2026-10-10T09:09:12Z
+CACHEBATCH_PILOT_COMPLETE 2 2026-10-10T09:09:12Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-10T09:09:14Z

@@ -1,0 +1,22 @@
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/alloc.o src/core/alloc.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/bootstrap_alloc.o src/core/bootstrap_alloc.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/btree.o src/core/btree.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/cache.o src/core/cache.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/crc32.o src/core/crc32.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/crc32_zero.o src/core/crc32_zero.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/dir.o src/core/dir.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/extent.o src/core/extent.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/file.o src/core/file.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/fs.o src/core/fs.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/fsck.o src/core/fsck.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/inode.o src/core/inode.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/namespace.o src/core/namespace.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/refcount.o src/core/refcount.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/snapshot.o src/core/snapshot.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/superblock.o src/core/superblock.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/core/txn.o src/core/txn.c
+ar rcs build/host/libbfs.a build/host/obj/core/alloc.o build/host/obj/core/bootstrap_alloc.o build/host/obj/core/btree.o build/host/obj/core/cache.o build/host/obj/core/crc32.o build/host/obj/core/crc32_zero.o build/host/obj/core/dir.o build/host/obj/core/extent.o build/host/obj/core/file.o build/host/obj/core/fs.o build/host/obj/core/fsck.o build/host/obj/core/inode.o build/host/obj/core/namespace.o build/host/obj/core/refcount.o build/host/obj/core/snapshot.o build/host/obj/core/superblock.o build/host/obj/core/txn.o
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -c -o build/host/obj/host/posix_bio.o src/host/posix_bio.c
+cc -std=c99 -Wall -Wextra -Werror -g -O2 -pthread -I include -I tests -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L -DBFS_FUSE_ENABLED -I/usr/include/fuse3 -o build/host/bfs \
+	tools/bfs_host.c tools/bfs_host_common.c src/fuse/bfs_fuse.c \
+	build/host/obj/host/posix_bio.o build/host/libbfs.a -lfuse3 -lpthread

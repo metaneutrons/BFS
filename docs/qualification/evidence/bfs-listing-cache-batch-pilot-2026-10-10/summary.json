@@ -1,0 +1,928 @@
+{
+ "clock_hz": 709379,
+ "phases": {
+  "APPEND_1K_256K": [
+   {
+    "candidate_over_reference": 1.0402886192194163,
+    "candidate_pfs3_us": 23680,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 79296,
+    "reference_pfs3_us": 28590,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 76225
+   },
+   {
+    "candidate_over_reference": 1.0179723763160875,
+    "candidate_pfs3_us": 23680,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 71934,
+    "reference_pfs3_us": 25408,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 70664
+   }
+  ],
+  "APPEND_4K_1M": [
+   {
+    "candidate_over_reference": 1.027209437679083,
+    "candidate_pfs3_us": 32385,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 91775,
+    "reference_pfs3_us": 39104,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 89344
+   },
+   {
+    "candidate_over_reference": 0.9142706356375151,
+    "candidate_pfs3_us": 32575,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 90084,
+    "reference_pfs3_us": 31744,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 98531
+   }
+  ],
+  "APPEND_READ_1280K": [
+   {
+    "candidate_over_reference": 1.0520231213872833,
+    "candidate_pfs3_us": 50176,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 46592,
+    "reference_pfs3_us": 39104,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 44288
+   },
+   {
+    "candidate_over_reference": 1.054330618331995,
+    "candidate_pfs3_us": 42303,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 45953,
+    "reference_pfs3_us": 40063,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 43585
+   }
+  ],
+  "LIST_EXALL_1000_ENTRIES_FIRST_PASS": [
+   {
+    "candidate_device_reads": {
+     "directory": 20,
+     "inode": 29
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 285.1085244981878,
+     "EXALL_FILL": 7.631735790668001,
+     "INODE_READ": 41.19679033497536,
+     "INODE_SEARCH": 30.842906746362083
+    },
+    "candidate_over_reference": 0.595954690592106,
+    "candidate_pfs3_us": 6463,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 49087,
+    "reference_device_reads": {
+     "directory": 21,
+     "inode": 56
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 255.6226408356229,
+     "EXALL_FILL": 84.60491380847526,
+     "INODE_READ": 72.65844193492607,
+     "INODE_SEARCH": 52.1344032561686
+    },
+    "reference_pfs3_us": 6656,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 82367
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 20,
+     "inode": 29
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 495.8562348194688,
+     "EXALL_FILL": 7.53451622645567,
+     "INODE_READ": 78.0187002803958,
+     "INODE_SEARCH": 48.488257650900195
+    },
+    "candidate_over_reference": 1.0908948863636363,
+    "candidate_pfs3_us": 6656,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 76799,
+    "reference_device_reads": {
+     "directory": 21,
+     "inode": 56
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 234.47738561944087,
+     "EXALL_FILL": 74.64155626593525,
+     "INODE_READ": 64.48705517341845,
+     "INODE_SEARCH": 43.89133766341967
+    },
+    "reference_pfs3_us": 6400,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 70400
+   }
+  ],
+  "LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 10.860971997402594,
+     "EXALL_FILL": 7.595030444995998,
+     "INODE_READ": 20.423631427058364,
+     "INODE_SEARCH": 5.705862518652296
+    },
+    "candidate_over_reference": 0.40269466221517214,
+    "candidate_pfs3_us": 50688,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 281279,
+    "reference_device_reads": {
+     "directory": 211,
+     "inode": 540
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 189.621504884573,
+     "EXALL_FILL": 63.516454613456354,
+     "INODE_READ": 50.48044037075289,
+     "INODE_SEARCH": 35.75945068433569
+    },
+    "reference_pfs3_us": 49471,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 698492
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 14.257028138183344,
+     "EXALL_FILL": 9.191712981728111,
+     "INODE_READ": 21.924417114737505,
+     "INODE_SEARCH": 7.129930727089047
+    },
+    "candidate_over_reference": 0.4400943111578548,
+    "candidate_pfs3_us": 52223,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 306303,
+    "reference_device_reads": {
+     "directory": 211,
+     "inode": 540
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 206.23291258593403,
+     "EXALL_FILL": 63.62799524142051,
+     "INODE_READ": 50.933722497160375,
+     "INODE_SEARCH": 36.50463700733021
+    },
+    "reference_pfs3_us": 49920,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 695994
+   }
+  ],
+  "LIST_EXALL_400_ENTRIES_FIRST_PASS": [
+   {
+    "candidate_device_reads": {
+     "directory": 9,
+     "inode": 12
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 6.680674836416935,
+     "INODE_READ": 55.28411653622087,
+     "INODE_SEARCH": 38.98081831157037
+    },
+    "candidate_over_reference": 0.9162162162162162,
+    "candidate_pfs3_us": 2878,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 21696,
+    "reference_device_reads": {
+     "directory": 9,
+     "inode": 13
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 41.738895078898466,
+     "INODE_READ": 27.396895888792386,
+     "INODE_SEARCH": 13.912965026299489
+    },
+    "reference_pfs3_us": 2880,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 23680
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 9,
+     "inode": 12
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 3.2484015259641974,
+     "INODE_READ": 47.316339208384164,
+     "INODE_SEARCH": 37.63242522532108
+    },
+    "candidate_over_reference": 0.8277967463346053,
+    "candidate_pfs3_us": 2880,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 20608,
+    "reference_device_reads": {
+     "directory": 9,
+     "inode": 13
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 47.13246742389562,
+     "INODE_READ": 33.34208358725516,
+     "INODE_SEARCH": 21.145255216182044
+    },
+    "reference_pfs3_us": 2687,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 24895
+   }
+  ],
+  "LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 17.45322652764232,
+     "EXALL_FILL": 6.448553009190268,
+     "INODE_READ": 16.916204172945633,
+     "INODE_SEARCH": 6.802473592950477
+    },
+    "candidate_over_reference": 0.7880124167528941,
+    "candidate_pfs3_us": 20800,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 113473,
+    "reference_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 8.01757593613569,
+     "EXALL_FILL": 43.58123346525058,
+     "INODE_READ": 30.858392141083666,
+     "INODE_SEARCH": 15.589792945601442
+    },
+    "reference_pfs3_us": 20160,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 143999
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 11.47885283164168,
+     "EXALL_FILL": 6.580523396355091,
+     "INODE_READ": 21.751119266347825,
+     "INODE_SEARCH": 6.886454748419003
+    },
+    "candidate_over_reference": 0.7351032408864718,
+    "candidate_pfs3_us": 20225,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 109759,
+    "reference_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 19.999887225305514,
+     "EXALL_FILL": 42.20723797862947,
+     "INODE_READ": 28.229361816033745,
+     "INODE_SEARCH": 13.912447806089958
+    },
+    "reference_pfs3_us": 20160,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 149311
+   }
+  ],
+  "LIST_EXALL_40_ENTRIES_FIRST_PASS": [
+   {
+    "candidate_device_reads": {
+     "directory": 1,
+     "inode": 1
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": null,
+     "EXALL_FILL": 31.717882824273065,
+     "INODE_READ": 0.0,
+     "INODE_SEARCH": 0.0
+    },
+    "candidate_over_reference": 0.9076699382042893,
+    "candidate_pfs3_us": 639,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 2497,
+    "reference_device_reads": {
+     "directory": 1,
+     "inode": 1
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": null,
+     "EXALL_FILL": 31.717882824273065,
+     "INODE_READ": 31.717882824273065,
+     "INODE_SEARCH": 31.717882824273065
+    },
+    "reference_pfs3_us": 640,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 2751
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 1,
+     "inode": 1
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": null,
+     "EXALL_FILL": 0.0,
+     "INODE_READ": 32.422724664812456,
+     "INODE_SEARCH": 32.422724664812456
+    },
+    "candidate_over_reference": 0.899609375,
+    "candidate_pfs3_us": 768,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 2303,
+    "reference_device_reads": {
+     "directory": 1,
+     "inode": 1
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": null,
+     "EXALL_FILL": 64.14060748908553,
+     "INODE_READ": 32.422724664812456,
+     "INODE_SEARCH": 32.422724664812456
+    },
+    "reference_pfs3_us": 513,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 2560
+   }
+  ],
+  "LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 6.558093646757909,
+     "INODE_READ": 11.154888258971395,
+     "INODE_SEARCH": 2.758076767328092
+    },
+    "candidate_over_reference": 0.9172829153007548,
+    "candidate_pfs3_us": 2496,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 12032,
+    "reference_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 30.400135035438527,
+     "INODE_READ": 26.783989940497253,
+     "INODE_SEARCH": 11.093597664141884
+    },
+    "reference_pfs3_us": 2497,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 13117
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 63.43576564854613,
+     "EXALL_FILL": 11.216178853800908,
+     "INODE_READ": 22.8001012765789,
+     "INODE_SEARCH": 2.758076767328092
+    },
+    "candidate_over_reference": 0.979921875,
+    "candidate_pfs3_us": 3840,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 12543,
+    "reference_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": 41.98405745821652,
+     "INODE_READ": 30.03239146646145,
+     "INODE_SEARCH": 11.093597664141884
+    },
+    "reference_pfs3_us": 2496,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 12800
+   }
+  ],
+  "LIST_EXNEXT_1000_ENTRIES_FIRST_PASS": [
+   {
+    "candidate_device_reads": {
+     "directory": 20,
+     "inode": 31
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 176.21046013485034,
+     "EXALL_FILL": null,
+     "INODE_READ": 51.69650326990712,
+     "INODE_SEARCH": 38.20728873544617
+    },
+    "candidate_over_reference": 1.0304937076476284,
+    "candidate_pfs3_us": 35521,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 136256,
+    "reference_device_reads": {
+     "directory": 20,
+     "inode": 58
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 127.92879405790136,
+     "EXALL_FILL": null,
+     "INODE_READ": 61.442764582193334,
+     "INODE_SEARCH": 48.34242830458171
+    },
+    "reference_pfs3_us": 31745,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 132224
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 20,
+     "inode": 31
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 128.28121497817105,
+     "EXALL_FILL": null,
+     "INODE_READ": 51.13749077568622,
+     "INODE_SEARCH": 37.33231265753519
+    },
+    "candidate_over_reference": 0.9252584845059034,
+    "candidate_pfs3_us": 32320,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 123584,
+    "reference_device_reads": {
+     "directory": 20,
+     "inode": 58
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 127.92879405790136,
+     "EXALL_FILL": null,
+     "INODE_READ": 54.953358671020226,
+     "INODE_SEARCH": 41.63427837393085
+    },
+    "reference_pfs3_us": 29953,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 133567
+   }
+  ],
+  "LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 8.458102086472817,
+     "EXALL_FILL": null,
+     "INODE_READ": 33.00529802280931,
+     "INODE_SEARCH": 19.41671451200208
+    },
+    "candidate_over_reference": 0.7032328640207399,
+    "candidate_pfs3_us": 285375,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 1007995,
+    "reference_device_reads": {
+     "directory": 220,
+     "inode": 560
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 168.2989700879795,
+     "EXALL_FILL": null,
+     "INODE_READ": 62.83880776319132,
+     "INODE_SEARCH": 48.68922768542415
+    },
+    "reference_pfs3_us": 285548,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 1433373
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 13.118688950447632,
+     "EXALL_FILL": null,
+     "INODE_READ": 32.82549143083497,
+     "INODE_SEARCH": 20.16950477706797
+    },
+    "candidate_over_reference": 0.7522036424914122,
+    "candidate_pfs3_us": 282112,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 1021306,
+    "reference_device_reads": {
+     "directory": 220,
+     "inode": 560
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 152.10199228293123,
+     "EXALL_FILL": null,
+     "INODE_READ": 56.375360137020486,
+     "INODE_SEARCH": 44.7190981346308
+    },
+    "reference_pfs3_us": 291519,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 1357752
+   }
+  ],
+  "LIST_EXNEXT_400_ENTRIES_FIRST_PASS": [
+   {
+    "candidate_device_reads": {
+     "directory": 9,
+     "inode": 12
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": null,
+     "INODE_READ": 44.43568125139704,
+     "INODE_SEARCH": 36.16145094941276
+    },
+    "candidate_over_reference": 0.9949112969208358,
+    "candidate_pfs3_us": 13312,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 49856,
+    "reference_device_reads": {
+     "directory": 9,
+     "inode": 12
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": null,
+     "INODE_READ": 50.196997165371286,
+     "INODE_SEARCH": 33.403374182084676
+    },
+    "reference_pfs3_us": 12865,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 50111
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 9,
+     "inode": 12
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": null,
+     "INODE_READ": 47.867954561849785,
+     "INODE_SEARCH": 35.916288570094714
+    },
+    "candidate_over_reference": 1.0063532401524777,
+    "candidate_pfs3_us": 18048,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 50688,
+    "reference_device_reads": {
+     "directory": 9,
+     "inode": 12
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": null,
+     "INODE_READ": 49.522800622246635,
+     "INODE_SEARCH": 33.34208358725516
+    },
+    "reference_pfs3_us": 12480,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 50368
+   }
+  ],
+  "LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 17.406528931581736,
+     "EXALL_FILL": null,
+     "INODE_READ": 32.34474216330598,
+     "INODE_SEARCH": 20.881314441852393
+    },
+    "candidate_over_reference": 0.99558811574853,
+    "candidate_pfs3_us": 128317,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 404158,
+    "reference_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 9.071008034767948,
+     "EXALL_FILL": null,
+     "INODE_READ": 30.521151358846588,
+     "INODE_SEARCH": 18.06194707969479
+    },
+    "reference_pfs3_us": 111871,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 405949
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 10.051657552040158,
+     "EXALL_FILL": null,
+     "INODE_READ": 37.233645142366505,
+     "INODE_SEARCH": 20.34143558526902
+    },
+    "candidate_over_reference": 1.137378381481537,
+    "candidate_pfs3_us": 113023,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 455677,
+    "reference_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 4.474213422554461,
+     "EXALL_FILL": null,
+     "INODE_READ": 31.486934646734618,
+     "INODE_SEARCH": 15.524516453752941
+    },
+    "reference_pfs3_us": 111614,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 400638
+   }
+  ],
+  "LIST_EXNEXT_40_ENTRIES_FIRST_PASS": [
+   {
+    "candidate_device_reads": {
+     "directory": 2,
+     "inode": 3
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": null,
+     "EXALL_FILL": null,
+     "INODE_READ": 58.50187276477031,
+     "INODE_SEARCH": 31.717882824273065
+    },
+    "candidate_over_reference": 1.0331387362637363,
+    "candidate_pfs3_us": 1665,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 6017,
+    "reference_device_reads": {
+     "directory": 2,
+     "inode": 3
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": null,
+     "EXALL_FILL": null,
+     "INODE_READ": 63.43576564854613,
+     "INODE_SEARCH": 0.0
+    },
+    "reference_pfs3_us": 1600,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 5824
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 2,
+     "inode": 3
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": null,
+     "EXALL_FILL": null,
+     "INODE_READ": 63.43576564854613,
+     "INODE_SEARCH": 32.422724664812456
+    },
+    "candidate_over_reference": 0.9790488859328235,
+    "candidate_pfs3_us": 1665,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 5888,
+    "reference_device_reads": {
+     "directory": 2,
+     "inode": 3
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": null,
+     "EXALL_FILL": null,
+     "INODE_READ": 57.79703092423091,
+     "INODE_SEARCH": 31.717882824273065
+    },
+    "reference_pfs3_us": 1600,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 6014
+   }
+  ],
+  "LIST_EXNEXT_40_ENTRIES_REPEAT10_TOTAL": [
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 15.858941412136533,
+     "EXALL_FILL": null,
+     "INODE_READ": 32.01156692449781,
+     "INODE_SEARCH": 13.391994970248627
+    },
+    "candidate_over_reference": 0.8683099346265137,
+    "candidate_pfs3_us": 12352,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 40511,
+    "reference_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": null,
+     "INODE_READ": 29.720830942744758,
+     "INODE_SEARCH": 13.803152710563275
+    },
+    "reference_pfs3_us": 12160,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 46655
+   },
+   {
+    "candidate_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "candidate_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": null,
+     "INODE_READ": 16.328835972496133,
+     "INODE_SEARCH": 8.281891626337966
+    },
+    "candidate_over_reference": 0.9937204111168347,
+    "candidate_pfs3_us": 15680,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 40511,
+    "reference_device_reads": {
+     "directory": 0,
+     "inode": 0
+    },
+    "reference_means_us": {
+     "DIR_NODE_VIEW": 0.0,
+     "EXALL_FILL": null,
+     "INODE_READ": 24.434517138699245,
+     "INODE_SEARCH": 10.807574888270821
+    },
+    "reference_pfs3_us": 12672,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 40767
+   }
+  ],
+  "LOOKUP_400": [
+   {
+    "candidate_over_reference": 0.992105658521928,
+    "candidate_pfs3_us": 67583,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 72639,
+    "reference_pfs3_us": 67136,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 73217
+   },
+   {
+    "candidate_over_reference": 1.0008764241893076,
+    "candidate_pfs3_us": 67391,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 73088,
+    "reference_pfs3_us": 68351,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 73024
+   }
+  ],
+  "SEQ_READ_8M": [
+   {
+    "candidate_over_reference": 0.9587286206417459,
+    "candidate_pfs3_us": 256510,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 269118,
+    "reference_pfs3_us": 256638,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 280703
+   },
+   {
+    "candidate_over_reference": 1.0419226233926666,
+    "candidate_pfs3_us": 269567,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 278334,
+    "reference_pfs3_us": 247935,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 267135
+   }
+  ],
+  "SEQ_WRITE_8M": [
+   {
+    "candidate_over_reference": 1.0379395761437977,
+    "candidate_pfs3_us": 35713,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 49025,
+    "reference_pfs3_us": 39809,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 47233
+   },
+   {
+    "candidate_over_reference": 1.0437938436345129,
+    "candidate_pfs3_us": 48192,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 47168,
+    "reference_pfs3_us": 37953,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 45189
+   }
+  ],
+  "SMALL_CREATE_40": [
+   {
+    "candidate_over_reference": 0.9552228009259259,
+    "candidate_pfs3_us": 17142,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 39615,
+    "reference_pfs3_us": 16129,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 41472
+   },
+   {
+    "candidate_over_reference": 0.9783179513843754,
+    "candidate_pfs3_us": 17792,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 37631,
+    "reference_pfs3_us": 15040,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 38465
+   }
+  ],
+  "SMALL_DELETE_40": [
+   {
+    "candidate_over_reference": 0.9963468779857247,
+    "candidate_pfs3_us": 8319,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 17728,
+    "reference_pfs3_us": 7744,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 17793
+   },
+   {
+    "candidate_over_reference": 1.003706871970345,
+    "candidate_pfs3_us": 9089,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 17600,
+    "reference_pfs3_us": 7616,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 17535
+   }
+  ],
+  "SMALL_READ_40": [
+   {
+    "candidate_over_reference": 1.048301286079343,
+    "candidate_pfs3_us": 13888,
+    "candidate_run": "cachebatch-pilot-1-bfs-first",
+    "candidate_us": 25024,
+    "reference_pfs3_us": 13632,
+    "reference_run": "dirvalid-pilot-1-bfs-first",
+    "reference_us": 23871
+   },
+   {
+    "candidate_over_reference": 0.8057673070953054,
+    "candidate_pfs3_us": 16768,
+    "candidate_run": "cachebatch-pilot-2-pfs3-first",
+    "candidate_us": 23360,
+    "reference_pfs3_us": 13632,
+    "reference_run": "dirvalid-pilot-2-pfs3-first",
+    "reference_us": 28991
+   }
+  ]
+ },
+ "retention": {
+  "regressed_phases": [],
+  "retained": true,
+  "target": [
+   {
+    "device_read_bound": 75,
+    "device_reads": 0,
+    "met": true,
+    "run": "cachebatch-pilot-1-bfs-first",
+    "time_bound": 0.85,
+    "time_ratio": 0.40269466221517214
+   },
+   {
+    "device_read_bound": 75,
+    "device_reads": 0,
+    "met": true,
+    "run": "cachebatch-pilot-2-pfs3-first",
+    "time_bound": 0.85,
+    "time_ratio": 0.4400943111578548
+   }
+  ],
+  "verifier": "passed"
+ }
+}

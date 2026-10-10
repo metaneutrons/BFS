@@ -1,0 +1,8 @@
+snapdog-runner
+START 1 listing-diag-1-bfs-first 2026-10-09T23:55:00Z
+PASS 1 listing-diag-1-bfs-first 2026-10-09T23:55:40Z
+START 2 listing-diag-2-pfs3-first 2026-10-09T23:55:40Z
+PASS 2 listing-diag-2-pfs3-first 2026-10-09T23:56:20Z
+LISTING_DIAG_COMPLETE 2 2026-10-09T23:56:20Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-09T23:56:23Z
