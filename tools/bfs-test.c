@@ -2260,6 +2260,65 @@ static void test_soft_link_resolution(void)
     if (ok) pass(T); else fail(T, step);
 }
 
+/* A soft link made through dos.library survives a remount. softpersist_53
+ * leaves a relative link to a file behind and softpersist_54 resolves and
+ * removes it: in the full suite in the same boot, and run alone in a second
+ * boot of the same image (emulator-test/softlink-remount.sh). */
+static void test_soft_link_persist_make(void)
+{
+    const char *T = "softpersist_53";
+    char dir[96], file[96], link[96];
+    if (!volpath(dir, sizeof(dir), "slkeep") || !volpath(file, sizeof(file), "slkeep/data") ||
+        !volpath(link, sizeof(link), "slkeeplnk")) {
+        fail(T, "path");
+        return;
+    }
+    BPTR made = CreateDir(dir);
+    if (!made) { fail(T, "mkdir"); return; }
+    UnLock(made);
+    const char *step = "make";
+    BOOL ok = write_seeded(file, 2000, 0x5353) &&
+              MakeLink(link, TEST_PTR("slkeep/data"), LINK_SOFT);
+    if (ok) { step = "open the link"; ok = verify_seeded(link, 2000, 0x5353); }
+    /* Commit now: the emulator may stop before the delayed commit. */
+    if (ok) {
+        step = "flush";
+        struct MsgPort *port = DeviceProc(vol);
+        ok = port && DoPkt(port, ACTION_FLUSH, 0, 0, 0, 0, 0) == DOSTRUE;
+    }
+    if (ok) pass(T); else fail(T, step);
+}
+
+static void test_soft_link_persist_check(void)
+{
+    const char *T = "softpersist_54";
+    char dir[96], file[96], link[96];
+    if (!volpath(dir, sizeof(dir), "slkeep") || !volpath(file, sizeof(file), "slkeep/data") ||
+        !volpath(link, sizeof(link), "slkeeplnk")) {
+        fail(T, "path");
+        return;
+    }
+    struct MsgPort *port = DeviceProc(vol);
+    BPTR root = Lock(vol, SHARED_LOCK);
+    const char *step = "read the link";
+    BOOL ok = port && root;
+    if (ok) {
+        /* The relative target replaces the link after the volume prefix. */
+        char buffer[96];
+        LONG length = ReadLink(port, root, link, buffer, sizeof(buffer));
+        ok = length == tool_strlen(file) &&
+             tool_memcmp(buffer, file, tool_strlen(file) + 1) == 0;
+    }
+    if (root) UnLock(root);
+    if (ok) { step = "open the link"; ok = verify_seeded(link, 2000, 0x5353); }
+    if (ok) { step = "list the link"; ok = exnext_type("slkeeplnk") == ST_SOFTLINK; }
+    BOOL removed = DeleteFile(link);
+    removed = DeleteFile(file) && removed;
+    removed = DeleteFile(dir) && removed;
+    if (ok && !removed) { ok = FALSE; step = "cleanup"; }
+    if (ok) pass(T); else fail(T, step);
+}
+
 /* ── Test table ────────────────────────────────────────────── */
 
 typedef void (*test_fn)(void);
