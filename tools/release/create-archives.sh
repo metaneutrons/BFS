@@ -58,11 +58,11 @@ jq -n \
     '{schema: 1, tag: $tag, source_commit: $commit, source_date_epoch: $epoch,
       toolchain: $toolchain,
       targets: [
-        {file: "bfshandler.020", flags: ["-m68020", "-Os"]},
-        {file: "bfshandler.030", flags: ["-m68030", "-Os"]},
-        {file: "bfshandler.040", flags: ["-m68040", "-Os"]},
-        {file: "bfshandler.060", flags: ["-m68060", "-Os"]},
-        {file: "bfshandler.080", flags: ["-m68080", "-Os"]}
+        {file: "bfshandler.020", flags: ["-m68020", "-O2"]},
+        {file: "bfshandler.030", flags: ["-m68030", "-O2"]},
+        {file: "bfshandler.040", flags: ["-m68040", "-O2"]},
+        {file: "bfshandler.060", flags: ["-m68060", "-O2"]},
+        {file: "bfshandler.080", flags: ["-m68080", "-O2"]}
       ]}' > "$staging/$package/BUILD-METADATA.json"
 
 python3 - "$staging/$package" "$source_date_epoch" <<'PY'

@@ -38,7 +38,7 @@ class IntegrityTests(unittest.TestCase):
         self.metadata = {
             "schema": 1, "tag": TAG, "source_commit": COMMIT,
             "source_date_epoch": 1, "toolchain": "test-fixture",
-            "targets": [{"file": f"bfshandler.{cpu}", "flags": [f"-m68{cpu}", "-Os"]}
+            "targets": [{"file": f"bfshandler.{cpu}", "flags": [f"-m68{cpu}", "-O2"]}
                         for cpu in release.CPUS],
             "files": {name: release.digest(data) for name, data in self.files.items()
                       if name != "BUILD-METADATA.json"},

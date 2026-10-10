@@ -418,7 +418,9 @@ clean:
 AMIGA_ASM_SRCS = src/amiga/startup.s src/amiga/crc32_68k.s src/amiga/memcpy_68k.s
 AMIGA_SRCS = $(AMIGA_ASM_SRCS) src/amiga/handler.c src/amiga/amiga_bio.c $(CORE_SRC_AMIGA)
 AMIGA_LDFLAGS = -nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
-AMIGA_BASE_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -noixemul -fomit-frame-pointer \
+# Release handlers are built for speed: -Os was about 10 % slower on the 68040
+# in every measured workload (docs/qualification/bfs-release-flags-pilot-2026-10-10.md).
+AMIGA_BASE_FLAGS = -std=c99 $(AMIGA_WARNINGS) -O2 -noixemul -fomit-frame-pointer \
                    -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I$(AMIGA_PREFIX)/ndk-include
 AMIGA_RELEASE_CPUS = 020 030 040 060 080
 AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -Isrc/amiga \
