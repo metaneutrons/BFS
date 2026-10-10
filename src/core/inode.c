@@ -200,10 +200,18 @@ static bfs_err_t sorted_read_body(bfs_btree_t *tree, bfs_btree_sorted_t *state,
 static bfs_err_t sorted_read(bfs_btree_t *tree, bfs_btree_sorted_t *state,
                              uint32_t ino, bfs_inode_t *out)
 {
+#ifdef BFS_PERF_WRITE_DETAIL
+    /* Counted like bfs_inode_read, so the sidecar matches inode_read_calls. */
+    bfs_write_probe_sample_t write_sample = bfs_write_probe_begin(
+        BFS_WRITE_PROBE_INODE_READ);
+#endif
     bfs_perf_detail_sample_t sample = bfs_perf_probe_detail_begin(
         BFS_PERF_DETAIL_SCOPE_DETAIL_INODE_READ);
     bfs_err_t result = sorted_read_body(tree, state, ino, out);
     bfs_perf_probe_detail_end(&sample);
+#ifdef BFS_PERF_WRITE_DETAIL
+    bfs_write_probe_end(&write_sample);
+#endif
     return result;
 }
 static bfs_err_t sorted_read_body(bfs_btree_t *tree, bfs_btree_sorted_t *state,

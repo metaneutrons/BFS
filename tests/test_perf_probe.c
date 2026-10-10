@@ -453,9 +453,11 @@ static void test_write_sidecar_real_growth_counts_and_data(void)
     bfs_perf_probe_fs = &fs;
     for (uint32_t index = 0; index < 256u; index++)
         TEST_ASSERT_EQ(bfs_file_write(&file, data, sizeof(data)), (int32_t)sizeof(data));
-    /* The host calls the shared core directly: no Amiga protection packet. */
+    /* The host calls the shared core directly: no Amiga protection packet.
+     * Inode write-back writes the tree on the first publication of the
+     * transaction only; the commit writes the pending copy. */
     TEST_ASSERT_EQ(bfs_write_probe_counters.inode_read_calls, 256u);
-    TEST_ASSERT_EQ(bfs_write_probe_counters.inode_write_calls, 256u);
+    TEST_ASSERT_EQ(bfs_write_probe_counters.inode_write_calls, 1u);
     TEST_ASSERT_EQ(bfs_write_probe_counters.extent_map_calls, 256u);
     TEST_ASSERT_EQ(bfs_write_probe_counters.freespace_goal_calls, 256u);
     TEST_ASSERT_EQ(bfs_write_probe_counters.inode_read_calls,
@@ -470,6 +472,20 @@ static void test_write_sidecar_real_growth_counts_and_data(void)
     TEST_ASSERT_EQ(file.extents.inline_length, 256u);
     TEST_ASSERT_EQ(file.extents.tree.root, BFS_BLK_NULL);
     TEST_ASSERT_EQ(bfs_fs_sync(&fs), BFS_OK);
+    TEST_ASSERT_EQ(bfs_write_probe_counters.inode_write_calls, 2u);
+
+    /* Sorted reads, as ExAll makes them, count in the sidecar like single
+     * reads, so the two inode read counters stay equal. */
+    uint32_t sorted[2] = { BFS_ROOT_INO, ino };
+    bfs_inode_t inodes[2];
+    bfs_err_t results[2];
+    uint32_t main_before = bfs_perf_probe_counters.inode_read_calls;
+    uint32_t sidecar_before = bfs_write_probe_counters.inode_read_calls;
+    TEST_ASSERT_EQ(bfs_inode_read_sorted(&fs.inode_tree, sorted, 2, inodes, results), BFS_OK);
+    TEST_ASSERT_EQ(bfs_perf_probe_counters.inode_read_calls, main_before + 2u);
+    TEST_ASSERT_EQ(bfs_write_probe_counters.inode_read_calls, sidecar_before + 2u);
+    TEST_ASSERT_EQ(bfs_write_probe_counters.inode_read_calls,
+                   bfs_perf_probe_counters.inode_read_calls);
     bfs_perf_probe_fs = NULL;
     stop_probe();
     TEST_ASSERT_EQ(bfs_fs_unmount(&fs), BFS_OK);

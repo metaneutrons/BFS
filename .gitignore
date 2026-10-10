@@ -58,6 +58,7 @@ aros/
 !docs/qualification/evidence/bfs-exnext-read-ahead-pilot-2026-10-10/**/*.fs-uae
 !docs/qualification/evidence/bfs-write-phase-confirmation-2026-10-10/**/*.fs-uae
 !docs/qualification/evidence/bfs-production-status-2026-10-10/**/*.fs-uae
+!docs/qualification/evidence/bfs-append-attribution-2026-10-10/**/*.fs-uae
 !docs/qualification/evidence/bfs-read-flush-profile-2026-10-09/**/*.fs-uae
 !docs/qualification/evidence/bfs-read-flush-cachy-2026-10-09/**/*.fs-uae
 !docs/qualification/evidence/bfs-write-path-profile-2026-10-09/**/*.fs-uae

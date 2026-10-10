@@ -91,6 +91,9 @@ CONFORMANCE_FIXTURE = $(BUILD_HOST)/conformance-fixture-writer
 # ── Test binaries ───────────────────────────────────────────
 TEST_BINS = $(patsubst tests/test_%.c,$(BUILD_HOST)/test_%,$(TEST_SRC))
 AMIGA_ENDIAN_TEST_BIN = $(BUILD_HOST)/test_endian_amiga_profile
+# The write probe's sidecar oracles, built as the Amiga write-probe handler is.
+WRITE_PROBE_FLAGS = -DBFS_PERF_WRITE_DETAIL=1 -DBFS_PERF_CRC_SAMPLE_STRIDE=1
+WRITE_PROBE_TEST_BIN = $(BUILD_HOST)/test_perf_probe_write
 AROS_DOS_NAME_TEST_BIN = $(BUILD_HOST)/test_dos_name_aros_profile
 
 # ── Phony targets ───────────────────────────────────────────
@@ -198,10 +201,10 @@ analyze:
 		-DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L $(CORE_SRC) $(HOST_SRC) \
 		tools/bfs-conformance-core.c tools/bfs-conformance-posix.c $(EMU_SRC)
 
-host-test: $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN)
+host-test: $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN) $(WRITE_PROBE_TEST_BIN)
 	@echo "=== Running tests ==="
 	@fail=0; \
-	for t in $(notdir $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN)); do \
+	for t in $(notdir $(TEST_BINS) $(AMIGA_ENDIAN_TEST_BIN) $(AROS_DOS_NAME_TEST_BIN) $(WRITE_PROBE_TEST_BIN)); do \
 		echo "--- $(BUILD_HOST)/$$t ---"; \
 		(cd $(BUILD_HOST) && ./$$t) || fail=1; \
 	done; \
@@ -264,6 +267,14 @@ $(BUILD_HOST)/test_perf_probe: tests/test_perf_probe.c src/amiga/perf_probe.c \
 		-Itests/perf_probe_stubs -iquote src/amiga -o $@ \
 		tests/test_perf_probe.c src/amiga/perf_probe.c $(CORE_SRC) $(EMU_SRC)
 
+$(WRITE_PROBE_TEST_BIN): tests/test_perf_probe.c src/amiga/perf_probe.c \
+		src/amiga/perf_probe.h $(CORE_SRC) $(EMU_SRC) $(CORE_HEADERS) \
+		src/amiga/write_probe.h $(PERF_PROBE_STUB_HEADERS)
+	@mkdir -p $(BUILD_HOST)
+	$(HOST_CC) $(HOST_CFLAGS) -DBFS_PERF_PROBE=1 $(WRITE_PROBE_FLAGS) \
+		-Itests/perf_probe_stubs -iquote src/amiga -o $@ \
+		tests/test_perf_probe.c src/amiga/perf_probe.c $(CORE_SRC) $(EMU_SRC)
+
 $(HOST_POSIX_OBJ): src/host/posix_bio.c $(CORE_HEADERS)
 	@mkdir -p $(dir $@)
 	$(HOST_CC) $(HOST_CFLAGS) -c -o $@ $<
@@ -318,7 +329,7 @@ amiga-perf-probe-handler:
 		$(AMIGA_SRCS) src/amiga/perf_probe.c \
 		-nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 
-amiga-write-perf-probe-handler: AMIGA_WRITE_PROBE_FLAGS = -DBFS_PERF_WRITE_DETAIL=1 -DBFS_PERF_CRC_SAMPLE_STRIDE=1
+amiga-write-perf-probe-handler: AMIGA_WRITE_PROBE_FLAGS = $(WRITE_PROBE_FLAGS)
 amiga-write-perf-probe-handler: AMIGA_PROBE_FILE = bfshandler-write-probe
 amiga-write-perf-probe-handler: amiga-perf-probe-handler
 
