@@ -17,6 +17,16 @@ the BFS sense. FUSE entry and attribute timeouts are zero in M5 and M6; caching 
 case-sensitive Linux dentry would otherwise create aliases that the core does
 not distinguish.
 
+Because both spellings of a name resolve to the same inode, Linux cannot pass a
+case-only rename to the adapter. The kernel treats `rename("name", "NAME")` as a
+rename of a file onto itself: it reports success without calling the adapter,
+and the stored spelling stays unchanged. With `RENAME_NOREPLACE` it fails with
+`EEXIST`, and GNU `mv` reports that both names are the same file. This holds for
+files and directories. On Linux, a case-only rename takes two renames through an
+intermediate name; each is atomic, the pair is not, and the inode is kept.
+AmigaDOS renames the spelling in one step, as the
+[namespace conventions](../on-disk-format/namespace.md) define.
+
 ### FUSE name encoding
 
 Linux names cannot contain NUL or slash and reserves `.` and `..`. The mapping
