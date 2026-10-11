@@ -1,5 +1,12 @@
 # Changelog
 
+## [0.2.1](https://github.com/metaneutrons/BFS/compare/v0.2.0...v0.2.1) (2026-10-11)
+
+
+### Bug Fixes
+
+* **fuse:** test and document case-only renames as Linux delivers them ([#92](https://github.com/metaneutrons/BFS/issues/92)) ([9e8e41b](https://github.com/metaneutrons/BFS/commit/9e8e41be09284e2ef628b4d2473adaad28d75278))
+
 ## [0.2.0](https://github.com/metaneutrons/BFS/compare/v0.1.4...v0.2.0) (2026-10-10)
 
 
