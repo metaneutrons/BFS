@@ -13,6 +13,8 @@ __pycache__/
 *.img
 *.hdf
 *.adf
+# Output of the bfs command captured by tests/test_fsck.c.
+/test_fsck.log
 
 # Emulator test runtime files
 aros/
