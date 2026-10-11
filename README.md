@@ -6,9 +6,11 @@
 > **⚠️ WARNING: Experimental software.** BFS has not yet been battle-tested.
 > Always keep backups of your data and use at your own risk.
 
-> **Release status:** v0.1.1 is qualified by the host and AROS/FS-UAE
+> **Release status:** v0.2.1 passes the host, Linux FUSE and AROS/FS-UAE
 > integration gates and ships handler builds for 68020, 68030, 68040, 68060 and
-> 68080. Physical Apollo 68080 hardware and AMMX are not qualified.
+> 68080. It writes on-disk format v3, which v0.1 drivers cannot read. Native
+> AROS x86_64 is not part of CI, and physical Apollo 68080 hardware and AMMX are
+> not qualified.
 
 ## Motivation
 
@@ -17,7 +19,7 @@
 - **O(n) directory scans** — linear search through linked blocks
 - **Anode chains** — file extent lookup is O(n) in fragment count
 - **No checksums** — silent corruption goes undetected
-- **~1.6 TB limit** — practical PFS3 partition-size ceiling
+- **~1.78 TB limit** — PFS3 refuses to format larger partitions (with 512-byte sectors)
 
 BFS is a **clean-break successor** with a modern on-disk format. It is NOT a
 fork of PFS3 — it is a complete fresh implementation from scratch with zero shared
@@ -30,21 +32,21 @@ code.
 | Directory lookup | O(n) linear scan | O(log n) B+tree |
 | File extent lookup | O(n) anode chain | O(log n) B+tree |
 | Metadata checksums | None | CRC32 on every block |
-| Crash safety | Journal replay | COW + dual superblocks |
+| Crash safety | Atomic update (new block locations) | COW + dual superblocks |
 | Data consistency | None | Optional `data=ordered` core API mode |
 | Snapshots | — | B+tree based (Read-only) |
 | Metadata compaction | — | **Online B+tree compaction** |
-| Max filename | 107 chars | 255 chars |
-| Address-space ceiling | ~1.6 TB (~1.46 TiB, practical) | <4 TiB at 1 KiB blocks; <16 TiB at 4 KiB blocks (format address limit) |
+| Max filename | 107 chars | 255 bytes (107 by default) |
+| Address-space ceiling | ~1.78 TB (~1.62 TiB) with 512-byte sectors | <4 TiB at 1 KiB blocks; <16 TiB at 4 KiB blocks (format address limit) |
 | Hard links | Yes | Yes |
 | Soft links | Yes | Yes |
 | File comments | Yes | Yes |
 | Free space tracking | Bitmap | Self-hosting B+tree |
-| Automated tests | — | Core, fault-injection and emulator suites |
+| Automated tests | — | Core, fault-injection, Linux FUSE and emulator suites |
 
-The PFS3 figure is a practical decimal-size limit. The BFS figures are binary
-TiB limits imposed by the on-disk block address space; 16 TiB is approximately
-17.59 TB.
+The PFS3 figure is its format limit of 3,469,243,648 sectors (`MAXDISKSIZE` in
+pfs3aio's `blocks.h`). The BFS figures are binary TiB limits imposed by the
+on-disk block address space; 16 TiB is approximately 17.59 TB.
 
 ## Architecture
 
@@ -77,8 +79,12 @@ The normative v3 byte layout is documented in [the on-disk format specification]
 Format v3 replaced v2 and cannot read v2 volumes: copy their data with a v0.1
 driver, then format the volume with `bfs format`, which replaces an older BFS
 format (see [format compatibility](docs/format-compatibility.md#replacing-an-older-format)).
+v3 has been frozen since v0.2.0; a later on-disk change raises the format
+version (see [format versions and releases](docs/format-compatibility.md#format-versions-and-releases)).
 
-- **Directory tree** — (parent_id, hash, name) → (inode, type)
+- **Directory tree** — (owner, kind, name hash, ordinal, part) → a name entry
+  (inode, type, name), a directory's parent link or an inode's comment; long
+  names and comments continue in further parts
 - **Extent tree** — file_block → (disk_block, length, data CRC32); a file whose
   content is one contiguous run keeps it in its inode instead
 - **Inode tree** — inode_id → metadata, flags and the optional inline extent
@@ -129,7 +135,9 @@ make aros-ci-test AROS_ROOT=/path/to/AROS-NX
 The outputs are in `build/aros/pc-x86_64`. `make aros-ci-test` boots the
 checkout's `aros-x86_64-pc.iso` in QEMU, extended by the handler, a Mountlist
 and the test program, and runs the same integration test as the FS-UAE run
-on a raw BFS disk. It needs `qemu-system-x86_64` and `xorriso`.
+on a raw BFS disk. It needs `qemu-system-x86_64` and `xorriso`. Neither target
+runs in CI yet: that needs an AROS-NX SDK and boot ISO with a fixed identity,
+which AROS-NX does not publish.
 
 ### AmigaOS administration
 
@@ -251,6 +259,10 @@ Full end-to-end test using FS-UAE with AROS:
 ```bash
 make emulator-test
 ```
+
+CI also boots images that the Linux FUSE qualification wrote and has the Amiga
+handler read and change them; see
+[Linux-written images](emulator-test/README.md#linux-written-images).
 
 ## Installation on Amiga
 
