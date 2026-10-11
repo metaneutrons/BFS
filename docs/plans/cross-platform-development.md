@@ -80,6 +80,9 @@ content manifests. It is not a second writer or an automatic repair tool.
 
 ### Compatibility and feature contract
 
+Format v3 has since replaced v2; see the 2026-10-11 entry under "Sources and
+decision changes". As first written:
+
 Freeze format v2. No field-width changes, private interpretation of padding,
 new option bits, silent migration, or platform-specific disk variants belong
 in this initiative. Historical valid v2 images remain readable; newly written
@@ -490,3 +493,25 @@ suggestion, the production FUSE driver intentionally shares the core to test
 it outside the emulator. A separate independent oracle retains the format
 validation benefit. GitHub tracking, target acceptance and publication remain
 subject to explicit owner decisions.
+
+2026-10-11: Format v3 replaces the v2 freeze. #83 introduced on-disk format
+v3, which extends the inode record with a flags word, an inline extent and a
+comment flag; it is a breaking change. Before the first v3 release, #88
+replaced the v3 directory tree with compact records in place. Release v0.2.0
+(2026-10-10) is the first release with v3. Its drivers neither read nor write
+v2 volumes; a v2 volume moves to v3 by copying its data with a v0.1 driver and
+formatting, as the [compatibility contract](../format-compatibility.md)
+describes. The rules of the compatibility and feature contract above now
+apply to v3 in place of v2: no field-width changes, private interpretation of
+padding, new option bits, silent migration or platform-specific variants
+within v3, and a later on-disk change raises the format version as the
+compatibility contract's section on format versions and releases states. Two
+of its statements no longer hold: v0.2.0 drivers do not read v2 images, and
+newly written volumes are not interoperable with the v0.1.3 baseline. M1 to M7
+were accepted under v2.
+
+M8-A3 names the "baseline Amiga reader" and M9-A3 "the pinned Amiga v2
+reader" as exchange partners. The v0.1.3 baseline refuses v3 volumes, so it
+can no longer serve. Which Amiga reader takes its place is open for the owner
+to decide; the evident candidate is the m68k handler of the BFS release under
+test, identified by its recorded hash.
