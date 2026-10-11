@@ -2258,6 +2258,13 @@ static LONG exnext_type(const char *name)
     return type;
 }
 
+/* Commit now: the emulator may stop before the delayed commit. */
+static BOOL flush_volume(void)
+{
+    struct MsgPort *port = DeviceProc(vol);
+    return port && DoPkt(port, ACTION_FLUSH, 0, 0, 0, 0, 0) == DOSTRUE;
+}
+
 /* dos.library follows soft links: a link inside a path and one at its end
  * make the handler report ERROR_IS_SOFT_LINK, ReadLink supplies the path
  * that replaces the link, and DOS retries. ExNext reports a link as
@@ -2323,12 +2330,7 @@ static void test_soft_link_persist_make(void)
     BOOL ok = write_seeded(file, 2000, 0x5353) &&
               MakeLink(link, TEST_PTR("slkeep/data"), LINK_SOFT);
     if (ok) { step = "open the link"; ok = verify_seeded(link, 2000, 0x5353); }
-    /* Commit now: the emulator may stop before the delayed commit. */
-    if (ok) {
-        step = "flush";
-        struct MsgPort *port = DeviceProc(vol);
-        ok = port && DoPkt(port, ACTION_FLUSH, 0, 0, 0, 0, 0) == DOSTRUE;
-    }
+    if (ok) { step = "flush"; ok = flush_volume(); }
     if (ok) pass(T); else fail(T, step);
 }
 
@@ -2362,14 +2364,164 @@ static void test_soft_link_persist_check(void)
     if (ok) pass(T); else fail(T, step);
 }
 
+/* ── Images written on Linux ───────────────────────────────── */
+
+/* These tests run alone on an image that the Linux FUSE qualification wrote
+ * (tests/fuse/test_fuse_mount.py); emulator-test/linux-exchange.sh boots it
+ * and afterwards checks on the host what changed against the image as Linux
+ * left it. */
+
+/* Whether the file rel holds exactly the size bytes of expected. */
+static BOOL file_equals(const char *rel, const void *expected, LONG size)
+{
+    const char *p = vpath(rel);
+    BPTR fh = p ? Open(p, MODE_OLDFILE) : 0;
+    if (!fh) return FALSE;
+    BOOL ok = Read(fh, databuf, size + 1) == size && tool_memcmp(databuf, expected, size) == 0;
+    if (!close_checked(fh)) ok = FALSE;
+    return ok;
+}
+
+/* The number of entries ExNext lists in the directory rel, -1 on error. */
+static LONG entry_count(const char *rel)
+{
+    const char *p = vpath(rel);
+    BPTR lock = p ? Lock(p, SHARED_LOCK) : 0;
+    struct FileInfoBlock *fib = (struct FileInfoBlock *)AllocDosObject(DOS_FIB, NULL);
+    LONG count = -1;
+    if (lock && fib && Examine(lock, fib)) {
+        count = 0;
+        while (ExNext(lock, fib)) count++;
+        if (IoErr() != ERROR_NO_MORE_ENTRIES) count = -1;
+    }
+    if (fib) FreeDosObject(DOS_FIB, fib);
+    if (lock) UnLock(lock);
+    return count;
+}
+
+static BOOL name_absent(const char *rel)
+{
+    const char *p = vpath(rel);
+    BPTR lock = p ? Lock(p, SHARED_LOCK) : 0;
+    if (lock) { UnLock(lock); return FALSE; }
+    return p && IoErr() == ERROR_OBJECT_NOT_FOUND;
+}
+
+/* rw/append holds 24 records from each of six concurrent writers,
+ * interleaved but never merged. */
+static BOOL append_records_intact(void)
+{
+    enum { WRITERS = 6, REPEAT = 24, RECORD = 10, SIZE = WRITERS * REPEAT * RECORD };
+    const char *p = vpath("rw/append");
+    BPTR fh = p ? Open(p, MODE_OLDFILE) : 0;
+    if (!fh) return FALSE;
+    BOOL ok = Read(fh, databuf, SIZE + 1) == SIZE;
+    if (!close_checked(fh)) ok = FALSE;
+    int counts[WRITERS] = {0};
+    for (int at = 0; ok && at < SIZE; at += RECORD) {
+        const UBYTE *r = databuf + at;
+        ok = tool_memcmp(r, "worker-0", 8) == 0 && r[8] >= '0' && r[8] < '0' + WRITERS &&
+             r[9] == '\n';
+        if (ok) counts[r[8] - '0']++;
+    }
+    for (int w = 0; ok && w < WRITERS; w++) ok = counts[w] == REPEAT;
+    return ok;
+}
+
+/* rw/durable-symlink holds the relative target "durable", which replaces the
+ * link next to it. */
+static BOOL linux_soft_link_resolves(void)
+{
+    char link[96], target[96], buffer[96];
+    if (!volpath(link, sizeof(link), "rw/durable-symlink") ||
+        !volpath(target, sizeof(target), "rw/durable"))
+        return FALSE;
+    struct MsgPort *port = DeviceProc(vol);
+    BPTR root = Lock(vol, SHARED_LOCK);
+    LONG length = port && root ? ReadLink(port, root, link, buffer, sizeof(buffer)) : -1;
+    if (root) UnLock(root);
+    return length == tool_strlen(target) && tool_memcmp(buffer, target, length + 1) == 0;
+}
+
+/* What the FUSE qualification left in the volume; NULL if all of it is
+ * there, else the part that is not. */
+static const char *linux_image_content(void)
+{
+    static const UBYTE durable[9] = { 'b', 'a', 's', 'e', 0, 0, 0, 0, 0 };
+    char name[3 + 107 + 1], comment[79 + 1];
+    tool_memcpy(name, "rw/", 3);
+    for (int i = 0; i < 107; i++) name[3 + i] = 'n';
+    name[110] = 0;
+    for (int i = 0; i < 79; i++) comment[i] = 'c';
+    comment[79] = 0;
+    if (entry_count("") != 21 || entry_count("rw") != 17) return "listing";
+    if (!file_equals("oracle.txt", "live contents", 13) ||
+        !examine_comment(vpath("oracle.txt"), "fixture"))
+        return "oracle.txt";
+    if (!file_equals("rw/durable", durable, 9) || !file_equals("rw/durable-link", durable, 9) ||
+        !examine_comment(vpath("rw/durable"), "M6 writable mount"))
+        return "hard-linked file";
+    if (!linux_soft_link_resolves()) return "soft link";
+    if (!append_records_intact()) return "append records";
+    if (!file_equals(name, "boundary", 8) || !examine_comment(vpath(name), comment))
+        return "107-byte name";
+    /* Linux stores case-name or CASE-NAME (see the FUSE case-only rename);
+     * a third spelling finds either. */
+    if (!file_equals("rw/Case-Name", "case", 4)) return "lookup under another case";
+    if (!name_absent("rw/unlinked") || !name_absent("interrupted-orphan")) return "unlinked names";
+    return NULL;
+}
+
+/* The changes that emulator-test/linux-exchange.py expects on the host. */
+static const char *linux_image_changes(void)
+{
+    if (!write_seeded(vpath("rw/amiga-new"), 5000, 0x4C58)) return "write a new file";
+    BPTR fh = Open(vpath("rw/positions"), MODE_OLDFILE);
+    BOOL ok = fh && Seek(fh, 0, OFFSET_END) != -1 && Write(fh, (APTR)"ghi", 3) == 3;
+    if (fh && !close_checked(fh)) ok = FALSE;
+    if (!ok) return "extend a file";
+    char from[96], to[96];
+    if (!volpath(from, sizeof(from), "rw/open-target") ||
+        !volpath(to, sizeof(to), "rw/amiga-renamed") || !Rename(from, to))
+        return "rename";
+    if (!DeleteFile(vpath("rw/removable-comment"))) return "delete";
+    if (!SetComment(vpath("rw/mknod-file"), "amiga comment")) return "set a comment";
+    BPTR dir = CreateDir(vpath("rw/amiga-dir"));
+    if (!dir) return "create a directory";
+    UnLock(dir);
+    return flush_volume() ? NULL : "flush";
+}
+
+static void test_linux_image_read(void)
+{
+    const char *T = "linuxread_56";
+    const char *step = linux_image_content();
+    if (!step) step = linux_image_changes();
+    if (step) fail(T, step); else pass(T);
+}
+
+/* In the interrupted image Linux left a file that it unlinked while it was
+ * open. The writable mount reclaims it; the flush commits that. */
+static void test_linux_image_reap(void)
+{
+    const char *T = "linuxreap_57";
+    const char *step = linux_image_content();
+    if (!step && !flush_volume()) step = "flush";
+    if (step) fail(T, step); else pass(T);
+}
+
 /* ── Test table ────────────────────────────────────────────── */
 
 typedef void (*test_fn)(void);
-static const struct { const char *name; test_fn fn; } all_tests[] = {
-#define BFS_TEST(name, fn) {#name, fn},
+/* A BFS_IMAGE_TEST needs a prepared image and runs only when a filter term
+ * names it exactly. */
+static const struct { const char *name; test_fn fn; BOOL image_only; } all_tests[] = {
+#define BFS_TEST(name, fn) {#name, fn, FALSE},
+#define BFS_IMAGE_TEST(name, fn) {#name, fn, TRUE},
 #include "bfs-test-cases.def"
 #undef BFS_TEST
-    {NULL, NULL}
+#undef BFS_IMAGE_TEST
+    {NULL, NULL, FALSE}
 };
 
 static int filter_valid(const char *filter)
@@ -2408,6 +2560,28 @@ static int filter_matches(const char *str, const char *filter)
         if (!*end) return 0;
         start = end + 1;
     }
+}
+
+/* Whether a term of filter is exactly str. */
+static int filter_names(const char *str, const char *filter)
+{
+    const char *start = filter;
+    if (!filter) return 0;
+    while (*start) {
+        const char *end = start;
+        while (*end && *end != '+') end++;
+        const char *a = str, *b = start;
+        while (b < end && *a == *b) { a++; b++; }
+        if (b == end && !*a) return 1;
+        start = *end ? end + 1 : end;
+    }
+    return 0;
+}
+
+static int test_selected(int index, const char *filter)
+{
+    if (all_tests[index].image_only) return filter_names(all_tests[index].name, filter);
+    return filter_matches(all_tests[index].name, filter);
 }
 
 static BOOL log_completion(BOOL publish)
@@ -2550,7 +2724,7 @@ int main(void)
 
     int i;
     for (i = 0; all_tests[i].name; i++) {
-        if (!filter_matches(all_tests[i].name, filter)) continue;
+        if (!test_selected(i, filter)) continue;
         int previous_run = tests_run, previous_fail = tests_fail;
         io_failed = FALSE;
         put(" RUN  "); put(all_tests[i].name); put("\n");

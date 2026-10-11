@@ -97,3 +97,9 @@ semantics, or new persistent state requires a new format version. It must not
 silently reinterpret existing bytes or make a valid superblock of one version
 describe a filesystem of another. Version 3 kept the recognition envelope, so
 a version 2 driver refuses a version 3 volume as too new without writing it.
+
+Version 3 has been frozen since release v0.2.0. The first on-disk change after a
+release raises the version number at once, and the number stays the same until
+the next release freezes it; the
+[compatibility contract](format-compatibility.md#format-versions-and-releases)
+states the rule in full.

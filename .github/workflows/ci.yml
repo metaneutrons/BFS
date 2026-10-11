@@ -220,6 +220,13 @@ jobs:
             bash tests/fuse/qualify_baseline_refusal.sh \
               "$output/linux-normal.bfs" "$output/linux-interrupted.bfs" "$output"
 
+      - name: Read and change Linux-written images with the Amiga handler
+        run: |
+          set -euo pipefail
+          output="$RUNNER_TEMP/fuse-baseline-refusal"
+          bash emulator-test/linux-exchange.sh \
+            "$output/linux-normal.bfs" "$output/linux-interrupted.bfs"
+
       - name: Preserve emulator evidence
         if: always()
         uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
