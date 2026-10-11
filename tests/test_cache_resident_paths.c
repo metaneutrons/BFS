@@ -16,10 +16,22 @@ typedef struct {
     bool partial_fail_write;
 } resident_memory_bio_t;
 
+/* The device of the running test, set by resident_memory_init; every test
+ * uses one. The callbacks take their state from it instead of casting the BIO
+ * they are given; see memory_device in test_cache.c for the GCC 16
+ * -Warray-bounds report that a cast causes on a speculatively inlined path. */
+static resident_memory_bio_t *resident_device;
+
+static resident_memory_bio_t *resident_memory_of(bfs_bio_t *bio)
+{
+    (void)bio;
+    return resident_device;
+}
+
 static bfs_err_t resident_memory_read(bfs_bio_t *bio, bfs_blk_t block,
                                   void *buffer)
 {
-    resident_memory_bio_t *memory = (resident_memory_bio_t *)bio;
+    resident_memory_bio_t *memory = resident_memory_of(bio);
     memory->reads++;
     if (block >= bio->block_count) return BFS_ERR_INVAL;
     memcpy(buffer, memory->blocks[block], bio->block_size); /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
@@ -29,7 +41,7 @@ static bfs_err_t resident_memory_read(bfs_bio_t *bio, bfs_blk_t block,
 static bfs_err_t resident_memory_write(bfs_bio_t *bio, bfs_blk_t block,
                                    const void *buffer)
 {
-    resident_memory_bio_t *memory = (resident_memory_bio_t *)bio;
+    resident_memory_bio_t *memory = resident_memory_of(bio);
     memory->writes++;
     if (block >= bio->block_count) return BFS_ERR_INVAL;
     if (memory->fail_write) {
@@ -64,6 +76,7 @@ static const bfs_bio_ops_t resident_memory_ops = {
 static void resident_memory_init(resident_memory_bio_t *memory)
 {
     memset(memory, 0, sizeof(*memory));
+    resident_device = memory;
     memory->bio.ops = &resident_memory_ops;
     memory->bio.block_size = BLOCK_SIZE;
     memory->bio.block_count = BLOCK_COUNT;
