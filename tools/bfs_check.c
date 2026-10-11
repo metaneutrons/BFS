@@ -11,7 +11,7 @@
 
 int bfs_check_command(const char *drive)
 {
-    struct DevProc *device = GetDeviceProc(drive, NULL);
+    struct DevProc *device = GetDeviceProc(DOS_CSTR(drive), NULL);
     struct MsgPort *port = device ? device->dvp_Port : NULL;
     ULONG report[BFS_CHECK_REPORT_WORDS] = {0, 0, 0, 0};
 
@@ -24,7 +24,7 @@ int bfs_check_command(const char *drive)
     }
 
     if (!DoPkt(port, BFS_ACTION_CHECK, BFS_CLI_PTR(report), sizeof(report), 0, 0, 0)) {
-        PrintFault(IoErr(), "bfs");
+        PrintFault(IoErr(), DOS_CSTR("bfs"));
         FreeDeviceProc(device);
         return 20;
     }

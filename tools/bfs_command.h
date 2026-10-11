@@ -6,6 +6,8 @@
 
 #include <exec/types.h>
 
+#include "dos_string.h"
+
 #ifdef BFS_AROS
 typedef SIPTR bfs_cli_word_t;
 typedef IPTR bfs_cli_uword_t;

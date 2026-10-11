@@ -39,6 +39,7 @@
 #include "bfs_fsck.h"
 #include "bfs_diagnostics.h"
 #include "bfs_dos_name.h"
+#include "dos_string.h"
 #include "amiga_bio.h"
 #include "snapshot_mount.h"
 #ifdef BFS_PERF_PROBE
@@ -314,7 +315,7 @@ static struct DosList *RegisterVolumeNode(struct bfs_handler *h,
     }
 
     SetIoErr(0);
-    struct DosList *vol = MakeDosEntry(name, DLT_VOLUME);
+    struct DosList *vol = MakeDosEntry(DOS_CSTR(name), DLT_VOLUME);
     if (!vol) return NULL;
 
     vol->dol_Task = h->msgport;
@@ -524,9 +525,10 @@ static LONG AllocateSnapshotMount(const char *target, bfs_snapshot_startup_t **s
         goto fail;
     }
     CopySnapshotDeviceName(startup->mount_name, startup->device_name);
-    startup->device_node = (struct DeviceNode *)MakeDosEntry(startup->device_name, DLT_DEVICE);
+    startup->device_node =
+        (struct DeviceNode *)MakeDosEntry(DOS_CSTR(startup->device_name), DLT_DEVICE);
     if (!startup->device_node) goto fail;
-    startup->volume_node = MakeDosEntry(startup->mount_name, DLT_VOLUME);
+    startup->volume_node = MakeDosEntry(DOS_CSTR(startup->mount_name), DLT_VOLUME);
     if (!startup->volume_node) goto fail;
     startup->volume_node->dol_misc.dol_volume.dol_DiskType = BFS_SB_MAGIC;
     DateStamp(&startup->volume_node->dol_misc.dol_volume.dol_VolumeDate);
@@ -580,7 +582,7 @@ static LONG PublishSnapshotVolume(bfs_snapshot_startup_t *startup)
     if (!doslist) return ERROR_OBJECT_IN_USE;
     /* AddDosEntry accepts duplicate volume names on AROS.  Do not let a
      * snapshot target shadow an existing live volume or another view. */
-    if (FindDosEntry(doslist, startup->mount_name, LDF_VOLUMES)) {
+    if (FindDosEntry(doslist, DOS_CSTR(startup->mount_name), LDF_VOLUMES)) {
         error = ERROR_OBJECT_EXISTS;
     } else if (AddDosEntry(startup->volume_node) == DOSFALSE) {
         error = IoErr() ? IoErr() : ERROR_OBJECT_EXISTS;
@@ -683,11 +685,11 @@ static void ReportFormatError(struct bfs_handler *h, struct MsgPort *reply_port)
     struct Process *caller = (struct Process *)reply_port->mp_SigTask;
     if (caller->pr_WindowPtr == (APTR)-1) return;
     struct IntuitionBase *IntuitionBase =
-        (struct IntuitionBase *)OpenLibrary("intuition.library", 37);
+        (struct IntuitionBase *)OpenLibrary(DOS_CSTR("intuition.library"), 37);
     if (!IntuitionBase) return;
     struct EasyStruct request = {
-        sizeof(struct EasyStruct), 0, "BFS: unsupported disk format",
-        h->format_error, "OK",
+        sizeof(struct EasyStruct), 0, DOS_STR("BFS: unsupported disk format"),
+        DOS_STR(h->format_error), DOS_STR("OK"),
     };
     h->format_error_reported = true;
     EasyRequestArgs((struct Window *)caller->pr_WindowPtr, &request, NULL, NULL);
@@ -1955,7 +1957,7 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     if (ec->eac->eac_MatchString) {
         /* name_len <= BFS_NAME_MAX, and skipped holds BFS_NAME_MAX + 1. */
         memcpy(ec->skipped, name, name_len); ec->skipped[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
-        if (!MatchPatternNoCase(ec->eac->eac_MatchString, ec->skipped)) {
+        if (!MatchPatternNoCase(ec->eac->eac_MatchString, DOS_STR(ec->skipped))) {
             ExAllConsume(ec, entry_pos);
             return true;
         }
@@ -2079,7 +2081,7 @@ static bool exall_gather_cb(const char *name, uint8_t name_len, uint32_t inode_n
     /* names holds BFS_NAME_MAX + 1 bytes per entry. */
     memcpy(stored, name, name_len); stored[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     pending->matched = !ec->eac->eac_MatchString ||
-                       MatchPatternNoCase(ec->eac->eac_MatchString, stored);
+                       MatchPatternNoCase(ec->eac->eac_MatchString, DOS_STR(stored));
     if (pending->matched) {
         LONG size = ExAllMinimumSize(ec->type, name_len);
         if (size > b->space) {
@@ -4075,7 +4077,7 @@ void EntryPoint(void)
 #ifdef BFS_PERF_PROBE
     bfs_perf_probe_fs = &h->fs;
 #endif
-    DOSBase = (struct DosLibrary *)OpenLibrary("dos.library", 37);
+    DOSBase = (struct DosLibrary *)OpenLibrary(DOS_CSTR("dos.library"), 37);
     h->DOSBase = DOSBase;
     if (!DOSBase) {
         pkt->dp_Res1 = DOSFALSE;

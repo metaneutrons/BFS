@@ -5,6 +5,7 @@
 #   make amiga       — cross-compile Amiga handler (requires bebbo's gcc)
 #   make aros        — cross-compile native AROS x86_64 handler, CLI and test program
 #   make aros-ci-test — run the integration test on AROS x86_64 in QEMU
+#   make aros-nx-check — compile the handler and bfs with the AROS-NX flags
 #   make clean
 
 # ── Toolchains ──────────────────────────────────────────────
@@ -32,22 +33,40 @@ INCLUDES = -I include -I tests
 HOST_CFLAGS  = -std=c99 -Wall -Wextra -Werror -g -O2 -pthread \
                $(INCLUDES) -DBFS_HOST=1 -D_POSIX_C_SOURCE=200809L
 AMIGA_PREFIX = $(shell brew --prefix amiga-gcc 2>/dev/null || echo /opt/homebrew/opt/amiga-gcc)/m68k-amigaos
-# The NDK declares STRPTR as unsigned char* in C, unlike standard C strings.
-# Suppress only that header-boundary diagnostic and reject every other warning.
-# The handler runs on a 128 KiB stack shared by the packet frame and the whole
-# core call chain; a filesystem state on the stack once overflowed it.
-AMIGA_WARNINGS = -Wall -Wextra -Werror -Wno-pointer-sign -Wframe-larger-than=16384
-AMIGA_CFLAGS = -std=c99 $(AMIGA_WARNINGS) -O2 -m68020 -noixemul -fomit-frame-pointer \
+# Compiler flags are split as docs/compiler-flags.md describes: the BFS_*
+# definitions and include paths are required by every build, the rest is the
+# policy of BFS's own builds. These reject every warning. The handler runs on a
+# 128 KiB stack shared by the packet frame and the whole core call chain; a
+# filesystem state on the stack once overflowed it.
+AMIGA_STRICT_WARNINGS = -Wall -Wextra -Werror -Wframe-larger-than=16384
+# Test programs, probes and benchmarks pass C strings to dos.library directly;
+# the NDK declares those parameters unsigned (STRPTR). The handler and bfs
+# convert at that boundary instead (src/amiga/dos_string.h).
+AMIGA_WARNINGS = $(AMIGA_STRICT_WARNINGS) -Wno-pointer-sign
+AMIGA_CFLAGS = -std=c99 $(AMIGA_STRICT_WARNINGS) -O2 -m68020 -noixemul -fomit-frame-pointer \
                -Isrc/amiga $(INCLUDES) -DBFS_AMIGA=1 \
                -I$(AMIGA_PREFIX)/ndk-include
 AROS_CC = $(AROS_TOOLCHAIN)/bin/clang
 AROS_LD = $(AROS_TOOLCHAIN)/bin/ld.lld
 AROS_SYSROOT = $(AROS_BUILD)/SYS/Developer
-AROS_CFLAGS = --target=x86_64-unknown-aros --sysroot=$(AROS_SYSROOT) \
-              -std=gnu99 -O2 -Wall -Wextra -Werror -Wno-pointer-sign \
-              -ffreestanding -fno-builtin -fno-stack-protector -fno-common \
-              -I$(AROS_BUILD)/SDK/include -iquote src/amiga $(INCLUDES) \
+# What any AROS build of the handler and bfs must set: the AROS SDK headers
+# need GNU C, -std=gnu99 or later.
+AROS_REQUIRED_CFLAGS = -iquote src/amiga -I include \
               -DBFS_AROS=1 -DBFS_VERSION=\"$(BFS_VERSION)\"
+AROS_CFLAGS = --target=x86_64-unknown-aros --sysroot=$(AROS_SYSROOT) \
+              -std=gnu99 -O2 -Wall -Wextra -Werror \
+              -ffreestanding -fno-builtin -fno-stack-protector -fno-common \
+              -I$(AROS_BUILD)/SDK/include $(AROS_REQUIRED_CFLAGS)
+# The flags AROS-NX builds programs and disk handlers with, taken from the
+# compile_commands.json of its pc-x86_64 build (AROS-NX 74c85fa, September
+# 2026), plus -Werror for this check only. AROS-NX itself never uses -Werror.
+AROS_NX_CFLAGS = --target=x86_64-unknown-aros -DAMIGA=1 -D_AMIGA=1 -D__AROS__=1 \
+              -D__AROS_VERSION__=1 -I$(AROS_BUILD)/GENINCDIR \
+              -I$(AROS_BUILD)/SDK/include/aros/posixc -I$(AROS_BUILD)/SDK/include/aros/stdc \
+              -I$(AROS_BUILD)/SDK/include -I$(AROS_ROOT)/compiler/include \
+              -I$(AROS_ROOT)/arch/all-native/include -O3 -DNDEBUG --sysroot=$(AROS_SYSROOT) \
+              -ffreestanding -fno-builtin -fno-stack-protector -fno-strict-aliasing \
+              -fno-common -Wall -Wextra -Wno-unused-parameter -Werror
 
 # ── Sources ─────────────────────────────────────────────────
 CORE_SRC = $(wildcard src/core/*.c)
@@ -99,7 +118,8 @@ AROS_DOS_NAME_TEST_BIN = $(BUILD_HOST)/test_dos_name_aros_profile
 
 # ── Phony targets ───────────────────────────────────────────
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
-	host-test coverage sanitize amiga aros aros-ci-test amiga-stresstest clean tools stress-test bench release \
+	host-test coverage sanitize amiga aros aros-ci-test aros-nx-check aros-nx-check-sources \
+	amiga-stresstest clean tools stress-test bench release \
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
 	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
 	fault-qualification fault-qualification-verify amiga-fs-compare-bench amiga-fs-profile-bench \
@@ -373,6 +393,9 @@ $(BUILD_AROS)/%.o: %.c $(AROS_HEADERS)
 	@mkdir -p $(dir $@)
 	$(AROS_CC) $(AROS_CFLAGS) -c -o $@ $<
 
+# The test program passes C strings to dos.library directly (see AMIGA_WARNINGS).
+$(AROS_TEST_OBJS): AROS_CFLAGS += -Wno-pointer-sign
+
 $(BUILD_AROS)/bfshandler: $(AROS_OBJS)
 	$(AROS_COLLECT) --ld "$(AROS_LD)" -- -r --sysroot="$(AROS_SYSROOT)" \
 		$(AROS_OBJS) -o $@ $(AROS_HANDLER_LIBS)
@@ -387,6 +410,29 @@ $(BUILD_AROS)/bfs-test: $(AROS_TEST_OBJS)
 
 # The integration test on AROS x86_64: the AROS-NX boot ISO of AROS_ROOT,
 # extended by the handler, a Mountlist and the test program, in QEMU.
+# Compile the handler and bfs as an AROS-NX package build would, with its
+# flags and -Werror (docs/compiler-flags.md). Needs AROS_ROOT, an AROS-NX
+# checkout with a pc-x86_64 build; AROS_TOOLCHAIN and AROS_BUILD as for make aros.
+AROS_NX_CHECK_SRCS = $(filter-out tools/bfs-test.c,$(AROS_SRCS) $(AROS_CLI_SRCS))
+
+aros-nx-check:
+	@toolchain="$(AROS_TOOLCHAIN)"; build="$(or $(AROS_BUILD),$(AROS_ROOT)/build/$(AROS_PRESET))"; \
+	if [ -n "$(AROS_ROOT)" ] && [ -z "$$toolchain" ]; then \
+		(cd "$(AROS_ROOT)" && aros toolchain install --preset $(AROS_PRESET) >/dev/null) || exit 2; \
+		toolchain=$$(cd "$(AROS_ROOT)" && aros toolchain path --preset $(AROS_PRESET)) || exit 2; \
+	fi; \
+	if [ -z "$(AROS_ROOT)" ] || [ -z "$$toolchain" ] || [ ! -d "$$build/SDK/include" ]; then \
+		echo "make aros-nx-check needs AROS_ROOT: an AROS-NX checkout with a $(AROS_PRESET) build" >&2; \
+		exit 2; \
+	fi; \
+	$(MAKE) --no-print-directory aros-nx-check-sources AROS_TOOLCHAIN="$$toolchain" AROS_BUILD="$$build"
+
+aros-nx-check-sources:
+	@for source in $(AROS_NX_CHECK_SRCS); do \
+		$(AROS_CC) $(AROS_NX_CFLAGS) $(AROS_REQUIRED_CFLAGS) -fsyntax-only "$$source" || exit 1; \
+	done
+	@echo "AROS-NX flags: $(words $(AROS_NX_CHECK_SRCS)) sources compile without warnings."
+
 aros-ci-test: aros $(BUILD_HOST)/bfs
 	python3 emulator-test/aros-ci-test.py \
 		--iso "$(or $(AROS_ISO),$(or $(AROS_BUILD),$(AROS_ROOT)/build/$(AROS_PRESET))/aros-x86_64-pc.iso)" \
@@ -435,12 +481,13 @@ AMIGA_SRCS = $(AMIGA_ASM_SRCS) src/amiga/handler.c src/amiga/amiga_bio.c $(CORE_
 AMIGA_LDFLAGS = -nostdlib -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -lgcc -lnix -s
 # Release handlers are built for speed: -Os was about 10 % slower on the 68040
 # in every measured workload (docs/qualification/bfs-release-flags-pilot-2026-10-10.md).
-AMIGA_BASE_FLAGS = -std=c99 $(AMIGA_WARNINGS) -O2 -noixemul -fomit-frame-pointer \
+AMIGA_BASE_FLAGS = -std=c99 $(AMIGA_STRICT_WARNINGS) -O2 -noixemul -fomit-frame-pointer \
                    -Isrc/amiga -I include -I tests -DBFS_AMIGA=1 -I$(AMIGA_PREFIX)/ndk-include
 AMIGA_RELEASE_CPUS = 020 030 040 060 080
-AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_WARNINGS) -Os -m68020 -noixemul -Isrc/amiga \
+AMIGA_TOOL_FLAGS = -std=c99 $(AMIGA_STRICT_WARNINGS) -Os -m68020 -noixemul -Isrc/amiga \
 			   -I$(AMIGA_PREFIX)/ndk-include \
                    -DBFS_VERSION=\"$(BFS_VERSION)\"
+AMIGA_TEST_TOOL_FLAGS = $(AMIGA_TOOL_FLAGS) -Wno-pointer-sign
 AMIGA_TOOL_LDFLAGS = -B$(AMIGA_PREFIX)/libnix/lib/ \
                      -L$(AMIGA_PREFIX)/libnix/lib -L$(AMIGA_PREFIX)/lib -lamiga -s
 TOOL_SRCS_TEST = tools/bfs-test.c
@@ -456,7 +503,7 @@ release:
 			-Wl,-Map,build/link-maps/bfshandler.$$cpu.map; \
 	done
 	@echo "  Tools (68020)..."
-	@$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+	@$(AMIGA_CC) $(AMIGA_TEST_TOOL_FLAGS) \
 		-o build/release/bfs-test $(TOOL_SRCS_TEST) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfs-test.map
 	@$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
 		-o build/release/bfs $(TOOL_SRCS_BFS) $(AMIGA_TOOL_LDFLAGS) -Wl,-Map,build/link-maps/bfs.map
@@ -468,7 +515,7 @@ release:
 # ── Amiga test binary ───────────────────────────────────────
 amiga-test: amiga
 	@mkdir -p $(BUILD_AMIGA)
-	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+	$(AMIGA_CC) $(AMIGA_TEST_TOOL_FLAGS) \
 		-o $(BUILD_AMIGA)/bfs-test tools/bfs-test.c $(AMIGA_TOOL_LDFLAGS)
 
 # The integration suite installs the same public administration command that
@@ -482,18 +529,18 @@ $(BUILD_AMIGA)/bfs: $(TOOL_SRCS_BFS) tools/bfs_command.h \
 
 $(BUILD_AMIGA)/compatibility-probe: tests/amiga/compatibility_probe.c include/bfs_diagnostics.h
 	@mkdir -p $(BUILD_AMIGA)
-	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) -o $@ tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
+	$(AMIGA_CC) $(AMIGA_TEST_TOOL_FLAGS) -o $@ tests/amiga/compatibility_probe.c $(AMIGA_TOOL_LDFLAGS)
 
 .PHONY: compatibility-test reset-test
 compatibility-test: amiga $(BUILD_HOST)/bfs $(BUILD_AMIGA)/bfs $(BUILD_AMIGA)/compatibility-probe
-	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+	$(AMIGA_CC) $(AMIGA_TEST_TOOL_FLAGS) \
 		-o build/amiga/cli-fixture tests/amiga/cli_fixture.c $(AMIGA_TOOL_LDFLAGS)
 	python3 emulator-test/compatibility-test.py
 
 # A keyboard reset must commit what the delayed-commit timer still holds.
 # Needs Xvfb and xdotool in addition to fs-uae.
 reset-test: amiga $(BUILD_HOST)/bfs
-	$(AMIGA_CC) $(AMIGA_TOOL_FLAGS) \
+	$(AMIGA_CC) $(AMIGA_TEST_TOOL_FLAGS) \
 		-o build/amiga/reset-probe tests/amiga/reset_probe.c $(AMIGA_TOOL_LDFLAGS)
 	python3 emulator-test/reset-test.py
 

@@ -100,6 +100,9 @@ version (see [format versions and releases](docs/format-compatibility.md#format-
 
 ## Building
 
+Which compiler flags a build must set and which are policy is described in
+[compiler flags](docs/compiler-flags.md).
+
 ### Host tests (macOS / Linux)
 
 ```bash
@@ -137,7 +140,8 @@ checkout's `aros-x86_64-pc.iso` in QEMU, extended by the handler, a Mountlist
 and the test program, and runs the same integration test as the FS-UAE run
 on a raw BFS disk. It needs `qemu-system-x86_64` and `xorriso`. Neither target
 runs in CI yet: that needs an AROS-NX SDK and boot ISO with a fixed identity,
-which AROS-NX does not publish.
+which AROS-NX does not publish. `make aros-nx-check AROS_ROOT=/path/to/AROS-NX`
+compiles the handler and `bfs` with the flags of an AROS-NX package build.
 
 ### AmigaOS administration
 
