@@ -20,9 +20,23 @@ typedef struct {
     int fail_buffer_alloc;
 } memory_bio_t;
 
+/* The device of the running test, set by memory_init; every test uses one.
+ * The callbacks take their state from it instead of casting the BIO they are
+ * given. GCC 16 inlines them speculatively into calls on the cache's own BIO,
+ * on a path guarded by a function-pointer test that never succeeds there, and
+ * on that path a cast (or a comparison with the BIO) makes the device appear
+ * to lie inside the smaller cache object, which -Warray-bounds reports. */
+static memory_bio_t *memory_device;
+
+static memory_bio_t *memory_of(bfs_bio_t *bio)
+{
+    (void)bio;
+    return memory_device;
+}
+
 static bfs_err_t memory_read(bfs_bio_t *bio, bfs_blk_t block, void *buffer)
 {
-    memory_bio_t *memory = (memory_bio_t *)bio;
+    memory_bio_t *memory = memory_of(bio);
     memory->reads++;
     if (memory->fail_read) return BFS_ERR_IO;
     if (block >= BLOCK_COUNT) return BFS_ERR_INVAL;
@@ -33,7 +47,7 @@ static bfs_err_t memory_read(bfs_bio_t *bio, bfs_blk_t block, void *buffer)
 
 static bfs_err_t memory_write(bfs_bio_t *bio, bfs_blk_t block, const void *buffer)
 {
-    memory_bio_t *memory = (memory_bio_t *)bio;
+    memory_bio_t *memory = memory_of(bio);
     memory->writes++;
     if (memory->fail_write) return BFS_ERR_IO;
     if (block >= BLOCK_COUNT) return BFS_ERR_INVAL;
@@ -44,7 +58,7 @@ static bfs_err_t memory_write(bfs_bio_t *bio, bfs_blk_t block, const void *buffe
 
 static bfs_err_t memory_sync(bfs_bio_t *bio)
 {
-    memory_bio_t *memory = (memory_bio_t *)bio;
+    memory_bio_t *memory = memory_of(bio);
     memory->syncs++;
     return memory->fail_sync ? BFS_ERR_IO : BFS_OK;
 }
@@ -56,7 +70,7 @@ static void memory_close(bfs_bio_t *bio)
 
 static void *memory_alloc_buffer(bfs_bio_t *bio, size_t size)
 {
-    memory_bio_t *memory = (memory_bio_t *)bio;
+    memory_bio_t *memory = memory_of(bio);
     memory->buffer_allocs++;
     if (memory->fail_buffer_alloc) return NULL;
     return malloc(size);
@@ -64,14 +78,14 @@ static void *memory_alloc_buffer(bfs_bio_t *bio, size_t size)
 
 static void memory_free_buffer(bfs_bio_t *bio, void *buffer)
 {
-    memory_bio_t *memory = (memory_bio_t *)bio;
+    memory_bio_t *memory = memory_of(bio);
     memory->buffer_frees++;
     free(buffer);
 }
 
 static void *memory_reject_buffer_alloc(bfs_bio_t *bio, size_t size)
 {
-    memory_bio_t *memory = (memory_bio_t *)bio;
+    memory_bio_t *memory = memory_of(bio);
     (void)size;
     memory->buffer_allocs++;
     return NULL;
@@ -112,6 +126,7 @@ static const bfs_bio_ops_t memory_free_only_ops = {
 static void memory_init(memory_bio_t *memory)
 {
     memset(memory, 0, sizeof(*memory));
+    memory_device = memory;
     memory->bio.ops = &memory_ops;
     memory->bio.block_size = BLOCK_SIZE;
     memory->bio.block_count = BLOCK_COUNT;
