@@ -24,11 +24,16 @@ def test_inventory(path, filter_name=""):
     for line in path.read_text(encoding="ascii").splitlines():
         if line == "/* SPDX-License-Identifier: MPL-2.0 */":
             continue
-        match = re.fullmatch(r"BFS_TEST\(([a-z0-9_]+), (test_[a-z0-9_]+)\)", line)
+        match = re.fullmatch(r"BFS_(TEST|IMAGE_TEST)\(([a-z0-9_]+), (test_[a-z0-9_]+)\)", line)
         if not match:
             raise ValueError("invalid guest test inventory")
-        if any(token in match[1] for token in filters):
-            names.append(match[1])
+        # An image test needs a prepared image and runs only when named exactly.
+        if match[1] == "IMAGE_TEST":
+            selected = match[2] in filters
+        else:
+            selected = any(token in match[2] for token in filters)
+        if selected:
+            names.append(match[2])
     if not names or len(set(names)) != len(names):
         raise ValueError("empty or duplicate guest test inventory")
     return names

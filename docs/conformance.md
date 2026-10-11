@@ -11,7 +11,7 @@ it does not add a filesystem capability or change the on-disk format.
 | --- | --- | --- |
 | `build/host/bfs-conformance-core` | Yes | Creates and removes its own temporary image, then exercises documented core operations over the production POSIX transport. |
 | `build/host/bfs-conformance-posix` | No | Observes a supplied mounted directory through OS calls only. It is read-only until a later milestone explicitly adds mutation cases. |
-| `tools/bfs-format-oracle.py` | No | Independently decodes committed v3 bytes and emits a normalized manifest. It has no write path. |
+| `tools/bfs-format-oracle.py` | No | Independently decodes committed v3 bytes and emits a normalized manifest, the comments by path and the inodes no path reaches. It has no write path. |
 
 `tools/check-conformance-linkage.sh` rejects a mounted backend that exports a
 `bfs_*` symbol. Its test compiles a deliberately contaminated counterprobe to
