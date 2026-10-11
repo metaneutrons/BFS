@@ -524,4 +524,5 @@ FUSE; no test has the current Amiga handler read and modify a Linux-written v3
 image. The owner decided that this direction is shown again for v3 as a CI
 step: the Linux-written normal and interrupted images that CI already
 produces are read and modified by the Amiga handler in the emulator run and
-then checked by the oracle. M6 stays closed; the step is follow-up evidence.
+then checked by the oracle. M6 stays closed; the step is follow-up evidence,
+added in #91 (`emulator-test/linux-exchange.sh`).
