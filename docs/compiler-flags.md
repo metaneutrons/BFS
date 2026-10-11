@@ -63,6 +63,13 @@ AROS-NX 74c85fa, plus `-Werror`. It needs a `pc-x86_64` build of that checkout.
 The check is not in CI yet, because AROS-NX publishes no SDK with a fixed
 identity.
 
+A package build takes its sources from the release asset
+`bfs-vX.Y.Z-source.tar.gz` and pins it with the SHA-256 from the release's
+`SHA256SUMS`; in AROS-NX that is `checksums=bfs-vX.Y.Z-source.tar.gz=sha256:<digest>`
+in `%fetch`. The archive unpacks to `bfs-vX.Y.Z-source/`, named like the
+archive, as AROS-NX ports assume for their source directory. It builds without
+git: the version comes from `version.txt`. See [release assets](../README.md#release-assets).
+
 ## Targets
 
 | Compiler | Where | Checked by |

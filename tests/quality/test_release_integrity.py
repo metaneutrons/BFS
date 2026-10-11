@@ -3,14 +3,17 @@
 
 import io
 import json
+import os
 import pathlib
+import subprocess  # nosec B404
 import sys
 import tarfile
 import tempfile
 import unittest
 from unittest.mock import patch
 
-sys.path.insert(0, str(pathlib.Path(__file__).resolve().parents[2] / "tools" / "release"))
+TOOLS = pathlib.Path(__file__).resolve().parents[2] / "tools" / "release"
+sys.path.insert(0, str(TOOLS))
 import release_integrity as release
 import sbom_document
 
@@ -18,6 +21,30 @@ import sbom_document
 TAG = "v0.1.0-qualification"
 COMMIT = "a" * 40
 PACKAGE = release.package_name(TAG)
+SOURCE = release.source_package_name(TAG)
+
+
+def tar_entry(name, data=b"", kind=tarfile.REGTYPE, mode=0o644, mtime=1):
+    entry = tarfile.TarInfo(name)
+    entry.type, entry.mode, entry.mtime = kind, mode, mtime
+    entry.linkname = "../../escape" if kind in (tarfile.SYMTYPE, tarfile.LNKTYPE) else ""
+    return entry, data
+
+
+def source_entries(mtime=1):
+    return [tar_entry(SOURCE, kind=tarfile.DIRTYPE, mode=0o755, mtime=mtime),
+            tar_entry(f"{SOURCE}/README.md", b"source\n", mtime=mtime),
+            tar_entry(f"{SOURCE}/tools", kind=tarfile.DIRTYPE, mode=0o755, mtime=mtime),
+            tar_entry(f"{SOURCE}/tools/run.sh", b"#!/bin/sh\n", mode=0o755, mtime=mtime)]
+
+
+def write_source(path, entries, headers=None):
+    headers = {"comment": COMMIT} if headers is None else headers
+    with tarfile.open(path, "w:gz", format=tarfile.PAX_FORMAT, pax_headers=headers) as archive:
+        for entry, data in entries:
+            entry.size = len(data) if entry.isfile() else 0
+            archive.addfile(entry, io.BytesIO(data) if entry.isfile() else None)
+    return path
 
 
 class IntegrityTests(unittest.TestCase):
@@ -113,6 +140,8 @@ class IntegrityTests(unittest.TestCase):
             document = sbom_document.document(name, release.digest(b"payload"), self.files)
             (self.root / f"{name}.spdx.json").write_text(json.dumps(document), encoding="utf-8")
             (self.root / f"{name}.sigstore.json").write_text("{}", encoding="utf-8")
+        write_source(self.root / f"{SOURCE}.tar.gz", source_entries())
+        (self.root / f"{SOURCE}.tar.gz.sigstore.json").write_text("{}", encoding="utf-8")
         self.sums()
 
     def sums(self):
@@ -153,6 +182,18 @@ class IntegrityTests(unittest.TestCase):
         path.symlink_to(f"{PACKAGE}.tar.gz")
         with self.assertRaisesRegex(ValueError, "non-regular"):
             release.verify_candidate(TAG, self.root)
+
+    def test_source_archive_names_the_payload_commit(self):
+        self.candidate()
+        (self.root / f"{SOURCE}.tar.gz.sigstore.json").unlink()
+        with self.assertRaisesRegex(ValueError, "inventory"):
+            release.verify_candidate(TAG, self.root)
+        self.candidate()
+        for headers, mtime in (({"comment": "b" * 40}, 1), (None, 2)):
+            write_source(self.root / f"{SOURCE}.tar.gz", source_entries(mtime), headers)
+            self.sums()
+            with self.subTest(mtime=mtime), self.assertRaisesRegex(ValueError, "different commits"):
+                release.verify_candidate(TAG, self.root)
 
     def test_tampered_payload(self):
         self.candidate()
@@ -201,6 +242,137 @@ class IntegrityTests(unittest.TestCase):
         self.files["RUNTIME-COMPONENTS.json"] = json.dumps(runtime).encode()
         with self.assertRaisesRegex(ValueError, "binary digest"):
             release.verify_runtime(self.files, "test-fixture")
+
+
+class SourceArchiveTests(unittest.TestCase):
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.path = pathlib.Path(self.temporary.name) / f"{SOURCE}.tar.gz"
+
+    def test_valid_source_archive(self):
+        commit, epoch, files = release.read_source_archive(write_source(self.path, source_entries()), TAG)
+        self.assertEqual((commit, epoch), (COMMIT, 1))
+        self.assertEqual(files, {"README.md": (0o644, b"source\n"), "tools/run.sh": (0o755, b"#!/bin/sh\n")})
+
+    def test_source_archive_counterprobes(self):
+        owned = tar_entry(f"{SOURCE}/owned", b"x")
+        owned[0].uid = 1000
+        cases = (("duplicate", [tar_entry(f"{SOURCE}/README.md", b"again\n")]),
+                 ("outside its root", [tar_entry("../escape", b"x")]),
+                 ("outside its root", [tar_entry("/absolute", b"x")]),
+                 ("outside its root", [tar_entry("other/README.md", b"x")]),
+                 ("non-regular", [tar_entry(f"{SOURCE}/link", kind=tarfile.SYMTYPE)]),
+                 ("non-regular", [tar_entry(f"{SOURCE}/hard", kind=tarfile.LNKTYPE)]),
+                 ("file mode", [tar_entry(f"{SOURCE}/open", b"x", mode=0o666)]),
+                 ("host owner", [owned]),
+                 ("timestamps", [tar_entry(f"{SOURCE}/late", b"x", mtime=2)]),
+                 ("directory inventory", [tar_entry(f"{SOURCE}/empty", kind=tarfile.DIRTYPE, mode=0o755)]),
+                 ("directory inventory", [tar_entry(f"{SOURCE}/nested/file", b"x")]))
+        for message, extra in cases:
+            write_source(self.path, source_entries() + extra)
+            with self.subTest(message=message, name=extra[0][0].name), self.assertRaisesRegex(ValueError, message):
+                release.read_source_archive(self.path, TAG)
+
+    def test_source_archive_without_commit_or_gzip(self):
+        for headers in ({}, {"comment": "HEAD"}):
+            write_source(self.path, source_entries(), headers)
+            with self.subTest(headers=headers), self.assertRaisesRegex(ValueError, "commit identity"):
+                release.read_source_archive(self.path, TAG)
+        write_source(self.path, source_entries())
+        self.path.write_bytes(self.path.read_bytes()[:-8])
+        with self.assertRaisesRegex(ValueError, "invalid gzip archive"):
+            release.read_source_archive(self.path, TAG)
+
+
+class SourceArchiveGitTests(unittest.TestCase):
+    """Create archives from a real repository and compare them with its commits."""
+
+    def setUp(self):
+        self.temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temporary.cleanup)
+        self.root = pathlib.Path(self.temporary.name)
+        repository = self.root / "repository"
+        environment = patch.dict(os.environ, {
+            "GIT_CONFIG_GLOBAL": os.devnull, "GIT_CONFIG_NOSYSTEM": "1",
+            "GIT_AUTHOR_NAME": "Fixture", "GIT_AUTHOR_EMAIL": "fixture@example.invalid",
+            "GIT_COMMITTER_NAME": "Fixture", "GIT_COMMITTER_EMAIL": "fixture@example.invalid",
+            "GIT_AUTHOR_DATE": "1700000000 +0000", "GIT_COMMITTER_DATE": "1700000000 +0000"})
+        environment.start()
+        self.addCleanup(environment.stop)
+        self.addCleanup(os.chdir, os.getcwd())
+        (repository / "tools").mkdir(parents=True)
+        (repository / "docs/qualification/evidence").mkdir(parents=True)
+        os.chdir(repository)
+        release.git("init", "-q")
+        pathlib.Path("README.md").write_bytes(b"source\n")
+        pathlib.Path("tools/run.sh").write_bytes(b"#!/bin/sh\n")
+        pathlib.Path("tools/run.sh").chmod(0o755)
+        pathlib.Path("docs/guide.md").write_bytes(b"guide\n")
+        pathlib.Path("docs/qualification/evidence/run.log").write_bytes(b"retained\n")
+        self.commit = self.commit_all("initial")
+
+    def commit_all(self, message):
+        release.git("add", "-A")
+        release.git("commit", "-q", "-m", message)
+        return release.git("rev-parse", "HEAD").decode().strip()
+
+    def create(self, name, commit=None):
+        output = self.root / name
+        # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+        subprocess.run([sys.executable, str(TOOLS / "create-source-archive.py"), TAG,  # nosec B603
+                        commit or self.commit, str(output)], check=True, capture_output=True, shell=False)
+        return output
+
+    def rewrite(self, output, change):
+        path = output / f"{SOURCE}.tar.gz"
+        with tarfile.open(path, "r:gz") as archive:
+            headers = dict(archive.pax_headers)
+            members = [(entry, archive.extractfile(entry).read() if entry.isfile() else b"")
+                       for entry in archive.getmembers()]
+        target = self.root / "rewritten"
+        target.mkdir(exist_ok=True)
+        write_source(target / path.name, change(members), headers)
+        return target
+
+    def test_reproducible_archive_matches_commit(self):
+        first, second = self.create("first"), self.create("second")
+        name = f"{SOURCE}.tar.gz"
+        self.assertEqual((first / name).read_bytes(), (second / name).read_bytes())
+        release.verify_source_archive(TAG, first, self.commit)
+        _, epoch, files = release.read_source_archive(first / name, TAG)
+        self.assertEqual(epoch, 1700000000)
+        self.assertEqual(files, {"README.md": (0o644, b"source\n"), "docs/guide.md": (0o644, b"guide\n"),
+                                 "tools/run.sh": (0o755, b"#!/bin/sh\n")})
+
+    def test_archive_of_another_commit(self):
+        pathlib.Path("README.md").write_bytes(b"changed\n")
+        later = self.commit_all("later")
+        with self.assertRaisesRegex(ValueError, "commit mismatch"):
+            release.verify_source_archive(TAG, self.create("later", later), self.commit)
+
+    def test_altered_missing_or_extra_content(self):
+        output = self.create("valid")
+        probes = (
+            ("differs from the commit", lambda members: [
+                (entry, b"changed\n" if entry.name.endswith("README.md") else data) for entry, data in members]),
+            ("inventory differs", lambda members: [
+                member for member in members if not member[0].name.endswith("README.md")]),
+            ("inventory differs", lambda members: members + [tar_entry(f"{SOURCE}/extra.txt", mtime=1700000000)]),
+        )
+        for message, change in probes:
+            with self.subTest(message=message), self.assertRaisesRegex(ValueError, message):
+                release.verify_source_archive(TAG, self.rewrite(output, change), self.commit)
+
+    def test_changed_mode(self):
+        def drop_execute(members):
+            for entry, _ in members:
+                if entry.name.endswith("run.sh"):
+                    entry.mode = 0o644
+            return members
+        output = self.rewrite(self.create("valid"), drop_execute)
+        with self.assertRaisesRegex(ValueError, "differs from the commit"):
+            release.verify_source_archive(TAG, output, self.commit)
 
 
 if __name__ == "__main__":

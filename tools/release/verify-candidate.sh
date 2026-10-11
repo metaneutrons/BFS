@@ -10,31 +10,37 @@ case "$mode" in
 esac
 package="bfs-${tag}-amiga"
 payloads=("${package}.tar.gz" "${package}.lha")
+source_archive="bfs-${tag}-source.tar.gz"
 script_dir=$(cd -- "$(dirname -- "$0")" && pwd)
 python3 "$script_dir/release_integrity.py" candidate "$tag" "$directory"
 
-for payload in "${payloads[@]}"; do
-    if [[ "$mode" == supply-chain ]]; then
-        cosign verify-blob \
-            --bundle "$directory/$payload.sigstore.json" \
-            --certificate-oidc-issuer https://token.actions.githubusercontent.com \
-            --certificate-identity \
-              "https://github.com/metaneutrons/BFS/.github/workflows/release.yml@refs/tags/$tag" \
-            "$directory/$payload"
-        for asset in "$payload" "$payload.spdx.json" "$payload.sigstore.json"; do
-            gh attestation verify "$directory/$asset" \
-                --repo metaneutrons/BFS \
-                --signer-workflow metaneutrons/BFS/.github/workflows/release.yml \
-                --source-ref "refs/tags/$tag"
-        done
-    fi
-done
+verify_signature() {
+    cosign verify-blob \
+        --bundle "$directory/$1.sigstore.json" \
+        --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+        --certificate-identity \
+          "https://github.com/metaneutrons/BFS/.github/workflows/release.yml@refs/tags/$tag" \
+        "$directory/$1"
+}
 
-if [[ "$mode" == supply-chain ]]; then
-    gh attestation verify "$directory/SHA256SUMS" \
+verify_attestation() {
+    gh attestation verify "$directory/$1" \
         --repo metaneutrons/BFS \
         --signer-workflow metaneutrons/BFS/.github/workflows/release.yml \
         --source-ref "refs/tags/$tag"
+}
+
+if [[ "$mode" == supply-chain ]]; then
+    for payload in "${payloads[@]}"; do
+        verify_signature "$payload"
+        for asset in "$payload" "$payload.spdx.json" "$payload.sigstore.json"; do
+            verify_attestation "$asset"
+        done
+    done
+    verify_signature "$source_archive"
+    verify_attestation "$source_archive"
+    verify_attestation "$source_archive.sigstore.json"
+    verify_attestation SHA256SUMS
 fi
 
 printf 'Release candidate completeness and integrity checks passed.\n'

@@ -172,6 +172,24 @@ runtime as the handler. A successful build is not physical hardware qualificatio
 
 Release acceptance follows the [release-readiness plan](docs/plans/release-readiness.md).
 
+### Release assets
+
+| Asset | Content |
+| --- | --- |
+| `bfs-vX.Y.Z-amiga.tar.gz`, `bfs-vX.Y.Z-amiga.lha` | AmigaOS handlers, `bfs` and `bfs-test`, with licenses and build metadata |
+| `bfs-vX.Y.Z-source.tar.gz` | source of the release commit, unpacks to `bfs-vX.Y.Z-source/` |
+| `*.spdx.json` | SPDX SBOMs of the two Amiga archives |
+| `*.sigstore.json` | Cosign signatures of the three archives |
+| `SHA256SUMS` | SHA-256 of every other asset |
+
+The source archive is `git archive` of the release commit without
+`docs/qualification/evidence`, which stays in the repository. Fixed file modes,
+owners and timestamps make it reproducible: the release workflow builds it
+twice, requires identical bytes and compares every file with the commit tree. Package
+builds should fetch this archive and pin its SHA-256 from `SHA256SUMS`, not the
+source downloads GitHub generates on request. Releases up to v0.2.1 have no
+source archive.
+
 ### Linux / POSIX administration
 
 `make tools` builds the canonical host command, `build/host/bfs`. Its filesystem
