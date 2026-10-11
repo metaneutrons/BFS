@@ -81,7 +81,7 @@ static int snapshot_create_or_delete(struct MsgPort *port, const char *operation
                                                        : "Snapshot deleted.\n");
         return 0;
     }
-    PrintFault(IoErr(), "bfs");
+    PrintFault(IoErr(), DOS_CSTR("bfs"));
     return 20;
 }
 
@@ -110,7 +110,7 @@ static int snapshot_list(struct MsgPort *port, const char *drive, const char *na
         if (!result) {
             LONG error = IoErr();
             if (error != 0) {
-                PrintFault(error, "bfs");
+                PrintFault(error, DOS_CSTR("bfs"));
                 return 20;
             }
             break;
@@ -194,7 +194,7 @@ static int snapshot_directory(struct MsgPort *port, const char *drive, int detai
         if (!result) {
             LONG error = IoErr();
             if (error != 0) {
-                PrintFault(error, "bfs");
+                PrintFault(error, DOS_CSTR("bfs"));
                 return 20;
             }
             break;
@@ -273,7 +273,7 @@ static int snapshot_mount(struct MsgPort *port, const char *drive,
     if (result) return result;
     if (!DoPkt(port, BFS_ACTION_SNAPSHOT_MOUNT,
                BFS_CLI_PTR(MKBADDR(bfs_bstr_bytes(&request))), BFS_CLI_PTR(target), 0, 0, 0)) {
-        PrintFault(IoErr(), "bfs");
+        PrintFault(IoErr(), DOS_CSTR("bfs"));
         return 20;
     }
     bfs_put("Mounted snapshot \"");
@@ -297,7 +297,7 @@ static int snapshot_unmount(struct MsgPort *port, const char *target,
     result = snapshot_capability(port, BFS_SNAPSHOT_CAP_MOUNTED_VIEW);
     if (result) return result;
     if (!DoPkt(port, ACTION_DIE, 0, 0, 0, 0, 0)) {
-        PrintFault(IoErr(), "bfs");
+        PrintFault(IoErr(), DOS_CSTR("bfs"));
         return 20;
     }
     bfs_put("Unmounted ");
@@ -309,7 +309,7 @@ static int snapshot_unmount(struct MsgPort *port, const char *target,
 int bfs_snapshot_command(const char *operation, const char *drive,
                          const char *name, const char *option)
 {
-    struct MsgPort *port = DeviceProc(drive);
+    struct MsgPort *port = DeviceProc(DOS_CSTR(drive));
     int result;
 
     if (!port) {

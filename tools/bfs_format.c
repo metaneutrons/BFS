@@ -16,7 +16,7 @@
 int bfs_format_command(const char *drive, const char *name)
 {
     struct MsgPort *port = NULL;
-    struct DevProc *device = GetDeviceProc(drive, NULL);
+    struct DevProc *device = GetDeviceProc(DOS_CSTR(drive), NULL);
     char format_message[BFS_FORMAT_ERROR_MAX] = {0};
     bfs_bstr_t bstr;
     LONG result, format_error, uninhibited, uninhibit_error;
@@ -56,14 +56,14 @@ int bfs_format_command(const char *drive, const char *name)
     bfs_put(name);
     bfs_put("\"...\n");
 
-    if (!Inhibit(drive, DOSTRUE)) {
-        PrintFault(IoErr(), "bfs");
+    if (!Inhibit(DOS_CSTR(drive), DOSTRUE)) {
+        PrintFault(IoErr(), DOS_CSTR("bfs"));
         FreeDeviceProc(device);
         return 20;
     }
     result = DoPkt(port, ACTION_FORMAT, BFS_CLI_PTR(MKBADDR(bfs_bstr_bytes(&bstr))), 0, 0, 0, 0);
     format_error = IoErr();
-    uninhibited = Inhibit(drive, DOSFALSE);
+    uninhibited = Inhibit(DOS_CSTR(drive), DOSFALSE);
     uninhibit_error = IoErr();
     if (!result && format_error == ERROR_NOT_IMPLEMENTED) {
         DoPkt(port, BFS_ACTION_FORMAT_ERROR, BFS_CLI_PTR(format_message),
@@ -73,7 +73,7 @@ int bfs_format_command(const char *drive, const char *name)
     FreeDeviceProc(device);
 
     if (!uninhibited) {
-        PrintFault(uninhibit_error, "bfs");
+        PrintFault(uninhibit_error, DOS_CSTR("bfs"));
         return 20;
     }
     if (result) {
@@ -84,7 +84,7 @@ int bfs_format_command(const char *drive, const char *name)
         bfs_put(format_message);
         bfs_put("\n");
     } else {
-        PrintFault(format_error, "bfs");
+        PrintFault(format_error, DOS_CSTR("bfs"));
     }
     return 20;
 }

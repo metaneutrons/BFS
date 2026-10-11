@@ -41,7 +41,7 @@ static void usage(void)
  * about a second, SYNC at every close and metadata change. */
 int bfs_commit_command(const char *drive, const char *mode)
 {
-    struct MsgPort *port = DeviceProc(drive);
+    struct MsgPort *port = DeviceProc(DOS_CSTR(drive));
     LONG requested = BFS_COMMIT_MODE_QUERY;
     LONG result;
 
@@ -75,7 +75,7 @@ int bfs_commit_command(const char *drive, const char *mode)
 
 int bfs_info_command(const char *drive)
 {
-    struct MsgPort *port = DeviceProc(drive);
+    struct MsgPort *port = DeviceProc(DOS_CSTR(drive));
 
     if (!port) {
         bfs_put("Cannot find handler for ");
@@ -105,7 +105,7 @@ int main(void)
 
     (void)version;
     process->pr_WindowPtr = (APTR)-1;
-    rdargs = ReadArgs("COMMAND/A,ARG1,ARG2,ARG3,ARG4", arguments, NULL);
+    rdargs = ReadArgs(DOS_CSTR("COMMAND/A,ARG1,ARG2,ARG3,ARG4"), arguments, NULL);
     if (!rdargs) {
         usage();
         process->pr_WindowPtr = old_window;
