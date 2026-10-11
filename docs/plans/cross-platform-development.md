@@ -512,6 +512,16 @@ were accepted under v2.
 
 M8-A3 names the "baseline Amiga reader" and M9-A3 "the pinned Amiga v2
 reader" as exchange partners. The v0.1.3 baseline refuses v3 volumes, so it
-can no longer serve. Which Amiga reader takes its place is open for the owner
-to decide; the evident candidate is the m68k handler of the BFS release under
-test, identified by its recorded hash.
+can no longer serve. The owner decided: the m68k handler of v0.2.0, the first
+v3 release, is the pinned Amiga reader for v3, as v0.1.3 was for v2. It is
+identified by its hash in the signed v0.2.0 release archive. Exchange with it
+also checks that later releases keep v3 unchanged.
+
+M6-A4 required Linux-written v2 images to be read and modified by the pinned
+baseline. Under v3, CI checks that the v0.1.3 baseline refuses Linux-written
+images and leaves them unchanged, and it reads an Amiga-written image through
+FUSE; no test has the current Amiga handler read and modify a Linux-written v3
+image. The owner decided that this direction is shown again for v3 as a CI
+step: the Linux-written normal and interrupted images that CI already
+produces are read and modified by the Amiga handler in the emulator run and
+then checked by the oracle. M6 stays closed; the step is follow-up evidence.
