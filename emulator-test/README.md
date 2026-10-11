@@ -47,6 +47,25 @@ The flow is:
 5. Run the complete on-Amiga integrity suite.
 6. Require a valid structured summary with zero failures.
 
+## Linux-written images
+
+`emulator-test/linux-exchange.sh NORMAL INTERRUPTED` takes the two images that the Linux FUSE
+qualification writes (`tests/fuse/test_fuse_mount.py --writable-image-output ...
+--interrupted-image-output ...`) and boots each one with the freshly built handler:
+
+- `linuxread_56` checks on the normal image what Linux left there (listings, contents, a hard
+  link, a soft link, comments, interleaved append records, a 107-byte name), then writes,
+  extends, renames and deletes files, sets a comment, creates a directory and flushes.
+- `linuxreap_57` mounts the interrupted image, which holds a file Linux unlinked while it was
+  open; the writable mount reclaims it, and the test flushes.
+
+After each boot, `emulator-test/linux-exchange.py` compares the oracle's view of the changed
+image with the image as Linux left it: every expected change and nothing else, comments,
+snapshots, no unreachable inode left, and a clean `bfs check`. These two tests are
+`BFS_IMAGE_TEST` entries in `tools/bfs-test-cases.def`; they run only when a filter names them
+exactly, never in the full suite on a fresh image. CI runs the script after the FUSE step that
+writes the images; locally it needs those images from a Linux host with FUSE.
+
 ## Kickstart Runs
 
 CI uses only the AROS ROM. The same suites run locally on a lawfully obtained

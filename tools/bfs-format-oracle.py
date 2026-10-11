@@ -418,6 +418,19 @@ def build_manifest(image, superblock):
     return sorted(manifest, key=lambda item: item["path"]), snapshots
 
 
+def namespace_extras(image, superblock, manifest):
+    """Comments by path, and the inode numbers that no path reaches, such as
+    retained zero-link inodes."""
+    inodes = {be32(key, 0) for key, _ in
+              walk_tree(image, superblock, superblock["inode_root"], "inode")}
+    directory = walk_tree(image, superblock, superblock["directory_root"], "directory")
+    _, comments, _ = parse_directory(directory)
+    comment_paths = {item["path"]: comments[item["inode"]].decode("latin-1")
+                     for item in manifest if item["inode"] in comments}
+    reachable = {item["inode"] for item in manifest}
+    return {"comments": comment_paths, "unreachable_inodes": sorted(inodes - reachable)}
+
+
 def main(argv):
     parser = argparse.ArgumentParser()
     parser.add_argument("image", type=Path)
@@ -428,7 +441,8 @@ def main(argv):
         superblock = select_superblock(image)
         namespace, snapshots = build_manifest(image, superblock)
         result = {"format_version": 1, "status": "ok", "superblock": superblock,
-                  "namespace": namespace, "snapshots": snapshots}
+                  "namespace": namespace, "snapshots": snapshots,
+                  **namespace_extras(image, superblock, namespace)}
         exit_code = 0
     except (OSError, OracleError) as error:
         result = {"format_version": 1, "status": "error", "code": str(error)}

@@ -98,6 +98,15 @@ class AmigaRunnerTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "invalid test filter"):
             RUNNER.test_inventory(ROOT / "tools/bfs-test-cases.def", "fill_08+")
 
+    def test_image_tests_run_only_when_named_exactly(self):
+        full = RUNNER.test_inventory(ROOT / "tools/bfs-test-cases.def")
+        self.assertNotIn("linuxread_56", full)
+        self.assertNotIn("linuxreap_57", full)
+        self.assertEqual(RUNNER.test_inventory(ROOT / "tools/bfs-test-cases.def", "linuxread_56"),
+                         ["linuxread_56"])
+        with self.assertRaisesRegex(ValueError, "empty"):
+            RUNNER.test_inventory(ROOT / "tools/bfs-test-cases.def", "linux")
+
     def test_child_completion(self):
         script = (f"from pathlib import Path; import time; "
                   f"Path({str(self.result)!r}).write_text({self.valid!r}); "
