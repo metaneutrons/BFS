@@ -80,6 +80,9 @@ content manifests. It is not a second writer or an automatic repair tool.
 
 ### Compatibility and feature contract
 
+Format v3 has since replaced v2; see the 2026-10-11 entry under "Sources and
+decision changes". As first written:
+
 Freeze format v2. No field-width changes, private interpretation of padding,
 new option bits, silent migration, or platform-specific disk variants belong
 in this initiative. Historical valid v2 images remain readable; newly written
@@ -490,3 +493,36 @@ suggestion, the production FUSE driver intentionally shares the core to test
 it outside the emulator. A separate independent oracle retains the format
 validation benefit. GitHub tracking, target acceptance and publication remain
 subject to explicit owner decisions.
+
+2026-10-11: Format v3 replaces the v2 freeze. #83 introduced on-disk format
+v3, which extends the inode record with a flags word, an inline extent and a
+comment flag; it is a breaking change. Before the first v3 release, #88
+replaced the v3 directory tree with compact records in place. Release v0.2.0
+(2026-10-10) is the first release with v3. Its drivers neither read nor write
+v2 volumes; a v2 volume moves to v3 by copying its data with a v0.1 driver and
+formatting, as the [compatibility contract](../format-compatibility.md)
+describes. The rules of the compatibility and feature contract above now
+apply to v3 in place of v2: no field-width changes, private interpretation of
+padding, new option bits, silent migration or platform-specific variants
+within v3, and a later on-disk change raises the format version as the
+compatibility contract's section on format versions and releases states. Two
+of its statements no longer hold: v0.2.0 drivers do not read v2 images, and
+newly written volumes are not interoperable with the v0.1.3 baseline. M1 to M7
+were accepted under v2.
+
+M8-A3 names the "baseline Amiga reader" and M9-A3 "the pinned Amiga v2
+reader" as exchange partners. The v0.1.3 baseline refuses v3 volumes, so it
+can no longer serve. The owner decided: the m68k handler of v0.2.0, the first
+v3 release, is the pinned Amiga reader for v3, as v0.1.3 was for v2. It is
+identified by its hash in the signed v0.2.0 release archive. Exchange with it
+also checks that later releases keep v3 unchanged.
+
+M6-A4 required Linux-written v2 images to be read and modified by the pinned
+baseline. Under v3, CI checks that the v0.1.3 baseline refuses Linux-written
+images and leaves them unchanged, and it reads an Amiga-written image through
+FUSE; no test has the current Amiga handler read and modify a Linux-written v3
+image. The owner decided that this direction is shown again for v3 as a CI
+step: the Linux-written normal and interrupted images that CI already
+produces are read and modified by the Amiga handler in the emulator run and
+then checked by the oracle. M6 stays closed; the step is follow-up evidence,
+added in #91 (`emulator-test/linux-exchange.sh`).

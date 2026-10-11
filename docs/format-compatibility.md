@@ -12,7 +12,27 @@ format does not add 64-bit block addresses.
 Before the first release of v3, development images carried version 3 with the
 version 2 directory tree. They have no marker that tells them apart: the
 superblock is accepted, and mount rejects the directory tree as corrupt
-(`BFS_ERR_CORRUPT`). Such images are rebuilt, not migrated.
+(`BFS_ERR_CORRUPT`). Such images are rebuilt, not migrated. This phase ended
+with release v0.2.0, the first release of v3; v3 has been frozen since.
+
+## Format versions and releases
+
+A released format version is never changed again. Later format versions
+follow these rules:
+
+- The first change to the on-disk format after a release raises the format
+  version on `main` at once. The next version after v3 is v4. A released driver
+  therefore refuses a development image as too new and never writes it.
+- Further format changes before the next release keep that number. Until it
+  is released, the new version may still change. Development images written
+  before such a change have no marker that tells them apart; they are rebuilt,
+  not migrated, as v3 development images were before v0.2.0.
+- The next release freezes that version.
+
+A change that raises the version updates the
+[format specification](on-disk-format.md), the byte fixtures, the checker, the
+compatibility tests and this document together, and states how volumes of the
+previous version are refused or replaced.
 
 ## Recognition and refusal
 
@@ -91,7 +111,9 @@ remain separate limits.
 
 ## Requirements for a future format
 
-- Freeze the v3 layout. New block-width or tree layouts require a new format.
+- The v3 layout is frozen. New block-width or tree layouts require a new
+  format version, raised as described in
+  [Format versions and releases](#format-versions-and-releases).
 - To obtain the explicit unsupported-format refusal of v2 and v3 drivers,
   retain the recognition envelope at the superblock locations. A different
   checksum/header scheme is not covered by this guarantee and needs a separate
