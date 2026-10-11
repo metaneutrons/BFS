@@ -26,6 +26,8 @@ def require(condition, message):
 
 
 def run(argv):
+    # Trusted local argv: the repository's oracle and bfs command, no shell.
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args, python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
     return subprocess.run([str(value) for value in argv], capture_output=True, text=True,
                           check=False, shell=False)  # nosec B603
 
