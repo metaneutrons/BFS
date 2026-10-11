@@ -18,6 +18,9 @@ BINARIES = ("bfshandler", "bfs-test", "bfs") + tuple(
 ARCHIVE_FILES = frozenset((*BINARIES, "BUILD-METADATA.json", "LICENSE", "README.md",
                            "RUNTIME-COMPONENTS.json", "THIRD-PARTY.md", "LICENSE.libnix",
                            "LICENSE.libgcc", "LICENSE.libgcc-exception"))
+# Retained qualification records stay in git; a source package does not need them.
+SOURCE_EXCLUDED = ("docs/qualification/evidence",)
+MAX_ENTRY_BYTES = 32 * 1024 * 1024
 
 
 def require(condition, message):
@@ -30,8 +33,25 @@ def package_name(tag):
     return f"bfs-{tag}-amiga"
 
 
+def source_package_name(tag):
+    package_name(tag)
+    return f"bfs-{tag}-source"
+
+
 def digest(data):
     return hashlib.sha256(data).hexdigest()
+
+
+def git(*arguments):
+    # nosemgrep: python.lang.security.audit.dangerous-subprocess-use-tainted-env-args.dangerous-subprocess-use-tainted-env-args, python.lang.security.audit.dangerous-subprocess-use-audit.dangerous-subprocess-use-audit
+    return subprocess.run(["git", *arguments], check=True, capture_output=True, shell=False).stdout  # nosec B603 B607
+
+
+def require_gzip(path):
+    try:
+        subprocess.run(["gzip", "-t", str(path)], check=True)
+    except subprocess.CalledProcessError as error:
+        raise ValueError("invalid gzip archive") from error
 
 
 def read_archive(path, tag):
@@ -45,10 +65,7 @@ def read_archive(path, tag):
                 check=True,
             )
         else:
-            try:
-                subprocess.run(["gzip", "-t", str(path)], check=True)
-            except subprocess.CalledProcessError as error:
-                raise ValueError("invalid gzip archive") from error
+            require_gzip(path)
             normalized = path
         with tarfile.open(normalized, "r:*") as archive:
             entries = archive.getmembers()
@@ -62,7 +79,7 @@ def read_archive(path, tag):
                     require(entry.isdir(), "package root is not a directory")
                     continue
                 require(entry.isfile() and not entry.issparse(), "non-regular archive entry")
-                require(0 < entry.size <= 32 * 1024 * 1024, "invalid archive entry size")
+                require(0 < entry.size <= MAX_ENTRY_BYTES, "invalid archive entry size")
                 stream = archive.extractfile(entry)
                 require(stream is not None, "archive entry has no data")
                 with stream:
@@ -137,6 +154,80 @@ def verify_archives(tag, directory, commit):
     verify_metadata(tar_files, tag, commit)
 
 
+def source_entry(entry, root):
+    parts = entry.name.split("/")
+    require(parts[0] == root and not {"", ".", ".."} & set(parts), "source archive entry outside its root")
+    require(entry.uid == 0 and entry.gid == 0, "source archive entry carries a host owner")
+    if entry.isdir():
+        require(entry.mode == 0o755, "unexpected source directory mode")
+    else:
+        require(entry.isfile() and not entry.issparse() and len(parts) > 1, "non-regular source archive entry")
+        require(entry.mode in (0o644, 0o755), "unexpected source file mode")
+        require(entry.size <= MAX_ENTRY_BYTES, "invalid source archive entry size")
+    return "/".join(parts[1:])
+
+
+def read_source_archive(path, tag):
+    """Return the commit, timestamp and {path: (mode, bytes)} of a source archive."""
+    root = source_package_name(tag)
+    require_gzip(path)
+    with tarfile.open(path, "r:gz") as archive:
+        # git archive records the commit in the pax global header.
+        commit = archive.pax_headers.get("comment", "")
+        require(re.fullmatch(r"[0-9a-f]{40}", commit), "source archive lacks its commit identity")
+        entries = archive.getmembers()
+        require(len({entry.name for entry in entries}) == len(entries), "duplicate source archive entry")
+        require(len({entry.mtime for entry in entries}) == 1, "source archive timestamps differ")
+        files, directories = {}, set()
+        for entry in entries:
+            relative = source_entry(entry, root)
+            if entry.isdir():
+                directories.add(relative)
+                continue
+            stream = archive.extractfile(entry)
+            require(stream is not None, "source archive entry has no data")
+            with stream:
+                data = stream.read()
+            require(len(data) == entry.size, "truncated source archive entry")
+            files[relative] = (entry.mode, data)
+    parents = {"/".join(path.split("/")[:depth]) for path in files for depth in range(path.count("/") + 1)}
+    require(directories == parents, "source archive directory inventory differs")
+    return commit, entries[0].mtime, files
+
+
+def git_blob_id(data):
+    # Git's object name, compared with the commit tree; signatures provide authenticity.
+    return hashlib.sha1(b"blob %d\0" % len(data) + data, usedforsecurity=False).hexdigest()
+
+
+def source_tree(commit):
+    """Return {path: (mode, blob)} of the commit without the excluded paths."""
+    tree = {}
+    for record in git("ls-tree", "-r", "-z", "--full-tree", commit).split(b"\0"):
+        if not record:
+            continue
+        meta, name = record.split(b"\t", 1)
+        mode, kind, blob = meta.decode("ascii").split(" ")
+        path = name.decode("utf-8")
+        if any(path == prefix or path.startswith(prefix + "/") for prefix in SOURCE_EXCLUDED):
+            continue
+        require(kind == "blob" and mode in ("100644", "100755"), f"unsupported source tree entry: {path}")
+        tree[path] = (0o755 if mode == "100755" else 0o644, blob)
+    return tree
+
+
+def verify_source_archive(tag, directory, commit):
+    require(re.fullmatch(r"[0-9a-f]{40}", commit), "invalid expected source commit")
+    path = directory / f"{source_package_name(tag)}.tar.gz"
+    archived, epoch, files = read_source_archive(path, tag)
+    require(archived == commit, "source archive commit mismatch")
+    require(epoch == int(git("show", "-s", "--format=%ct", commit)), "source archive timestamp differs from the commit")
+    tree = source_tree(commit)
+    require(set(files) == set(tree), "source archive inventory differs from the commit")
+    for name, (mode, data) in files.items():
+        require((mode, git_blob_id(data)) == tree[name], f"source file differs from the commit: {name}")
+
+
 def verify_sbom(path, payload, tag):
     from sbom_document import document as expected_document
 
@@ -159,13 +250,15 @@ def verify_sbom(path, payload, tag):
     verify_metadata(files, tag, metadata.get("source_commit", ""))
     expected = expected_document(payload.name, digest(payload.read_bytes()), files)
     require(document == expected, "SBOM file, runtime, license or relationship inventory mismatch")
+    return metadata
 
 
 def verify_candidate(tag, directory):
     package = package_name(tag)
     payloads = [f"{package}.tar.gz", f"{package}.lha"]
-    expected = {"SHA256SUMS"} | {name + suffix for name in payloads
-                                for suffix in ("", ".spdx.json", ".sigstore.json")}
+    source = f"{source_package_name(tag)}.tar.gz"
+    expected = {"SHA256SUMS", source, source + ".sigstore.json"} | {
+        name + suffix for name in payloads for suffix in ("", ".spdx.json", ".sigstore.json")}
     require(not directory.is_symlink() and directory.is_dir(), "invalid candidate directory")
     entries = list(directory.iterdir())
     require({path.name for path in entries} == expected, "unexpected candidate asset inventory")
@@ -182,15 +275,20 @@ def verify_candidate(tag, directory):
     for name, checksum in inventory.items():
         require(digest((directory / name).read_bytes()) == checksum, f"checksum mismatch: {name}")
     for name in payloads:
-        verify_sbom(directory / f"{name}.spdx.json", directory / name, tag)
+        metadata = verify_sbom(directory / f"{name}.spdx.json", directory / name, tag)
+    commit, epoch, _ = read_source_archive(directory / source, tag)
+    require((commit, epoch) == (metadata["source_commit"], metadata["source_date_epoch"]),
+            "source archive and Amiga payloads name different commits or timestamps")
 
 
 def main():
-    require(len(sys.argv) in (4, 5), "usage: release_integrity.py archives|candidate TAG DIRECTORY [COMMIT]")
+    require(len(sys.argv) in (4, 5),
+            "usage: release_integrity.py archives|source|candidate TAG DIRECTORY [COMMIT]")
     mode, tag, directory = sys.argv[1:4]
-    if mode == "archives":
+    if mode in ("archives", "source"):
         require(len(sys.argv) == 5, "expected source commit is required")
-        verify_archives(tag, pathlib.Path(directory), sys.argv[4])
+        verify = verify_archives if mode == "archives" else verify_source_archive
+        verify(tag, pathlib.Path(directory), sys.argv[4])
     else:
         require(mode == "candidate" and len(sys.argv) == 4, "invalid verification mode")
         verify_candidate(tag, pathlib.Path(directory))
