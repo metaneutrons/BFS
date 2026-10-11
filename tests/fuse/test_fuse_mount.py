@@ -220,6 +220,15 @@ def expect_errnos(expected, operation):
     raise RuntimeError(f"operation unexpectedly succeeded; expected one of {expected}")
 
 
+def renameat2_noreplace(source, target):
+    libc = ctypes.CDLL(None, use_errno=True)
+    at_fdcwd, rename_noreplace = -100, 1
+    if libc.renameat2(at_fdcwd, os.fsencode(source), at_fdcwd, os.fsencode(target),
+                      rename_noreplace) != 0:
+        error = ctypes.get_errno()
+        raise OSError(error, os.strerror(error), str(source))
+
+
 def append_client(path, payload, repetitions):
     descriptor = os.open(path, os.O_WRONLY | os.O_APPEND | os.O_CLOEXEC)
     try:
@@ -516,6 +525,27 @@ def exercise_long_names(image, mountpoint):
         unmount(process, mountpoint)
 
 
+def exercise_case_only_rename(work):
+    # Both spellings resolve to one inode, so the kernel treats a case-only
+    # rename as a rename onto itself and never calls the adapter: the stored
+    # spelling stays. Two renames through another name change it.
+    case_name = work / "case-name"
+    case_name.write_bytes(b"case")
+    inode = os.stat(case_name).st_ino
+    os.rename(case_name, work / "CASE-NAME")
+    require("case-name" in os.listdir(work) and "CASE-NAME" not in os.listdir(work),
+            "a direct case-only rename changed the stored spelling")
+    expect_errno(errno.EEXIST,
+                 lambda: renameat2_noreplace(case_name, work / "CASE-NAME"))
+    os.rename(case_name, work / "case-rename-step")
+    os.rename(work / "case-rename-step", work / "CASE-NAME")
+    names = os.listdir(work)
+    require("CASE-NAME" in names and "case-name" not in names and "case-rename-step" not in names,
+            "a case-only rename through another name did not change the spelling")
+    require((work / "Case-Name").read_bytes() == b"case", "case-insensitive lookup differs")
+    require(os.stat(work / "CASE-NAME").st_ino == inode, "case-only rename changed the inode")
+
+
 def exercise_writable_fixture(image, mountpoint):
     process = mount(image, mountpoint, read_write=True)
     try:
@@ -528,10 +558,7 @@ def exercise_writable_fixture(image, mountpoint):
         exercise_open_unlink_and_append(work)
         exercise_large_offsets(work)
         exercise_name_and_metadata_boundaries(work)
-        case_name = work / "case-name"
-        case_name.write_bytes(b"case")
-        os.rename(case_name, work / "CASE-NAME")
-        require((work / "CASE-NAME").read_bytes() == b"case", "case-only rename differs")
+        exercise_case_only_rename(work)
         expect_errno(errno.ENOTEMPTY, lambda: os.rmdir(work))
         directory = os.open(work, os.O_RDONLY | os.O_DIRECTORY | os.O_CLOEXEC)
         try:
@@ -590,7 +617,7 @@ def create_interrupted_open_unlink_image(image, mountpoint, output):
         require((work / "open-target").read_bytes() == b"new",
                 "replacement state did not survive remount")
         require(not (work / "unlinked").exists(), "unlinked file returned after remount")
-        require((work / "CASE-NAME").is_file(), "case-only rename did not survive remount")
+        require("CASE-NAME" in os.listdir(work), "case-only rename did not survive remount")
     finally:
         unmount(process, mountpoint)
 

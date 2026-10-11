@@ -196,6 +196,12 @@ snapshot selection (`--snapshot` or `--snapshot-id`) have one canonical entry
 point. A writable mount is explicit and is refused for snapshots. New names longer than
 107 bytes are refused unless `--long-names` is given (see "File names").
 
+Names are case-insensitive under Linux as on the Amiga, so Linux treats a rename
+that only changes case (`mv name NAME`) as a rename onto the same file and does
+not pass it on; the stored spelling stays. Rename through an intermediate name
+instead (`mv name tmp && mv tmp NAME`); see the
+[filesystem semantics](docs/platform-contract/filesystem-semantics.md).
+
 ### Stress test binary
 
 ```bash
