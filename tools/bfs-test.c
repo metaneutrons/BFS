@@ -2465,7 +2465,9 @@ static const char *linux_image_content(void)
     if (!append_records_intact()) return "append records";
     if (!file_equals(name, "boundary", 8) || !examine_comment(vpath(name), comment))
         return "107-byte name";
-    if (!file_equals("rw/CASE-NAME", "case", 4)) return "lookup under another case";
+    /* Linux stores case-name or CASE-NAME (see the FUSE case-only rename);
+     * a third spelling finds either. */
+    if (!file_equals("rw/Case-Name", "case", 4)) return "lookup under another case";
     if (!name_absent("rw/unlinked") || !name_absent("interrupted-orphan")) return "unlinked names";
     return NULL;
 }
