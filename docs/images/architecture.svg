@@ -1,0 +1,89 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="476" viewBox="0 0 800 476" role="img" aria-labelledby="title desc">
+  <title id="title">BFS architecture</title>
+  <desc id="desc">Platform adapters for AmigaOS/AROS and Linux FUSE sit on a portable core of four layers: operations, metadata trees, the B+tree engine, and storage and transactions.</desc>
+  <style>
+    text { font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace; fill: #000; }
+    .window-title { font-size: 14px; font-weight: 700; }
+    .group { font-size: 13px; font-weight: 700; }
+    .layer { font-size: 14px; font-weight: 700; }
+    .files { font-size: 13px; }
+    .note { font-weight: 400; }
+  </style>
+
+  <!-- Window: Workbench 2/3 palette, active window with blue border -->
+  <g shape-rendering="crispEdges">
+    <rect x="0" y="0" width="800" height="476" fill="#6688bb"/>
+    <path d="M0.5 475.5 V0.5 H799.5" fill="none" stroke="#fff"/>
+    <path d="M0.5 475.5 H799.5 V0.5" fill="none" stroke="#000"/>
+    <rect x="4" y="22" width="792" height="450" fill="#aaaaaa"/>
+    <path d="M4.5 471.5 V22.5 H795.5" fill="none" stroke="#000"/>
+    <path d="M4.5 471.5 H795.5 V22.5" fill="none" stroke="#fff"/>
+
+    <!-- Close gadget -->
+    <path d="M1.5 21.5 V1.5 H22.5" fill="none" stroke="#fff"/>
+    <path d="M1.5 21.5 H22.5 V1.5" fill="none" stroke="#000"/>
+    <rect x="8" y="7" width="8" height="8" fill="#fff" stroke="#000"/>
+
+    <!-- Depth gadget -->
+    <path d="M776.5 21.5 V1.5 H798.5" fill="none" stroke="#fff"/>
+    <path d="M776.5 21.5 H798.5 V1.5" fill="none" stroke="#000"/>
+    <rect x="781.5" y="5.5" width="9" height="7" fill="#aaaaaa" stroke="#000"/>
+    <rect x="785.5" y="9.5" width="9" height="7" fill="#fff" stroke="#000"/>
+  </g>
+  <text class="window-title" x="32" y="16">BFS Architecture</text>
+
+  <!-- Group: platform adapters -->
+  <g shape-rendering="crispEdges" fill="none">
+    <rect x="16.5" y="40.5" width="767" height="114" stroke="#000"/>
+    <rect x="17.5" y="41.5" width="767" height="114" stroke="#fff"/>
+  </g>
+  <rect x="26" y="32" width="396" height="18" fill="#aaaaaa"/>
+  <text class="group" x="32" y="45">Platform adapters <tspan class="note">· src/amiga, src/fuse, src/host</tspan></text>
+
+  <g shape-rendering="crispEdges" fill="none">
+    <path d="M30.5 140.5 V54.5 H394.5" stroke="#fff"/>
+    <path d="M30.5 140.5 H394.5 V54.5" stroke="#000"/>
+    <path d="M405.5 140.5 V54.5 H769.5" stroke="#fff"/>
+    <path d="M405.5 140.5 H769.5 V54.5" stroke="#000"/>
+  </g>
+  <text class="layer" x="42" y="74">AmigaOS / AROS handler</text>
+  <text class="files" x="42" y="93">handler.c (DOS packets)</text>
+  <text class="files" x="42" y="111">amiga_bio.c (device I/O)</text>
+  <text class="files" x="42" y="129">startup.s · startup_aros.c · 68k asm</text>
+
+  <text class="layer" x="417" y="74">Linux FUSE adapter</text>
+  <text class="files" x="417" y="93">bfs_fuse.c (FUSE operations)</text>
+  <text class="files" x="417" y="111">posix_bio.c (image and device I/O)</text>
+
+  <!-- Group: portable core -->
+  <g shape-rendering="crispEdges" fill="none">
+    <rect x="16.5" y="172.5" width="767" height="284" stroke="#000"/>
+    <rect x="17.5" y="173.5" width="767" height="284" stroke="#fff"/>
+  </g>
+  <rect x="26" y="164" width="200" height="18" fill="#aaaaaa"/>
+  <text class="group" x="32" y="177">Portable core <tspan class="note">· src/core</tspan></text>
+
+  <g shape-rendering="crispEdges" fill="none">
+    <path d="M30.5 238.5 V186.5 H769.5" stroke="#fff"/>
+    <path d="M30.5 238.5 H769.5 V186.5" stroke="#000"/>
+    <path d="M30.5 300.5 V248.5 H769.5" stroke="#fff"/>
+    <path d="M30.5 300.5 H769.5 V248.5" stroke="#000"/>
+    <path d="M30.5 362.5 V310.5 H769.5" stroke="#fff"/>
+    <path d="M30.5 362.5 H769.5 V310.5" stroke="#000"/>
+    <path d="M30.5 442.5 V372.5 H769.5" stroke="#fff"/>
+    <path d="M30.5 442.5 H769.5 V372.5" stroke="#000"/>
+  </g>
+
+  <text class="layer" x="42" y="206">Operations</text>
+  <text class="files" x="42" y="226">namespace.c (dir CRUD, rename, links) · file.c (I/O) · snapshot.c</text>
+
+  <text class="layer" x="42" y="268">Metadata trees <tspan class="note files">(key → value, all on the shared engine)</tspan></text>
+  <text class="files" x="42" y="288">dir.c (names) · extent.c (file maps) · inode.c · refcount.c (snap)</text>
+
+  <text class="layer" x="42" y="330">B+tree engine</text>
+  <text class="files" x="42" y="350">btree.c — one generic copy-on-write B+tree, used by every tree above</text>
+
+  <text class="layer" x="42" y="392">Storage &amp; transactions</text>
+  <text class="files" x="42" y="412">fs.c (format/mount) · txn.c (COW commit) · superblock.c (dual-SB)</text>
+  <text class="files" x="42" y="430">alloc.c + bootstrap_alloc.c (free space) · cache.c (LRU) · crc32.c</text>
+</svg>
