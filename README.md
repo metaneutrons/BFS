@@ -64,33 +64,35 @@ it is slower.
 
 | Workload | BFS time / PFS3 time |
 | --- | ---: |
-| Lock 40 files, 10 passes | 0.88 |
-| Sequential write, 8 MiB | 0.74 |
-| Sequential read, 8 MiB | 1.05 |
+| Lock 40 files, 10 passes | 0.89 |
+| Sequential write, 8 MiB | 0.71 |
+| Sequential read, 8 MiB | 1.01 |
 | Read the appended files, 1,280 KiB | 1.05 |
 | Read 40 small files | 1.26 |
-| Create 40 small files | 1.74 |
-| Delete 40 small files | 1.77 |
-| Append 4 KiB × 256 | 1.66 |
+| Create 40 small files | 1.78 |
+| Delete 40 small files | 1.72 |
+| Append 4 KiB × 256 | 1.59 |
 | Append 1 KiB × 256 | 1.83 |
-| ExNext, 400 entries, 10 passes | 1.87 |
-| ExNext, 1,000 entries, first pass | 2.36 |
-| ExNext, 1,000 entries, 10 passes | 1.84 |
-| ExAll, 400 entries, 10 passes | 3.78 |
-| ExAll, 1,000 entries, first pass | 6.09 |
-| ExAll, 1,000 entries, 10 passes | 3.71 |
+| ExNext, 400 entries, 10 passes | 1.52 |
+| ExNext, 1,000 entries, first pass | 2.07 |
+| ExNext, 1,000 entries, 10 passes | 1.56 |
+| ExAll, 400 entries, 10 passes | 3.55 |
+| ExAll, 1,000 entries, first pass | 6.24 |
+| ExAll, 1,000 entries, 10 passes | 3.93 |
 
 BFS is faster than PFS3 for lookups and sequential writes and close to it for
 large reads. Small files, appends and above all directory listings take
 longer; ExAll is the largest gap.
 
 The figures are medians of eight emulator starts with alternating order
-(BFS first, then PFS3 first), measured on 10 October 2026 with the 68040
-release build (`-O2 -m68040`) of the pre-release commit `b0e062c` and
-Buffers = 30 for BFS. v0.2.0 additionally reads the inodes of an ExNext batch
-at once; this run does not include that change. Method, identities and all
-phases are in the
-[measurement report](docs/qualification/bfs-production-status-2026-10-10.md).
+(BFS first, then PFS3 first), measured on 12 October 2026 with the 68040
+release build (`-O2 -m68040`) of v0.3.0 and Buffers = 30 for BFS. Single
+starts spread widely on the virtual host that runs the emulator, so only the
+medians are meaningful. Compared with the pre-release build `b0e062c`,
+v0.3.0 needs 16–18 % less time for repeated ExNext listings of 400 and 1,000
+entries; the other workloads are unchanged within that spread. Method,
+identities and all phases are in the
+[measurement report](docs/qualification/bfs-v0.3.0-performance-2026-10-12.md).
 
 ## Architecture
 

@@ -1,0 +1,5 @@
+Full source verification on Cachy, 12 October 2026
+source-identities.sha256 (full, 18302 files of git archive v0.3.0): 779d039f3052f6628659a77494985f3d94c42cccf0e84af902cb73072646ad8c
+results/source-check.before.log (full): 18302 lines, 0 not OK, SHA-256 718df16b69b97378c07f99a060d4ebc6960a50f0568d372a7ff0290318d32a73
+results/source-check.post.log (full): 18302 lines, 0 not OK, SHA-256 718df16b69b97378c07f99a060d4ebc6960a50f0568d372a7ff0290318d32a73
+Retained copies omit ./docs/qualification/ (reports and evidence the run does not read).
