@@ -1,5 +1,17 @@
 # Changelog
 
+## [0.3.0](https://github.com/metaneutrons/BFS/compare/v0.2.1...v0.3.0) (2026-10-12)
+
+
+### Features
+
+* **release:** publish a reproducible, signed source archive ([#96](https://github.com/metaneutrons/BFS/issues/96)) ([f44b09f](https://github.com/metaneutrons/BFS/commit/f44b09f410d58f938f7fad68f8290968d3675e6c))
+
+
+### Documentation
+
+* **readme:** add preliminary relative performance figures against PFS3 ([#99](https://github.com/metaneutrons/BFS/issues/99)) ([17e2686](https://github.com/metaneutrons/BFS/commit/17e26868af42aa7155a71d32a83fc65d934a5b8f))
+
 ## [0.2.1](https://github.com/metaneutrons/BFS/compare/v0.2.0...v0.2.1) (2026-10-11)
 
 
