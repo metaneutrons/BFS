@@ -6,7 +6,7 @@
 > **⚠️ WARNING: Experimental software.** BFS has not yet been battle-tested.
 > Always keep backups of your data and use at your own risk.
 
-> **Release status:** v0.2.1 passes the host, Linux FUSE and AROS/FS-UAE
+> **Release status:** v0.3.0 passes the host, Linux FUSE and AROS/FS-UAE
 > integration gates and ships handler builds for 68020, 68030, 68040, 68060 and
 > 68080. It writes on-disk format v3, which v0.1 drivers cannot read. Native
 > AROS x86_64 is not part of CI, and physical Apollo 68080 hardware and AMMX are
@@ -47,6 +47,50 @@ code.
 The PFS3 figure is its format limit of 3,469,243,648 sectors (`MAXDISKSIZE` in
 pfs3aio's `blocks.h`). The BFS figures are binary TiB limits imposed by the
 on-disk block address space; 16 TiB is approximately 17.59 TB.
+
+## Performance (preliminary)
+
+> **Synthetic benchmark, relative figures only.** The numbers below come from a
+> benchmark that runs as part of the development cycle in FS-UAE, which
+> emulates an A1200 with a 68040 at maximum emulation speed (Kickstart 3.2,
+> 2 MiB chip and 8 MiB fast memory); BFS and PFS3 each run on their own
+> 255.5 MiB partition in the same emulator start. The figures are not absolute
+> speeds and do not predict results on real hardware, other CPUs or real disks
+> and controllers.
+
+Each value is the time BFS needs for a workload divided by the time PFS3
+(pfs3aio) needs for it in the same run. Below 1.00 BFS is faster, above 1.00
+it is slower.
+
+| Workload | BFS time / PFS3 time |
+| --- | ---: |
+| Lock 40 files, 10 passes | 0.88 |
+| Sequential write, 8 MiB | 0.74 |
+| Sequential read, 8 MiB | 1.05 |
+| Read the appended files, 1,280 KiB | 1.05 |
+| Read 40 small files | 1.26 |
+| Create 40 small files | 1.74 |
+| Delete 40 small files | 1.77 |
+| Append 4 KiB × 256 | 1.66 |
+| Append 1 KiB × 256 | 1.83 |
+| ExNext, 400 entries, 10 passes | 1.87 |
+| ExNext, 1,000 entries, first pass | 2.36 |
+| ExNext, 1,000 entries, 10 passes | 1.84 |
+| ExAll, 400 entries, 10 passes | 3.78 |
+| ExAll, 1,000 entries, first pass | 6.09 |
+| ExAll, 1,000 entries, 10 passes | 3.71 |
+
+BFS is faster than PFS3 for lookups and sequential writes and close to it for
+large reads. Small files, appends and above all directory listings take
+longer; ExAll is the largest gap.
+
+The figures are medians of eight emulator starts with alternating order
+(BFS first, then PFS3 first), measured on 10 October 2026 with the 68040
+release build (`-O2 -m68040`) of the pre-release commit `b0e062c` and
+Buffers = 30 for BFS. v0.2.0 additionally reads the inodes of an ExNext batch
+at once; this run does not include that change. Method, identities and all
+phases are in the
+[measurement report](docs/qualification/bfs-production-status-2026-10-10.md).
 
 ## Architecture
 
