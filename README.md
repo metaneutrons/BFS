@@ -94,25 +94,10 @@ phases are in the
 
 ## Architecture
 
-```plain
-┌──────────────────────────────────────────────────────────────────────┐
-│ AmigaOS Glue Layer                                                   │
-│ handler.c (DOS packets) · amiga_bio.c (device) · startup.s · 68k asm │
-├──────────────────────────────────────────────────────────────────────┤
-│ Operations                                                           │
-│ namespace.c (dir CRUD, rename, links) · file.c (I/O) · snapshot.c    │
-├──────────────────────────────────────────────────────────────────────┤
-│ Metadata trees  (key → value, all on the shared engine)              │
-│ dir.c (names) · extent.c (file maps) · inode.c · refcount.c (snap)   │
-├──────────────────────────────────────────────────────────────────────┤
-│ B+tree engine                                                        │
-│ btree.c — one generic copy-on-write B+tree, used by every tree above │
-├──────────────────────────────────────────────────────────────────────┤
-│ Storage & transactions                                               │
-│ fs.c (format/mount) · txn.c (COW commit) · superblock.c (dual-SB)    │
-│ alloc.c + bootstrap_alloc.c (free space) · cache.c (LRU) · crc32.c   │
-└──────────────────────────────────────────────────────────────────────┘
-```
+<p align="center">
+  <img src="docs/images/architecture.svg" width="800"
+       alt="BFS architecture: an AmigaOS/AROS handler and a Linux FUSE adapter on a portable core of four layers, from top to bottom operations, metadata trees, the B+tree engine, and storage and transactions">
+</p>
 
 The B+tree engine is shared across all metadata types, utilizing a **dynamic transaction tracking** architecture that ensures session-wide consistency and safe COW reclamation. It supports **online compaction** for metadata trees to maintain performance without downtime.
 
