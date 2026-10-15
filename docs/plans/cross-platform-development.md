@@ -526,3 +526,14 @@ step: the Linux-written normal and interrupted images that CI already
 produces are read and modified by the Amiga handler in the emulator run and
 then checked by the oracle. M6 stays closed; the step is follow-up evidence,
 added in #91 (`emulator-test/linux-exchange.sh`).
+
+2026-10-15: MorphOS SDK pin and cross toolchain. M2-A3 asks to pin build
+inputs and to establish runtime access. The MorphOS build inputs are pinned
+now: the SDK 3.20 of 2026-05-29 and a GCC 15.2.0 cross toolchain built from
+its sources, released with signatures as
+[morphos-cross](https://github.com/metaneutrons/morphos-cross) r2. Neither the
+SDK nor a binary from it is committed here, and the toolchain archives do not
+contain it. The rest of M2-A3 for MorphOS stays open: no OS minimum is named
+and no runtime or hardware is available. That remains an explicit blocker for
+M9, which keeps its dependency on M2's confirmed runtime access. A cross-build
+with this toolchain is no acceptance evidence (M9-A4).
