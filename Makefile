@@ -6,6 +6,7 @@
 #   make aros        — cross-compile native AROS x86_64 handler, CLI and test program
 #   make aros-ci-test — run the integration test on AROS x86_64 in QEMU
 #   make aros-nx-check — compile the handler and bfs with the AROS-NX flags
+#   make morphos     — cross-compile the native MorphOS PowerPC handler, bfs and bfs-test
 #   make clean
 
 # ── Toolchains ──────────────────────────────────────────────
@@ -118,7 +119,7 @@ AROS_DOS_NAME_TEST_BIN = $(BUILD_HOST)/test_dos_name_aros_profile
 
 # ── Phony targets ───────────────────────────────────────────
 .PHONY: setup check repository-audit quality-gates shellcheck actionlint secrets-scan analyze \
-	host-test coverage sanitize amiga aros aros-ci-test aros-nx-check aros-nx-check-sources \
+	host-test coverage sanitize amiga aros aros-ci-test aros-nx-check aros-nx-check-sources morphos \
 	amiga-stresstest clean tools stress-test bench release \
 	conformance conformance-test linux-qualification-fast linux-qualification-soak \
 	linux-qualification-soak-preflight linux-qualification-soak-verify qualification-tests \
@@ -438,6 +439,48 @@ aros-ci-test: aros $(BUILD_HOST)/bfs
 		--iso "$(or $(AROS_ISO),$(or $(AROS_BUILD),$(AROS_ROOT)/build/$(AROS_PRESET))/aros-x86_64-pc.iso)" \
 		--handler $(BUILD_AROS)/bfshandler --test-binary $(BUILD_AROS)/bfs-test \
 		--bfs $(BUILD_HOST)/bfs
+
+# ── Native MorphOS (PowerPC) ────────────────────────────────
+# MORPHOS_CC is the cross compiler of github.com/metaneutrons/morphos-cross with
+# the MorphOS SDK installed (ppc-morphos-gcc on PATH, or set MORPHOS_CC). The
+# handler starts as a DOS process without a C runtime: it has its own entry
+# (startup_morphos.c, linked first), its heap through exec (heap_aros.c) and no
+# startup file. Commands use the standard startup of the libnix flavour.
+# The MorphOS linker writes the relocatable ELF that MorphOS loads. Compiling
+# and linking is no qualification: docs/morphos-build.md lists what the build
+# does not show.
+MORPHOS_CC ?= ppc-morphos-gcc
+BUILD_MORPHOS = build/morphos
+MORPHOS_CFLAGS = -std=c99 $(AMIGA_STRICT_WARNINGS) -O2 -noixemul \
+                 -iquote src/amiga -I include -DBFS_MORPHOS=1 \
+                 -DBFS_VERSION=\"$(BFS_VERSION)\"
+MORPHOS_HANDLER_SRCS = src/amiga/startup_morphos.c src/amiga/handler.c \
+	src/amiga/amiga_bio.c src/amiga/heap_aros.c $(CORE_SRC)
+MORPHOS_HANDLER_OBJS = $(patsubst %.c,$(BUILD_MORPHOS)/%.o,$(MORPHOS_HANDLER_SRCS))
+MORPHOS_CLI_OBJS = $(patsubst %.c,$(BUILD_MORPHOS)/%.o,$(AROS_CLI_SRCS))
+MORPHOS_TEST_OBJS = $(BUILD_MORPHOS)/tools/bfs-test.o
+
+morphos:
+	@command -v $(MORPHOS_CC) >/dev/null 2>&1 || { \
+		echo "make morphos needs $(MORPHOS_CC) on PATH: the morphos-cross toolchain with the MorphOS SDK installed" >&2; \
+		exit 2; }
+	@$(MAKE) --no-print-directory $(BUILD_MORPHOS)/bfshandler $(BUILD_MORPHOS)/bfs $(BUILD_MORPHOS)/bfs-test
+
+$(BUILD_MORPHOS)/%.o: %.c $(AROS_HEADERS)
+	@mkdir -p $(dir $@)
+	$(MORPHOS_CC) $(MORPHOS_CFLAGS) -c -o $@ $<
+
+# The test program passes C strings to dos.library directly (see AMIGA_WARNINGS).
+$(MORPHOS_TEST_OBJS): MORPHOS_CFLAGS += -Wno-pointer-sign
+
+$(BUILD_MORPHOS)/bfshandler: $(MORPHOS_HANDLER_OBJS)
+	$(MORPHOS_CC) -noixemul -nostartfiles -o $@ $(MORPHOS_HANDLER_OBJS) -s
+
+$(BUILD_MORPHOS)/bfs: $(MORPHOS_CLI_OBJS)
+	$(MORPHOS_CC) -noixemul -o $@ $(MORPHOS_CLI_OBJS) -s
+
+$(BUILD_MORPHOS)/bfs-test: $(MORPHOS_TEST_OBJS)
+	$(MORPHOS_CC) -noixemul -o $@ $(MORPHOS_TEST_OBJS) -s
 
 amiga-stresstest:
 	@mkdir -p $(BUILD_AMIGA)

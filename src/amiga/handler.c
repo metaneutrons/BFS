@@ -29,6 +29,10 @@
 #include <aros/asmcall.h>
 #include <dos/dos64.h>
 #endif
+#ifdef BFS_MORPHOS
+#include <emul/emulinterface.h>
+#include <emul/emulregs.h>
+#endif
 
 #include "bfs_fs.h"
 #include "bfs_cache.h"
@@ -258,6 +262,18 @@ static AROS_INTH1(DiskChangeHandler, struct bfs_handler *, h)
     return 0;
     AROS_INTFUNC_EXIT
 }
+#elif defined(BFS_MORPHOS)
+/* Exec calls an interrupt with 68k registers. The gate below runs the native
+ * function and leaves the emulated registers readable: the server data is a1. */
+static ULONG DiskChangeHandlerPPC(void)
+{
+    struct bfs_handler *h = (struct bfs_handler *)REG_A1;
+    Signal(h->msgport->mp_SigTask, 1UL << h->diskchange_sig);
+    return 0;
+}
+static struct EmulLibEntry DiskChangeHandler = {
+    TRAP_LIB, 0, (void (*)(void))DiskChangeHandlerPPC
+};
 #else
 static ULONG DiskChangeHandler(register struct bfs_handler *h __asm("a1"))
 {
@@ -279,12 +295,31 @@ static AROS_INTH1(ResetHandler, struct bfs_handler *, h)
     return 0;
     AROS_INTFUNC_EXIT
 }
+#elif defined(BFS_MORPHOS)
+static ULONG ResetHandlerPPC(void)
+{
+    struct bfs_handler *h = (struct bfs_handler *)REG_A1;
+    Signal(h->msgport->mp_SigTask, 1UL << h->reset_sig);
+    return 0;
+}
+static struct EmulLibEntry ResetHandler = {
+    TRAP_LIB, 0, (void (*)(void))ResetHandlerPPC
+};
 #else
 static ULONG ResetHandler(register struct bfs_handler *h __asm("a1"))
 {
     Signal(h->msgport->mp_SigTask, 1UL << h->reset_sig);
     return 0;
 }
+#endif
+
+/* The code pointer of an interrupt structure for the handlers above. */
+#if defined(BFS_AROS)
+#define BFS_INTERRUPT_CODE(handler) ((void (*)(void))AROS_ASMSYMNAME(handler))
+#elif defined(BFS_MORPHOS)
+#define BFS_INTERRUPT_CODE(handler) ((void (*)(void))&(handler))
+#else
+#define BFS_INTERRUPT_CODE(handler) ((void (*)(void))(handler))
 #endif
 
 /* ── Packet helpers ────────────────────────────────────────── */
@@ -688,8 +723,8 @@ static void ReportFormatError(struct bfs_handler *h, struct MsgPort *reply_port)
         (struct IntuitionBase *)OpenLibrary(DOS_CSTR("intuition.library"), 37);
     if (!IntuitionBase) return;
     struct EasyStruct request = {
-        sizeof(struct EasyStruct), 0, DOS_STR("BFS: unsupported disk format"),
-        DOS_STR(h->format_error), DOS_STR("OK"),
+        sizeof(struct EasyStruct), 0, DOS_UBYTES("BFS: unsupported disk format"),
+        DOS_UBYTES(h->format_error), DOS_UBYTES("OK"),
     };
     h->format_error_reported = true;
     EasyRequestArgs((struct Window *)caller->pr_WindowPtr, &request, NULL, NULL);
@@ -1788,11 +1823,7 @@ static void AddCommitResetHandler(struct bfs_handler *h)
     h->reset_int->is_Node.ln_Type = NT_INTERRUPT;
     h->reset_int->is_Node.ln_Name = (char *)"BFS-Commit";
     h->reset_int->is_Data = h;
-#ifdef BFS_AROS
-    h->reset_int->is_Code = (void (*)(void))AROS_ASMSYMNAME(ResetHandler);
-#else
-    h->reset_int->is_Code = (void (*)(void))ResetHandler;
-#endif
+    h->reset_int->is_Code = BFS_INTERRUPT_CODE(ResetHandler);
     h->reset_req = (struct IOStdReq *)CreateIORequest(h->devport, sizeof(struct IOStdReq));
     if (!h->reset_req) return;
     if (OpenDevice((CONST_STRPTR)"keyboard.device", 0,
@@ -1957,7 +1988,7 @@ static bool exall_optimized_cb(const char *name, uint8_t name_len,
     if (ec->eac->eac_MatchString) {
         /* name_len <= BFS_NAME_MAX, and skipped holds BFS_NAME_MAX + 1. */
         memcpy(ec->skipped, name, name_len); ec->skipped[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
-        if (!MatchPatternNoCase(ec->eac->eac_MatchString, DOS_STR(ec->skipped))) {
+        if (!MatchPatternNoCase(DOS_CSTR(ec->eac->eac_MatchString), DOS_STR(ec->skipped))) {
             ExAllConsume(ec, entry_pos);
             return true;
         }
@@ -2081,7 +2112,7 @@ static bool exall_gather_cb(const char *name, uint8_t name_len, uint32_t inode_n
     /* names holds BFS_NAME_MAX + 1 bytes per entry. */
     memcpy(stored, name, name_len); stored[name_len] = 0; /* Flawfinder: ignore */ // nosemgrep: c_buffer_rule-memcpy-CopyMemory
     pending->matched = !ec->eac->eac_MatchString ||
-                       MatchPatternNoCase(ec->eac->eac_MatchString, DOS_STR(stored));
+                       MatchPatternNoCase(DOS_CSTR(ec->eac->eac_MatchString), DOS_STR(stored));
     if (pending->matched) {
         LONG size = ExAllMinimumSize(ec->type, name_len);
         if (size > b->space) {
@@ -4134,7 +4165,7 @@ void EntryPoint(void)
         memcpy(devname, BstrText(bname), device_length);
         devname[device_length] = 0;
         removable_device = strcmp((char *)devname, "trackdisk.device") == 0;
-        if (OpenDevice(devname, fssm->fssm_Unit, (struct IORequest *)h->request, fssm->fssm_Flags)) {
+        if (OpenDevice(DOS_CSTR(devname), fssm->fssm_Unit, (struct IORequest *)h->request, fssm->fssm_Flags)) {
             pkt->dp_Res1 = DOSFALSE;
             pkt->dp_Res2 = ERROR_DEVICE_NOT_MOUNTED;
             goto fail_startup;
@@ -4220,11 +4251,7 @@ void EntryPoint(void)
             h->diskchange_int->is_Node.ln_Type = NT_INTERRUPT;
             h->diskchange_int->is_Node.ln_Name = (char *)"BFS-DiskChange";
             h->diskchange_int->is_Data = h;
-#ifdef BFS_AROS
-            h->diskchange_int->is_Code = (void (*)(void))AROS_ASMSYMNAME(DiskChangeHandler);
-#else
-            h->diskchange_int->is_Code = (void (*)(void))DiskChangeHandler;
-#endif
+            h->diskchange_int->is_Code = BFS_INTERRUPT_CODE(DiskChangeHandler);
             h->diskchange_req = (struct IOExtTD *)CreateIORequest(h->devport, sizeof(struct IOExtTD));
             if (h->diskchange_req) {
                 *h->diskchange_req = *h->request;
