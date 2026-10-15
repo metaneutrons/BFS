@@ -174,6 +174,23 @@ runs in CI yet: that needs an AROS-NX SDK and boot ISO with a fixed identity,
 which AROS-NX does not publish. `make aros-nx-check AROS_ROOT=/path/to/AROS-NX`
 compiles the handler and `bfs` with the flags of an AROS-NX package build.
 
+### Native MorphOS PowerPC (build only)
+
+`make morphos` cross-compiles the handler, `bfs` and the test program for
+native MorphOS with `ppc-morphos-gcc` from
+[morphos-cross](https://github.com/metaneutrons/morphos-cross), installed with
+the MorphOS SDK:
+
+```sh
+export PATH="$HOME/.morphos-cross/current/bin:$PATH"
+make morphos
+```
+
+The outputs are in `build/morphos`. They compile and link without warnings,
+and nothing has run: no MorphOS runtime or hardware is available yet, so the
+port is not qualified. [`docs/morphos-build.md`](docs/morphos-build.md) lists
+what the build shows and what still needs a MorphOS system.
+
 ### AmigaOS administration
 
 Release archives publish one administration binary, `bfs`:

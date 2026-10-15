@@ -2,8 +2,8 @@
 #ifndef BFS_AMIGA_STDINT_H
 #define BFS_AMIGA_STDINT_H
 
-/* AROS provides the standard integer types in its SDK. */
-#ifdef BFS_AROS
+/* AROS and MorphOS provide the standard integer types in their SDKs. */
+#if defined(BFS_AROS) || defined(BFS_MORPHOS)
 #include <stdint.h>
 #else
 /* Both GCC and VBCC for m68k-amigaos need these types defined.

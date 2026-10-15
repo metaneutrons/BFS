@@ -39,7 +39,7 @@ static void put_date(ULONG days)
     date_time.dat_Format = FORMAT_DEF;
     date_time.dat_Flags = 0;
     date_time.dat_StrDay = NULL;
-    date_time.dat_StrDate = (STRPTR)buffer;
+    date_time.dat_StrDate = DOS_UBYTES(buffer);
     date_time.dat_StrTime = NULL;
     if (DateToStr(&date_time)) bfs_put(buffer);
     else bfs_putnum((LONG)days);

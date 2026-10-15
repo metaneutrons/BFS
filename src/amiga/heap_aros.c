@@ -1,6 +1,6 @@
 /* SPDX-License-Identifier: MPL-2.0 */
-/* Native AROS: the core's heap through exec. The handler starts as a DOS
- * process without a C runtime, so nothing has to initialise a C library. */
+/* Native AROS and MorphOS: the core's heap through exec. The handler starts as
+ * a DOS process without a C runtime, so nothing has to initialise a C library. */
 #include <exec/memory.h>
 #include <proto/exec.h>
 #include <stddef.h>
