@@ -81,6 +81,43 @@ jobs:
         shell: bash
         run: make tools host-test conformance-test HOST_CC=gcc
 
+  morphos-build:
+    name: MorphOS Cross Build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      # The MorphOS SDK archive (about 370 MiB) comes from morphos-team.net. The cache
+      # keeps it between runs; the toolchain's own helper verifies it against the
+      # SHA-256 that the pinned morphos-cross release carries, cached or not. The
+      # cache is saved as soon as the install has verified the archive, so a failing
+      # build does not cost the next run another download.
+      - name: Restore the MorphOS SDK archive
+        id: sdk-cache
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/morphos-cross-cache
+          key: morphos-sdk-${{ hashFiles('tools/morphos-cross.pins') }}
+      - name: Install the pinned morphos-cross toolchain and SDK
+        env:
+          MORPHOS_CROSS_CACHE: ${{ runner.temp }}/morphos-cross-cache
+        run: |
+          set -euo pipefail
+          sudo apt-get update -qq
+          sudo apt-get install -y -qq --no-install-recommends libarchive-tools
+          tools/install-morphos-cross.sh "$RUNNER_TEMP/morphos-cross"
+          echo "$RUNNER_TEMP/morphos-cross/bin" >> "$GITHUB_PATH"
+      - name: Save the verified MorphOS SDK archive
+        if: steps.sdk-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: ${{ runner.temp }}/morphos-cross-cache
+          key: ${{ steps.sdk-cache.outputs.cache-primary-key }}
+      - name: Cross-compile the handler and commands for MorphOS
+        run: make morphos
+      - name: Check that the outputs are 32-bit big-endian PowerPC ELF files
+        run: tools/check-morphos-elf.sh build/morphos/bfshandler build/morphos/bfs build/morphos/bfs-test
+
   fuse-conformance:
     name: Linux FUSE Conformance
     runs-on: ubuntu-24.04
@@ -247,7 +284,7 @@ jobs:
     name: CI Success
     if: always()
     needs:
-      [commit-hygiene, quality, host-tests, linux-build, fuse-conformance, fault-corruption-qualification, sanitizers, static-analysis, coverage, integration-test]
+      [commit-hygiene, quality, host-tests, linux-build, morphos-build, fuse-conformance, fault-corruption-qualification, sanitizers, static-analysis, coverage, integration-test]
     runs-on: ubuntu-24.04
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

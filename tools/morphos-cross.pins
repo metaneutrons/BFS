@@ -1,0 +1,12 @@
+# The morphos-cross release that the "MorphOS Cross Build" CI job installs
+# (.github/workflows/ci.yml, tools/install-morphos-cross.sh). The workflow hashes this
+# file as the key of its SDK cache, so a new pin fetches the SDK archive once more.
+#
+# To move to a newer release, set the tag and the digest of the linux-x86_64 archive,
+# which the release publishes in SHA256SUMS:
+#   curl -fsSL "https://github.com/metaneutrons/morphos-cross/releases/download/$TAG/SHA256SUMS" |
+#       grep 'linux-x86_64.tar.xz$'
+# The MorphOS SDK itself is pinned by the release (pins.env inside the archive, with its
+# SHA-256), not here.
+MORPHOS_CROSS_VERSION=v20260529-r4
+MORPHOS_CROSS_LINUX_X86_64_SHA256=f35e54072b7c36b00e3901669cfc4ac3fa3df805c3117e0d5f3f22f3379caab6

@@ -30,6 +30,16 @@ provides the ELF entry point `__start` and is linked first, so the entry leads
 the text. The heap is `src/amiga/heap_aros.c`, exec's `AllocVec`, as on AROS.
 `bfs` and `bfs-test` use the standard startup of the libnix flavour.
 
+The `MorphOS Cross Build` job in `.github/workflows/ci.yml` runs `make morphos`
+with these flags on Ubuntu x86-64 for every pull request and push to `main`, and
+the required `CI Success` check includes it. The job installs the morphos-cross
+release pinned in `tools/morphos-cross.pins` (archive digest verified) and the
+SDK that release pins, caches the SDK archive between runs and verifies it
+against the SHA-256 of the release. Then `tools/check-morphos-elf.sh` confirms
+with `readelf -h` that the three outputs are 32-bit big-endian PowerPC ELF
+files. A green job shows that the sources compile and link for MorphOS. It is
+no runtime evidence.
+
 ## What the build shows
 
 - All sources of the handler, the core and the commands compile without
