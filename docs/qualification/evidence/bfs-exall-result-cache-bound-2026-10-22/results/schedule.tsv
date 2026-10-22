@@ -1,0 +1,17 @@
+sequence	round	order	variant	run_name
+1	1	bfs-first	reference	exallcache-1-bfs-first-reference
+2	1	bfs-first	bound	exallcache-1-bfs-first-bound
+3	2	pfs3-first	bound	exallcache-2-pfs3-first-bound
+4	2	pfs3-first	reference	exallcache-2-pfs3-first-reference
+5	3	bfs-first	reference	exallcache-3-bfs-first-reference
+6	3	bfs-first	bound	exallcache-3-bfs-first-bound
+7	4	pfs3-first	bound	exallcache-4-pfs3-first-bound
+8	4	pfs3-first	reference	exallcache-4-pfs3-first-reference
+9	5	bfs-first	reference	exallcache-5-bfs-first-reference
+10	5	bfs-first	bound	exallcache-5-bfs-first-bound
+11	6	pfs3-first	bound	exallcache-6-pfs3-first-bound
+12	6	pfs3-first	reference	exallcache-6-pfs3-first-reference
+13	7	bfs-first	reference	exallcache-7-bfs-first-reference
+14	7	bfs-first	bound	exallcache-7-bfs-first-bound
+15	8	pfs3-first	bound	exallcache-8-pfs3-first-bound
+16	8	pfs3-first	reference	exallcache-8-pfs3-first-reference
