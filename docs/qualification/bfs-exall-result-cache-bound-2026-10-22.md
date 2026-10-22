@@ -387,3 +387,199 @@ limit of criterion 4 is tight against the host's scatter. Whether to repeat the
 main series, to read the criteria differently or to accept the result is
 Fabian's decision. The plan's decision rule and the numbers of the main series
 are unchanged.
+
+
+## Repeat of the main series, 23 October 2026
+
+Fabian ordered a repeat of the main series after the null series. The text and
+the numbers above, the null series' addendum and the plan's decision rule are
+unchanged.
+
+### Series
+
+The
+[scope](evidence/bfs-exall-result-cache-bound-2026-10-22/repeat-2026-10-23/PILOT_SCOPE.md)
+fixed the evaluation before the first start (commit `3aaa70a`): the repeat
+alone by the decision rule as written, the pooled data of both main series, and
+the per-phase comparison with the first series, with a reproduction test for
+the two misses of the first series. The same two handlers (`reference`
+`e2e274bb…`, `bound` `be30c603…`, whose hashes recorded again equal those of the
+first series), guest, PFS3, ROM, formatter, RDB Buffers = 30, source tree, run
+script and verifier. Sixteen fresh `compare` starts in eight rounds, BFS first
+in odd rounds and PFS3 first in even rounds, `reference` first in odd rounds
+and `bound` first in even rounds. All 16 starts pass
+`emulator-test/verify-bench-results.sh`. The series ran detached on Cachy from
+22:19:31 to 22:28:55 UTC on 22 October (00:19 to 00:28 CEST on 23 October). The
+runner container and Coffin were stopped and restored by the launch script with
+status 0 at 22:28:57 UTC, and a check at 22:29 UTC finds both running and no CI
+worker, benchmark emulator, unit or watcher process of the session left. A
+first marker unit watched the wrong process, wrote a false `SERIES_DONE` within
+seconds of the start and was replaced, with the false file deleted. The series
+was not touched.
+
+### Results
+
+BFS / PFS3 of each handler (median of eight starts), the median of the eight
+paired ratios `bound` over `reference` of the repeat with its range, and the
+paired medians of the first series and of the pooled data (16 rounds).
+
+**ExAll**
+
+| Phase | reference | bound | bound / reference | range | first series | pooled |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ExAll 40, first pass | 3.11 | 3.61 | 1.070 | 0.95–1.75 | 1.116 | 1.074 |
+| ExAll 40 × 10 | 3.18 | 1.30 | 0.421 | 0.41–0.85 | 0.420 | 0.421 |
+| ExAll 40 × 10 in `perf` | 2.98 | 1.54 | 0.528 | 0.49–0.90 | 0.526 | 0.528 |
+| ExAll 400, first pass | 5.52 | 5.90 | 1.039 | 0.59–2.02 | 1.008 | 1.026 |
+| ExAll 400 × 10 | 3.65 | 1.43 | 0.396 | 0.34–1.62 | 0.415 | 0.407 |
+| ExAll 1,000, first pass | 4.97 | 5.59 | 1.073 | 0.95–1.33 | 0.998 | 1.019 |
+| ExAll 1,000 × 10 | 3.72 | 1.41 | 0.387 | 0.30–0.77 | 0.437 | 0.398 |
+
+**ExNext**
+
+| Phase | reference | bound | bound / reference | range | first series | pooled |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| ExNext 40, first pass | 2.04 | 2.10 | 1.000 | 0.98–1.21 | 1.020 | 1.000 |
+| ExNext 40 × 10 | 1.63 | 1.67 | 1.036 | 0.98–1.55 | 1.038 | 1.036 |
+| ExNext 40 × 10 in `perf` | 1.52 | 1.59 | 1.032 | 0.88–1.48 | 1.053 | 1.039 |
+| ExNext 400, first pass | 1.95 | 2.03 | 1.043 | 0.95–1.14 | 1.037 | 1.037 |
+| ExNext 400 × 10 | 1.53 | 1.55 | 1.027 | 0.72–1.37 | 1.028 | 1.027 |
+| ExNext 1,000, first pass | 2.03 | 2.00 | 1.011 | 0.85–1.15 | 1.008 | 1.008 |
+| ExNext 1,000 × 10 | 1.53 | 1.51 | 1.005 | 0.90–1.18 | 1.009 | 1.009 |
+
+**Phases without listings**
+
+| Phase | reference | bound | bound / reference | range | first series | pooled |
+| --- | ---: | ---: | ---: | ---: | ---: | ---: |
+| Lookup 400 | 0.88 | 0.90 | 1.021 | 1.01–1.13 | 1.026 | 1.021 |
+| Sequential write 8 MiB | 0.70 | 0.73 | 1.054 | 0.95–2.41 | 1.048 | 1.054 |
+| Sequential read 8 MiB | 0.99 | 0.99 | 1.041 | 0.93–1.25 | 1.007 | 1.013 |
+| Append read 1,280 KiB | 1.04 | 1.09 | 1.019 | 0.97–1.25 | 1.007 | 1.009 |
+| Small read 40 | 1.27 | 1.27 | 1.069 | 0.83–1.15 | 1.006 | 1.031 |
+| Small create 40 | 1.68 | 1.86 | 1.068 | 0.95–1.41 | 0.986 | 1.006 |
+| Small delete 40 | 1.70 | 1.77 | 1.005 | 0.92–1.72 | 1.014 | 1.012 |
+| Append 4 KiB × 256 | 1.56 | 1.61 | 1.009 | 0.77–1.57 | 1.042 | 1.017 |
+| Append 1 KiB × 256 | 1.84 | 1.86 | 1.033 | 0.93–1.10 | 1.014 | 1.018 |
+
+All 23 medians of the repeat lie inside the range of the first series. The
+differences between the two series' medians lie between −0.050 and +0.081 with
+a median of +0.001, so the two series agree phase by phase within the host's
+spread. Geometric mean of the paired medians over the 16 phases the bound does
+not change: 1.029 in the repeat, 1.021 in the first series and 1.021 pooled.
+Over all 23 phases 0.888, 0.887 and 0.883. Geometric mean of the BFS / PFS3
+medians: 1.923 for `reference` and 1.710 for `bound` in the repeat.
+
+Per entry in microseconds, repeat:
+
+| Phase | reference | bound | PFS3 |
+| --- | ---: | ---: | ---: |
+| ExAll 1,000 × 10 | 19.4 | 7.3 | 5.2 |
+| ExAll 400 × 10 | 18.7 | 7.5 | 5.1 |
+| ExAll 1,000, first pass | 37.9 | 40.5 | 7.6 |
+| ExAll 400, first pass | 39.4 | 40.9 | 7.0 |
+| ExAll 40, first pass | 44.8 | 48.0 | 14.4 |
+
+Pooled, the first pass costs the bound 1.2 µs more per entry at 1,000 entries,
+1.5 at 400 and 3.2 at 40.
+
+### The decision rule
+
+The rule of the plan, evaluated by `summarize.py` on the medians, for the
+repeat alone as ordered, for the pooled data and, as a reference, for the first
+series.
+
+| Criterion | Limit | Repeat | Pooled | First series |
+| --- | --- | --- | --- | --- |
+| 1. Gain at 1,000 entries: `r`, lock-owned estimate | ≤ 0.50, ≤ 0.55 | 0.387, 0.456 (met) | 0.398, 0.461 (met) | 0.437, 0.493 (met) |
+| 2. Gain at 400 entries: `r`, lock-owned estimate | ≤ 0.55, ≤ 0.60 | 0.396, 0.460 (met) | 0.407, 0.469 (met) | 0.415, 0.474 (met) |
+| 3. First pass over 40, 400, 1,000 entries, each | ≤ 1.05 | 1.070, 1.039, 1.073 (not met) | 1.074, 1.026, 1.019 (not met) | 1.116, 1.008, 0.998 (not met) |
+| 4. The 16 unchanged phases: each, geometric mean | ≤ 1.05, ≤ 1.02 | above 1.05: Small read 40 1.069, Small create 40 1.068, Sequential write 1.054; 1.029 (not met) | above 1.05: Sequential write 1.054; 1.021 (not met) | above 1.05: ExNext 40 × 10 in `perf` 1.053; 1.021 (not met) |
+| 5. Candidate record, 1,000 entries with 12-byte names | ≤ 32 bytes, < 64 KiB | 30 bytes, 42,000 bytes (met) | the same (met) | the same (met) |
+| 6. All starts pass the verifier | all | 16 (met) | 32 (met) | 16 (met) |
+
+The repeat alone meets criteria 1, 2, 5 and 6 and misses criteria 3 and 4, as
+the first series did. The pooled data give the same reading. The pooled data
+are not an independent test, because the repeat was ordered after the first
+series was known.
+
+### The two misses of the first series
+
+- **ExAll 40, first pass** reproduces: 1.116 in the first series, 1.070 in the
+  repeat (ratios from 0.95 to 1.75), 1.074 pooled. Identical handlers gave
+  0.983 in the null series with ratios from 0.89 to 1.07.
+- **ExNext 40 × 10 in `perf`** does not reproduce: 1.053 in the first series,
+  1.032 in the repeat, 1.039 pooled. The bound does not change ExNext.
+
+The set of phases that exceed 1.05 is not stable. In the repeat Small create 40
+(first series 0.986), Small read 40 (1.006), Sequential write (1.048) and the
+first pass over 1,000 entries (0.998) exceed it, and ExNext 40 × 10 in `perf`
+does not. The single ratios of these phases scatter widely, for example Small
+create 40 from 0.95 to 1.41 and Sequential write from 0.95 to 2.41, so a single
+phase near the limit decides little.
+
+### Bias, spread and the bootstrap
+
+Method of the null series, over the 16 unchanged phases. The position effect
+(second start over first) is 1.040 in the first series, 0.996 in the repeat
+(bootstrap 95 % interval 0.934–1.030), 1.014 pooled (0.978–1.058) and 0.997 in
+the null series. The effect of the handler (`bound` over `reference`, after the
+position) is 1.032 in the first series, 1.039 in the repeat (1.018–1.109),
+1.027 pooled (1.002–1.089) and 1.009 in the null series (0.979–1.028).
+
+Fourteen of the 16 per-round geometric means of the main series lie above 1.00
+(all eight of the repeat), against four of eight in the null series. The
+round-to-round scatter, the standard deviation of the logarithm of the
+per-round geometric mean, is 0.114 in the first series, 0.054 in the repeat,
+0.087 pooled and 0.031 in the null series, so the first series' window was the
+noisiest of the three.
+
+The bootstrap over the rounds estimates how often a series with this scatter
+would cross the limits: the geometric mean of the 16 medians exceeds 1.02 in 93
+% of the draws for the repeat and 64 % pooled (null series 18 %), the worst of
+the 16 medians exceeds 1.05 in 99.5 % and 80 % (null 68 %), and the largest
+first-pass ExAll median exceeds 1.05 in 97 % and 96 % (null 0.1 %). The
+intervals of the geometric mean are 1.018–1.059 for the repeat, 1.006–1.046
+pooled and 0.972–1.032 for the null series. With eight or sixteen rounds the
+bootstrap is rough.
+
+### Reading
+
+By the decision rule as written the repeat meets the gain, memory and validity
+criteria and misses the first-listing and no-regression criteria, and so do the
+first series and the pooled data. The gain is not in doubt: ExAll 1,000 × 10
+takes 0.387 of the reference in the repeat and 0.398 pooled, and the lock-owned
+estimate stays below 0.47.
+
+The repeat points further toward a real cost than the reading of the first
+series did.
+
+- **First listing.** The first pass of the bound costs a few percent more:
+  pooled medians 1.074, 1.026 and 1.019 at 40, 400 and 1,000 entries, which is
+  1.2 to 3.2 µs per entry, and the repeat's three first-pass medians all exceed
+  1.0 (1.070, 1.039, 1.073) where identical handlers gave 0.98, 1.00 and 0.95.
+  The recording is a copy into a static array, so the candidate's fill will
+  cost more. At 40 entries the miss exceeds 1.05 in both series and pooled.
+- **Phases the bound does not change.** There is no single phase to blame. The
+  geometric mean is 1.021, 1.029 and 1.021 against 1.003 for identical
+  handlers, the handler effect is about 3 % in both main series and its
+  interval excludes 1 in the repeat, and 14 of 16 rounds lie above 1.00 (a
+  one-sided sign test gives about 0.002 if the rounds are taken as
+  independent). That points to a small real cost of about 2–3 % across phases,
+  which the null series does not show. The phases that exceed 1.05 change from
+  series to series and the individual misses (one in the first series, three in
+  the repeat, one pooled) are marginal.
+
+### What stays open
+
+- The cause of the 2–3 % on unchanged phases. The bound adds a function call
+  per packet, 1.2 KB of code and eight bytes to the handler's state. Phases
+  that run before the first ExAll, when the array is not yet allocated, also
+  exceed 1.05 in the repeat (Small create 40 1.068, Small read 40 1.069,
+  against 0.986 and 1.006 in the first series), so the 92 KB array cannot be
+  the whole cause. Attributing it would need a variant without the counter, and
+  was not measured.
+- The real cost of the first listing for the candidate, which allocates.
+- Whether the gain on repeated passes of an unchanged directory is worth a cost
+  of a few percent on every first listing and on other work. This and whether
+  to go on with the plan's second step is Fabian's decision. The invalidation,
+  the real listing patterns and real hardware stay as stated above.
