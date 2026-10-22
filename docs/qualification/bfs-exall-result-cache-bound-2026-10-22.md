@@ -239,3 +239,151 @@ passes on one lock is worth the invalidation code, the memory and the added
 cost on every first listing is Fabian's decision. To settle the two missed
 criteria before that decision, the `reference` against `reference` series is
 the way. A real implementation would start with the second plan the rule names.
+
+
+## Addendum of 22 October 2026: `reference` against `reference`
+
+The report above says that criteria 3 and 4 are narrowly missed and that a
+series of `reference` against itself would show how much bias the pairing has
+on Cachy. Fabian ordered that series. The text and the numbers above, and the
+plan's decision rule, are unchanged.
+
+### Series
+
+The
+[scope](evidence/bfs-exall-result-cache-bound-2026-10-22/null-series/PILOT_SCOPE.md)
+was fixed and committed before the first start. One handler, the `reference`
+handler (`e2e274bb…`), runs under two names, `reference-a` and `reference-b`,
+which are byte-identical copies of one file (the three SHA-256 are equal,
+`inputs.sha256`). Schedule, guest, PFS3, ROM, formatter, RDB Buffers = 30,
+source tree, run script and verifier are those of the main series: sixteen
+fresh `compare` starts in eight rounds, BFS first in odd rounds and PFS3 first
+in even rounds, `reference-a` first in odd rounds and `reference-b` first in
+even rounds. All 16 starts pass `emulator-test/verify-bench-results.sh`. The
+series ran 12:25:20–12:34:45 UTC. Runner container and Coffin were stopped by
+the launch script and restored with status 0 at 12:34:48 UTC. A second check at
+14:24 UTC finds both running and no CI worker process, benchmark emulator, unit
+or watcher process of the session left (`services-restored.log`). Every ratio
+below belongs to identical code, so any difference from 1 is the host's bias
+and spread, not a handler.
+
+### Results
+
+BFS / PFS3 of each name (median of eight starts), the median of the eight
+paired ratios `reference-b` over `reference-a` in the same round with their
+range, and for comparison the paired median of the main series (`bound` over
+`reference`).
+
+**ExAll**
+
+| Phase | a | b | b / a | range | main series: bound / reference |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ExAll 40, first pass | 3.11 | 3.12 | 0.983 | 0.89–1.07 | 1.116 |
+| ExAll 40 × 10 | 3.16 | 3.09 | 0.992 | 0.98–1.03 | 0.420 |
+| ExAll 40 × 10 in `perf` | 2.96 | 2.94 | 0.991 | 0.74–1.03 | 0.526 |
+| ExAll 400, first pass | 5.35 | 5.53 | 1.000 | 0.66–1.05 | 1.008 |
+| ExAll 400 × 10 | 3.60 | 3.60 | 1.002 | 0.97–1.15 | 0.415 |
+| ExAll 1,000, first pass | 6.20 | 5.65 | 0.952 | 0.48–0.99 | 0.998 |
+| ExAll 1,000 × 10 | 3.85 | 3.78 | 0.998 | 0.64–1.12 | 0.437 |
+
+**ExNext**
+
+| Phase | a | b | b / a | range | main series: bound / reference |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| ExNext 40, first pass | 2.14 | 2.18 | 1.030 | 0.94–1.42 | 1.020 |
+| ExNext 40 × 10 | 1.59 | 1.61 | 1.010 | 0.99–1.17 | 1.038 |
+| ExNext 40 × 10 in `perf` | 1.57 | 1.53 | 0.980 | 0.71–1.08 | 1.053 |
+| ExNext 400, first pass | 2.04 | 2.09 | 0.995 | 0.87–1.07 | 1.037 |
+| ExNext 400 × 10 | 1.51 | 1.53 | 1.023 | 0.92–1.09 | 1.028 |
+| ExNext 1,000, first pass | 2.04 | 2.00 | 0.968 | 0.75–1.03 | 1.008 |
+| ExNext 1,000 × 10 | 1.56 | 1.56 | 0.999 | 0.88–1.34 | 1.009 |
+
+**Phases without listings**
+
+| Phase | a | b | b / a | range | main series: bound / reference |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| Lookup 400 | 0.90 | 0.90 | 1.012 | 0.84–1.18 | 1.026 |
+| Sequential write 8 MiB | 0.69 | 0.60 | 1.015 | 0.86–1.06 | 1.048 |
+| Sequential read 8 MiB | 1.01 | 1.01 | 0.999 | 0.95–1.08 | 1.007 |
+| Append read 1,280 KiB | 1.14 | 1.14 | 0.991 | 0.58–1.18 | 1.007 |
+| Small read 40 | 1.21 | 1.36 | 1.036 | 0.67–1.47 | 1.006 |
+| Small create 40 | 1.75 | 1.71 | 1.014 | 0.87–1.13 | 0.986 |
+| Small delete 40 | 1.75 | 1.73 | 1.009 | 0.96–1.30 | 1.014 |
+| Append 4 KiB × 256 | 1.60 | 1.60 | 1.007 | 0.90–1.33 | 1.042 |
+| Append 1 KiB × 256 | 1.88 | 1.85 | 0.964 | 0.87–1.05 | 1.014 |
+
+Over all 23 phases the null medians lie between 0.952 and 1.036, and the
+geometric mean is 0.999. Single ratios still scatter widely in some phases:
+Small read 40 from 0.67 to 1.47, ExAll 1,000, first pass from 0.48 to 0.99.
+Medians decide, as in the main series.
+
+### Criteria 3 and 4 against the null series
+
+| Statistic | Limit | Null series | Main series |
+| --- | --- | --- | --- |
+| First pass of ExAll over 40, 400, 1,000 entries, each | ≤ 1.05 | 0.983, 1.000, 0.952 | 1.116, 1.008, 0.998 |
+| Worst of the 16 phases the bound does not change | ≤ 1.05 | 1.036 (Small read 40) | 1.053 (ExNext 40 × 10 in `perf`) |
+| Geometric mean of those 16 phases | ≤ 1.02 | 1.003 | 1.021 |
+
+The null series meets criteria 3 and 4 as written. Identical handlers do not
+cross the limits in this series, so the limits are attainable on this host.
+
+### Bias between the names and between the positions
+
+With the order alternating, the effect of the position (second start of a round
+over the first) and of the name (`reference-b` over `reference-a`) separate.
+From the medians of the odd and the even rounds, over the 16 unchanged phases,
+the second start takes 0.997 of the time of the first (bootstrap 95 % interval
+0.965–1.017) and `reference-b` 1.009 of that of `reference-a` (0.979–1.028).
+The same figures from the means of the logarithms are 0.992 and 1.002. Over all
+23 phases they are 0.999 and 1.000. The pairing shows no position effect and no
+effect of the name beyond about one percent. The same analysis on the main
+series gives 1.040 for the position (0.959–1.140) and 1.032 for the name
+(0.993–1.184), with intervals that include 1 and the null's figures.
+
+### Spread
+
+The null series scatters much less from round to round than the main series.
+The geometric mean over the 16 unchanged phases of one round lies between 0.947
+and 1.042 in the null series (standard deviation of its logarithm 0.031) and
+between 0.923 and 1.262 in the main series (0.114). The null series therefore
+does not reproduce the main series' spread. Either Cachy was noisier in the
+main series' window (09:48–09:57 UTC against 12:25–12:34 UTC), or the bound's
+starts vary more than the reference's. One series of each cannot tell which.
+
+A bootstrap over the rounds (5,000 draws of four odd and four even rounds)
+estimates how often identical handlers would cross the limits. For the null
+series the geometric mean of the 16 medians exceeds 1.02 in 18 % of the draws
+(95 % interval 0.972–1.032), the worst of the 16 medians exceeds 1.05 in 68 %
+(the interval reaches 1.42, because a few phases have single ratios of 1.3 to
+1.5), and the largest of the three first-pass ExAll medians exceeds 1.05 in 0.1 %
+(interval 0.965–1.036). With only eight rounds the bootstrap is rough. The
+same procedure on the main series gives 61 %, 88 % and 79 %.
+
+### Reading
+
+The null series meets criteria 3 and 4 as written, so the limits are not
+unattainable for identical handlers, and the harness shows no position or name
+bias that could account for the main series' misses. Neither does the null
+series make the limits comfortable. It is one draw, and the bootstrap suggests
+that the per-phase limit of 1.05 over 16 phases is crossed by identical
+handlers in about two of three repeats, and the limit of 1.02 for the geometric
+mean in about one of six. A miss of those two statistics alone carries little
+information. The main series' 1.053 and 1.021 lie inside what identical
+handlers produce, and on this evidence they do not show a cost of the bound.
+
+The first-pass limit is different. For identical handlers the eight ratios of
+the 40-entry first pass lie between 0.89 and 1.07, and the 95 % interval of the
+largest of the three first-pass medians ends at 1.036. The main series measured
+1.116 for that phase, with ratios from 0.78 to 1.50. Identical handlers did not
+produce that. The null series shows no harness bias that could cause it. It leaves
+open whether the bound's recording costs something at 40 entries or the main
+series' window was noisier, and the larger first passes (1.008 and 0.998) show
+no cost.
+
+For criteria 3 and 4 this means that the misses of the main series are not
+excused by limits that identical handlers cannot meet, and that the per-phase
+limit of criterion 4 is tight against the host's scatter. Whether to repeat the
+main series, to read the criteria differently or to accept the result is
+Fabian's decision. The plan's decision rule and the numbers of the main series
+are unchanged.
