@@ -2,7 +2,10 @@
 
 Decision state: bound experiment only. Nothing is implemented, and the
 experiment retains nothing in `src/`. Whether a real implementation follows
-is decided by the rule below, which is fixed before any measurement.
+is decided by the rule below, which was fixed before any measurement. The
+bound ran on 22 October 2026; its reading is in
+`docs/qualification/bfs-exall-result-cache-bound-2026-10-22.md`. The rule
+below is unchanged since its first commit.
 
 ## Problem
 
