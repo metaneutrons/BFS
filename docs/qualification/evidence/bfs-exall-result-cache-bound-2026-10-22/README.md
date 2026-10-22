@@ -41,4 +41,8 @@ From the repository root:
 python3 docs/qualification/evidence/bfs-exall-result-cache-bound-2026-10-22/summarize.py
 ```
 
+The `null-series` subdirectory holds the control series of `reference` against
+`reference`, with its own [README](null-series/README.md). Its files are covered
+by the same `SHA256SUMS`.
+
 Verify all retained files from this directory with `shasum -a 256 -c SHA256SUMS`.
