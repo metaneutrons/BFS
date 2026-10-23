@@ -1,0 +1,20 @@
+; BFS hit-rate session: Workbench, a BFS volume and the counters of the handler.
+; The assigns are the ones a normal startup makes. Without ENV: and T: commands
+; such as List wait for a requester that nobody sees.
+MakeDir >NIL: RAM:T RAM:Clipboards RAM:ENV RAM:ENV/Sys
+Assign ENV: RAM:ENV
+Assign T: RAM:T
+Assign CLIPS: RAM:Clipboards
+MakeDir >NIL: SYS:Prefs SYS:Prefs/Env-Archive
+Assign ENVARC: SYS:Prefs/Env-Archive
+Echo "BFS Hit-Rate-Sitzung: Zaehler auf 0 gesetzt."
+C:hitrate BFS: RESET
+Run >NIL: <NIL: Execute S:hitrate-loop
+If EXISTS S:Autotest
+  Execute S:Autotest
+EndIf
+If EXISTS S:Shellmode
+  Echo "Shell-Modus ohne Workbench: Befehle hier eintippen (Dir, List, Copy, Delete)."
+Else
+  LoadWB
+EndIf

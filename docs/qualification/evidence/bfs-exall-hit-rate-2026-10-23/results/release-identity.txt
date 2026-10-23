@@ -1,0 +1,10 @@
+Zero effect on release builds
+=============================
+The patch (hitrate-handler.patch) was applied to origin/main at b8f3e8a in a scratch
+worktree and committed there as a throwaway, because `make release` requires a clean
+tree. `make release` without -DBFS_HITRATE builds build/release/bfshandler.040 with
+SHA-256
+  e2e274bbd604dce11b2fcbcb631f0c13322034408018be72d2f6d55c99987212
+which is the SHA-256 of the unpatched `reference` handler of the ExAll result cache
+bound and of the published v0.3.0 68040 handler. The counter is compiled only under
+BFS_HITRATE.

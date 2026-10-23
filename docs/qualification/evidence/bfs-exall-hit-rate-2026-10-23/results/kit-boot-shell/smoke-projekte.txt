@@ -1,0 +1,381 @@
+     BFS (dir)
+          emulator-test (dir)
+               config (dir)
+                 bfstest.fs-uae.template
+               startup (dir)
+                 bench    ci-test  test
+               scripts (dir)
+                 test-bfs.script
+            aros-ci-test.py
+            bench-config.sh
+            bench-series.sh
+            build-bench-image.sh
+            build-image.sh
+            ci-benchmark.sh
+            ci-local.sh
+            ci-test.sh
+            ci_runner.py
+            compatibility-test.py
+            linux-exchange.py
+            linux-exchange.sh
+            README.md
+            reset-test.py
+            run-bench.sh
+            run-stress.sh
+            run.sh
+            softlink-remount.sh
+            test-memory-functions.sh
+            verify-bench-results.sh
+            verify-stress.c
+          docs (dir)
+               platform-contract (dir)
+                 capabilities.json
+                 capabilities.md
+                 filesystem-semantics.md
+                 lifecycle-and-storage.md
+                 targets.md
+               images (dir)
+                 architecture.svg
+               plans (dir)
+                 bfs-btree-bulk-slots-v1.md
+                 bfs-btree-scratch-lifetime-v1.md
+                 bfs-crc-native-word-order-v1.md
+                 bfs-directory-layout-v1.md
+                 bfs-exall-result-cache-v1.md
+                 bfs-format-v3-v1.md
+                 bfs-free-tree-multiedit-v1.md
+                 bfs-handler-cpu-attribution-v1.md
+                 bfs-inode-stamp-coalescing-v1.md
+                 bfs-inode-write-back-v1.md
+                 bfs-listing-metadata-v1.md
+                 bfs-memory-copy-48-v1.md
+                 bfs-memory-copy-short-v1.md
+                 bfs-metadata-listing-performance-v1.md
+                 bfs-metadata-stock-v1.md
+                 bfs-metadata-withdrawal-batch-v1.md
+                 bfs-reserve-pair-validation-v1.md
+                 bfs-single-block-absence-v1.md
+                 bfs-split-coalesce-attribution-v1.md
+                 bfs-temporary-buffer-reuse-v1.md
+                 bfs-transaction-owned-nodes-v1.md
+                 cross-platform-development.md
+                 fault-corruption-qualification.md
+                 release-readiness.md
+               qualification (dir)
+                 bfs-after-buffer-profile-2026-10-01.md
+                 bfs-amiga-internal-profile-2026-09-29.md
+                 bfs-amiga-write-profile-2026-09-28.md
+                 bfs-append-attribution-2026-10-10.md
+                 bfs-append-split-exnext-pilot-2026-10-10.md
+                 bfs-batched-append-performance-2026-09-29.md
+                 bfs-btree-bulk-slots-performance-2026-10-01.md
+                 bfs-btree-scratch-lifetime-performance-2026-10-01.md
+                 bfs-cache-lookup-hint-performance-2026-10-01.md
+                 bfs-cpu-attribution-2026-10-01.md
+                 bfs-crc-native-word-order-performance-2026-10-01.md
+                 bfs-crc-nibble-performance-2026-09-30.md
+                 bfs-crc-zero-performance-2026-09-30.md
+                 bfs-cursor-path-performance-2026-10-09.md
+                 bfs-directory-layout-pilot-2026-10-10.md
+                 bfs-directory-listing-performance-2026-10-03.md
+                 bfs-directory-validation-pilot-2026-10-10.md
+                 bfs-exact-key-fastpath-2026-10-09.md
+                 bfs-exact-path-buffer-performance-2026-10-01.md
+                 bfs-exall-result-cache-bound-2026-10-22.md
+                 bfs-exnext-read-ahead-pilot-2026-10-10.md
+                 bfs-floor-resident-pilot-2026-10-09.md
+                 bfs-free-tree-allocation-cost-audit-2026-10-01.md
+                 bfs-free-tree-leaf-batch-2026-09-29.md
+                 bfs-free-tree-phase-profile-2026-09-30.md
+                 bfs-free-tree-quickwins-2026-09-29.md
+                 bfs-goal-root-pilot-2026-10-09.md
+                 bfs-handler-cpu-scopes-2026-10-01.md
+                 bfs-inode-stamp-performance-2026-10-01.md
+                 bfs-inode-write-back-bound-2026-10-10.md
+                 bfs-inode-write-back-pilot-2026-10-10.md
+                 bfs-leaf-range-performance-2026-10-08.md
+                 bfs-listing-cache-batch-pilot-2026-10-10.md
+                 bfs-listing-detail-profile-2026-10-08.md
+                 bfs-listing-diagnostic-2026-10-10.md
+                 bfs-listing-metadata-bound-2026-10-10.md
+                 bfs-memory-copy-48-performance-2026-10-01.md
+                 bfs-memory-copy-short-performance-2026-10-01.md
+                 bfs-metadata-listing-performance-2026-10-08.md
+                 bfs-metadata-reuse-performance-2026-09-30.md
+                 bfs-metadata-single-extent-performance-2026-10-01.md
+                 bfs-metadata-stock-performance-2026-10-01.md
+                 bfs-metadata-withdrawal-batch-performance-2026-10-01.md
+                 bfs-mixed-reserve-performance-2026-09-30.md
+                 bfs-next-quickwin-experiments-2026-09-29.md
+                 bfs-node-write-retention-2026-09-29.md
+                 bfs-noop-update-performance-2026-09-30.md
+                 bfs-pfs3-deep-profile-2026-09-29.md
+                 bfs-pfs3-performance-2026-09-28.md
+                 bfs-production-codegen-pilot-2026-10-10.md
+                 bfs-production-status-2026-10-10.md
+                 bfs-read-flush-cachy-2026-10-09.md
+                 bfs-read-flush-profile-2026-10-09.md
+                 bfs-release-flags-pilot-2026-10-10.md
+                 bfs-reserve-batch-performance-2026-09-30.md
+                 bfs-reserve-commit-profile-2026-09-30.md
+                 bfs-reserve-pair-validation-performance-2026-10-01.md
+                 bfs-root-fold-performance-2026-09-30.md
+                 bfs-root-shift-performance-2026-09-30.md
+                 bfs-scan-admission-performance-2026-10-09.md
+                 bfs-scan-cache-performance-2026-10-09.md
+                 bfs-seal-geometry-performance-2026-10-01.md
+                 bfs-sealed-settlement-performance-2026-10-01.md
+                 bfs-single-block-absence-performance-2026-10-01.md
+                 bfs-sparse-crc-append-confirmation-2026-10-09.md
+                 bfs-sparse-key-crc-performance-2026-10-09.md
+                 bfs-split-coalesce-attribution-2026-10-01.md
+                 bfs-temporary-buffer-reuse-performance-2026-10-01.md
+                 bfs-v0.3.0-performance-2026-10-12.md
+                 bfs-validation-cache-performance-2026-09-30.md
+                 bfs-verified-node-cache-2026-09-29.md
+                 bfs-write-guard-pilot-2026-10-09.md
+                 bfs-write-path-in-place-performance-2026-10-04.md
+                 bfs-write-path-profile-2026-10-09.md
+                 bfs-write-phase-confirmation-2026-10-10.md
+                 fault-corruption.md
+                 linux-m7.md
+                 release-v0.1.1-handoff-2026-09-08.md
+               on-disk-format (dir)
+                 btree.md            commit-recovery.md
+                 fixtures.md         namespace.md
+                 superblock.md
+            amiga-packets.md
+            amiga-snapshot-volumes.md
+            compiler-flags.md
+            conformance.md
+            failure-semantics.md
+            format-compatibility.md
+            morphos-build.md
+            on-disk-format.md
+            platform-contract.md
+            static-review.md
+          src (dir)
+               fuse (dir)
+                 bfs_fuse.c
+               amiga (dir)
+                 amiga_bio.c          amiga_bio.h
+                 commit_protocol.h    crc32_68k.s
+                 dos_packets.h        dos_string.h
+                 handler.c            heap_aros.c
+                 memcpy_68k.s         memset_68k.s
+                 perf_probe.c         perf_probe.h
+                 snapshot_mount.h     snapshot_protocol.h
+                 startup.s            startup_aros.c
+                 startup_morphos.c    startup_vbcc.s
+                 stdbool.h            stddef.h
+                 stdint.h             stdlib.h
+                 string.h             write_probe.h
+               core (dir)
+                 alloc.c            bootstrap_alloc.c
+                 btree.c            cache.c
+                 crc32.c            crc32_zero.c
+                 dir.c              extent.c
+                 file.c             fs.c
+                 fsck.c             inode.c
+                 namespace.c        refcount.c
+                 snapshot.c         superblock.c
+                 txn.c
+               host (dir)
+                 posix_bio.c
+          tests (dir)
+               fuse (dir)
+                 qualify_baseline_refusal.sh
+                 test_fuse_mount.py
+               quality (dir)
+                 test-gates.sh
+                 test_amiga_runner.py
+                 test_bench_cache_capacity.py
+                 test_bench_verifier.py
+                 test_build_identity.py
+                 test_capability_manifest.py
+                 test_ci_results.py
+                 test_github_preflight.py
+                 test_inode_tree_access.py
+                 test_morphos_elf.py
+                 test_release_identity.py
+                 test_release_integrity.py
+                 test_release_signing.py
+                 test_runtime_inventory.py
+                 test_split_bench_verifier.py
+                 test_write_split_bench_verifier.py
+               amiga (dir)
+                 cli_fixture.c
+                 compatibility_probe.c
+                 crc32_abi_probe.s
+                 crc32_probe.c
+                 crc32_sparse_probe.c
+                 memory_copy_compare_probe.c
+                 memory_functions_probe.c
+                 reset_probe.c
+               conformance (dir)
+                    replays (dir)
+                      core-full-v1.jsonl
+                      smoke-v1.jsonl
+                 fixture_writer.c     scenarios.json
+                 test_conformance.py
+               qualification (dir)
+                 fault-campaign-v1.json
+                 fault_campaign.py
+                 fuse_soak.py
+                 linux-m7-matrix.json
+                 linux_qualification.py
+                 test_fault_campaign.py
+                 test_linux_qualification.py
+                 verify_fault_campaign.py
+                 verify_fuse_soak.py
+               perf_probe_stubs (dir)
+                    proto (dir)
+                      exec.h   timer.h
+                    devices (dir)
+                      timer.h
+                    exec (dir)
+                      io.h     types.h
+            bench_btree.c
+            block_device_emu.c
+            block_device_emu.h
+            dir_records_fixture.h
+            inode_write_back_fixture.h
+            posix_bio_faults.c
+            posix_bio_faults.h
+            test_alloc.c
+            test_alloc_metadata_reuse.c
+            test_alloc_root_shift.c
+            test_bio.c
+            test_block_runs.c
+            test_btree.c
+            test_btree_buffers.c
+            test_btree_bulk_slots.c
+            test_btree_noop.c
+            test_btree_scratch_lifetime.c
+            test_btree_sparse_crc.c
+            test_btree_validation_cache.c
+            test_cache.c
+            test_cache_buffer_faults.c
+            test_cache_resident_paths.c
+            test_compatibility.c
+            test_concurrency.c
+            test_corruption.c
+            test_crash_inject.c
+            test_crc32.c
+            test_crc32_sparse.c
+            test_deferred_nodes.c
+            test_dir.c
+            test_dirops.c
+            test_dir_exclusive_cursor.c
+            test_dir_records.c
+            test_dir_records_atomicity.c
+            test_dos_name.c
+            test_durability_patterns.c
+            test_edge_cases.c
+            test_endian.c
+            test_extent.c
+            test_features.c
+            test_file.c
+            test_file_inode_reuse.c
+            test_file_write_guard.c
+            test_format_fixtures.c
+            test_fs.c
+            test_fsck.c
+            test_handler_ops.c
+            test_harness.h
+            test_hunt.c
+            test_hwfail.c
+            test_inline_extent.c
+            test_inode_lookup_hints.c
+            test_inode_sorted.c
+            test_inode_stamp.c
+            test_inode_stamp_faults.c
+            test_inode_write_back.c
+            test_inode_write_back_recovery.c
+            test_integration.c
+            test_invariants.c
+            test_large_reclaim.c
+            test_model.c
+            test_name_limit.c
+            test_pending_frees.c
+            test_perf_probe.c
+            test_posix_bio.c
+            test_posix_faults.c
+            test_realworld.c
+            test_robustness.c
+            test_snapshot.c
+            test_snap_full.c
+            test_stress.c
+            test_superblock.c
+            test_txn_sealed_convergence.c
+            test_txn_sealed_persistence.c
+            test_txn_sealed_preflight.c
+          include (dir)
+            bfs_alloc.h            bfs_bio.h
+            bfs_bootstrap_alloc.h  bfs_btree.h
+            bfs_btree_internal.h   bfs_cache.h
+            bfs_crc32.h            bfs_diagnostics.h
+            bfs_dir.h              bfs_dos_name.h
+            bfs_extent.h           bfs_file.h
+            bfs_fs.h               bfs_fsck.h
+            bfs_inode.h            bfs_internal.h
+            bfs_lock.h             bfs_ondisk.h
+            bfs_posix_bio.h        bfs_refcount.h
+            bfs_snapshot.h         bfs_superblock.h
+            bfs_txn.h              bfs_types.h
+          tools (dir)
+               release (dir)
+                 build_identity.py
+                 create-archives.sh
+                 create-source-archive.py
+                 generate-sbom.py
+                 github_preflight.py
+                 qualify-archives.sh
+                 release_integrity.py
+                 requirements.in
+                 requirements.txt
+                 runtime_inventory.py
+                 sbom_document.py
+                 sign-blob.sh
+                 validate-sbom.py
+                 verify-archives.sh
+                 verify-candidate.sh
+                 verify-identity.sh
+            bench-summary.py
+            bfs-bench.c
+            bfs-conformance-core.c
+            bfs-conformance-posix.c
+            bfs-conformance.py
+            bfs-format-oracle.py
+            bfs-persistence-model.py
+            bfs-stresstest.c
+            bfs-test-cases.def
+            bfs-test.c
+            bfs.c
+            bfs_check.c
+            bfs_command.h
+            bfs_command_runner.py
+            bfs_common.c
+            bfs_format.c
+            bfs_host.c
+            bfs_host_common.c
+            bfs_host_common.h
+            bfs_snapshot.c
+            check-actions-pinned.sh
+            check-ci-results.sh
+            check-commit-hygiene.sh
+            check-conformance-linkage.sh
+            check-morphos-elf.sh
+            check-no-binaries.sh
+            core-workload-profile.sh
+            core-workload.c
+            fs-compare-bench.c
+            fs-compare-split.h
+            fs-profile-bench.c
+            install-aros-rom.sh
+            install-ci-tools.sh
+            install-lha.sh
+            install-morphos-cross.sh
+            morphos-cross.pins
+            verify-sha256.sh
+            verify-split-bench.py
