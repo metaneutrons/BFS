@@ -1,0 +1,17 @@
+sequence	round	order	variant	run_name
+1	1	bfs-first	reference-a	exallnull-1-bfs-first-reference-a
+2	1	bfs-first	reference-b	exallnull-1-bfs-first-reference-b
+3	2	pfs3-first	reference-b	exallnull-2-pfs3-first-reference-b
+4	2	pfs3-first	reference-a	exallnull-2-pfs3-first-reference-a
+5	3	bfs-first	reference-a	exallnull-3-bfs-first-reference-a
+6	3	bfs-first	reference-b	exallnull-3-bfs-first-reference-b
+7	4	pfs3-first	reference-b	exallnull-4-pfs3-first-reference-b
+8	4	pfs3-first	reference-a	exallnull-4-pfs3-first-reference-a
+9	5	bfs-first	reference-a	exallnull-5-bfs-first-reference-a
+10	5	bfs-first	reference-b	exallnull-5-bfs-first-reference-b
+11	6	pfs3-first	reference-b	exallnull-6-pfs3-first-reference-b
+12	6	pfs3-first	reference-a	exallnull-6-pfs3-first-reference-a
+13	7	bfs-first	reference-a	exallnull-7-bfs-first-reference-a
+14	7	bfs-first	reference-b	exallnull-7-bfs-first-reference-b
+15	8	pfs3-first	reference-b	exallnull-8-pfs3-first-reference-b
+16	8	pfs3-first	reference-a	exallnull-8-pfs3-first-reference-a

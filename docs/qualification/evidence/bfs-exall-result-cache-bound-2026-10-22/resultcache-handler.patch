@@ -1,0 +1,285 @@
+diff --git a/src/amiga/handler.c b/src/amiga/handler.c
+index 2ddc2a1..eebd38a 100644
+--- a/src/amiga/handler.c
++++ b/src/amiga/handler.c
+@@ -138,6 +138,7 @@ struct bfs_notify {
+ };
+ 
+ struct bfs_open_file;
++struct exall_cache;
+ 
+ struct bfs_snapshot_pin {
+     struct bfs_snapshot_pin *next;
+@@ -172,6 +173,10 @@ struct bfs_handler {
+     uint32_t next_snapshot_pin;
+     uint32_t open_file_count;
+     uint32_t lock_count;
++    /* ExAll result cache bound: raised by every packet that can change the
++     * volume, so a cached listing is used only while it is unchanged. */
++    uint32_t volume_changes;
++    struct exall_cache *exall_cache;
+     bool notify_pending;
+     bool should_exit;
+     bool media_changed;
+@@ -761,6 +766,7 @@ static bool TryRemountMedia(struct bfs_handler *h)
+     if (h->snapshot_startup) return false;
+     if (HandlerIsInUse(h)) return false;
+ 
++    h->volume_changes++;
+     RemoveVolumeNode(h);
+     bfs_cache_destroy(&h->cache);
+ 
+@@ -822,6 +828,22 @@ static bool SnapshotRejectsPacket(LONG type)
+     }
+ }
+ 
++/* The packets that can change the volume: the ones a snapshot refuses, a
++ * close (it stamps the inode), a media change and the 64-bit resize. */
++static bool PacketMayChangeVolume(LONG type)
++{
++    if (SnapshotRejectsPacket(type)) return true;
++    switch (type) {
++    case ACTION_END:
++    case ACTION_INHIBIT:
++    case ACTION_DIE:
++    case BFS_ACTION_CHANGE_FILE_SIZE64:
++        return true;
++    default:
++        return false;
++    }
++}
++
+ /* ── Lock helpers ──────────────────────────────────────────── */
+ 
+ static void AttachLock(struct bfs_handler *h, bfs_lock_t *lock, uint32_t ino,
+@@ -2083,12 +2105,44 @@ typedef struct {
+     bool matched;        /* passes eac_MatchString */
+ } exall_pending_t;
+ 
++/* ExAll result cache bound (docs/plans/bfs-exall-result-cache-v1.md): one
++ * array of 1,024 entries holding the last unfiltered pass over one directory
++ * with the inode copies it read. A measuring device for an upper bound, never
++ * a release artifact. */
++#define EXALL_CACHE_CAP 1024u
++#define EXALL_CACHE_NAMES 16384u
++
++typedef struct {
++    uint32_t ino;
++    uint32_t type;
++    bfs_dir_pos_t pos;
++    uint16_t name_offset;
++    uint8_t name_len;
++    bfs_inode_t inode;
++} exall_cache_entry_t;
++
++struct exall_cache {
++    bool valid;            /* a complete pass of dir_ino at stamp is recorded */
++    bool recording;        /* a pass of rec_dir at rec_stamp is being recorded */
++    uint32_t dir_ino;
++    uint32_t stamp;
++    uint32_t count;
++    uint32_t rec_dir;
++    uint32_t rec_stamp;
++    uint32_t rec_count;
++    uint32_t names_used;
++    exall_cache_entry_t entries[EXALL_CACHE_CAP];
++    char names[EXALL_CACHE_NAMES];
++};
++typedef struct exall_cache exall_cache_t;
++
+ typedef struct {
+     exall_optimized_ctx_t *ec;
+     uint32_t count;
+     uint32_t names_used;
+     LONG space;          /* bytes left once the gathered entries are written */
+     bool full;           /* the next entry does not fit, comment or not */
++    const exall_cache_entry_t *cached; /* the gather came from the cache */
+     exall_pending_t entries[EXALL_BATCH];
+     char names[EXALL_BATCH * (BFS_NAME_MAX + 1)];
+     uint32_t inos[EXALL_BATCH];
+@@ -2155,9 +2209,13 @@ static bool exall_fill_gathered(exall_batch_t *b, uint32_t index)
+     }
+     const bfs_inode_t *inode = NULL;
+     if (ec->type >= ED_SIZE) {
+-        ec->err = b->results[pending->read_index];
+-        if (ec->err != BFS_OK) return false;
+-        inode = &b->inodes[pending->read_index];
++        if (b->cached) {
++            inode = &b->cached[index].inode;
++        } else {
++            ec->err = b->results[pending->read_index];
++            if (ec->err != BFS_OK) return false;
++            inode = &b->inodes[pending->read_index];
++        }
+     }
+     return exall_write_entry(ec, b->names + pending->name_offset, pending->name_len,
+                              pending->ino, pending->type, &pending->pos, inode);
+@@ -2186,32 +2244,144 @@ static bfs_err_t ExAllReadInodes(struct bfs_handler *h, exall_batch_t *b)
+     return bfs_inode_read_sorted(&h->fs.inode_tree, b->inos, count, b->inodes, b->results);
+ }
+ 
++static exall_cache_t *ExAllCacheGet(struct bfs_handler *h)
++{
++    if (!h->exall_cache) {
++        h->exall_cache = (exall_cache_t *)AllocVec(sizeof(*h->exall_cache), MEMF_ANY);
++        if (h->exall_cache) {
++            h->exall_cache->valid = false;
++            h->exall_cache->recording = false;
++        }
++    }
++    return h->exall_cache;
++}
++
++static bool ExAllCacheHit(const struct bfs_handler *h, const exall_cache_t *c,
++                          const bfs_lock_t *lk)
++{
++    return c->valid && c->dir_ino == lk->ino && c->stamp == h->volume_changes;
++}
++
++/* Gather the next batch from the cache with the callback the scan uses, so
++ * that pattern matching and the room check are the same. */
++static void ExAllGatherCached(exall_batch_t *b, const exall_cache_t *c, uint32_t position)
++{
++    b->ec->skip_count = 0;
++    if (position > c->count) position = c->count;
++    b->cached = c->entries + position;
++    for (uint32_t i = position; i < c->count; i++) {
++        const exall_cache_entry_t *e = &c->entries[i];
++        if (!exall_gather_cb(c->names + e->name_offset, e->name_len, e->ino, e->type,
++                             &e->pos, b))
++            break;
++    }
++}
++
++/* A pass from the start that reads inodes for every entry starts a recording. */
++static void ExAllCacheBegin(const struct bfs_handler *h, exall_cache_t *c,
++                            const bfs_lock_t *lk, const exall_optimized_ctx_t *ec)
++{
++    c->valid = false;
++    c->recording = ec->type >= ED_SIZE && !ec->eac->eac_MatchString;
++    c->rec_dir = lk->ino;
++    c->rec_stamp = h->volume_changes;
++    c->rec_count = 0;
++    c->names_used = 0;
++}
++
++/* Record the batch gathered at position first, with its inode copies. Any
++ * change, gap, or full array ends the recording. */
++static void ExAllCacheRecord(const struct bfs_handler *h, exall_cache_t *c,
++                             const bfs_lock_t *lk, const exall_batch_t *b, uint32_t first)
++{
++    if (!c->recording) return;
++    if (c->rec_dir != lk->ino || c->rec_stamp != h->volume_changes ||
++        first > c->rec_count || b->ec->type < ED_SIZE || b->ec->eac->eac_MatchString) {
++        c->recording = false;
++        return;
++    }
++    if (first < c->rec_count) { /* entries that were gathered but not written */
++        c->names_used = c->entries[first].name_offset;
++        c->rec_count = first;
++    }
++    if (c->rec_count + b->count > EXALL_CACHE_CAP) {
++        c->recording = false;
++        return;
++    }
++    for (uint32_t i = 0; i < b->count; i++) {
++        const exall_pending_t *p = &b->entries[i];
++        if (!p->matched || b->results[p->read_index] != BFS_OK ||
++            c->names_used + p->name_len > EXALL_CACHE_NAMES) {
++            c->recording = false;
++            return;
++        }
++        exall_cache_entry_t *e = &c->entries[c->rec_count + i];
++        e->ino = p->ino;
++        e->type = p->type;
++        e->pos = p->pos;
++        e->name_offset = (uint16_t)c->names_used;
++        e->name_len = p->name_len;
++        memcpy(c->names + c->names_used, b->names + p->name_offset, p->name_len);
++        c->names_used += p->name_len;
++        e->inode = b->inodes[p->read_index];
++    }
++    c->rec_count += b->count;
++}
++
++/* The scan reached the end of the directory and every entry was written. */
++static void ExAllCacheComplete(const struct bfs_handler *h, exall_cache_t *c,
++                               const bfs_lock_t *lk)
++{
++    if (!c->recording || c->rec_dir != lk->ino || c->rec_stamp != h->volume_changes) return;
++    c->recording = false;
++    c->valid = true;
++    c->dir_ino = c->rec_dir;
++    c->stamp = c->rec_stamp;
++    c->count = c->rec_count;
++}
++
+ /* Fill the caller's buffer from the lock's resume point, a batch at a time. */
+ static bfs_err_t ExAllBatched(struct bfs_handler *h, bfs_lock_t *lk,
+                               exall_optimized_ctx_t *ec, exall_batch_t *b)
+ {
++    exall_cache_t *cache = ExAllCacheGet(h);
+     for (;;) {
++        uint32_t first = ec->position;
+         b->ec = ec;
+         b->count = 0;
+         b->names_used = 0;
+         b->full = false;
++        b->cached = NULL;
+         b->space = (LONG)(ec->end - ec->pos);
+         ec->seen = 0;
+-        bfs_err_t err = ScanDirectoryFrom(h, lk, ec->position, exall_gather_cb, b,
+-                                          &ec->skip_count, false);
+-        if (err != BFS_OK) return err;
+-        bool more = b->full || b->count == EXALL_BATCH;
+-        if (ec->type >= ED_SIZE) {
+-            err = ExAllReadInodes(h, b);
++        bool cached = cache && ExAllCacheHit(h, cache, lk);
++        bfs_err_t err;
++        if (cached) {
++            ExAllGatherCached(b, cache, first);
++        } else {
++            if (cache && first == 0) ExAllCacheBegin(h, cache, lk, ec);
++            err = ScanDirectoryFrom(h, lk, ec->position, exall_gather_cb, b,
++                                    &ec->skip_count, false);
+             if (err != BFS_OK) return err;
+         }
++        bool more = b->full || b->count == EXALL_BATCH;
++        if (!cached) {
++            if (ec->type >= ED_SIZE) {
++                err = ExAllReadInodes(h, b);
++                if (err != BFS_OK) return err;
++            }
++            if (cache) ExAllCacheRecord(h, cache, lk, b, first);
++        }
+         for (uint32_t i = 0; i < b->count; i++)
+             if (!exall_fill_gathered(b, i)) return ec->err;
+         if (b->full) {
+             ec->overflow = true;
+             return BFS_OK;
+         }
+-        if (!more) return BFS_OK;
++        if (!more) {
++            if (cache && !cached) ExAllCacheComplete(h, cache, lk);
++            return BFS_OK;
++        }
+         /* The next batch resumes after the entry consumed last. */
+         CursorRemember(lk, ec->position, &ec->last, false);
+     }
+@@ -2300,6 +2470,8 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+                 -1 : DOSFALSE;
+     bfs_packet_word_t res2 = ERROR_ACTION_NOT_KNOWN;
+ 
++    if (PacketMayChangeVolume(pkt->dp_Type)) h->volume_changes++;
++
+     if (h->snapshot_startup && SnapshotRejectsPacket(pkt->dp_Type)) {
+         res1 = DOSFALSE;
+         res2 = ERROR_DISK_WRITE_PROTECTED;
+@@ -4341,6 +4513,7 @@ void EntryPoint(void)
+     } else {
+         RemoveVolumeNode(h);
+     }
++    if (h->exall_cache) FreeVec(h->exall_cache);
+     bfs_cache_destroy(&h->cache);
+     bfs_amiga_bio_release((amiga_bio_t *)(h + 1));
+ #ifdef BFS_PERF_PROBE

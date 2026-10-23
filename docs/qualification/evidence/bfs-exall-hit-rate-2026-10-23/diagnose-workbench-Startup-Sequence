@@ -1,0 +1,32 @@
+; Why the minimal system folder of emulator-test/.assets cannot start Workbench.
+; Run with run-guest.sh (see README.md); the report files are SYS:diag-*.txt.
+MakeDir >NIL: RAM:T RAM:Clipboards RAM:ENV RAM:ENV/Sys
+Assign ENV: RAM:ENV
+Assign T: RAM:T
+Assign CLIPS: RAM:Clipboards
+MakeDir >NIL: SYS:Prefs SYS:Prefs/Env-Archive
+Assign ENVARC: SYS:Prefs/Env-Archive
+Version >SYS:diag-version.txt
+List SYS:Libs >SYS:diag-libs-dir.txt
+List SYS:C >SYS:diag-c-dir.txt
+; 1. Which libraries open (openlibs returns 5 if one fails)
+C:openlibs SYS:diag-openlibs.txt exec.library dos.library intuition.library graphics.library layers.library utility.library locale.library keymap.library gadtools.library diskfont.library icon.library workbench.library asl.library amigaguide.library
+Echo "openlibs rc $RC" >SYS:diag-openlibs-rc.txt
+; 2. LoadWB with requesters suppressed, so that the error shows instead of a window
+;    nobody sees
+FailAt 21
+C:quiet SYS:diag-loadwb-quiet.txt LoadWB
+; 3. What the ROM holds
+C:quiet SYS:diag-inventory.txt C:inventory
+; 4. Do SetPatch and IPrefs change the result?
+C:SetPatch QUIET
+Echo "SetPatch rc $RC" >SYS:diag-setpatch-rc.txt
+C:IPrefs
+Echo "IPrefs rc $RC" >SYS:diag-iprefs-rc.txt
+C:openlibs SYS:diag-openlibs-after-setpatch.txt icon.library workbench.library
+Echo "openlibs rc $RC" >SYS:diag-openlibs-after-setpatch-rc.txt
+; 5. LoadWB without suppression: what is the system waiting for
+Run >NIL: <NIL: LoadWB
+Wait 8 SEC
+C:taskdump >SYS:diag-taskdump.txt
+Echo "done" >SYS:diag.done
