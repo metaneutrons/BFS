@@ -224,12 +224,12 @@ release build.
   latest complete pass of either kind (a cache that ExNext also used). The first
   decides.
 
-### Decision rule, proposed
+### Decision rule
 
-The thresholds are proposed by this plan. Fabian may adjust them before the
-first session. Once data exists they are not changed. All figures are shares of
-the entries listed by ExAll and ExNext together, under the stamp test and the
-same-kind scope.
+The thresholds were proposed by this plan (commit `db1a0d4`). Fabian accepted
+them on 23 October 2026 without change. They are fixed from now on and are not
+changed once data exists. All figures are shares of the entries listed by ExAll
+and ExNext together, under the stamp test and the same-kind scope.
 
 1. **Enough data.** At least 2,000 entries listed and 100 starts in all. With
    less there is no decision and the session is extended.
