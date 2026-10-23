@@ -173,3 +173,88 @@ carry the complexity, if the bound clears the rule, stays with Fabian.
    directory leave the cache valid.
 3. Whether the same cache should serve ExNext and `readdir`. ExNext has its
    read-ahead already and is not part of this bound.
+
+## Hit-rate measurement
+
+The bound and its repeat measure how much a result cache gains when it hits.
+They cannot say how often it would hit in real use, which the strongest
+objection above turns on. Fabian chose to measure that before anyone builds the
+cache: a debug build of the handler counts, while a person uses a BFS volume in
+an emulator, how many of the listed entries came from repeat listings of an
+unchanged volume. The counters change no listing and are not part of any
+release build.
+
+### Definitions
+
+- A **pass** is one enumeration of a directory from its start to its end through
+  one lock. It **starts** with an ExAll call whose `eac_LastKey` is 0 or an
+  ExNext call whose `fib_DiskKey` is 0, and it is **complete** when a call
+  reports that no entries remain. A pass that ends earlier (`ExAllEnd`, `UnLock`
+  or a restart) is abandoned and fills nothing.
+- For every directory the handler keeps its latest complete passes: the volume
+  state at their start, and the lock they used while that lock is held. It keeps
+  one record for the latest complete ExAll pass, one for the latest ExNext
+  pass and one for the latest of either, in a table of 512 directories. A pass
+  during which the volume changed fills nothing.
+- At every start the handler classifies the pass by the record of its kind:
+  - **A, new:** no complete pass of this directory in this mount.
+  - **B, same lock:** the latest complete pass left the volume as it is now and
+    used the lock that starts this pass, which is still held. A cache owned by
+    the lock would hit.
+  - **C, other lock:** the volume is as it was, but the latest complete pass used
+    another lock, now released or still held. Only a cache that survives
+    `UnLock` would hit.
+  - **D, changed:** the volume has changed since the latest complete pass.
+- It counts starts and entries for each class, separately for ExAll and for
+  ExNext, where the entries of a pass are those its calls returned (ExAll:
+  `eac_Entries` of every call, ExNext: one per call that returned an entry).
+  It also counts ExAll calls and the entries they returned, starts with a
+  pattern, abandoned passes and evictions from the table.
+- **Validity test.** The primary test is the one the candidate would use, the
+  stamps of the ExNext read-ahead: root and generation of the directory tree,
+  the recovery generation, root and generation of the inode tree and the
+  pending-inode version (`ExNextBatchCurrent`, `ExNextInode`). The second test
+  is the bound's counter, raised by every packet that can change the volume,
+  including every close of a file. It is coarser: opening and closing a file
+  only to read it raises it, which Workbench does for every icon. Both are
+  counted, the stamps decide, and the counter shows what the bound would have
+  seen.
+- **Scope.** Each start is classified twice: against the latest complete pass of
+  the same kind (the ExAll cache is filled by ExAll only), and against the
+  latest complete pass of either kind (a cache that ExNext also used). The first
+  decides.
+
+### Decision rule, proposed
+
+The thresholds are proposed by this plan. Fabian may adjust them before the
+first session. Once data exists they are not changed. All figures are shares of
+the entries listed by ExAll and ExNext together, under the stamp test and the
+same-kind scope.
+
+1. **Enough data.** At least 2,000 entries listed and 100 starts in all. With
+   less there is no decision and the session is extended.
+2. **Lock-owned cache, the candidate of this plan.** Continue to the second plan
+   if the ExAll entries of class B are at least 25 % of all entries. A hit saves
+   about 60 % of the time of an ExAll entry and a miss costs a few percent
+   more, so 25 % saves at most 15 % of the listing time, and less, because an
+   ExNext entry costs several times more than an ExAll entry on the emulated
+   machine, so the share of entries overstates the share of time of the hits.
+3. **Directory-level cache.** If rule 2 fails and the ExAll entries of classes B
+   and C together are at least 40 %, a cache that survives `UnLock` is worth
+   planning instead (open question 1), with its standing memory and release
+   under shortage. Otherwise stop: a result cache is not worth its invalidation
+   code and its memory in real use.
+4. **Reported, not decided.** If class D holds at least 30 % of the ExAll
+   entries, the volume-wide stamps end the validity too often and a
+   per-directory change counter (open question 2) should be looked at before
+   either result is final. If the ExNext entries are at least 60 % of all
+   entries, the ExAll cache serves the minority of listings, and ExNext is the
+   place to look.
+
+### What the numbers will and will not show
+
+They show how one person used one emulated machine for the length of a session,
+with the programs and the files of that session. They are not a statistic of the
+Amiga world. They count entries, not time, and the stamps of the volume come
+from the BFS volume alone. A scripted run checks the counter and is not
+evidence of real use.
