@@ -5,10 +5,10 @@ d8c847a5b36df1085298b55222c4927f9f53ad18f27dc2b353ad90dfea34ead4  ./build-instru
 2241ca6c9713a31b9ea63d4bb7d464dc78debcffbedcfc15203f5803ca3c9e5a  ./diagnose-workbench-Startup-Sequence
 cdf124576e21d47f887a6dbc2fded7517e95c362a29e8aaf96f2c6ceb95c3ad8  ./hitrate-handler.patch
 7a3d923654cb14042ac73023a150277d98cf631a418bd91c5604cb0900c293e5  ./inputs.sha256
-01955bbbbcab97579d3f781753eaf59ac215c8de139a875641a124eb83b95b1e  ./kit/ANLEITUNG.md
+b92c30abefef5e20960f3b9434b1c07916e4e751fa75ed52445be66923901be4  ./kit/ANLEITUNG.md
 00a88cf2254e393e7137b6f3714db41f40a7323d81d5130f02064c327bcd228c  ./kit/Startup-Sequence
 a4adbf0aede0a100b5904b29a4a36f17267f22e2aabab5113efffacc4ae09c4c  ./kit/Startup-Zeilen.txt
-374139d15579f2d27ff2cad4b430ee531fae52ef587d241651dd444033f207e2  ./kit/attach-to-config.sh
+87435b79cce8fbf7d51c485f1af1fe1895e9b1cbe1744931c5c196c055353fd7  ./kit/attach-to-config.sh
 8d042d589e4c653c27a753a75e7eebf023b537a74142e76dffd50509f50df8c4  ./kit/hitrate-loop
 d609dfc2b6aba1fa34f91d05fe6ec95f34e3629306cbc2c79f58ea8917dd8a1b  ./kit/hitrate-loop-attached
 74520ebbfa1ca6e4bf2c8c9436bfafba72118e76e61c6b55648354a08dc1bab6  ./kit/populate-Startup-Sequence
@@ -16,10 +16,10 @@ d32543d498d67971e24d8724ab055babbb94b0898c6bd2937c377de845b308f7  ./kit/start.sh
 56de1935fe7b5d5a66e3e0db129ac52bba25f6b89fc7657791cc91c11c804f85  ./make-tree.py
 e168beceabfc0daf9358c7e1f32655ba45ead2159d694f7c1a2db7c02881b3a9  ./memory-probe.sh
 bea62057499da61f9b48a8da8f52f9a96f710121cf06fde813a82878c3892526  ./results/attach-check/attached-counters.txt
-9c16d0b2f69b3aef852caa69d242e09d98c495c2cd0b410a94cf9f981dca78b9  ./results/attach-check/own-hitrate.fs-uae.txt
-faf28e1c47ea66840591dfbbc4d4cbe3beabde200473e7614cbec7b27aa48b5d  ./results/attach-check/own.fs-uae.txt
-bf1dad57cf26d475fde0f05a669381f3949e25765dba067fc0ba52aef256d102  ./results/attach-check/summary.txt
-bce2ea502a4b9ef301f5a8ff5c47a10b1ad3dba3a7ebf2a95a0a12d3f965236d  ./results/attach-check/verify-attach.log
+9728c8ea41c5a8df41343743b8960a0f4d08818cd2fb9a0ba09f4c3dd37d7d65  ./results/attach-check/own-hitrate.fs-uae.txt
+98a5022130a36417641d5a1b65de654afc3e8d09a330c6c7b57e703dfd4a10ad  ./results/attach-check/own.fs-uae.txt
+4e12d19abb6d23fb861fbe7b97dfe502acf65690c3d0fd2f10c48798ac91e877  ./results/attach-check/summary.txt
+c85eea4bfe30505ab093e3ae994dc1442bbb17433024599d5ec5a71f9cd5aedc  ./results/attach-check/verify-attach.log
 2f400b3add3cf5259042b5635102024fd3049a2decde4c47929bc895a3abcdee  ./results/bfs-test-full-suite-console.log
 6c322f2f43a244f1211b8c1ccc5fe691b2eebcc02a91b47111662170da5faaae  ./results/bfs-test-full-suite-instrumented.txt
 8c273f0bbe77686e79b1e584473ab7e5b67500428f90e722ebb31768375d3818  ./results/command-listing-calls/Startup-Sequence
@@ -83,5 +83,5 @@ bbabb008b8e0b9dd6c6adfab1665a4e3f25a52ae75ad4aa879b92b702e01b6ae  ./tools/hitrat
 7f0a68733ec106097bbb0c2af2257fe8c737195f8879d2c3c2fcf73038776a98  ./tools/openlibs.c
 c3dde1bf998689b49a19c339f64cc7b43549aa0f9344b260768206212641eecc  ./tools/quiet.c
 4fda1fb493f08723270877d26bded105c2c2f2b2d9802b11c9a936ba49e0dd2b  ./tools/taskdump.c
-5c221f65cb04d1080ccf2501b7f6d7684c5ebce1a6d7f8015d5294ca9d5bf4d5  ./verify-attach.sh
+497fea3b0b24f43c1795c35bfa2b4ce0ab924be18240411b69920675a8a16ddb  ./verify-attach.sh
 c1203c54c6badbe01d0a979e445b03fe6e20eaaf1ac2dcc5bd104be43f8e370c  ./verify-kit.sh

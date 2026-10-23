@@ -37,12 +37,15 @@ case ${cpu:-} in
 esac
 
 /bin/cp "$config" "$output"
-{
-    printf '\n# Hit-rate session: BFS volume with the instrumented handler and the Hitrate folder\n'
+added=$(
+    printf '# Hit-rate session: BFS volume with the instrumented handler and the Hitrate folder\n'
     printf 'hard_drive_%s = %s/bfs.hdf\n' "$hdf" "$kit"
     printf 'hard_drive_%s = %s/Hitrate\n' "$folder" "$kit"
     printf 'hard_drive_%s_label = HR\n' "$folder"
-} >>"$output"
-echo "Wrote $output (BFS hard file as hard drive $hdf, Hitrate folder as hard drive $folder)."
+)
+printf '\n%s\n' "$added" >>"$output"
+echo "Wrote the copy $output"
+echo "Added to the copy (nothing else changed, $config is untouched):"
+printf '%s\n' "$added" | sed 's/^/  /'
 echo "Start it with: fs-uae \"$output\""
-echo "Then add the lines of Startup-Zeilen.txt to the S:User-Startup of your Workbench."
+echo "Then add the line of Startup-Zeilen.txt to the S:User-Startup of your Workbench."

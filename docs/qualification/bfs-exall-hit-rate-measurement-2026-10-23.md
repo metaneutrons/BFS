@@ -83,7 +83,9 @@ and not in `src/`. Everything is compiled only with `-DBFS_HITRATE=1`.
 - **The own-Workbench route works with a stand-in.** `verify-attach.sh` writes a
   stand-in boot folder and an FS-UAE configuration for it, runs `attach-to-config.sh`
   on that configuration (the copy gets the BFS hard file as hard drive 1 and the
-  folder `Hitrate` as hard drive 2, label `HR`, and the original is unchanged), adds
+  folder `Hitrate` as hard drive 2, label `HR`; the script prints the added lines and
+  the check confirms that the original is byte-identical afterwards and that the copy
+  only adds lines), adds
   the line of `Startup-Zeilen.txt` to a `User-Startup`, boots, lists
   `BFS:Projekte ALL` twice and reads the counters through `HR:`. Result: both
   listings have 382 lines, and the counters hold 31 ExNext passes of class A and

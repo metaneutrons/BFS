@@ -18,6 +18,7 @@ Entscheidungsregel (Schwellen aus dem Plan, von Fabian am 23.10.2026 unveränder
   Regel 3, Verzeichnis-Cache: Klassen B und C = 0.0 % (Schwelle 40 %)
   Klasse D = 0.0 % der ExAll-Einträge, ExNext = 100.0 % aller Einträge
   Ergebnis: keine Entscheidung
+  Hinweis: In dieser Sitzung hat kein Programm ExAll aufgerufen (ExAll-Aufrufe: 0). Die Regel sagt dann nichts über einen ExAll-Cache, auch wenn oben „stoppen“ steht: es gab nichts zu zählen. Dir, List, Copy, Delete, Protect, Search und Filenote der Kit-Konsole benutzen ExNext. Die Sitzung mit Programmen wiederholen, die ExAll aufrufen.
 
 Zum Vergleich: Baumstempel, Vergleich mit der letzten Runde beider Arten (ein Cache, den auch ExNext nutzt)
 Klasse                 ExAll Starts  ExAll Einträge  ExNext Starts  ExNext Einträge  Anteil ExAll  Anteil ExNext

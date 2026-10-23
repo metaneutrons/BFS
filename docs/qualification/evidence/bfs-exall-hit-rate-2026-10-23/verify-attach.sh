@@ -44,7 +44,14 @@ audio_driver = null
 window_width = 800
 window_height = 600
 CONFIG
+before=$(shasum -a 256 <"$run/own.fs-uae")
 "$run/kit/attach-to-config.sh" "$run/own.fs-uae" | tee "$run/attach.out"
+[[ $(shasum -a 256 <"$run/own.fs-uae") == "$before" ]] || { echo "FAIL: the original configuration changed" >&2; exit 1; }
+# The copy must be the original plus added lines only.
+if /usr/bin/diff "$run/own.fs-uae" "$run/own-hitrate.fs-uae" | grep -q '^<'; then
+    echo "FAIL: the copy removes or changes lines of the original" >&2; exit 1
+fi
+echo "original unchanged; the copy only adds $(/usr/bin/diff "$run/own.fs-uae" "$run/own-hitrate.fs-uae" | grep -c '^>') lines"
 FSEMU_AUDIO_DRIVER=null fs-uae "$run/own-hitrate.fs-uae" >"$run/fs-uae.out" 2>&1 &
 pid=$!
 trap 'kill "$pid" 2>/dev/null || true' EXIT
