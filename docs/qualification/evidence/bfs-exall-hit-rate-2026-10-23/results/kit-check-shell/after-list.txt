@@ -13,6 +13,7 @@ bfs-sparse-key-crc-performance-2026-10-09.md      11140 ----rwed Yesterday 11:29
 bfs-exact-key-fastpath-2026-10-09.md       9255 ----rwed Yesterday 11:29:10
 bfs-sealed-settlement-performance-2026-10-01.md       9827 ----rwed Yesterday 11:29:10
 bfs-reserve-commit-profile-2026-09-30.md       4913 ----rwed Yesterday 11:29:10
+bfs-exall-hit-rate-measurement-2026-10-23.md       8341 ----rwed Today     16:12:56
 bfs-exnext-read-ahead-pilot-2026-10-10.md       4719 ----rwed Yesterday 11:29:10
 bfs-scan-cache-performance-2026-10-09.md       9399 ----rwed Yesterday 11:29:10
 bfs-mixed-reserve-performance-2026-09-30.md       7371 ----rwed Yesterday 11:29:10
@@ -77,4 +78,4 @@ bfs-cache-lookup-hint-performance-2026-10-01.md       6242 ----rwed Yesterday 11
 bfs-split-coalesce-attribution-2026-10-01.md      10388 ----rwed Yesterday 11:29:10
 bfs-crc-zero-performance-2026-09-30.md       6090 ----rwed Yesterday 11:29:10
 bfs-listing-cache-batch-pilot-2026-10-10.md       4656 ----rwed Yesterday 11:29:10
-78 files - 602K bytes - 1322 blocks used
+79 files - 610K bytes - 1340 blocks used

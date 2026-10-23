@@ -1,0 +1,7 @@
+Wrote <scratch>/f-attach/own-hitrate.fs-uae (BFS hard file as hard drive 1, Hitrate folder as hard drive 2).
+Start it with: fs-uae "<scratch>/f-attach/own-hitrate.fs-uae"
+Then add the lines of Startup-Zeilen.txt to the S:User-Startup of your Workbench.
+listed lines: 382 and 382
+ExNext entries class A and class C: 421 421 (the second listing goes through another lock, so both must be above 0 and equal)
+attach route works: <scratch>/f-attach
+exit 0

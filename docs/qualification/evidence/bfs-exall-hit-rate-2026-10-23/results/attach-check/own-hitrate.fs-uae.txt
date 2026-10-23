@@ -1,0 +1,18 @@
+[fs-uae]
+amiga_model = A1200
+chip_memory = 2048
+fast_memory = 8192
+cpu = 68040
+uae_cpu_speed = max
+kickstart_file = <worktree>/build/hitrate-kit-new/A1200.47.102.rom
+hard_drive_0 = System
+hard_drive_0_label = System
+floppy_speed = 0
+audio_driver = null
+window_width = 800
+window_height = 600
+
+# Hit-rate session: BFS volume with the instrumented handler and the Hitrate folder
+hard_drive_1 = <scratch>/f-attach/kit/bfs.hdf
+hard_drive_2 = <scratch>/f-attach/kit/Hitrate
+hard_drive_2_label = HR

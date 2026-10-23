@@ -1,14 +1,14 @@
 == tree
-3362 Dateien, 23.2 MB in /Volumes/Dev/Source/Amiga/BFS/.claude/worktrees/quizzical-curran-29db9c/build/hitrate-kit/.tree
-462 Verzeichnisse
+3396 Dateien, 23.3 MB in <worktree>/build/hitrate-kit-new/.tree
+468 Verzeichnisse
 == populate the BFS volume (an emulator window opens and closes by itself)
-run complete: /Volumes/Dev/Source/Amiga/BFS/.claude/worktrees/quizzical-curran-29db9c/build/hitrate-kit/.populate
+run complete: <worktree>/build/hitrate-kit-new/.populate
 populate start
 copy done
 
 Mounted disks:
 Unit      Size       Used       Free Full Errs   Status   Name
-BFS        63M       8394       7862  52%   0  Read/Write BFS
+BFS        63M       8452       7804  52%   0  Read/Write BFS
 
 Volumes available:
 BFS [Mounted]
@@ -18,5 +18,6 @@ BFS [Mounted]
      Archiv (dir)
      Werkzeuge (dir)
 == assemble the kit
-Kit: /Volumes/Dev/Source/Amiga/BFS/.claude/worktrees/quizzical-curran-29db9c/build/hitrate-kit
+Kit: <worktree>/build/hitrate-kit-new
  97M
+build exit 0

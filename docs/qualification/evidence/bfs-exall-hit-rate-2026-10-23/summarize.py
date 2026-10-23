@@ -81,6 +81,13 @@ def evaluate(values):
     else:
         reading["result"] = "stoppen: ein Ergebnis-Cache lohnt sich in dieser Nutzung nicht"
     reading["notes"] = []
+    if values["calls.exall"] == 0:
+        reading["notes"].append(
+            "In dieser Sitzung hat kein Programm ExAll aufgerufen (ExAll-Aufrufe: 0). Die Regel "
+            "sagt dann nichts über einen ExAll-Cache, auch wenn oben „stoppen“ steht: es gab "
+            "nichts zu zählen. Dir, List, Copy, Delete, Protect, Search und Filenote der "
+            "Kit-Konsole benutzen ExNext. Die Sitzung mit Programmen wiederholen, die ExAll "
+            "aufrufen.")
     if reading["enough_data"] and reading["d_share_of_exall"] >= CHANGED_SHARE_OF_EXALL:
         reading["notes"].append(
             "Klasse D hält mindestens %.0f %% der ExAll-Einträge: die volumenweiten Stempel "

@@ -1,0 +1,17 @@
+Directory "SYS:Libs" on Friday 23-Oct-26
+rexxsyslib.library            35620 ----rwed Today     17:52:24
+rexxsupport.library            2584 ----rwed Today     17:52:24
+mathtrans.library              2920 ----rwed Today     17:52:24
+mathieeesingtrans.library       7044 ----rwed Today     17:52:24
+mathieeedoubtrans.library       9284 ----rwed Today     17:52:24
+mathieeedoubbas.library        3900 ----rwed Today     17:52:24
+iffparse.library               6108 ----rwed Today     17:52:24
+datatypes.library             20008 ----rwed Today     17:52:24
+commodities.library            7836 ----rwed Today     17:52:24
+bullet.library                25968 ----rwed Today     17:52:24
+asl.library                   58140 ----rwed Today     17:52:24
+amigaguide.library            21828 ----rwed Today     17:52:24
+diskfont.library              19948 ----rwed Today     17:52:24
+locale.library                22212 ----rwed Today     17:52:24
+version.library                 308 ----rwed Today     17:52:24
+15 files - 237K bytes - 498 blocks used

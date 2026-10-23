@@ -68,32 +68,95 @@ and not in `src/`. Everything is compiled only with `-DBFS_HITRATE=1`.
   ExNext tests (`exall_44`, `exalldel_49`, `exallpack_50`, `exnext_37`,
   `exnextdel_48`, `exnextfresh_55`). The compiler warnings are the project's own
   (`-Wall -Wextra -Werror`, frame limit 16 KiB).
-- **The kit boots and counts.** In both modes below, FS-UAE boots the kit, the
-  volume `BFS:` mounts with 3,362 files in 462 directories (52 % of 63 MB used)
-  and a `Dir BFS:Projekte ALL` lists its 381 lines. The counters then show 35
-  complete ExNext passes over 34 directories with 1,181 entries returned: 34 of
-  class A and one of class C, the second listing of `Berichte` through another
-  lock (a `Dir` started after Workbench was up in Workbench mode, a `List` in
-  shell mode) with the volume unchanged.
+- **The kit boots and counts, in the console.** The rebuilt kit (after the
+  Workbench finding below) boots in FS-UAE in both modes, and in both the volume
+  `BFS:` mounts with 3,396 files in 468 directories (52 % of 63 MB used), a
+  `Dir BFS:Projekte ALL` lists its 381 lines, and the Shell console runs the
+  commands that come after the Workbench decision: a foreground `List BFS:Berichte`
+  (81 lines) and `Dir BFS:Archiv` (600 lines). The counters then show 37 complete
+  ExNext passes with 1,863 entries returned and no ExAll call at all: 34 passes of
+  class A (1,105 entries) and 3 of class C (758 entries), listings repeated through
+  another lock with the volume unchanged. In Workbench mode `verify-kit.sh` ends
+  with exit code 3 and the line `WORKBENCH: NOT AVAILABLE`, because `icon.library`
+  and `workbench.library` do not open (`results/kit-check-workbench/`); in shell mode
+  it ends with 0 (`results/kit-check-shell/`).
+- **The own-Workbench route works with a stand-in.** `verify-attach.sh` writes a
+  stand-in boot folder and an FS-UAE configuration for it, runs `attach-to-config.sh`
+  on that configuration (the copy gets the BFS hard file as hard drive 1 and the
+  folder `Hitrate` as hard drive 2, label `HR`, and the original is unchanged), adds
+  the line of `Startup-Zeilen.txt` to a `User-Startup`, boots, lists
+  `BFS:Projekte ALL` twice and reads the counters through `HR:`. Result: both
+  listings have 382 lines, and the counters hold 31 ExNext passes of class A and
+  31 of class C with 421 entries each, as the two identical listings through two
+  locks give (`results/attach-check/`). This does not test Fabian's Workbench, his
+  configuration or a Workbench window.
+- **No command of the assets lists through ExAll.** With the counters reset
+  before each step, `Copy ... ALL` from BFS and within BFS, `Delete ... ALL`,
+  `Protect ... ALL`, `Search ... ALL`, `Filenote ... ALL`, `List ... ALL` and
+  `Dir ... ALL` showed 0 ExAll calls and only ExNext calls
+  (`results/command-listing-calls/`). The console route therefore measures ExNext
+  only. `summarize.py` now prints a note when a session had no ExAll call,
+  because the rule's "stop" would then mean only that there was nothing to count.
+  The rule, its thresholds and the counters are unchanged.
 
 ## The kit
 
 `build/hitrate-kit/` in this checkout (git ignores `build/`; it holds the
-Kickstart ROM and the Workbench commands of `emulator-test/.assets`). It can be
+Kickstart ROM and the commands of `emulator-test/.assets`). It can be
 rebuilt with `docs/qualification/evidence/bfs-exall-hit-rate-2026-10-23/build-kit.sh`
 from the instrumented handler built by `build-instrumented.sh 040`. It holds the
 boot folder `System`, the hard file `bfs.hdf` (the BFS volume with the tree of
 `make-tree.py`: the assets, the sources and documents of the repository and raw
 results of earlier measurements, with a 600-entry flat folder and trees up to
-14 levels deep), `start.sh`, `summarize.py` and the one-page German instructions
-`ANLEITUNG.md`.
+14 levels deep), `start.sh`, `summarize.py`, the one-page German instructions
+`ANLEITUNG.md`, and for the own-Workbench route `attach-to-config.sh`, the folder
+`Hitrate` and `Startup-Zeilen.txt`.
 
-`./start.sh` starts Workbench with the counters at zero. `./start.sh shell` starts
-only the boot console, without Workbench. Fabian uses the volume for 10 to 20
-minutes, waits 15 seconds, closes the emulator and runs
-`python3 summarize.py System/hitrate.txt`, which prints the decision-rule table in
-German. The result file goes to `sessions/` of the evidence directory, one file
-per session.
+**Workbench does not start from this kit.** `./start.sh` checks at boot whether
+`icon.library` and `workbench.library` open (`C:openlibs`, return code 5 if not),
+writes the result to `System/workbench-check.txt` and, if they do not open, says so
+and leaves the Shell console on screen. The listing commands (`Dir`, `List`,
+`Copy`, `Delete`) work there. If both libraries open, the kit runs `LoadWB` and
+records its return code in `System/loadwb-rc.txt`. `./start.sh shell` skips the
+check. Fabian has three ways to a result (see the instructions): the console,
+the Workbench of the kit once two libraries of his Workbench 3.2 are copied into
+`System/Libs` (untested, I have no such files), or his own Workbench with the
+BFS volume attached to a copy of his FS-UAE configuration by `attach-to-config.sh`
+(tested with a stand-in, not with his Workbench). The following section gives the
+finding behind this.
+
+Fabian uses the volume for 10 to 20 minutes, waits 15 seconds, closes the
+emulator and runs `python3 summarize.py System/hitrate.txt` (route C:
+`Hitrate/hitrate.txt`), which prints the decision-rule table in German. The
+result file goes to `sessions/` of the evidence directory, one file per session.
+
+## Workbench and the minimal system folder
+
+Fabian reported on 23 October 2026 that the first version of the kit stopped with
+`invalid resident library` and `LoadWB failed returncode 20` and left the prompt
+`1>`. That was right, and my earlier report was wrong to count "the Workbench
+starting" among the checked things: the boot check ran its listings before the
+kit's `LoadWB` and never tested whether Workbench came up. The cause, found in the
+emulator and read from files only (`results/workbench-diagnosis/`):
+
+- `LoadWB` with DOS requesters suppressed (`quiet`) prints the two lines above and
+  returns 20. Without the suppression it waits behind a "System Request" window on
+  the Workbench screen, and the console hangs at the next command that needs a
+  library. That is why `List` hung after Workbench in my first checks.
+- `OpenLibrary` fails for `icon.library` and `workbench.library` (`openlibs`),
+  although the Kickstart's resident list holds both (version 47, together with
+  `workbench.task` 39; `inventory`). `asl.library` and `amigaguide.library` from the
+  assets' `Libs` do not open either. I did not find out why; they presumably need
+  `icon.library`. All other libraries that I tried open (exec, dos, intuition,
+  graphics, layers, utility, locale, keymap, gadtools, diskfont).
+- `SetPatch` and `IPrefs` return 0 and change nothing, and the assigns `ENV:`, `T:`,
+  `CLIPS:`, `ENVARC:` do not help (the kit makes them anyway, `List` needs them).
+- `emulator-test/.assets` holds the Kickstart ROM, `C` and `Libs` of the CI image
+  and no disk copies of `icon.library` and `workbench.library`. The two files can
+  only come from a Workbench 3.2 installation, which this checkout does not have.
+
+The kit now tests for exactly this at boot (`workbench-check.txt`, `loadwb-rc.txt`)
+and `verify-kit.sh` exits with 3 in Workbench mode if Workbench is not available.
 
 ## What the numbers will and will not show
 
@@ -107,28 +170,24 @@ The table holds 512 directories; the summary warns if it was full.
 
 ## What I could not check
 
-- **Workbench and Shell windows by hand.** I cannot operate the emulator's
-  windows. Checked are the boot, the Workbench starting, the volume, listings
-  started from scripts, the counters and the file `hitrate.txt`. The menu steps
-  and the Shell windows of the instructions were not exercised, and
-  whether the file requester `RequestFile` starts a listing here was not shown:
-  it produced none within six seconds.
-- **`List` after Workbench.** In this minimal system `List` hangs once Workbench is
-  running, on `SYS:` and `RAM:` as on BFS, with the instrumented and with the
-  reference handler, so BFS and the counter are not the cause. A foreground
-  command typed into the boot console after Workbench hangs as well, while
-  commands started with `Run` do not. `Dir` works after Workbench, and every
-  listing command works in shell mode. The kit's instructions say so. Without
-  the standard assigns (`ENV:`, `T:`, `ENVARC:`) `List` hangs even before
-  Workbench; the kit makes them.
+- **Workbench.** It never started in any of my checks, and I have no files that
+  would start it. Not exercised: the Workbench of the kit with the two libraries
+  copied in (route B), Fabian's Workbench with the attach script (route C; tested
+  only with the stand-in above), Workbench windows and menus, Shell windows, and
+  file requesters. The first instructions described such steps and are replaced.
 - **Which programs list through ExAll.** The scripted run counts ExAll
-  correctly. In the boot checks `Dir` and `List` used ExNext. Which part of a real
-  session lists through ExAll depends on the programs used, and the counters will
-  tell.
+  correctly. In every boot check and for every command of the assets that I
+  tried, listing went through ExNext. Which part of a real session lists through
+  ExAll depends on the programs used, probably on Workbench windows and requesters,
+  but I did not show that; the counters will tell, and route A cannot.
+- **Why the ROM's `icon.library` and `workbench.library` do not open.** I measured
+  that they do not and that `LoadWB` returns 20 with `invalid resident library`;
+  I did not find out what in the Kickstart or the missing disk files causes it.
 
 ## Evidence
 
 [`evidence/bfs-exall-hit-rate-2026-10-23/`](evidence/bfs-exall-hit-rate-2026-10-23/README.md)
-holds the patch, the programs (`hitrate`, `hitrate-check`), the build, run and
-kit scripts, `summarize.py`, the German instructions, the results above and
+holds the patch, the programs (`hitrate`, `hitrate-check`, `openlibs`, `quiet`,
+`taskdump`, `inventory`), the build, run, kit and check scripts, `summarize.py`, the
+German instructions, the results above (including `workbench-diagnosis/`) and
 `SHA256SUMS`. No screenshot is kept.
