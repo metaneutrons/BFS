@@ -1,0 +1,6 @@
+smoke run complete: <scratch>/f-wb
+after the Workbench decision: after-dir.txt 600 lines, after-list.txt 81 lines
+WORKBENCH: NOT AVAILABLE with this System folder:
+icon.library	FAILED, IoErr 0
+workbench.library	FAILED, IoErr 0
+exit 3

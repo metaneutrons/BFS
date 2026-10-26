@@ -1,0 +1,9 @@
+Diese Zeile kommt ans Ende von S:User-Startup deiner Workbench 3.2
+(oder in ein Skript, das du beim Start ausfuehrst):
+
+Run >NIL: <NIL: Execute HR:hitrate-loop
+
+HR: ist der Ordner "Hitrate" dieses Kits auf dem Mac, BFS: die Platte mit dem
+instrumentierten Handler. Die Zaehler stehen dann alle 10 Sekunden in
+Hitrate/hitrate.txt. Von Hand: HR:hitrate BFS: (zeigen) und HR:hitrate BFS: RESET
+(auf 0 setzen). Die Schleife setzt die Zaehler beim Start auf 0.

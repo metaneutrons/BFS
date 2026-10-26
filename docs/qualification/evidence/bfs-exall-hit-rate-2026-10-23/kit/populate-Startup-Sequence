@@ -1,0 +1,8 @@
+; Populate BFS: from the host tree (SRC:). Used once by build-kit.sh.
+Echo "populate start" >SYS:populate.txt
+Copy SRC: BFS: ALL QUIET CLONE
+Echo "copy done" >>SYS:populate.txt
+Wait 5 SEC
+Info BFS: >>SYS:populate.txt
+Dir BFS: >>SYS:populate.txt
+Echo "done" >SYS:populate.done

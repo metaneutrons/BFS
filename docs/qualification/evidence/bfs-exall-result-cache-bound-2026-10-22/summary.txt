@@ -1,0 +1,44 @@
+phase                                         ref  bound  b/ref    min    max
+SMALL_CREATE_40                              1.75   1.78  0.986  0.842  1.509
+LOOKUP_400                                   0.89   0.91  1.026  0.955  1.652
+SMALL_READ_40                                1.26   1.30  1.006  0.772  1.592
+LIST_EXNEXT_400                              1.55   1.63  1.053  0.735  1.521
+LIST_EXALL_400                               2.92   1.55  0.526  0.324  0.774
+SEQ_WRITE_8M                                 0.73   0.77  1.048  0.910  1.597
+SEQ_READ_8M                                  1.01   1.02  1.007  0.810  1.435
+SMALL_DELETE_40                              1.72   1.76  1.014  0.977  1.512
+APPEND_4K_1M                                 1.58   1.59  1.042  0.904  1.688
+APPEND_1K_256K                               1.84   1.89  1.014  0.950  1.153
+APPEND_READ_1280K                            1.08   1.08  1.007  0.840  1.090
+LIST_EXNEXT_40_ENTRIES_FIRST_PASS            1.96   2.12  1.020  0.894  4.412
+LIST_EXNEXT_40_ENTRIES_REPEAT10_TOTAL        1.62   1.72  1.038  0.735  1.949
+LIST_EXALL_40_ENTRIES_FIRST_PASS             2.89   3.23  1.116  0.778  1.500
+LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL         3.14   1.30  0.420  0.394  0.699
+LIST_EXNEXT_400_ENTRIES_FIRST_PASS           1.97   2.07  1.037  0.963  3.468
+LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL       1.53   1.56  1.028  0.950  1.107
+LIST_EXALL_400_ENTRIES_FIRST_PASS            5.52   5.87  1.008  0.751  1.368
+LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL        3.52   1.47  0.415  0.371  0.532
+LIST_EXNEXT_1000_ENTRIES_FIRST_PASS          2.05   2.07  1.008  0.832  1.046
+LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL      1.54   1.60  1.009  0.925  1.278
+LIST_EXALL_1000_ENTRIES_FIRST_PASS           6.23   6.05  0.998  0.569  1.140
+LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL       3.86   1.71  0.437  0.331  0.478
+geomean BFS/PFS3 of medians: reference 1.947, bound 1.741
+geomean of paired medians: all 0.887, 16 unchanged phases 1.021
+per entry (us): phase reference bound pfs3
+  LIST_EXALL_400                                18.4     9.7     6.3
+  LIST_EXALL_40_ENTRIES_FIRST_PASS              43.2    46.4    15.2
+  LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL          20.0     8.4     6.4
+  LIST_EXALL_400_ENTRIES_FIRST_PASS             40.3    41.5     7.3
+  LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL         18.4     7.5     5.1
+  LIST_EXALL_1000_ENTRIES_FIRST_PASS            39.8    40.2     6.4
+  LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL        19.5     8.6     5.0
+lock-owned estimate: {"1000": {"f": 0.9975290813040762, "lock_owned": 0.4928629591677338, "r": 0.4367889455970291}, "400": {"f": 1.0080238592320367, "lock_owned": 0.47417446685521475, "r": 0.41485786770223454}}
+memory bytes: {"bound_batch_bytes": 21912, "bound_cache_bytes": 92196, "bound_entry_bytes": 74, "bound_pending_bytes": 22, "candidate_record_bytes": 30}
+decision rule:
+  gain_1000: met {"lock_owned": 0.4928629591677338, "lock_owned_limit": 0.55, "met": true, "r": 0.4367889455970291, "r_limit": 0.5}
+  gain_400: met {"lock_owned": 0.47417446685521475, "lock_owned_limit": 0.6, "met": true, "r": 0.41485786770223454, "r_limit": 0.55}
+  first_listing: NOT met {"limit": 1.05, "met": false, "ratios": {"LIST_EXALL_1000_ENTRIES_FIRST_PASS": 0.9975290813040762, "LIST_EXALL_400_ENTRIES_FIRST_PASS": 1.0080238592320367, "LIST_EXALL_40_ENTRIES_FIRST_PASS": 1.1156850961538463}}
+  no_regression: NOT met {"geomean": 1.0211957178444233, "geomean_limit": 1.02, "limit": 1.05, "met": false, "misses": ["LIST_EXNEXT_400"], "worst_phase": "LIST_EXNEXT_400", "worst_ratio": 1.0530240926283139}
+  memory: met {"bytes_for_1000_entries": 42000, "met": true, "name_bytes_assumed": 12, "record_bytes": 30, "record_limit": 32, "total_limit": 65536}
+  valid_runs: met {"met": true, "starts": 16}
+  all criteria met: False
