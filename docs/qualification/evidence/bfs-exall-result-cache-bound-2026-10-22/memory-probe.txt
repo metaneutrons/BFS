@@ -1,0 +1,6 @@
+type	bytes
+bound_batch_bytes	21912
+bound_cache_bytes	92196
+bound_entry_bytes	74
+bound_pending_bytes	22
+candidate_record_bytes	30

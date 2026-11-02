@@ -1,0 +1,7 @@
+type	bytes
+hr_dir_bytes	244
+hr_lock_bytes	116
+hr_lock_pass_bytes	40
+hr_rec_bytes	40
+hr_report_bytes	332
+hr_state_bytes	125268

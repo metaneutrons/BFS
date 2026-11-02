@@ -1,0 +1,20 @@
+FAIL starts.exall.stamps.kind.same_lock expected 6 actual 7
+FAIL entries.exall.stamps.kind.same_lock expected 64 actual 76
+FAIL starts.exall.stamps.kind.other_lock expected 1 actual 0
+FAIL entries.exall.stamps.kind.other_lock expected 12 actual 0
+FAIL starts.exall.stamps.any.same_lock expected 5 actual 6
+FAIL entries.exall.stamps.any.same_lock expected 51 actual 63
+FAIL starts.exall.stamps.any.other_lock expected 2 actual 1
+FAIL entries.exall.stamps.any.other_lock expected 25 actual 13
+FAIL starts.exall.counter.kind.same_lock expected 5 actual 6
+FAIL entries.exall.counter.kind.same_lock expected 51 actual 63
+FAIL starts.exall.counter.kind.other_lock expected 1 actual 0
+FAIL entries.exall.counter.kind.other_lock expected 12 actual 0
+FAIL starts.exall.counter.any.same_lock expected 5 actual 6
+FAIL entries.exall.counter.any.same_lock expected 51 actual 63
+FAIL starts.exall.counter.any.other_lock expected 1 actual 0
+FAIL entries.exall.counter.any.other_lock expected 12 actual 0
+passes 13
+failures 16
+HITRATE-CHECK FAIL
+HITRATE-CHECK-COMPLETE

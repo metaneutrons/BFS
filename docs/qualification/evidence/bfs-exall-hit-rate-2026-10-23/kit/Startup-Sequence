@@ -1,0 +1,37 @@
+; BFS hit-rate session: Workbench, a BFS volume and the counters of the handler.
+; The assigns are the ones a normal startup makes. Without ENV: and T: commands
+; such as List wait for a requester that nobody sees.
+MakeDir >NIL: RAM:T RAM:Clipboards RAM:ENV RAM:ENV/Sys
+Assign ENV: RAM:ENV
+Assign T: RAM:T
+Assign CLIPS: RAM:Clipboards
+MakeDir >NIL: SYS:Prefs SYS:Prefs/Env-Archive
+Assign ENVARC: SYS:Prefs/Env-Archive
+Echo "BFS Hit-Rate-Sitzung: Zaehler auf 0 gesetzt."
+C:hitrate BFS: RESET
+Run >NIL: <NIL: Execute S:hitrate-loop
+If EXISTS S:Autotest
+  Execute S:Autotest
+EndIf
+If EXISTS S:Shellmode
+  Echo >RAM:Console-only
+  Echo "Shell-Modus ohne Workbench: Befehle hier eintippen (Dir, List, Copy, Delete)."
+Else
+  ; LoadWB needs icon.library and workbench.library. The ROM has them, but they cannot be
+  ; opened here and the folder has no disk copies, so test first (the result is in
+  ; SYS:workbench-check.txt, the test also keeps DOS from showing hidden requesters).
+  C:openlibs SYS:workbench-check.txt icon.library workbench.library
+  If WARN
+    Echo >RAM:Console-only
+    Echo "Die Workbench laesst sich mit diesem System-Ordner nicht starten:"
+    Echo "icon.library und workbench.library fehlen (siehe ANLEITUNG.md)."
+    Echo "Hier ist die Konsole: Dir, List, Copy, Delete eintippen."
+  Else
+    LoadWB
+    Echo "LoadWB rc $RC" >SYS:loadwb-rc.txt
+  EndIf
+EndIf
+; The automatic check of verify-kit.sh runs its last part here, after the decision above.
+If EXISTS S:Autotest-after
+  Execute S:Autotest-after
+EndIf
