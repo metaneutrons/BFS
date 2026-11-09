@@ -1,0 +1,12 @@
+Wrote the copy <scratch>/g-attach/own-hitrate.fs-uae
+Added to the copy (nothing else changed, <scratch>/g-attach/own.fs-uae is untouched):
+  # Hit-rate session: BFS volume with the instrumented handler and the Hitrate folder
+  hard_drive_1 = <scratch>/g-attach/kit/bfs.hdf
+  hard_drive_2 = <scratch>/g-attach/kit/Hitrate
+  hard_drive_2_label = HR
+Start it with: fs-uae "<scratch>/g-attach/own-hitrate.fs-uae"
+Then add the line of Startup-Zeilen.txt to the S:User-Startup of your Workbench.
+original unchanged; the copy only adds 5 lines
+listed lines: 382 and 382
+ExNext entries class A and class C: 421 421 (the second listing goes through another lock, so both must be above 0 and equal)
+attach route works: <scratch>/g-attach

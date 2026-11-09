@@ -1,0 +1,41 @@
+names: a = reference, b = bound
+phase                                           a      b    b/a    min    max
+SMALL_CREATE_40                              1.75   1.78  0.986  0.842  1.509
+LOOKUP_400                                   0.89   0.91  1.026  0.955  1.652
+SMALL_READ_40                                1.26   1.30  1.006  0.772  1.592
+LIST_EXNEXT_400                              1.55   1.63  1.053  0.735  1.521
+LIST_EXALL_400                               2.92   1.55  0.526  0.324  0.774
+SEQ_WRITE_8M                                 0.73   0.77  1.048  0.910  1.597
+SEQ_READ_8M                                  1.01   1.02  1.007  0.810  1.435
+SMALL_DELETE_40                              1.72   1.76  1.014  0.977  1.512
+APPEND_4K_1M                                 1.58   1.59  1.042  0.904  1.688
+APPEND_1K_256K                               1.84   1.89  1.014  0.950  1.153
+APPEND_READ_1280K                            1.08   1.08  1.007  0.840  1.090
+LIST_EXNEXT_40_ENTRIES_FIRST_PASS            1.96   2.12  1.020  0.894  4.412
+LIST_EXNEXT_40_ENTRIES_REPEAT10_TOTAL        1.62   1.72  1.038  0.735  1.949
+LIST_EXALL_40_ENTRIES_FIRST_PASS             2.89   3.23  1.116  0.778  1.500
+LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL         3.14   1.30  0.420  0.394  0.699
+LIST_EXNEXT_400_ENTRIES_FIRST_PASS           1.97   2.07  1.037  0.963  3.468
+LIST_EXNEXT_400_ENTRIES_REPEAT10_TOTAL       1.53   1.56  1.028  0.950  1.107
+LIST_EXALL_400_ENTRIES_FIRST_PASS            5.52   5.87  1.008  0.751  1.368
+LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL        3.52   1.47  0.415  0.371  0.532
+LIST_EXNEXT_1000_ENTRIES_FIRST_PASS          2.05   2.07  1.008  0.832  1.046
+LIST_EXNEXT_1000_ENTRIES_REPEAT10_TOTAL      1.54   1.60  1.009  0.925  1.278
+LIST_EXALL_1000_ENTRIES_FIRST_PASS           6.23   6.05  0.998  0.569  1.140
+LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL       3.86   1.71  0.437  0.331  0.478
+unchanged_16: geomean 1.021, worst LIST_EXNEXT_400 1.053, lowest SMALL_CREATE_40 0.986, above 1.05: ['LIST_EXNEXT_400'], below 1/1.05: []
+all_23: geomean 0.887, worst LIST_EXALL_40_ENTRIES_FIRST_PASS 1.116, lowest LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL 0.415, above 1.05: ['LIST_EXNEXT_400', 'LIST_EXALL_40_ENTRIES_FIRST_PASS'], below 1/1.05: ['LIST_EXALL_400', 'LIST_EXALL_40_ENTRIES_REPEAT10_TOTAL', 'LIST_EXALL_400_ENTRIES_REPEAT10_TOTAL', 'LIST_EXALL_1000_ENTRIES_REPEAT10_TOTAL']
+position (median_based_unchanged_16): second over first 1.0405, name b over a 1.0317, phases with the second start slower 13
+position (median_based_all_23): second over first 1.0324, name b over a 0.8922, phases with the second start slower 17
+position (log_mean_unchanged_16): second over first 1.0510, name b over a 1.0692, round-to-round sd of log 0.1141, per-round geomean 0.923-1.262
+  per round: {1: 1.04, 2: 1.001, 3: 1.165, 4: 1.214, 5: 1.262, 6: 0.954, 7: 1.042, 8: 0.923}
+position (log_mean_all_23): second over first 1.0455, name b over a 0.9152, round-to-round sd of log 0.0897, per-round geomean 0.819-1.035
+  per round: {1: 0.894, 2: 0.867, 3: 0.984, 4: 1.005, 5: 1.035, 6: 0.822, 7: 0.921, 8: 0.819}
+bootstrap over rounds (5000 draws, 4 odd and 4 even rounds each):
+  g16: 0.983 / 1.024 / 1.083
+  w16: 1.027 / 1.119 / 1.642
+  first_pass_max: 1.013 / 1.116 / 1.323
+  position_effect_16: 0.959 / 1.049 / 1.140
+  name_effect_16: 0.993 / 1.059 / 1.184
+  share above the limit: geomean 0.607, worst of 16 0.878, first-pass ExAll 0.790
+criteria: {"both_met": false, "criterion_3_first_pass_each": {"limit": 1.05, "met": false, "ratios": {"LIST_EXALL_1000_ENTRIES_FIRST_PASS": 0.9975290813040762, "LIST_EXALL_400_ENTRIES_FIRST_PASS": 1.0080238592320367, "LIST_EXALL_40_ENTRIES_FIRST_PASS": 1.1156850961538463}}, "criterion_4_unchanged_each_and_geomean": {"geomean": 1.0211957178444233, "geomean_limit": 1.02, "limit": 1.05, "met": false, "worst": 1.0530240926283139, "worst_phase": "LIST_EXNEXT_400"}, "every_phase_each": {"limit": 1.05, "met": false}}

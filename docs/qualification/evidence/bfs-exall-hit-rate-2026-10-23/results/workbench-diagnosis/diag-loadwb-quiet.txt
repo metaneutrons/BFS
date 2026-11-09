@@ -1,0 +1,4 @@
+quiet: running LoadWB
+invalid resident library
+LoadWB failed returncode 20
+quiet: return code 20, IoErr 0
