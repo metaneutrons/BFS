@@ -1,0 +1,9 @@
+; Counters of the BFS hit-rate build, written to HR:hitrate.txt every ten seconds.
+; HR: is the Hitrate folder of the kit, a folder on the Mac.
+HR:hitrate BFS: RESET
+Lab loop
+HR:hitrate BFS: >HR:hitrate.tmp
+Delete HR:hitrate.txt QUIET
+Rename HR:hitrate.tmp HR:hitrate.txt QUIET
+Wait 10 SEC
+Skip loop BACK

@@ -1,0 +1,31 @@
+MakeDir >NIL: RAM:T RAM:Clipboards RAM:ENV RAM:ENV/Sys RAM:t1
+Assign ENV: RAM:ENV
+Assign T: RAM:T
+FailAt 21
+Echo "start" >SYS:w-steps.txt
+C:hitrate BFS: RESET
+Copy BFS:Berichte TO RAM:t1 ALL QUIET
+C:hitrate BFS: >SYS:w1-copy-from-bfs.txt
+C:hitrate BFS: RESET
+Copy BFS:Berichte TO BFS:Neu ALL QUIET
+C:hitrate BFS: >SYS:w2-copy-within-bfs.txt
+C:hitrate BFS: RESET
+Delete BFS:Neu ALL QUIET
+C:hitrate BFS: >SYS:w3-delete-all.txt
+C:hitrate BFS: RESET
+Protect BFS:Berichte +e ALL QUIET
+C:hitrate BFS: >SYS:w4-protect-all.txt
+C:hitrate BFS: RESET
+Search BFS:Berichte BFS ALL QUIET >NIL:
+C:hitrate BFS: >SYS:w5-search-all.txt
+C:hitrate BFS: RESET
+List BFS:Berichte ALL >NIL:
+C:hitrate BFS: >SYS:w6-list-all.txt
+C:hitrate BFS: RESET
+Dir BFS:Projekte ALL >NIL:
+C:hitrate BFS: >SYS:w7-dir-all.txt
+C:hitrate BFS: RESET
+Filenote BFS:Berichte "x" ALL QUIET
+C:hitrate BFS: >SYS:w8-filenote-all.txt
+C:hitrate BFS: RESET
+Echo "done" >SYS:w.done

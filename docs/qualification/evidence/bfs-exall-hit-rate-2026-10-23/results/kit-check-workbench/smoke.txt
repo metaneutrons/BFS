@@ -1,0 +1,96 @@
+autotest start
+
+Mounted disks:
+Unit      Size       Used       Free Full Errs   Status   Name
+BFS        63M       8452       7804  52%   0  Read/Write BFS
+
+Volumes available:
+BFS [Mounted]
+     Messdaten (dir)
+     Berichte (dir)
+     Projekte (dir)
+     Archiv (dir)
+     Werkzeuge (dir)
+System:C/hitrate
+version	1
+starts.exall.stamps.kind.new	0
+entries.exall.stamps.kind.new	0
+starts.exall.stamps.kind.same_lock	0
+entries.exall.stamps.kind.same_lock	0
+starts.exall.stamps.kind.other_lock	0
+entries.exall.stamps.kind.other_lock	0
+starts.exall.stamps.kind.changed	0
+entries.exall.stamps.kind.changed	0
+starts.exall.stamps.any.new	0
+entries.exall.stamps.any.new	0
+starts.exall.stamps.any.same_lock	0
+entries.exall.stamps.any.same_lock	0
+starts.exall.stamps.any.other_lock	0
+entries.exall.stamps.any.other_lock	0
+starts.exall.stamps.any.changed	0
+entries.exall.stamps.any.changed	0
+starts.exall.counter.kind.new	0
+entries.exall.counter.kind.new	0
+starts.exall.counter.kind.same_lock	0
+entries.exall.counter.kind.same_lock	0
+starts.exall.counter.kind.other_lock	0
+entries.exall.counter.kind.other_lock	0
+starts.exall.counter.kind.changed	0
+entries.exall.counter.kind.changed	0
+starts.exall.counter.any.new	0
+entries.exall.counter.any.new	0
+starts.exall.counter.any.same_lock	0
+entries.exall.counter.any.same_lock	0
+starts.exall.counter.any.other_lock	0
+entries.exall.counter.any.other_lock	0
+starts.exall.counter.any.changed	0
+entries.exall.counter.any.changed	0
+starts.exnext.stamps.kind.new	34
+entries.exnext.stamps.kind.new	1105
+starts.exnext.stamps.kind.same_lock	0
+entries.exnext.stamps.kind.same_lock	0
+starts.exnext.stamps.kind.other_lock	0
+entries.exnext.stamps.kind.other_lock	0
+starts.exnext.stamps.kind.changed	0
+entries.exnext.stamps.kind.changed	0
+starts.exnext.stamps.any.new	34
+entries.exnext.stamps.any.new	1105
+starts.exnext.stamps.any.same_lock	0
+entries.exnext.stamps.any.same_lock	0
+starts.exnext.stamps.any.other_lock	0
+entries.exnext.stamps.any.other_lock	0
+starts.exnext.stamps.any.changed	0
+entries.exnext.stamps.any.changed	0
+starts.exnext.counter.kind.new	34
+entries.exnext.counter.kind.new	1105
+starts.exnext.counter.kind.same_lock	0
+entries.exnext.counter.kind.same_lock	0
+starts.exnext.counter.kind.other_lock	0
+entries.exnext.counter.kind.other_lock	0
+starts.exnext.counter.kind.changed	0
+entries.exnext.counter.kind.changed	0
+starts.exnext.counter.any.new	34
+entries.exnext.counter.any.new	1105
+starts.exnext.counter.any.same_lock	0
+entries.exnext.counter.any.same_lock	0
+starts.exnext.counter.any.other_lock	0
+entries.exnext.counter.any.other_lock	0
+starts.exnext.counter.any.changed	0
+entries.exnext.counter.any.changed	0
+calls.exall	0
+entries_returned.exall	0
+passes_complete.exall	0
+passes_abandoned.exall	0
+passes_changed.exall	0
+orphan_entries.exall	0
+calls.exnext	1139
+entries_returned.exnext	1105
+passes_complete.exnext	34
+passes_abandoned.exnext	0
+passes_changed.exnext	0
+orphan_entries.exnext	0
+pattern_starts	0
+evictions	0
+directories	34
+volume_changes	0
+autotest done

@@ -1,0 +1,3 @@
+diag-taskdump.txt: the name of the IPrefs task holds non-ASCII bytes; they are
+replaced by '?' so that the repository audit accepts the file as text. Nothing else
+in the files of this directory was changed after the run.

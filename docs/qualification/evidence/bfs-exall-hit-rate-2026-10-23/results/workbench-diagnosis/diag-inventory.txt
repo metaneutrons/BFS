@@ -1,0 +1,65 @@
+quiet: running C:inventory
+kickstart 47.102
+-- resident modules
+expansion.library	47
+exec.library	47
+diag init
+	47
+utility.library	47
+potgo.resource	37
+cia.resource	45
+FileSystem.resource	47
+battclock.resource	47
+misc.resource	37
+disk.resource	47
+battmem.resource	39
+graphics.library	47
+layers.library	46
+gameport.device	47
+timer.device	46
+card.resource	47
+keyboard.device	47
+keymap.library	47
+input.device	47
+ramdrive.device	46
+trackdisk.device	47
+carddisk.device	47
+scsi.device	47
+intuition.library	47
+syscheck	47
+romboot	47
+bootmenu	47
+alert.hook
+	47
+strap	47
+filesystem	47
+ramlib	45
+mathieeesingbas.library	47
+dos.library	47
+console.device	46
+audio.device	47
+mathffp.library	46
+gadtools.library	47
+workbench.library	47
+icon.library	47
+workbench.task	39
+con-handler	47
+syslog	47
+shell	47
+system-startup	47
+ram-handler	47
+-- OpenLibrary
+workbench.library	not available
+icon.library	not available
+intuition.library	47.51
+asl.library	not available
+locale.library	47.26
+utility.library	47.3
+gadtools.library	47.17
+commodities.library	45.2
+datatypes.library	47.3
+iffparse.library	45.3
+diskfont.library	47.1
+bullet.library	46.4
+amigaguide.library	not available
+quiet: return code 0, IoErr 0

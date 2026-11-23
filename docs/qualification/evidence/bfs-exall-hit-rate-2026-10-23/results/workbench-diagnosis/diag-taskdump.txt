@@ -1,0 +1,78 @@
+-- modules
+00f84164 00f8417e expansion.library
+00f80042 00f840b0 exec.library
+00f8417e 00f84c84 diag init
+
+00fc1598 00fc2428 utility.library
+00fc4974 00fc4aa4 potgo.resource
+00fc4390 00fc478a cia.resource
+00fc4b4c 00fc4d78 FileSystem.resource
+00fc242c 00fc2ebe battclock.resource
+00fc4aa4 00fc4b4c misc.resource
+00fc4d78 00fc5102 disk.resource
+00fc478c 00fc4972 battmem.resource
+00f858c8 00f9c988 graphics.library
+00fb2400 00fb5414 layers.library
+00fc92ec 00fc9d14 gameport.device
+00fc61bc 00fc6fec timer.device
+00fc09b4 00fc1598 card.resource
+00fc8b68 00fc92ec keyboard.device
+00fc5530 00fc61bc keymap.library
+00fc8078 00fc8b68 input.device
+00fc386c 00fc3eca ramdrive.device
+00fc9d14 00fcb938 trackdisk.device
+00fc2ec0 00fc386c carddisk.device
+00fb5448 00fb91d0 scsi.device
+00fd9388 00ff4d74 intuition.library
+00fbf9d8 00fbfa40 syscheck
+00fc6fec 00fc7006 romboot
+00fbbc60 00fbf97c bootmenu
+00f840b0 00f84162 alert.hook
+
+00fc7006 00fc8078 strap
+00fa6edc 00fae59c filesystem
+00fc5104 00fc552e ramlib
+00f84c88 00f858c8 mathieeesingbas.library
+00f9d790 00fa6438 dos.library
+00fae59c 00fb23fc console.device
+00fbfa40 00fc09a0 audio.device
+00fc3ed0 00fc4390 mathffp.library
+00ff4fb0 00ffb324 gadtools.library
+00ffc688 00ffc6f0 workbench.library
+00ffc6f0 00ffc778 icon.library
+00ffc9ca 00ffca8e workbench.task
+00fb91ee 00fbbc54 con-handler
+00ffc7ca 00ffc7e4 syslog
+00fce518 00fd937c shell
+00ffb354 00ffb3f0 system-startup
+00fcb93c 00fce4da ram-handler
+-- waiting
+task UAE fs automounter type=00000001 state=00000004 sigwait=00002000
+  00f80ce8 in exec.library
+  00ff0000 in intuition.library
+task DF0 type=0000000d state=00000004 sigwait=40000100
+  00f80ce8 in exec.library
+  00ff0000 in intuition.library
+task CON type=0000000d state=00000004 sigwait=00000100
+  00f80ce8 in exec.library
+task scsi.device type=00000001 state=00000004 sigwait=e0000000
+  00f80ce8 in exec.library
+task ? IPrefs ? type=0000000d state=00000004 sigwait=0000f000
+  00f80ce8 in exec.library
+  00ff0000 in intuition.library
+task RAM type=0000000d state=00000004 sigwait=c0000100
+  00f80ce8 in exec.library
+  00ff0000 in intuition.library
+task BFS type=0000000d state=00000004 sigwait=60000100
+  00f80ce8 in exec.library
+task ramlib type=0000000d state=00000004 sigwait=80000000
+  00f80ce8 in exec.library
+  00ff0000 in intuition.library
+task trackdisk.device type=00000001 state=00000004 sigwait=00000300
+  00f80ce8 in exec.library
+task input.device type=00000001 state=00000004 sigwait=c0000000
+  00f80ce8 in exec.library
+task DH0 type=0000000d state=00000004 sigwait=00002100
+  00f80ce8 in exec.library
+-- ready
+-- screens and windows

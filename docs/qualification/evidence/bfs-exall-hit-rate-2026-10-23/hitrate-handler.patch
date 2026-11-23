@@ -1,0 +1,450 @@
+diff --git a/src/amiga/handler.c b/src/amiga/handler.c
+index 2ddc2a1f..64cb044e 100644
+--- a/src/amiga/handler.c
++++ b/src/amiga/handler.c
+@@ -46,6 +46,9 @@
+ #include "dos_string.h"
+ #include "amiga_bio.h"
+ #include "snapshot_mount.h"
++#ifdef BFS_HITRATE
++#include "hitrate.h"
++#endif
+ #ifdef BFS_PERF_PROBE
+ #include "perf_probe.h"
+ #ifdef BFS_PERF_WRITE_DETAIL
+@@ -138,6 +141,9 @@ struct bfs_notify {
+ };
+ 
+ struct bfs_open_file;
++#ifdef BFS_HITRATE
++struct hr_state;
++#endif
+ 
+ struct bfs_snapshot_pin {
+     struct bfs_snapshot_pin *next;
+@@ -172,6 +178,10 @@ struct bfs_handler {
+     uint32_t next_snapshot_pin;
+     uint32_t open_file_count;
+     uint32_t lock_count;
++#ifdef BFS_HITRATE
++    uint32_t volume_changes; /* raised by every packet that can change the volume */
++    struct hr_state *hr;
++#endif
+     bool notify_pending;
+     bool should_exit;
+     bool media_changed;
+@@ -228,12 +238,36 @@ typedef struct {
+     struct exnext_batch *batch; /* ExNext read-ahead, allocated on first use */
+ } bfs_scan_cursor_t;
+ 
++#ifdef BFS_HITRATE
++/* Volume state the candidate cache would compare, the stamps of the ExNext
++ * read-ahead (ExNextBatchCurrent, ExNextInode). */
++typedef struct {
++    bfs_blk_t dir_root;
++    uint32_t dir_generation;
++    uint64_t recovery_generation;
++    bfs_blk_t inode_root;
++    uint32_t inode_generation;
++    uint32_t pending_version;
++} hr_stamp_t;
++
++/* The pass a lock is making of its directory, one per kind. */
++typedef struct {
++    bool active;
++    uint8_t cls[HR_TESTS][HR_SCOPES];
++    hr_stamp_t stamp;
++    uint32_t counter;
++} hr_lock_pass_t;
++#endif
++
+ typedef struct {
+     struct FileLock fl;
+     uint32_t ino;
+     uint32_t type; /* BFS_INODE_FILE or BFS_INODE_DIR */
+     uint32_t parent_ino;
+     bfs_scan_cursor_t *cursor; /* allocated by the first enumeration */
++#ifdef BFS_HITRATE
++    hr_lock_pass_t hr[HR_KINDS];
++#endif
+ } bfs_lock_t;
+ 
+ typedef struct bfs_open_file {
+@@ -754,6 +788,10 @@ static void ApplyNameLimit(struct bfs_handler *h)
+     (void)bfs_fs_set_name_limit(&h->fs, h->long_names ? BFS_NAME_MAX : BFS_SHORT_NAME_MAX);
+ }
+ 
++#ifdef BFS_HITRATE
++static void HrForget(struct bfs_handler *h);
++#endif
++
+ static bool TryRemountMedia(struct bfs_handler *h)
+ {
+     /* A snapshot root is immutable and is selected by the startup record.
+@@ -761,6 +799,10 @@ static bool TryRemountMedia(struct bfs_handler *h)
+     if (h->snapshot_startup) return false;
+     if (HandlerIsInUse(h)) return false;
+ 
++#ifdef BFS_HITRATE
++    h->volume_changes++;
++    HrForget(h);
++#endif
+     RemoveVolumeNode(h);
+     bfs_cache_destroy(&h->cache);
+ 
+@@ -822,6 +864,184 @@ static bool SnapshotRejectsPacket(LONG type)
+     }
+ }
+ 
++#ifdef BFS_HITRATE
++/* ── Hit-rate counter ───────────────────────────────────────── */
++
++/* The packets that can change the volume, as in the result cache bound: the
++ * ones a snapshot refuses, a close, a media change and the 64-bit resize. */
++static bool PacketMayChangeVolume(LONG type)
++{
++    if (SnapshotRejectsPacket(type)) return true;
++    switch (type) {
++    case ACTION_END:
++    case ACTION_INHIBIT:
++    case ACTION_DIE:
++    case BFS_ACTION_CHANGE_FILE_SIZE64:
++        return true;
++    default:
++        return false;
++    }
++}
++
++#define HR_DIRS 512
++
++/* What a complete pass left: the volume at its start and its lock, under each
++ * validity test. A pass during which the volume changed leaves nothing. */
++typedef struct {
++    bool valid;
++    hr_stamp_t stamp;
++    uint32_t counter;
++    const bfs_lock_t *lock; /* NULL once the lock is released */
++} hr_rec_t;
++
++typedef struct {
++    uint32_t ino;
++    hr_rec_t last[3][HR_TESTS]; /* latest ExAll pass, ExNext pass, either */
++} hr_dir_t;
++
++struct hr_state {
++    bfs_hitrate_report_t rep;
++    uint32_t used;
++    uint32_t next_evict;
++    hr_dir_t dirs[HR_DIRS];
++};
++
++/* A remount is another volume: the table of directories starts again. */
++static void HrForget(struct bfs_handler *h)
++{
++    if (h->hr) {
++        h->hr->used = 0;
++        h->hr->next_evict = 0;
++    }
++}
++
++static struct hr_state *HrGet(struct bfs_handler *h)
++{
++    if (!h->hr) h->hr = (struct hr_state *)AllocVec(sizeof(*h->hr), MEMF_ANY | MEMF_CLEAR);
++    return h->hr;
++}
++
++static void HrStamp(struct bfs_handler *h, hr_stamp_t *s)
++{
++    s->dir_root = h->fs.dir_tree.tree.root;
++    s->dir_generation = h->fs.dir_tree.tree.generation;
++    s->recovery_generation = h->fs.recovery_generation;
++    s->inode_root = h->fs.inode_tree.root;
++    s->inode_generation = h->fs.inode_tree.generation;
++    s->pending_version = bfs_inode_pending_version(&h->fs.inode_tree);
++}
++
++static bool HrStampEqual(const hr_stamp_t *a, const hr_stamp_t *b)
++{
++    return a->dir_root == b->dir_root && a->dir_generation == b->dir_generation &&
++           a->recovery_generation == b->recovery_generation &&
++           a->inode_root == b->inode_root && a->inode_generation == b->inode_generation &&
++           a->pending_version == b->pending_version;
++}
++
++static hr_dir_t *HrDir(struct hr_state *hr, uint32_t ino)
++{
++    for (uint32_t i = 0; i < hr->used; i++)
++        if (hr->dirs[i].ino == ino) return &hr->dirs[i];
++    hr_dir_t *d;
++    if (hr->used < HR_DIRS) {
++        d = &hr->dirs[hr->used++];
++    } else {
++        d = &hr->dirs[hr->next_evict++ % HR_DIRS];
++        hr->rep.evictions++;
++    }
++    memset(d, 0, sizeof(*d));
++    d->ino = ino;
++    return d;
++}
++
++static uint8_t HrClassify(const hr_rec_t *last, bool use_stamps, const hr_stamp_t *now,
++                          uint32_t counter, const bfs_lock_t *lk)
++{
++    if (!last->valid) return HR_CLASS_NEW;
++    bool same = use_stamps ? HrStampEqual(&last->stamp, now) : last->counter == counter;
++    if (!same) return HR_CLASS_CHANGED;
++    return last->lock == lk ? HR_CLASS_SAME_LOCK : HR_CLASS_OTHER_LOCK;
++}
++
++/* A pass over the directory of lk starts. */
++static void HrBegin(struct bfs_handler *h, bfs_lock_t *lk, int kind, bool pattern)
++{
++    struct hr_state *hr = HrGet(h);
++    if (!hr) return;
++    hr_lock_pass_t *pass = &lk->hr[kind];
++    if (pass->active) hr->rep.passes_abandoned[kind]++;
++    hr_dir_t *d = HrDir(hr, lk->ino);
++    hr_stamp_t now;
++    HrStamp(h, &now);
++    for (int test = 0; test < HR_TESTS; test++) {
++        for (int scope = 0; scope < HR_SCOPES; scope++) {
++            const hr_rec_t *last = &d->last[scope == HR_SCOPE_KIND ? kind : 2][test];
++            uint8_t cls = HrClassify(last, test == HR_TEST_STAMPS, &now, h->volume_changes, lk);
++            pass->cls[test][scope] = cls;
++            hr->rep.starts[kind][test][scope][cls]++;
++        }
++    }
++    pass->active = true;
++    pass->stamp = now;
++    pass->counter = h->volume_changes;
++    if (pattern) hr->rep.pattern_starts++;
++}
++
++/* A call of the pass returned entries. complete: no entries remain. */
++static void HrEnd(struct bfs_handler *h, bfs_lock_t *lk, int kind, uint32_t entries, bool complete)
++{
++    struct hr_state *hr = HrGet(h);
++    if (!hr) return;
++    hr_lock_pass_t *pass = &lk->hr[kind];
++    hr->rep.calls[kind]++;
++    hr->rep.entries_returned[kind] += entries;
++    if (!pass->active) {
++        hr->rep.orphan_entries[kind] += entries;
++        return;
++    }
++    for (int test = 0; test < HR_TESTS; test++)
++        for (int scope = 0; scope < HR_SCOPES; scope++)
++            hr->rep.entries[kind][test][scope][pass->cls[test][scope]] += entries;
++    if (!complete) return;
++    pass->active = false;
++    hr->rep.passes_complete[kind]++;
++    hr_stamp_t now;
++    HrStamp(h, &now);
++    bool stamps_ok = HrStampEqual(&pass->stamp, &now);
++    bool counter_ok = pass->counter == h->volume_changes;
++    if (!stamps_ok) hr->rep.passes_changed[kind]++;
++    hr_dir_t *d = HrDir(hr, lk->ino);
++    const int slots[2] = { kind, 2 };
++    for (int i = 0; i < 2; i++) {
++        hr_rec_t *rec = d->last[slots[i]];
++        if (stamps_ok) {
++            rec[HR_TEST_STAMPS].valid = true;
++            rec[HR_TEST_STAMPS].stamp = pass->stamp;
++            rec[HR_TEST_STAMPS].lock = lk;
++        }
++        if (counter_ok) {
++            rec[HR_TEST_COUNTER].valid = true;
++            rec[HR_TEST_COUNTER].counter = pass->counter;
++            rec[HR_TEST_COUNTER].lock = lk;
++        }
++    }
++}
++
++/* A lock is released: its passes end and no record names it any more. */
++static void HrLockFreed(struct bfs_handler *h, const bfs_lock_t *lk)
++{
++    struct hr_state *hr = h->hr;
++    if (!hr) return;
++    for (int kind = 0; kind < HR_KINDS; kind++)
++        if (lk->hr[kind].active) hr->rep.passes_abandoned[kind]++;
++    for (uint32_t i = 0; i < hr->used; i++)
++        for (int slot = 0; slot < 3; slot++)
++            for (int test = 0; test < HR_TESTS; test++)
++                if (hr->dirs[i].last[slot][test].lock == lk) hr->dirs[i].last[slot][test].lock = NULL;
++}
++#endif
++
+ /* ── Lock helpers ──────────────────────────────────────────── */
+ 
+ static void AttachLock(struct bfs_handler *h, bfs_lock_t *lock, uint32_t ino,
+@@ -902,6 +1122,9 @@ static bool FreeLock(struct bfs_handler *h, bfs_lock_t *lock)
+         bfs_lock_t *current = (bfs_lock_t *)BADDR(*link);
+         if (current == lock) {
+             *link = current->fl.fl_Link;
++#ifdef BFS_HITRATE
++            HrLockFreed(h, current);
++#endif
+             DisposeLock(current);
+             if (h->lock_count > 0) h->lock_count--;
+             return true;
+@@ -2300,6 +2523,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+                 -1 : DOSFALSE;
+     bfs_packet_word_t res2 = ERROR_ACTION_NOT_KNOWN;
+ 
++#ifdef BFS_HITRATE
++    if (PacketMayChangeVolume(pkt->dp_Type)) h->volume_changes++;
++#endif
+     if (h->snapshot_startup && SnapshotRejectsPacket(pkt->dp_Type)) {
+         res1 = DOSFALSE;
+         res2 = ERROR_DISK_WRITE_PROTECTED;
+@@ -2443,6 +2669,33 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+         break;
+     }
+ 
++#ifdef BFS_HITRATE
++    case BFS_ACTION_HITRATE_READ: {
++        bfs_hitrate_report_t *target = (bfs_hitrate_report_t *)pkt->dp_Arg1;
++        struct hr_state *hr = HrGet(h);
++        if (!target || !hr) { res2 = ERROR_REQUIRED_ARG_MISSING; break; }
++        if (pkt->dp_Arg2 != (LONG)sizeof(*target)) { res2 = ERROR_BAD_NUMBER; break; }
++        *target = hr->rep;
++        target->magic = BFS_HITRATE_MAGIC;
++        target->version = BFS_HITRATE_VERSION;
++        target->size = (uint32_t)sizeof(*target);
++        target->directories = hr->used;
++        target->volume_changes = h->volume_changes;
++        res1 = DOSTRUE;
++        res2 = 0;
++        break;
++    }
++
++    case BFS_ACTION_HITRATE_RESET: {
++        struct hr_state *hr = HrGet(h);
++        if (!hr) { res2 = ERROR_NO_FREE_STORE; break; }
++        memset(hr, 0, sizeof(*hr));
++        res1 = DOSTRUE;
++        res2 = 0;
++        break;
++    }
++#endif
++
+     case BFS_ACTION_CHECK: {
+         ULONG *summary = (ULONG *)pkt->dp_Arg1;
+         bfs_fsck_report_t report;
+@@ -2930,6 +3183,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+         bool fallback;
+         bool consumed_stop = true;
+         bfs_err_t err;
++#ifdef BFS_HITRATE
++        if (position == 0 && lk->type == BFS_INODE_DIR) HrBegin(h, lk, HR_KIND_EXNEXT, false);
++#endif
+         const exnext_entry_t *entry = ExNextEntry(h, lk, position, &err, &fallback);
+         if (fallback) {
+             err = ScanDirectoryFrom(h, lk, position, exam_next_pos_cb, &ctx,
+@@ -2950,6 +3206,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+ 
+         if (!ctx.got_entry) {
+             res2 = ERROR_NO_MORE_ENTRIES;
++#ifdef BFS_HITRATE
++            if (lk->type == BFS_INODE_DIR) HrEnd(h, lk, HR_KIND_EXNEXT, 0, true);
++#endif
+             break;
+         }
+ 
+@@ -2972,6 +3231,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+ #ifdef BFS_AROS
+         if (wide_fib)
+             FillFib64((struct FileInfoBlock64 *)BADDR(pkt->dp_Arg2), fib, en_size);
++#endif
++#ifdef BFS_HITRATE
++        if (lk->type == BFS_INODE_DIR) HrEnd(h, lk, HR_KIND_EXNEXT, 1, false);
+ #endif
+         res1 = DOSTRUE;
+         res2 = 0;
+@@ -3274,6 +3536,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+ 
+         CursorClearConsumedStop(lk);
+         ExNextBatchDrop(lk);
++#ifdef BFS_HITRATE
++        if (ectx.position == 0) HrBegin(h, lk, HR_KIND_EXALL, eac->eac_MatchString != NULL);
++#endif
+         bfs_err_t err;
+         exall_batch_t *batch = (exall_batch_t *)AllocVec(sizeof(*batch), MEMF_ANY);
+         if (batch) {
+@@ -3296,6 +3561,9 @@ static void HandlePacket(struct DosPacket *pkt, struct bfs_handler *h)
+         } else {
+             res2 = ectx.overflow ? ERROR_BUFFER_OVERFLOW : ERROR_NO_MORE_ENTRIES;
+         }
++#ifdef BFS_HITRATE
++        HrEnd(h, lk, HR_KIND_EXALL, eac->eac_Entries, res2 == ERROR_NO_MORE_ENTRIES);
++#endif
+         break;
+     }
+ 
+@@ -4341,6 +4609,9 @@ void EntryPoint(void)
+     } else {
+         RemoveVolumeNode(h);
+     }
++#ifdef BFS_HITRATE
++    if (h->hr) FreeVec(h->hr);
++#endif
+     bfs_cache_destroy(&h->cache);
+     bfs_amiga_bio_release((amiga_bio_t *)(h + 1));
+ #ifdef BFS_PERF_PROBE
+diff --git a/src/amiga/hitrate.h b/src/amiga/hitrate.h
+new file mode 100644
+index 00000000..db796540
+--- /dev/null
++++ b/src/amiga/hitrate.h
+@@ -0,0 +1,51 @@
++/* SPDX-License-Identifier: MPL-2.0 */
++/* Hit-rate counter of a debug build (BFS_HITRATE), see the section
++ * "Hit-rate measurement" of docs/plans/bfs-exall-result-cache-v1.md. The
++ * handler counts the starts of ExAll and ExNext passes over a directory and
++ * the entries they return, by what a result cache could have served. This
++ * header is shared by the handler and the tools that read the counters. */
++#ifndef BFS_HITRATE_H
++#define BFS_HITRATE_H
++
++#include <stdint.h>
++
++#define BFS_ACTION_HITRATE_READ  3020 /* arg1: report buffer, arg2: its size */
++#define BFS_ACTION_HITRATE_RESET 3021 /* clears the counters and the table */
++
++#define BFS_HITRATE_MAGIC 0x48495452u /* "HITR" */
++#define BFS_HITRATE_VERSION 1u
++
++enum { HR_KIND_EXALL = 0, HR_KIND_EXNEXT = 1, HR_KINDS = 2 };
++/* The validity test: the tree stamps of the candidate, or the packet counter
++ * of the bound. */
++enum { HR_TEST_STAMPS = 0, HR_TEST_COUNTER = 1, HR_TESTS = 2 };
++/* The record a start is compared with: the latest complete pass of its own
++ * kind, or the latest complete pass of either kind. */
++enum { HR_SCOPE_KIND = 0, HR_SCOPE_ANY = 1, HR_SCOPES = 2 };
++enum {
++    HR_CLASS_NEW = 0,        /* A: no complete pass of the directory yet */
++    HR_CLASS_SAME_LOCK = 1,  /* B: unchanged, same lock */
++    HR_CLASS_OTHER_LOCK = 2, /* C: unchanged, another lock */
++    HR_CLASS_CHANGED = 3,    /* D: the volume changed since */
++    HR_CLASSES = 4
++};
++
++typedef struct {
++    uint32_t magic;
++    uint32_t version;
++    uint32_t size;
++    uint32_t starts[HR_KINDS][HR_TESTS][HR_SCOPES][HR_CLASSES];
++    uint32_t entries[HR_KINDS][HR_TESTS][HR_SCOPES][HR_CLASSES];
++    uint32_t calls[HR_KINDS];            /* ExAll calls, ExNext calls */
++    uint32_t entries_returned[HR_KINDS]; /* entries of all calls */
++    uint32_t passes_complete[HR_KINDS];
++    uint32_t passes_abandoned[HR_KINDS]; /* ended by a restart or an UnLock */
++    uint32_t passes_changed[HR_KINDS];   /* complete, volume changed during it */
++    uint32_t orphan_entries[HR_KINDS];   /* entries of calls without a counted start */
++    uint32_t pattern_starts;             /* ExAll starts with a pattern */
++    uint32_t evictions;                  /* directories dropped from the table */
++    uint32_t directories;                /* directories in the table */
++    uint32_t volume_changes;             /* the packet counter */
++} bfs_hitrate_report_t;
++
++#endif

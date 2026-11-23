@@ -1,0 +1,2 @@
+icon.library	FAILED, IoErr 0
+workbench.library	FAILED, IoErr 0

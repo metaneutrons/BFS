@@ -1,0 +1,36 @@
+snapdog-runner
+START 1 exallcache-1-bfs-first-reference 2026-10-22T09:48:07Z
+PASS 1 exallcache-1-bfs-first-reference 2026-10-22T09:48:41Z
+START 2 exallcache-1-bfs-first-bound 2026-10-22T09:48:42Z
+PASS 2 exallcache-1-bfs-first-bound 2026-10-22T09:49:18Z
+START 3 exallcache-2-pfs3-first-bound 2026-10-22T09:49:18Z
+PASS 3 exallcache-2-pfs3-first-bound 2026-10-22T09:49:53Z
+START 4 exallcache-2-pfs3-first-reference 2026-10-22T09:49:53Z
+PASS 4 exallcache-2-pfs3-first-reference 2026-10-22T09:50:28Z
+START 5 exallcache-3-bfs-first-reference 2026-10-22T09:50:28Z
+PASS 5 exallcache-3-bfs-first-reference 2026-10-22T09:51:04Z
+START 6 exallcache-3-bfs-first-bound 2026-10-22T09:51:04Z
+PASS 6 exallcache-3-bfs-first-bound 2026-10-22T09:51:40Z
+START 7 exallcache-4-pfs3-first-bound 2026-10-22T09:51:40Z
+PASS 7 exallcache-4-pfs3-first-bound 2026-10-22T09:52:16Z
+START 8 exallcache-4-pfs3-first-reference 2026-10-22T09:52:16Z
+PASS 8 exallcache-4-pfs3-first-reference 2026-10-22T09:52:52Z
+START 9 exallcache-5-bfs-first-reference 2026-10-22T09:52:52Z
+PASS 9 exallcache-5-bfs-first-reference 2026-10-22T09:53:28Z
+START 10 exallcache-5-bfs-first-bound 2026-10-22T09:53:28Z
+PASS 10 exallcache-5-bfs-first-bound 2026-10-22T09:54:04Z
+START 11 exallcache-6-pfs3-first-bound 2026-10-22T09:54:04Z
+PASS 11 exallcache-6-pfs3-first-bound 2026-10-22T09:54:39Z
+START 12 exallcache-6-pfs3-first-reference 2026-10-22T09:54:39Z
+PASS 12 exallcache-6-pfs3-first-reference 2026-10-22T09:55:15Z
+START 13 exallcache-7-bfs-first-reference 2026-10-22T09:55:15Z
+PASS 13 exallcache-7-bfs-first-reference 2026-10-22T09:55:51Z
+START 14 exallcache-7-bfs-first-bound 2026-10-22T09:55:51Z
+PASS 14 exallcache-7-bfs-first-bound 2026-10-22T09:56:26Z
+START 15 exallcache-8-pfs3-first-bound 2026-10-22T09:56:26Z
+PASS 15 exallcache-8-pfs3-first-bound 2026-10-22T09:57:01Z
+START 16 exallcache-8-pfs3-first-reference 2026-10-22T09:57:01Z
+PASS 16 exallcache-8-pfs3-first-reference 2026-10-22T09:57:37Z
+EXALLCACHE_BOUND_COMPLETE 16 2026-10-22T09:57:37Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-22T09:57:40Z

@@ -1,0 +1,9 @@
+file	calls.exall	calls.exnext
+w1-copy-from-bfs.txt	0	80
+w2-copy-within-bfs.txt	0	80
+w3-delete-all.txt	0	80
+w4-protect-all.txt	0	80
+w5-search-all.txt	0	80
+w6-list-all.txt	0	80
+w7-dir-all.txt	0	452
+w8-filenote-all.txt	0	80

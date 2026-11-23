@@ -1,0 +1,36 @@
+snapdog-runner
+START 1 exallnull-1-bfs-first-reference-a 2026-10-22T12:25:20Z
+PASS 1 exallnull-1-bfs-first-reference-a 2026-10-22T12:25:56Z
+START 2 exallnull-1-bfs-first-reference-b 2026-10-22T12:25:56Z
+PASS 2 exallnull-1-bfs-first-reference-b 2026-10-22T12:26:31Z
+START 3 exallnull-2-pfs3-first-reference-b 2026-10-22T12:26:31Z
+PASS 3 exallnull-2-pfs3-first-reference-b 2026-10-22T12:27:07Z
+START 4 exallnull-2-pfs3-first-reference-a 2026-10-22T12:27:07Z
+PASS 4 exallnull-2-pfs3-first-reference-a 2026-10-22T12:27:42Z
+START 5 exallnull-3-bfs-first-reference-a 2026-10-22T12:27:42Z
+PASS 5 exallnull-3-bfs-first-reference-a 2026-10-22T12:28:17Z
+START 6 exallnull-3-bfs-first-reference-b 2026-10-22T12:28:17Z
+PASS 6 exallnull-3-bfs-first-reference-b 2026-10-22T12:28:53Z
+START 7 exallnull-4-pfs3-first-reference-b 2026-10-22T12:28:53Z
+PASS 7 exallnull-4-pfs3-first-reference-b 2026-10-22T12:29:29Z
+START 8 exallnull-4-pfs3-first-reference-a 2026-10-22T12:29:29Z
+PASS 8 exallnull-4-pfs3-first-reference-a 2026-10-22T12:30:05Z
+START 9 exallnull-5-bfs-first-reference-a 2026-10-22T12:30:05Z
+PASS 9 exallnull-5-bfs-first-reference-a 2026-10-22T12:30:40Z
+START 10 exallnull-5-bfs-first-reference-b 2026-10-22T12:30:40Z
+PASS 10 exallnull-5-bfs-first-reference-b 2026-10-22T12:31:15Z
+START 11 exallnull-6-pfs3-first-reference-b 2026-10-22T12:31:15Z
+PASS 11 exallnull-6-pfs3-first-reference-b 2026-10-22T12:31:50Z
+START 12 exallnull-6-pfs3-first-reference-a 2026-10-22T12:31:50Z
+PASS 12 exallnull-6-pfs3-first-reference-a 2026-10-22T12:32:25Z
+START 13 exallnull-7-bfs-first-reference-a 2026-10-22T12:32:25Z
+PASS 13 exallnull-7-bfs-first-reference-a 2026-10-22T12:33:00Z
+START 14 exallnull-7-bfs-first-reference-b 2026-10-22T12:33:00Z
+PASS 14 exallnull-7-bfs-first-reference-b 2026-10-22T12:33:35Z
+START 15 exallnull-8-pfs3-first-reference-b 2026-10-22T12:33:35Z
+PASS 15 exallnull-8-pfs3-first-reference-b 2026-10-22T12:34:10Z
+START 16 exallnull-8-pfs3-first-reference-a 2026-10-22T12:34:10Z
+PASS 16 exallnull-8-pfs3-first-reference-a 2026-10-22T12:34:45Z
+EXALLNULL_COMPLETE 16 2026-10-22T12:34:45Z
+snapdog-runner
+RESTORE_COMPLETE status=0 2026-10-22T12:34:48Z

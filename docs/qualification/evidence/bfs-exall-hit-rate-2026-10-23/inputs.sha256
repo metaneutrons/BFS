@@ -1,0 +1,10 @@
+d37b771492b8b15cf00cabf0c1a94d7d597d085a6a72a244b9ba71edc6e4ebcd  instrumented-bfshandler-040
+eb7471fad3ca21d9e48271ac341ed8f8fce627ad85a2d0d891bf6fbb1a475b2a  hr-tools/hitrate
+3e1115fe9717a250f4ffc5d6e239e6ed5a26dc5b9a2881366fdfac36721e6c8f  hr-tools/hitrate-check
+7a335b1281daa8c1...  build/amiga/bfshandler (instrumented 68020, used by the full on-Amiga suite; rebuild with build-instrumented.sh 020)
+cdf124576e21d47f887a6dbc2fded7517e95c362a29e8aaf96f2c6ceb95c3ad8  hitrate-handler.patch
+e2e274bbd604dce11b2fcbcb631f0c13322034408018be72d2f6d55c99987212  reference bfshandler and release 040 of the patched tree without the define
+7c0b2d9c74a7cc64fc3606a0d5def22d7353616eae070677570ac4cd4ca8bb8f  kit-tools3/openlibs
+7300a2755f135576dded13ecbae6421b8cdb914d95482323284ef386b2e93e38  kit-tools3/quiet
+36a9046d84cc73beb3b026aa3a9152f0a30340f59cc85782ed4c57bbc0426180  kit-tools3/taskdump
+96361acb9956d4844f5715d59c89e970d0bb75cb14a076a833e6f2e9025118c6  kit-tools3/inventory

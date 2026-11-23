@@ -1,0 +1,14 @@
+exec.library	opened 47.8
+dos.library	opened 47.30
+intuition.library	opened 47.51
+graphics.library	opened 47.10
+layers.library	opened 46.2
+utility.library	opened 47.3
+locale.library	opened 47.26
+keymap.library	opened 47.1
+gadtools.library	opened 47.17
+diskfont.library	opened 47.1
+icon.library	FAILED, IoErr 0
+workbench.library	FAILED, IoErr 0
+asl.library	FAILED, IoErr 0
+amigaguide.library	FAILED, IoErr 0

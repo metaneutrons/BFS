@@ -1,0 +1,8 @@
+; Writes the counters to SYS:hitrate.txt every ten seconds (SYS: is the System
+; folder of the kit on the host).
+Lab loop
+C:hitrate BFS: >SYS:hitrate.tmp
+Delete SYS:hitrate.txt QUIET
+Rename SYS:hitrate.tmp SYS:hitrate.txt QUIET
+Wait 10 SEC
+Skip loop BACK
